@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="640" viewBox="0 0 980 640" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <style>
+      .abs   { fill:#ede7f6; stroke:#7e57c2; stroke-width:1.8; }
+      .node  { fill:#e8f0fe; stroke:#4285f4; stroke-width:1.3; }
+      .wp    { fill:#fff7e6; stroke:#f5a623; stroke-width:1.3; }
+      .cond  { fill:#e6f4ea; stroke:#34a853; stroke-width:1.3; }
+      .h     { font-size:14px; font-weight:700; fill:#1a1a1a; }
+      .t     { font-size:12px; fill:#202124; font-family:Consolas,monospace; }
+      .title { font-size:17px; font-weight:700; fill:#1a1a1a; }
+      .cap   { font-size:11.5px; fill:#666; }
+      .link  { stroke:#999; stroke-width:1; fill:none; }
+    </style>
+  </defs>
+
+  <text x="20" y="30" class="title">AST type hierarchy (Parser/Nodes.cs — C# records)</text>
+
+  <!-- ===== Node tree ===== -->
+  <rect x="380" y="50" width="220" height="40" rx="8" class="abs"/>
+  <text x="490" y="68" text-anchor="middle" class="h">abstract record Node</text>
+  <text x="490" y="83" text-anchor="middle" class="cap">every executable construct</text>
+
+  <!-- Node children: 2 rows x 7 -->
+  <!-- row 1 y=120 -->
+  <g class="t">
+    <rect x="14"  y="120" width="126" height="34" rx="6" class="node"/><text x="77"  y="142" text-anchor="middle">Script</text>
+    <rect x="150" y="120" width="126" height="34" rx="6" class="node"/><text x="213" y="142" text-anchor="middle">List</text>
+    <rect x="286" y="120" width="126" height="34" rx="6" class="node"/><text x="349" y="142" text-anchor="middle">Pipeline</text>
+    <rect x="422" y="120" width="136" height="34" rx="6" class="node"/><text x="490" y="142" text-anchor="middle">SimpleCommand</text>
+    <rect x="568" y="120" width="136" height="34" rx="6" class="node"/><text x="636" y="142" text-anchor="middle">IfCommand</text>
+    <rect x="714" y="120" width="126" height="34" rx="6" class="node"/><text x="777" y="142" text-anchor="middle">WhileCommand</text>
+    <rect x="850" y="120" width="116" height="34" rx="6" class="node"/><text x="908" y="142" text-anchor="middle">ForCommand</text>
+  </g>
+  <!-- row 2 y=166 -->
+  <g class="t">
+    <rect x="14"  y="166" width="126" height="34" rx="6" class="node"/><text x="77"  y="188" text-anchor="middle">CaseCommand</text>
+    <rect x="150" y="166" width="126" height="34" rx="6" class="node"/><text x="213" y="188" text-anchor="middle">FunctionDef</text>
+    <rect x="286" y="166" width="126" height="34" rx="6" class="node"/><text x="349" y="188" text-anchor="middle">Subshell</text>
+    <rect x="422" y="166" width="136" height="34" rx="6" class="node"/><text x="490" y="188" text-anchor="middle">BraceGroup</text>
+    <rect x="568" y="166" width="136" height="34" rx="6" class="node"/><text x="636" y="183" text-anchor="middle">ArrayElement</text><text x="636" y="196" text-anchor="middle">Assign</text>
+    <rect x="714" y="166" width="126" height="34" rx="6" class="node"/><text x="777" y="183" text-anchor="middle">ArrayCompound</text><text x="777" y="196" text-anchor="middle">Assign</text>
+    <rect x="850" y="166" width="116" height="34" rx="6" class="node"/><text x="908" y="183" text-anchor="middle">Conditional</text><text x="908" y="196" text-anchor="middle">Expression</text>
+  </g>
+  <!-- connector from Node down -->
+  <path class="link" d="M490,90 L490,108 M77,108 L908,108 M77,108 L77,120 M213,108 L213,120 M349,108 L349,120 M490,108 L490,120 M636,108 L636,120 M777,108 L777,120 M908,108 L908,120"/>
+
+  <text x="20" y="232" class="cap">SimpleCommand carries Name + Args (List&lt;Word&gt;), Assignments, Redirects. Compound commands carry their own Redirects.</text>
+
+  <!-- ===== Word / WordPart ===== -->
+  <rect x="14" y="256" width="300" height="40" rx="8" class="abs"/>
+  <text x="164" y="274" text-anchor="middle" class="h">record Word(List&lt;WordPart&gt;)</text>
+  <text x="164" y="289" text-anchor="middle" class="cap">a single shell word = ordered parts</text>
+
+  <rect x="360" y="256" width="240" height="40" rx="8" class="abs"/>
+  <text x="480" y="280" text-anchor="middle" class="h">abstract record WordPart</text>
+
+  <path class="link" d="M314,276 L358,276"/>
+
+  <!-- WordPart children: 2 rows x 5, y=330 / 376 -->
+  <g class="t">
+    <rect x="14"  y="330" width="178" height="34" rx="6" class="wp"/><text x="103" y="352" text-anchor="middle">LiteralPart</text>
+    <rect x="202" y="330" width="178" height="34" rx="6" class="wp"/><text x="291" y="352" text-anchor="middle">SingleQuotedPart</text>
+    <rect x="390" y="330" width="178" height="34" rx="6" class="wp"/><text x="479" y="352" text-anchor="middle">AnsiCQuotedPart</text>
+    <rect x="578" y="330" width="178" height="34" rx="6" class="wp"/><text x="667" y="352" text-anchor="middle">DoubleQuotedPart</text>
+    <rect x="766" y="330" width="200" height="34" rx="6" class="wp"/><text x="866" y="352" text-anchor="middle">VarExpansionPart</text>
+  </g>
+  <g class="t">
+    <rect x="14"  y="376" width="178" height="34" rx="6" class="wp"/><text x="103" y="398" text-anchor="middle">BraceExpansionPart</text>
+    <rect x="202" y="376" width="178" height="34" rx="6" class="wp"/><text x="291" y="393" text-anchor="middle">CommandSubstitution</text><text x="291" y="406" text-anchor="middle">Part</text>
+    <rect x="390" y="376" width="178" height="34" rx="6" class="wp"/><text x="479" y="393" text-anchor="middle">ArithmeticExpansion</text><text x="479" y="406" text-anchor="middle">Part</text>
+    <rect x="578" y="376" width="178" height="34" rx="6" class="wp"/><text x="667" y="398" text-anchor="middle">TildePart</text>
+    <rect x="766" y="376" width="200" height="34" rx="6" class="wp"/><text x="866" y="398" text-anchor="middle">HeredocBodyPart</text>
+  </g>
+  <path class="link" d="M480,296 L480,318 M103,318 L866,318 M103,318 L103,330 M291,318 L291,330 M479,318 L479,330 M667,318 L667,330 M866,318 L866,330"/>
+
+  <!-- ===== CondExpr ===== -->
+  <rect x="14" y="452" width="240" height="40" rx="8" class="abs"/>
+  <text x="134" y="476" text-anchor="middle" class="h">abstract record CondExpr</text>
+  <text x="134" y="508" class="cap">used inside [[ … ]] (ConditionalExpression)</text>
+
+  <g class="t">
+    <rect x="290" y="452" width="104" height="34" rx="6" class="cond"/><text x="342" y="474" text-anchor="middle">CondAnd</text>
+    <rect x="404" y="452" width="104" height="34" rx="6" class="cond"/><text x="456" y="474" text-anchor="middle">CondOr</text>
+    <rect x="518" y="452" width="104" height="34" rx="6" class="cond"/><text x="570" y="474" text-anchor="middle">CondNot</text>
+    <rect x="632" y="452" width="104" height="34" rx="6" class="cond"/><text x="684" y="474" text-anchor="middle">CondBinary</text>
+    <rect x="746" y="452" width="104" height="34" rx="6" class="cond"/><text x="798" y="474" text-anchor="middle">CondUnary</text>
+    <rect x="860" y="452" width="104" height="34" rx="6" class="cond"/><text x="912" y="474" text-anchor="middle">CondWord</text>
+  </g>
+  <path class="link" d="M254,470 L288,470"/>
+
+  <!-- legend -->
+  <rect x="14" y="546" width="952" height="78" rx="8" fill="#fafafa" stroke="#ddd"/>
+  <text x="28" y="568" class="h">Legend</text>
+  <rect x="28"  y="580" width="20" height="14" class="abs"/><text x="54"  y="591" class="t">abstract base</text>
+  <rect x="170" y="580" width="20" height="14" class="node"/><text x="196" y="591" class="t">Node (statement)</text>
+  <rect x="360" y="580" width="20" height="14" class="wp"/><text x="386" y="591" class="t">WordPart</text>
+  <rect x="500" y="580" width="20" height="14" class="cond"/><text x="526" y="591" class="t">CondExpr ([[ ]])</text>
+  <text x="28" y="614" class="cap">Each record is dispatched by type in Evaluator.Execute (Node) / WordExpander.ExpandPart (WordPart) / Evaluator.ExecConditional (CondExpr).</text>
+</svg>

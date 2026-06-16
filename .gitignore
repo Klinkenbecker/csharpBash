@@ -1,0 +1,27 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+app.publish/
+*.dll
+*.exe
+*.pdb
+
+# Visual Studio / editor
+.vs/
+*.user
+*.suo
+*.ncb
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Mercurial working store — history is shipped as MERCURIAL_HISTORY.md + the
+# mercurial-history.hg bundle, so the live .hg/ dir is intentionally excluded.
+.hg/
+
+# Local tool settings
+.claude/
+
+# The LinkedIn article lives elsewhere, not in the code repo.
+moosh-all-the-way-down.md

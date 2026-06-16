@@ -1,0 +1,21 @@
+a	1
+b	2
+c	3
+--
+a,1
+b,2
+c,3
+==
+apple
+		banana
+		cherry
+	date
+==
+same rc=0
+cases/p1.txt cases/p2.txt differ: byte 1, line 1
+diff rc=1
+==
+hello
+hello
+touched
+removed

@@ -1,0 +1,13 @@
+== default echo (all on one line) ==
+a b c
+== -n1 ==
+a
+b
+c
+== -n2 ==
+1 2
+3 4
+5
+== -I{} ==
+item=[x]
+item=[y]

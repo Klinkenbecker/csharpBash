@@ -1,0 +1,14 @@
+T1 single index: one / three
+T2 append index: four
+T3 for over @:
+  - one
+  - two
+  - three
+  - four
+T4 keys: 0 1 2 3
+T5 after unset arr[1]: values=one three four len=3 keys=0 2 3
+T6 assoc single: Alice
+T7 assoc iterate:
+  red=ff0000
+  green=00ff00
+T8 arith index: three / four

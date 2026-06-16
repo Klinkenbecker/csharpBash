@@ -1,0 +1,7 @@
+null-ok
+missing rc=1
+continued
+div-continued
+one
+merged=[cat: nosuchfile_xyz: No such file or directory]
+both rc=1

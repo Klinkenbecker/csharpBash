@@ -1,0 +1,17 @@
+== delete+append ==
+2d1
+< b
+4a4
+> e
+rc=1
+== change ==
+2c2
+< world
+---
+> there
+rc=1
+== identical ==
+rc=0
+== brief ==
+Files c1.txt and c2.txt differ
+rc=1

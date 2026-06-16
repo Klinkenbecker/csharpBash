@@ -1,0 +1,7 @@
+arg0=args.sh
+count=3
+first=A second=B
+all=A B C
+  item: A
+  item: B
+  item: C

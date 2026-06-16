@@ -1,0 +1,16 @@
+prec 14
+parens 20
+sub 5
+div 3 mod 2
+pow 1024
+neg -2 not0 1 not5 0 bnot -1
+band 2 bor 7 bxor 4
+shl 16 shr 64
+lt 1 gt 1 le 1 ge 0
+eq 1 ne 1
+land 1 land0 0 lor 0 lor1 1
+tern1 10 tern0 20
+hex 255 oct 8
+discrim_or 1 discrim_and 1
+mix 1
+var 26

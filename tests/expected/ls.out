@@ -1,0 +1,18 @@
+== plain ==
+a.txt
+b.txt
+== -a ==
+.
+..
+.hidden
+a.txt
+b.txt
+== -A ==
+.hidden
+a.txt
+b.txt
+== -r ==
+b.txt
+a.txt
+== file arg ==
+lstest/a.txt

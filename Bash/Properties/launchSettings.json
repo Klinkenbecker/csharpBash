@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Bash": {
+      "commandName": "Project",
+      "workingDirectory": "F:\\Koliada\\Tools\\bash\\Bash"
+    }
+  }
+}

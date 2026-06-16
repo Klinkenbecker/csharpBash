@@ -1,0 +1,26 @@
+== which whoami (nonempty) ==
+which-ok
+which-missing rc=1
+== s/// first ==
+bar foo foo
+== s///g ==
+bar bar bar
+== s with & ==
+a[b]c
+== s with group ==
+Smith John
+== alt delim ==
+/opt/bin
+== -n p ==
+b
+== d delete line2 ==
+a
+c
+== /re/d ==
+keep
+keep2
+== s///i ==
+hi
+== $ last line ==
+a
+b

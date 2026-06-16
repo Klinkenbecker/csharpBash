@@ -1,0 +1,10 @@
+# This is a Unix-shell project: the interpreter emits LF, and the test fixtures
+# (tests/expected/*.out) and scripts are LF-sensitive. Normalize everything to LF
+# in the repo AND on checkout so the suite is portable across platforms.
+* text=auto eol=lf
+
+# Binary artifacts — never apply EOL conversion.
+mercurial-history.hg binary
+*.exe binary
+*.dll binary
+*.pdb binary

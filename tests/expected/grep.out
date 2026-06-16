@@ -1,0 +1,23 @@
+== basic ==
+apple
+banana
+apricot
+== -i ==
+apple
+== -v ==
+cherry
+== -n ==
+2:banana
+== -c ==
+3
+== ^ap regex ==
+apple
+apricot
+== -w word ==
+cat
+== pipe -i ==
+Foo
+== -F fixed (dot literal) ==
+a.b
+== rc no match ==
+rc=1

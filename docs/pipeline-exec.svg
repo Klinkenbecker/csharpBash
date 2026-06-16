@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="440" viewBox="0 0 980 440" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 z" fill="#555"/>
+    </marker>
+    <style>
+      .stage { fill:#e8f0fe; stroke:#4285f4; stroke-width:1.5; }
+      .ext   { fill:#fce8e6; stroke:#ea4335; stroke-width:1.5; }
+      .buf   { fill:#fff7e6; stroke:#f5a623; stroke-width:1.5; }
+      .lbl   { font-size:13px; font-weight:600; fill:#1a1a1a; }
+      .sub   { font-size:10.5px; fill:#5f6368; font-family:Consolas,monospace; }
+      .flow  { stroke:#555; stroke-width:1.6; fill:none; marker-end:url(#arr4); }
+      .pipe  { stroke:#ea4335; stroke-width:1.6; fill:none; marker-end:url(#arr4); stroke-dasharray:5 3; }
+      .title { font-size:17px; font-weight:700; fill:#1a1a1a; }
+      .h     { font-size:13.5px; font-weight:700; fill:#1a1a1a; }
+      .note  { font-size:11px; fill:#666; }
+      .band  { fill:#fafafa; stroke:#ddd; }
+    </style>
+  </defs>
+
+  <text x="20" y="30" class="title">Pipeline execution — <tspan font-family="Consolas,monospace" font-size="15">a | b | c</tspan> (Evaluator.ExecPipeline routes by AllStagesInProcess)</text>
+
+  <!-- ===== Scenario A: all in-process (sequential) ===== -->
+  <rect x="14" y="52" width="952" height="150" rx="10" class="band"/>
+  <text x="28" y="74" class="h">A · all stages are builtins/functions → ExecPipelineSequential</text>
+  <text x="28" y="92" class="note">Runs stages one at a time on a single thread; each stage's stdout is captured to a buffer and replayed as the next stage's stdin. Avoids the global-Console race.</text>
+
+  <rect x="60"  y="108" width="120" height="54" rx="8" class="stage"/>
+  <text x="120" y="130" text-anchor="middle" class="lbl">a</text><text x="120" y="148" text-anchor="middle" class="sub">builtin</text>
+  <rect x="250" y="108" width="96"  height="54" rx="8" class="buf"/>
+  <text x="298" y="132" text-anchor="middle" class="lbl">buffer</text><text x="298" y="150" text-anchor="middle" class="sub">captured stdout</text>
+  <rect x="416" y="108" width="120" height="54" rx="8" class="stage"/>
+  <text x="476" y="130" text-anchor="middle" class="lbl">b</text><text x="476" y="148" text-anchor="middle" class="sub">builtin</text>
+  <rect x="606" y="108" width="96"  height="54" rx="8" class="buf"/>
+  <text x="654" y="132" text-anchor="middle" class="lbl">buffer</text><text x="654" y="150" text-anchor="middle" class="sub">captured stdout</text>
+  <rect x="772" y="108" width="120" height="54" rx="8" class="stage"/>
+  <text x="832" y="130" text-anchor="middle" class="lbl">c</text><text x="832" y="148" text-anchor="middle" class="sub">builtin</text>
+  <path class="flow" d="M180,135 L248,135"/>
+  <path class="flow" d="M346,135 L414,135"/>
+  <path class="flow" d="M536,135 L604,135"/>
+  <path class="flow" d="M702,135 L770,135"/>
+  <text x="918" y="139" class="note">→ stdout</text>
+
+  <!-- ===== Scenario B: external present (threads) ===== -->
+  <rect x="14" y="216" width="952" height="200" rx="10" class="band"/>
+  <text x="28" y="238" class="h">B · any stage is an external process → ExecPipelineViaThreads</text>
+  <text x="28" y="256" class="note">One thread per stage; AnonymousPipe pairs wire stage→stage via [ThreadStatic] _pipeStdin / _pipeStdout. Each thread's finally closes its write end → signals EOF downstream.</text>
+
+  <rect x="60"  y="278" width="120" height="60" rx="8" class="stage"/>
+  <text x="120" y="302" text-anchor="middle" class="lbl">a (thread)</text><text x="120" y="322" text-anchor="middle" class="sub">_pipeStdout</text>
+  <rect x="416" y="278" width="120" height="60" rx="8" class="ext"/>
+  <text x="476" y="298" text-anchor="middle" class="lbl">b (thread)</text><text x="476" y="314" text-anchor="middle" class="sub">external proc</text><text x="476" y="328" text-anchor="middle" class="sub">_pipeStdin/Out</text>
+  <rect x="772" y="278" width="120" height="60" rx="8" class="stage"/>
+  <text x="832" y="302" text-anchor="middle" class="lbl">c (thread)</text><text x="832" y="322" text-anchor="middle" class="sub">_pipeStdin</text>
+
+  <text x="298" y="300" text-anchor="middle" class="sub" fill="#ea4335">AnonymousPipe</text>
+  <text x="654" y="300" text-anchor="middle" class="sub" fill="#ea4335">AnonymousPipe</text>
+  <path class="pipe" d="M180,308 L414,308"/>
+  <path class="pipe" d="M536,308 L770,308"/>
+  <text x="918" y="312" class="note">→ stdout</text>
+
+  <text x="28" y="372" class="note">Stream draining happens on background threads, joined after WaitForExit — never drained synchronously before exit (would deadlock on a full pipe buffer).</text>
+  <text x="28" y="392" class="note">pipefail / $? : the pipeline's exit status follows the last stage (or first failure under <tspan font-family="Consolas,monospace">set -o pipefail</tspan>).</text>
+</svg>

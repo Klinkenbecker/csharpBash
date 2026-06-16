@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="470" viewBox="0 0 980 470" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr5" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 z" fill="#555"/>
+    </marker>
+    <style>
+      .dec   { fill:#fef7e0; stroke:#f9ab00; stroke-width:1.6; }
+      .blt   { fill:#e8f0fe; stroke:#4285f4; stroke-width:1.6; }
+      .ext   { fill:#fce8e6; stroke:#ea4335; stroke-width:1.6; }
+      .note  { fill:#f1f3f4; stroke:#bbb; }
+      .lbl   { font-size:13px; font-weight:600; fill:#1a1a1a; }
+      .sub   { font-size:11px; fill:#3c4043; }
+      .mono  { font-size:11px; fill:#3c4043; font-family:Consolas,monospace; }
+      .flow  { stroke:#555; stroke-width:1.6; fill:none; marker-end:url(#arr5); }
+      .title { font-size:17px; font-weight:700; fill:#1a1a1a; }
+      .yn    { font-size:11px; font-weight:700; fill:#555; }
+      .h     { font-size:13px; font-weight:700; fill:#1a1a1a; }
+    </style>
+  </defs>
+
+  <text x="20" y="30" class="title">Redirect model — one owner per command type (ExecSimpleCommand)</text>
+
+  <!-- decision -->
+  <rect x="360" y="52" width="260" height="60" rx="8" class="dec"/>
+  <text x="490" y="76" text-anchor="middle" class="lbl">builtin or function?</text>
+  <text x="490" y="96" text-anchor="middle" class="mono">Builtins.Has(name) || _functions</text>
+
+  <!-- left: builtin path -->
+  <text x="250" y="135" class="yn">YES (in-process)</text>
+  <path class="flow" d="M380,112 L250,150"/>
+  <rect x="60" y="156" width="360" height="74" rx="8" class="blt"/>
+  <text x="240" y="180" text-anchor="middle" class="h">ApplyRedirects → Console swap</text>
+  <text x="76" y="200" class="mono">Console.SetOut / SetError / SetIn  (RedirectScope RAII)</text>
+  <text x="76" y="218" class="sub">restores streams + disposes opened FileStreams on exit</text>
+
+  <rect x="60" y="244" width="360" height="92" rx="8" class="note"/>
+  <text x="74" y="264" class="h">handles (fd-aware):</text>
+  <text x="74" y="284" class="mono">&gt;file  &gt;&gt;file  &lt;file   2&gt;file</text>
+  <text x="74" y="302" class="mono">2&gt;&amp;1  1&gt;&amp;2   /dev/null  /dev/std{out,err}</text>
+  <text x="74" y="322" class="sub">builtins write to Console; byte-faithful path via CurrentRawStdout()</text>
+
+  <!-- right: external path -->
+  <text x="640" y="135" class="yn">NO (external)</text>
+  <path class="flow" d="M600,112 L720,150"/>
+  <rect x="560" y="156" width="360" height="74" rx="8" class="ext"/>
+  <text x="740" y="180" text-anchor="middle" class="h">ExecExternal → own fd-map</text>
+  <text x="576" y="200" class="sub">a Console swap can't reach a child's OS handles, so the</text>
+  <text x="576" y="218" class="sub">child process owns its stdin/stdout/stderr directly</text>
+
+  <rect x="560" y="244" width="360" height="92" rx="8" class="note"/>
+  <text x="574" y="264" class="h">ProcessStartInfo redirection:</text>
+  <text x="574" y="284" class="mono">file (trunc/append) · /dev/null → Stream.Null</text>
+  <text x="574" y="302" class="mono">/dev/std{out,err} · 2&gt;&amp;1 · 1&gt;&amp;2 · pipe handles</text>
+  <text x="574" y="322" class="sub">resolved name via ResolveOnPath(name) ?? name (OS fallback)</text>
+
+  <!-- bottom rationale -->
+  <rect x="60" y="360" width="860" height="92" rx="10" fill="#fafafa" stroke="#ddd"/>
+  <text x="76" y="382" class="h">Why one owner per command type</text>
+  <text x="76" y="404" class="sub">ApplyRedirects (a Console swap) used to run for EVERY command, then ExecExternal re-opened the same file → a sharing-violation</text>
+  <text x="76" y="422" class="sub">that crashed the shell on <tspan class="mono">extcmd &gt;file</tspan>; external <tspan class="mono">2&gt;file</tspan> / <tspan class="mono">2&gt;/dev/null</tspan> were silently dropped. Now redirects apply in exactly</text>
+  <text x="76" y="440" class="sub">ONE place per command type. See DECISIONS — "Redirects apply in exactly one place per command type".</text>
+</svg>

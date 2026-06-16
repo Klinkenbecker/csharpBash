@@ -1,0 +1,4 @@
+clear rc=0
+found rc=0
+missing rc=1
+set rc=0

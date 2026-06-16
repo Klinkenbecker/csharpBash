@@ -1,0 +1,3 @@
+echo greeting=$GREETING
+echo ver=$BASH_VERSION
+exit

@@ -1,0 +1,14 @@
+G1 empty array for-loop (expect zero iterations):
+G1 done
+G2 empty array as args (expect 'a|b'):
+a|b
+G3 quoted empty string (expect one iteration []):
+  iter []
+G4 unset unquoted (expect zero iterations):
+G5 single-quoted with spaces (expect one iter [p q]):
+  iter [p q]
+G6 undeclared array (expect zero iterations):
+G7 mid-word join (expect pre-one / two / three-post):
+  iter [pre-one]
+  iter [two]
+  iter [three-post]

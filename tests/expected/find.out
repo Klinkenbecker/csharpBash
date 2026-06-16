@@ -1,0 +1,17 @@
+== all ==
+ftest
+ftest/a.txt
+ftest/b.log
+ftest/sub
+ftest/sub/c.txt
+== name *.txt ==
+ftest/a.txt
+ftest/sub/c.txt
+== type d ==
+ftest
+ftest/sub
+== maxdepth 1 ==
+ftest
+ftest/a.txt
+ftest/b.log
+ftest/sub

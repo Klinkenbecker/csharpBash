@@ -1,0 +1,6 @@
+cp ok
+mv ok
+cp-r ok
+rm ok
+dir-kept-without-r
+rm-rf ok
