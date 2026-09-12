@@ -1767,3 +1767,126 @@ files over the 9P `/mnt` bridge — a real cost of using it on Windows files, ma
 rather than engineered away. Git Bash ships bash 4.4 where WSL has 5.1.
 
 **Implemented by:** rev 76 -- README "Performance".
+
+## 2026-09-13 -- Native AOT builds and is 2.5x faster to start; the Zig apphost is a 3 ms / 82 KB win on the framework-dependent path
+**Status:** Active. Supersedes the "Native AOT blocked on tooling" finding of 2026-09-12, which was
+wrong about the cause.
+
+**1. Native AOT WORKS here. The 2026-09-12 conclusion was a bad diagnosis.** The link failure was
+not a missing MSVC linker — VS 2022 Professional's C++ toolchain is installed. Two environmental
+things were needed, and the second is the one that wasted the earlier attempt:
+  * `vcvars64.bat` first, so `link.exe` has `LIB`/`INCLUDE`/`PATH`; and
+  * **`vswhere.exe` ON PATH** (it lives in `…\Microsoft Visual Studio\Installer`, which vcvars does
+    NOT add). The ILCompiler shells out to `vswhere` to locate the linker and, when it is missing,
+    **splices its own error text into the command line it then tries to run** —
+    `The command ""'vswhere.exe' is not recognized…;…\link.exe" @"…link.rsp"" exited with code 123`.
+    That is why the first attempt looked like a missing linker: the real linker path was in the
+    message, immediately after the error text.
+Recipe kept at `scratchpad/aot.cmd`; the two `-p:` flags are just `PublishAot=true -p:DebugType=none`.
+
+**Measured, best of 11 for startup, best of 3 per benchmark:**
+
+| build | startup | size | loop | arith | func | coreutils | pipeline | find |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| **Native AOT** | **0.029** | **5.7 MB** | 0.172 | 0.259 | 0.229 | 0.073 | 0.266 | 0.038 |
+| self-contained + R2R (shipped) | 0.073 | 79 MB | 0.360 | 0.428 | 0.489 | 0.149 | 0.472 | 0.100 |
+| Git Bash (reference) | 0.028 | — | | | | | | |
+
+**AOT startup matches Git Bash** (0.029 vs 0.028), erasing the one row the benchmark lost badly,
+and every short benchmark is 1.65–2.6x faster. **Correctness is unaffected:** 50/50 suite cases and
+the 237-probe battery at 226/237 with the baseline held, both identical to the managed build, and
+the six subsystems most at risk were checked explicitly — the `ConsoleMux` reflection on `Console`'s
+private static fields (the thing feared on 2026-09-12) SURVIVES, as do regex + `BASH_REMATCH`, the
+awk parser, the Toolhelp32/NtQuery P/Invokes, job objects and `timeout`, the custom `ShellEncoding`
+subclass, and UNC globs.
+
+**The honest cost, and it is real: AOT is ~10 % SLOWER in steady state.** `loop_big` (2 M
+iterations) with startup subtracted: 1.366 s of work under AOT against 1.228 s under R2R — 0.90x.
+That is the expected AOT characteristic (no dynamic re-optimisation). So the crossover is about
+**0.4 s of work**: AOT saves 44 ms of startup and gives back ~11 % of throughput, so it wins for
+anything shorter and loses for a long batch loop. **Claude Code spawns a fresh shell per tool call
+running a short command, which is the side of the crossover AOT wins**, and it is 13x smaller.
+**Recommendation: ship AOT** — the architect's call, since it adds a BUILD-machine prerequisite
+(MSVC + vswhere) that the R2R build does not have.
+
+**2. The Zig apphost (E:/Claude/AppHost) is a real but small win, on one path only.** Framework-
+dependent single-file, same settings: **0.080 s on the Zig host against 0.083 s on the stock host**
+(~3 ms, as the architect predicted), and 82 KB smaller (597,465 vs 679,385 bytes). With R2R added:
+0.068–0.070 s at 1.68 MB, which is the fastest managed configuration measured — but it needs the
+.NET 8 runtime installed on the target, which the current ship deliberately does not.
+
+**AppHost's own `limits:` note is CORRECT, and the reason is structural, not an SDK quirk** — the
+architect asked this to be verified rather than repeated. A self-contained single-file publish does
+not use `apphost` at all: `_CreateSingleFileHost` takes `$(SingleFileHostSourcePath)`, and the stock
+`singlefilehost.exe` is **~10 MB**, not 141 KB, because it CONTAINS the runtime-loading machinery
+and loads CoreCLR and every assembly from inside its own bundle. The Zig host's job is the
+opposite: locate an installed .NET and hand off to `hostfxr`. Verified both ways — publishing
+self-contained with `-p:AppHostSourcePath=<zig>` ignores it (68,043,853 bytes, the normal size),
+and forcing `-p:SingleFileHostSourcePath=<zig>` builds a 58 MB binary that dies with
+`A fatal error was encountered. The library 'hostpolicy.dll' … was not found`.
+
+**A measurement error worth recording, because it nearly produced a false finding:** the first
+Zig-apphost test showed the stock and Zig publishes byte-identical, and I briefly concluded
+`AppHostSourcePath` was ignored on that path too. It was a stale `obj/`: `-v n` showed
+`Skipping target "_CreateAppHost" because all output files are up-to-date`. **Any apphost
+experiment must delete `obj/` first** — the intermediate patched host is cached, so changing the
+host property alone does not invalidate it. Also: comparing the published exe's leading bytes
+against the host template is NOT a valid check, because `CreateAppHost` patches placeholders inside
+it; compare sizes (the two hosts differ by ~76 KB) or diff against a known-good publish.
+
+**Implemented by:** rev 78 (documentation only; no code change, ship build unchanged pending the
+architect's decision on AOT).
+
+**Correction to the crossover figure in the entry above (measured 2026-09-13).** That entry put the
+AOT/R2R crossover at "~0.4 s of work", derived arithmetically from 44 ms of startup saving against
+an 11 % throughput penalty. That derivation was wrong, because it assumed the penalty applies at
+every scale. It does not — R2R's ReadyToRun code is CONSERVATIVE, and the JIT only overtakes AOT
+once it has re-compiled the hot path, which takes about a million iterations to pay back. Measured
+on the same loop at four sizes (work = total minus each build's startup):
+
+| iterations | AOT work | R2R work | winner |
+|---:|---:|---:|---|
+| 200 k | 0.145 | 0.286 | AOT, 2.0x |
+| 500 k | 0.350 | 0.435 | AOT, 1.24x |
+| 1 M | 0.688 | 0.714 | AOT, level |
+| 2 M | 1.369 | 1.233 | R2R, 1.11x |
+
+**So the crossover is ~1.2 M shell operations (~0.7 s of pure interpretation), not 0.4 s** — and
+including startup AOT stays ahead to roughly 2 M. The architect's point that long scripts are rare
+in Claude Code use is therefore an understatement of the case for AOT: to lose, a SINGLE shell
+invocation would have to perform over a million interpreter operations. It is also worth separating
+wall clock from interpreter work — installer-79's 273-second build spends nearly all of that inside
+`dotnet publish`, an external process, and only milliseconds in the shell, so the penalty never
+applies to it at all.
+
+## 2026-09-13 -- RATIFIED: the ship build is Native AOT
+**Status:** Active. Supersedes the ReadyToRun ship decision of 2026-09-12 (which itself superseded
+nothing — it was the first). The architect: "lets settle on AOT and re-publish."
+
+**The deliverable is now one static 5.7 MB executable** produced by `tools\publish-aot.cmd`, with
+no .NET runtime required on the target and ~29 ms startup against the ReadyToRun build's ~74 ms —
+the same startup as Git Bash, which erases the one benchmark row this project lost badly.
+
+**Why the script rather than a documented `dotnet publish` line.** AOT needs two things on the
+BUILD machine that are easy to get wrong, and one of them produces a message that actively
+misleads: without `vswhere.exe` on PATH the ILCompiler splices its own error text into the linker
+command line, so the failure reads as a missing linker while naming the real linker in the same
+string. That cost a day's misdiagnosis. The script checks both prerequisites and explains the trap
+in a comment, so the next person does not repeat it. It also deletes `obj/` first, because a stale
+intermediate is silently reused.
+
+**The trade accepted, stated plainly:** AOT cannot re-optimise at runtime, so past roughly 1.2 M
+shell operations in a single invocation the ReadyToRun build is ~11 % faster. No Claude Code tool
+call approaches that, and wall clock is not the measure — a build script that runs for minutes
+inside `dotnet publish` does milliseconds of interpretation. Both managed recipes stay in the
+README for anyone who wants the smallest download (1.7 MB, framework-dependent) or cannot build
+AOT.
+
+**Verified on the AOT binary before adopting it:** 50/50 suite cases and the 237-probe battery at
+226/237 with the baseline held, both identical to the managed build; and the six subsystems most at
+risk under AOT checked explicitly — the `ConsoleMux` reflection on `Console`'s private static
+fields, regex with `BASH_REMATCH`, the awk parser, the Toolhelp32/NtQuery P/Invokes, job objects
+and `timeout`, the custom `ShellEncoding` subclass, and UNC globs.
+
+**Implemented by:** rev 80 -- `tools/publish-aot.cmd` (the ship recipe), README build section and
+Performance table re-measured against the AOT build.

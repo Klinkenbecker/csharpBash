@@ -127,6 +127,19 @@
 > escape processing on the replacement (`${V//b/\\}` → `a\\`), and **does not expand `$` in the
 > pattern or replacement at all** — `${path//$old/$new}` silently returns the input unchanged.
 > ~half a day; no failing observable.
+> **AWAITING THE ARCHITECT (2026-09-13, rev 78): ship Native AOT?** It BUILDS here — the
+> 2026-09-12 "blocked on a missing MSVC linker" was a misdiagnosis; the linker is installed and the
+> real cause was `vswhere.exe` not being on PATH, whose absence gets its own error text spliced into
+> the linker command line. **Startup 0.029 s (matches Git Bash's 0.028, was 0.073), size 5.7 MB
+> (was 79 MB), every short benchmark 1.65–2.6× faster, suite 50/50 and battery 226/237 unchanged,
+> and the `ConsoleMux` reflection survives.** The real cost: **~10 % slower in steady state**
+> (`loop_big` work-only 1.366 s vs 1.228 s), so the crossover is ~0.4 s of work — AOT wins short
+> invocations, R2R wins long batch loops. Claude Code spawns a fresh shell per tool call, which is
+> the winning side. Recommendation: ship it. It is the architect's call because it adds a
+> BUILD-machine prerequisite (MSVC C++ tools + `vswhere` on PATH); recipe in `scratchpad/aot.cmd`.
+> Also measured: the Zig apphost (E:/Claude/AppHost) is worth ~3 ms and 82 KB, but only on the
+> framework-dependent path — self-contained uses the ~10 MB `singlefilehost` instead, which the Zig
+> host structurally cannot replace (verified; AppHost's own `limits:` note is right).
 > **SHIP-READY at rev 76 (2026-09-12) — the snapshot is the architect's to cut.** Suite 50/50;
 > battery 226/237 (baseline 226, the 11 diffs environment/by-design); `dist/Bash.exe` published
 > ReadyToRun at rev 76 and copied to the share. `MERCURIAL_HISTORY.md` (77 changesets) and

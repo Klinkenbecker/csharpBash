@@ -42,22 +42,22 @@ Measured on one Windows 10 machine against the two other bash shells available o
 
 | benchmark | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.358** | 1.519 | 0.424 | 4.2× | 1.2× |
-| `arith` — 200 k `$(( ))` evaluations | **0.427** | 2.124 | 0.625 | 5.0× | 1.5× |
-| `func` — 100 k function calls | **0.486** | 2.366 | 0.577 | 4.9× | 1.2× |
-| `loop_big` — 2 M iterations | **1.301** | 19.537 | 3.443 | 15.0× | 2.6× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.160** | 20.569 | 0.787 | **128.6×** | 4.9× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.456 | 0.344 | **0.125** | 0.8× | 0.3× |
-| `find` — walk 400 files | **0.098** | 0.194 | 0.107 | 2.0× | 1.1× |
-| startup — `bash -c 'exit 0'` | 0.074 | **0.028** | 0.101 | 0.4× | 1.4× |
+| `loop` — 200 k `while` iterations | **0.169** | 1.499 | 0.433 | 8.9× | 2.6× |
+| `arith` — 200 k `$(( ))` evaluations | **0.259** | 2.093 | 0.632 | 8.1× | 2.4× |
+| `func` — 100 k function calls | **0.229** | 2.319 | 0.589 | 10.1× | 2.6× |
+| `loop_big` — 2 M iterations | **1.389** | 15.082 | 3.481 | 10.9× | 2.5× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.078** | 20.303 | 0.777 | **260×** | 10.0× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.260 | 0.353 | **0.136** | 1.4× | 0.5× |
+| `find` — walk 400 files | **0.055** | 0.226 | 0.218 | 4.1× | 4.0× |
+| startup — `bash -c 'exit 0'` | 0.030 | **0.027** | 0.096 | 0.9× | 3.2× |
 
 **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
 
-**Where it wins, and why.** Interpreter throughput is 4–15× Git Bash and ahead of native Linux bash. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
+**Where it wins, and why.** Interpreter throughput is 8–11× Git Bash and 2.4–2.6× native Linux bash. Startup is level with Git Bash and three times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
 
-**Where it loses, and why.** Startup is 74 ms against Git Bash's 28 ms; roughly 60 ms of that is the .NET single-file runtime floor, which only Native AOT would move. And a long streaming text pipeline is slower — native C `grep`/`sed`/`sort` beat managed implementations per line, and WSL wins that row outright. C#Bash is fastest where a script does *many small things*; a pipe pushing 50 k lines through five real tools is not that shape.
+**Where it loses, and why.** One row: a long streaming text pipeline against WSL, where native C `grep`/`sed`/`sort` beat managed implementations per line. It does beat Git Bash there. C#Bash is fastest where a script does *many small things*; a pipe pushing 50 k lines through five real tools is not that shape.
 
-**Caveats worth stating.** One machine, one run. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the rows that touch the filesystem are marked in the harness output. Git Bash's bash is 4.4 where WSL's is 5.1.
+**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
 
 ## Architecture
 
@@ -85,12 +85,22 @@ The test suite's expected outputs are authored from real bash semantics, not cap
 
 Claude Code on Windows needs *a* `bash.exe`; it finds Git for Windows by default, or whatever `CLAUDE_CODE_GIT_BASH_PATH` names. C#Bash is built to be that shell (with or without Git installed):
 
-1. Publish one self-contained file somewhere the build never touches:
+1. Publish the Native AOT build somewhere the build never touches:
+   ```cmd
+   tools\publish-aot.cmd            REM -> dist\Bash.exe, ~5.7 MB
+   ```
+   One static executable. No .NET runtime on the target, and **~29 ms startup — the same as Git Bash** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
+
+   The managed alternatives, if you cannot or would rather not build AOT:
    ```sh
+   # self-contained, no runtime needed on the target: ~79 MB, ~74 ms
    dotnet publish Bash/Bash.csproj -c Release -r win-x64 \
        -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o dist
+   # framework-dependent, smallest download, needs .NET 8 installed: ~1.7 MB, ~68 ms
+   dotnet publish Bash/Bash.csproj -c Release -r win-x64 -p:SelfContained=false \
+       -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o dist
    ```
-   `dist/Bash.exe` (~79 MB) carries the .NET 8 runtime inside it; nothing else is needed on the target machine. `PublishReadyToRun` precompiles the IL and takes startup from ~86 ms to ~74 ms, which matters because Claude Code spawns a shell for *every* tool call. (Drop it for a 68 MB file; add `-p:SelfContained=false` for a ~0.6 MB one that needs the runtime installed.) Pointing Claude Code at `bin\Release` is a bad idea: every rebuild replaces the file under a live session, and the test runner kills stale interpreter processes before building.
+   ReadyToRun keeps the runtime and its JIT, so it is about 11 % faster than AOT in *steady state* — but only past roughly 1.2 million shell operations in a single invocation, which no Claude Code tool call approaches. Pointing Claude Code at `bin\Release` is a bad idea either way: every rebuild replaces the file under a live session, and the test runner kills stale interpreter processes before building.
 2. Set the variable for your user and restart Claude Code:
    ```powershell
    setx CLAUDE_CODE_GIT_BASH_PATH "C:\path\to\Bash.exe"

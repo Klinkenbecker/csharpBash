@@ -5,8 +5,14 @@
 # /mnt, which is a real cost of using WSL bash on Windows files and belongs in the number.
 # It is generated rather than pointed at the repository so the count is fixed and the walk is
 # bounded: pointing it at the repo pulls in .hg and bin/obj and takes minutes over 9P.
-here="$(cd "$(dirname "$0")" && pwd)"
+# BENCH_DIR, not $0: compare3.sh must SOURCE this into WSL bash (its Windows entry point takes only
+# -c), and in a sourced script $0 is the shell, not the file — so `dirname "$0"` became /bin and the
+# tree was built, or failed to build, in the wrong place. That silently made the WSL column of this
+# row time a failure rather than a walk (caught 2026-09-13). The harness exports BENCH_DIR in each
+# shell's own path form; the $0 path is the fallback for running this script directly.
+here="${BENCH_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 tree="$here/.findtree"
+[ -d "$here" ] || { echo "find: bench dir not found: $here" >&2; exit 1; }
 
 if [ ! -d "$tree" ]; then
 	mkdir -p "$tree" || exit 1

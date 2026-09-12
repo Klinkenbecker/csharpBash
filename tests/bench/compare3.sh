@@ -14,6 +14,12 @@
 #    using WSL bash on Windows files, so it is reported rather than engineered away, and the
 #    filesystem-touching rows are marked.
 #  * WSL bash is native Linux bash; Git Bash is bash on the MSYS2 POSIX emulation layer.
+#  * MSYS2_ARG_CONV_EXCL is set for every WSL call: Git Bash rewrites a /mnt/... value it passes to
+#    a native program, which silently pointed a benchmark at the wrong directory and timed the
+#    resulting failure (caught 2026-09-13).
+#  * pipeline.sh writes its input to $TMPDIR, which for WSL is ext4 INSIDE the VM and for the other
+#    two is the Windows temp directory — so that row gives WSL a filesystem advantage as well as a
+#    tool-speed one.
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
@@ -53,13 +59,16 @@ echo "rounds   : $rounds (best of)"
 echo
 
 export TIMEFORMAT='%3R'
+export BENCH_DIR="$here"      # see find.sh: $0 is unusable in a sourced script
 
 # run one benchmark in one shell, once; echoes the elapsed seconds
 run_once() {
   case "$1" in
     cs)   { time "$cs" "$2" >/dev/null 2>&1; } 2>&1 ;;
     git)  { time "$gitbash" "$2" >/dev/null 2>&1; } 2>&1 ;;
-    wsl)  { time "$wsl" -c ". $(to_wsl "$2")" >/dev/null 2>&1; } 2>&1 ;;
+    # BENCH_DIR is passed explicitly: in a SOURCED script $0 is the shell, not the file, so a
+    # benchmark that located itself from $0 built its fixture in /bin and timed the failure.
+    wsl)  { time MSYS2_ARG_CONV_EXCL='*' "$wsl" -c "BENCH_DIR=$(to_wsl "$here") . $(to_wsl "$2")" >/dev/null 2>&1; } 2>&1 ;;
   esac
 }
 
@@ -114,7 +123,7 @@ printf '   (bash -c '"'"'exit 0'"'"', best of 7)\n'
 # ── the outputs must agree, or a time means nothing ──────────────────────────
 echo
 echo "output agreement:"
-for b in loop arith func coreutils pipeline; do
+for b in loop arith func coreutils pipeline find; do
   s="$here/$b.sh"
   [ -f "$s" ] || continue
   a=$("$cs" "$s" 2>/dev/null)
@@ -123,7 +132,7 @@ for b in loop arith func coreutils pipeline; do
     if [ "$a" = "$("$gitbash" "$s" 2>/dev/null)" ]; then ok="= Git Bash"; else ok="DIFFERS from Git Bash"; fi
   fi
   if [ -n "$wsl" ]; then
-    if [ "$a" = "$("$wsl" -c ". $(to_wsl "$s")" 2>/dev/null)" ]; then ok="$ok, = WSL"; else ok="$ok, DIFFERS from WSL"; fi
+    if [ "$a" = "$(MSYS2_ARG_CONV_EXCL='*' "$wsl" -c "BENCH_DIR=$(to_wsl "$here") . $(to_wsl "$s")" 2>/dev/null)" ]; then ok="$ok, = WSL"; else ok="$ok, DIFFERS from WSL"; fi
   fi
   printf '  %-11s %s\n' "$b" "$ok"
 done
