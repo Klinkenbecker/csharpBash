@@ -1,0 +1,47 @@
+[]
+nullglob=1
+extglob rc=1
+hello world
+alias rc=1
+cd
+cv rc=1
+via-command
+builtin
+keyword
+function
+type rc=1
+via-builtin
+int=7
+declare -i n="7"
+assoc=v
+arr=y 3
+ro=1
+inner
+outer
+g()
+g
+let=12
+let0 rc=1
+cases
+tests
+b 2
+1
+pf=1
+read=2 3|1
+ifs=yx
+mapfile=2 l1
+opt=a:
+opt=b:val
+ab  |007| 3.14|ff|a\ b|x	y
+1-2-3-
+v07
+nonewline
+tab\there
+x	y
+test-ok
+dtest-ok
+pattern-ok
+re=abc-123
+to-fd3
+notfound rc=127
+bash: nosuch_cmd_zz: command not found

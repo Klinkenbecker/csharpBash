@@ -1,0 +1,15 @@
+c-l ok 0
+lc ok
+name a 2
+bash
+pipefail=1
+errexit rc=1
+from stdin 5
+dash-c flag
+exit=7
+syntax rc=2
+euo rc=1
+build-var-ok
+rev-var-ok
+1
+stamp-agrees

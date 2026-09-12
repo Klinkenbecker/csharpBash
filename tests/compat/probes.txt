@@ -1,0 +1,485 @@
+echo $OSTYPE
+----
+echo $$ | grep -qE '^[0-9]+$' && echo pidok
+----
+echo $PPID | grep -qE '^[0-9]+$' && echo ppidok
+----
+[ -n "$RANDOM" ] && echo randok
+----
+x=/a/b/c.txt; echo "${x##*/} ${x%.*} ${x#/a/} ${x%%/*}|"
+----
+x=hello; echo "${x^^} ${x^} ${x:1:3} ${#x} ${x/l/L} ${x//l/L} ${x: -2} ${x:0:-1}"
+----
+y=x; x=val; echo ${!y}; echo ${!y*} | wc -w
+----
+arr=(a b c); echo ${#arr[@]} ${arr[-1]} ${arr[@]:1}; arr+=(d); echo "${arr[*]}"; unset 'arr[0]'; echo ${#arr[@]}; for i in "${!arr[@]}"; do printf '%s=%s ' "$i" "${arr[$i]}"; done; echo
+----
+declare -A m; m[k]=v; m[j]=w; echo ${m[k]} ${#m[@]}; declare -p m | grep -c 'declare -A'
+----
+declare -i n=5; n+=2; echo $n; declare -r RR=1; RR=2 2>/dev/null; echo $RR
+----
+[[ "abc123" =~ ([a-z]+)([0-9]+) ]] && echo ${BASH_REMATCH[2]} ${#BASH_REMATCH[@]}
+----
+for ((i=0;i<3;i++)); do printf '%d,' $i; done; echo
+----
+printf 'a\nb\n' | while IFS= read -r l; do echo "[$l]"; done
+----
+mapfile -t m < a.txt; echo ${#m[@]} ${m[1]}
+----
+readarray -t m < a.txt; echo ${#m[@]}
+----
+read -r a b <<< "1 2"; echo $b$a
+----
+echo "$(< b.txt)"
+----
+set -euo pipefail; false | true; echo notreached
+----
+set -e; false; echo notreached
+----
+command -v ls >/dev/null && echo cvok; type -P git >/dev/null && echo tpok; type echo
+----
+{ echo a; echo b; } | wc -l
+----
+x=1; ( x=2; cd d2 ); echo $x; [ "$(basename "$PWD")" = d2 ] && echo leaked || echo isolated
+----
+cat <<'EOF'
+$notexpanded
+EOF
+----
+v=exp; cat <<EOF
+$v
+EOF
+----
+cat <<-EOF
+	indented
+EOF
+----
+cat > hd.txt <<EOF
+hdoc
+EOF
+cat hd.txt
+----
+cat -n a.txt
+----
+cat -A c.txt
+----
+ls -l a.txt | wc -w
+----
+ls -la . | wc -l
+----
+ls -d */ | sort
+----
+ls -1 *.txt | wc -l
+----
+ls -R d2
+----
+sed -n '1,2p' a.txt
+----
+sed -n '2,$p' a.txt
+----
+sed -n '/a/,/b/p' a.txt
+----
+sed -i 's/X/Y/' c.txt; cat c.txt
+----
+sed -i.bak 's/Y/Z/' c.txt 2>/dev/null; cat c.txt; ls c.txt.bak 2>/dev/null | wc -l
+----
+sed 's/a/b/g; s/z/Z/' b.txt
+----
+sed '1d' a.txt; sed '$d' a.txt; sed 's/.*/[&]/' a.txt
+----
+sed -E 's/(a)/<\1>/' a.txt
+----
+sed '1i\inserted' a.txt
+----
+sed '1a\appended' a.txt
+----
+sed = a.txt
+----
+sed 's/^[ \t]*//' <<< '   trimmed'
+----
+grep -n -A1 a a.txt
+----
+grep -B1 b a.txt; grep -C1 b a.txt
+----
+grep -o 'b' a.txt
+----
+grep -rn --include='*.txt' zz . | sort
+----
+grep -rn zz . --include='*.txt' | sort
+----
+grep -rl zz . | sort
+----
+grep -E 'a|zz' a.txt b.txt
+----
+grep -c '' a.txt; grep -m1 . a.txt; grep -x a a.txt; grep -w a a.txt; grep -i ZZ b.txt
+----
+grep -L zz a.txt b.txt
+----
+grep -P '\d' <<< 'a1'
+----
+grep --color=never a a.txt
+----
+grep -q zz b.txt; echo rc=$?; grep -q nope b.txt; echo rc=$?
+----
+grep -e a -e zz a.txt b.txt
+----
+grep -r zz . | sort
+----
+find . -name '*.txt' -not -name 'a*' | sort
+----
+find . -type f -name '*.txt' ! -path '*/d2/*' | sort
+----
+find . -path '*d2*' -prune -o -name '*.txt' -print | sort
+----
+find . -name '*.txt' -exec echo X{} \; | sort
+----
+find . -name '*.txt' -exec grep -l zz {} + | sort
+----
+find . -maxdepth 1 -type d | sort
+----
+find . -mindepth 1 -maxdepth 1 -type f | sort
+----
+find . -name '*.txt' -print0 | tr '\0' '\n' | sort
+----
+find . -name '*.txt' -o -name '*.md' | sort
+----
+find . -empty | sort
+----
+find . -type f -size +0 | sort
+----
+find . -iname 'A.TXT'
+----
+diff -u a.txt b.txt | sed '1,2d'; echo rc=$?
+----
+diff a.txt b.txt; echo rc=$?
+----
+diff -r d2 d2; echo rc=$?
+----
+diff <(echo a) <(echo b); echo rc=$?
+----
+cat <(echo ps)
+----
+awk '{print NR": "$0}' a.txt
+----
+echo 'a:b' | awk -F: '{print $2}'
+----
+echo 'a b c' | cut -d' ' -f2-
+----
+printf '3\n1\n2\n' | sort -n | tr '\n' ,; echo
+----
+printf 'a\na\nb\n' | uniq -c | tr -s ' '
+----
+printf 'a\na\nb\n' | sort | uniq -d
+----
+sort -r a.txt; sort -u a.txt | wc -l
+----
+printf 'x,2\ny,1\n' | sort -t, -k2 -n
+----
+printf 'v10\nv9\n' | sort -V
+----
+mkdir -p d1/{x,y}; ls d1 | tr '\n' ' '; echo; rm -rf d1; test -e d1 || echo gone
+----
+echo {1..3} {a..c} f{,.bak} {01..3}
+----
+shopt -s nullglob; echo *.nomatch; echo end
+----
+shopt -s globstar; n=0; for f in **/*.txt; do n=$((n+1)); done; echo $n
+----
+echo *.txt
+----
+for f in *.txt; do printf '%s ' "$f"; done; echo
+----
+pushd d2 >/dev/null; basename "$PWD"; popd >/dev/null; [ "$(basename "$PWD")" = d2 ] && echo still-in || echo back
+----
+function f { echo fn:$1; }; f x
+----
+function g() { echo fn2; }; g
+----
+h() { local v=1; return 3; }; h; echo rc=$?
+----
+h() { :; }; declare -f h >/dev/null 2>&1; echo rc=$?; declare -F h
+----
+x=$(echo outer $(echo inner)); echo $x; echo `echo bt`
+----
+echo $(( 2 ** 10 )) $(( 7 % 3 )) $(( 1 ? 5 : 6 )) $((0x1F)) $((010))
+----
+i=1; ((i++)); ((i+=2)); echo $i; let i=i*2; echo $i; if (( i > 3 )); then echo cmp; fi
+----
+case x in a|x) echo matched;; esac; case ab in a*) echo glob;; esac
+----
+until false; do echo once; break; done
+----
+trap 'echo trapped' EXIT; true
+----
+trap 'echo err' ERR; false; true
+----
+t=$(mktemp); [ -f "$t" ] && echo mkok; rm -f "$t"
+----
+d=$(mktemp -d); [ -d "$d" ] && echo mkdok; rmdir "$d"
+----
+date +%Y | grep -qE '^20' && echo dateok; date -u +%Y-%m-%dT%H:%M:%SZ | grep -qE 'T..:..:..Z$' && echo isodate; date +%s | grep -qE '^[0-9]{10}$' && echo epoch
+----
+date -d '2020-01-01' +%A
+----
+printf '%-5s|%03d|%q|%.2f|%x|%b\n' ab 7 'a b' 3.14159 255 'x\ty'
+----
+printf -v v 'p%03d' 5; echo $v
+----
+a="1 2"; set -- $a; echo $#; set -- p q r; shift; echo $1 $#
+----
+set -- -a -b val; while getopts "ab:" o; do echo $o $OPTARG; done
+----
+readonly R=1; R=2 2>/dev/null; echo $R
+----
+exec 3>fd3.txt; echo hi >&3; exec 3>&-; cat fd3.txt
+----
+echo a | tee t.txt >/dev/null; cat t.txt
+----
+printf 'x\n' | xargs -I{} echo "<{}>"; echo a b | xargs -n1; printf 'a\0b\0' | xargs -0 -n1 echo; echo | xargs -r echo empty
+----
+f() { echo "$@"; }; f "a b" c; echo ${@:-none}
+----
+head -2 a.txt | tail -1; head -n1 a.txt; head -1 a.txt; tail -n +2 a.txt; tail -1 a.txt; head -c 2 a.txt; echo
+----
+head -n 1 a.txt b.txt
+----
+printf '%s\n' a b c | head -n -1
+----
+wc -l < a.txt; wc -c a.txt; wc a.txt; wc -l *.txt | tail -1
+----
+time true 2>/dev/null; echo timeok
+----
+false | true; echo ${PIPESTATUS[0]}
+----
+cmd=echo; $cmd dyn
+----
+echo "$HOME" | grep -q . && echo homeok; echo "$PWD" | grep -q . && echo pwdok
+----
+cd /c/Users 2>/dev/null && echo cdmsys || echo cdfail
+----
+cd C:/Users && echo cdwin
+----
+cd 'C:\Users' && echo cdwinbs
+----
+cd /tmp && echo tmpok
+----
+cd "$TEMP" && echo tempok
+----
+echo hi > /dev/null && echo devnull; echo a > /dev/stderr
+----
+ls /c/ >/dev/null 2>&1 && echo lsmsys
+----
+ls C:/ >/dev/null 2>&1 && echo lswin
+----
+cat /c/Windows/win.ini >/dev/null 2>&1 && echo catmsys
+----
+[[ -v HOME ]] && echo vok; [[ abc == a* ]] && echo globok; [[ abc != x ]] && echo neok; [[ -f a.txt && -d d2 ]] && echo both
+----
+s='  x  '; echo "[${s// /}]"
+----
+echo $BASH_VERSION | grep -q . && echo bvok; echo ${BASH_VERSINFO[0]}
+----
+builtin echo b1; command echo c1; \echo escaped
+----
+echo one \
+two
+----
+x=5; [ $x -gt 3 ] && echo gt; [ "$x" = 5 ] && echo eq; [ -z "" ] && echo z; [ -n "" ] || echo n; ! false && echo negok
+----
+false; echo $?; true; echo $?
+----
+exit 7
+----
+sleep 0.1; echo slept
+----
+printf 'a\0b' | tr '\0' '\n' | wc -l
+----
+echo é | wc -c
+----
+echo 'it'"'"'s'; echo "$(echo \"q\")"; eval 'echo ev'"'"'al'
+----
+x=1; { x=2; }; echo $x
+----
+sh_var="a b"; printf '[%s]' $sh_var; echo; printf '[%s]' "$sh_var"; echo
+----
+echo -n no; echo newline; echo "tab\there"; echo -e 'x\ty' | tr '\t' T
+----
+printf '%s' "$(cat a.txt)" | wc -c
+----
+cp a.txt d2/; ls d2 | tr '\n' ' '; echo; rm d2/a.txt
+----
+cp -r d2 d3 && ls d3 | wc -l; rm -rf d3
+----
+mv a.txt a2.txt && mv a2.txt a.txt && echo mvok
+----
+rm -f nonexist; echo rc=$?; rm nonexist 2>/dev/null; echo rc=$?
+----
+mkdir x 2>/dev/null; mkdir x; echo rc=$?; rmdir x
+----
+basename /x/y/z.c .c; dirname /x/y/z.c; basename a.txt
+----
+realpath a.txt | grep -q 'a.txt' && echo rpok
+----
+readlink -f a.txt | grep -q 'a.txt' && echo rlok
+----
+chmod +x a.txt; echo chmodrc=$?
+----
+timeout 5 echo tmo
+----
+git --version | cut -d' ' -f1
+----
+dotnet --version >/dev/null && echo dotnetok
+----
+which git | grep -q git && echo whichok
+----
+stat -c %s a.txt
+----
+echo hi >> app.txt; echo hi >> app.txt; wc -l < app.txt; rm app.txt
+----
+echo x > out.txt 2>&1; cat out.txt; echo y &> both.txt; cat both.txt
+----
+echo x 2>&1 >/dev/null | cat
+----
+cat nonexist 2>/dev/null || echo failed; cat nonexist |& head -c 4; echo
+----
+exec >/dev/null; echo hidden
+----
+cd d2 && cd .. && echo $OLDPWD | grep -q d2 && echo oldpwd
+----
+export FOO=bar; env | grep -c '^FOO=bar$'; FOO=baz env | grep -c '^FOO=baz$'; FOO=qux sh -c 'echo $FOO'
+----
+unset FOO; echo ${FOO:-unset}; : ${DEF:=dflt}; echo $DEF; echo ${undefined-fallback} ${undefined:-fb2}
+----
+export -p | grep -c PATH
+----
+echo ${var:?unset} 2>/dev/null; echo rc=$?
+----
+cat nonexist 2>&1 | head -c 4; echo; ls nonexist >/dev/null 2>&1; echo rc=$?
+----
+echo hi | cat -
+----
+echo hi > "sp ace.txt"; cat "sp ace.txt"; rm "sp ace.txt"
+----
+seq 3 | tr '\n' ,; echo; seq 0 2 6 | tr '\n' ' '; echo; seq -w 8 10 | tr '\n' ' '; echo
+----
+expr 2 + 3; expr length abc
+----
+tr -d '\n' < a.txt; echo; tr '[:lower:]' '[:upper:]' < a.txt; tr -cd '[:alnum:]' <<< 'a-b_c!'; echo
+----
+cut -c1 a.txt; rev a.txt; tac a.txt; nl a.txt; paste a.txt b.txt; fold -w2 <<< abcd
+----
+od -An -c <<< hi
+----
+base64 <<< hi
+----
+md5sum a.txt | cut -c1-8
+----
+sha256sum a.txt | cut -c1-8
+----
+tar --version | head -1 | cut -d' ' -f1
+----
+curl --version | head -1 | cut -d' ' -f1
+----
+python --version 2>&1 | cut -d' ' -f1
+----
+node --version | cut -c1
+----
+(sleep 0.2; echo bg) & wait; echo after
+----
+sleep 0.2 & wait $!; echo waited rc=$?
+----
+sleep 0.2 & echo $! | grep -qE '^[0-9]+$' && echo bangok; wait
+----
+x=$(false); echo rc=$?; echo ok | grep -q ok; echo rc=$?
+----
+[[ $(echo a) == a ]] && echo cs
+----
+local x 2>/dev/null; echo localrc=$?
+----
+IFS=:; a='1:2'; set -- $a; echo $#; unset IFS
+----
+echo $'\x41\u00e9'
+----
+echo "$(echo 'a  b')"; echo $(echo 'a  b')
+----
+echo $- | grep -q h && echo hflag; echo $LINENO
+----
+echo ${BASH_SOURCE[0]:-nosrc} ${FUNCNAME[0]:-nofn}
+----
+set -x; echo traced; set +x
+----
+which ls
+----
+type ls
+----
+echo hi | sed 's/hi/bye/' > o.txt; cat o.txt
+----
+nohup echo nh >/dev/null 2>&1; echo nohuprc=$?
+----
+printf '%s\n' "$SHELL" | grep -q . && echo shellok
+----
+umask 022; echo umaskok
+----
+echo "$(printf '%s\n' a b | sed 's/^/> /')"
+----
+printf 'l1\nl2\nl3\n' | sed -n '2,$p'; printf 'a b\n' | awk '{print $2, $1}'
+----
+hexdump -C a.txt | head -1 | cut -c1-8
+----
+xxd -l 4 a.txt | cut -c1-8
+----
+echo "3.5 * 2" | bc
+----
+jq --version 2>&1 | head -c 2; echo
+----
+ls --color=never a.txt; ls -lh a.txt | wc -w; ls -A | wc -l
+----
+du -sh . | wc -w; du -s a.txt | wc -w
+----
+cat -s a.txt | wc -l; cat -b a.txt; cat -E a.txt
+----
+cp -p a.txt a3.txt; rm a3.txt; echo cprc=$?
+----
+mkdir -p x/y/z && rmdir -p x/y/z 2>/dev/null; echo rc=$?; ls -d x 2>/dev/null | wc -l; rm -rf x
+----
+touch -c nonexist; ls nonexist 2>/dev/null | wc -l
+----
+ln -s a.txt lnk 2>/dev/null; echo lnrc=$?; rm -f lnk
+----
+uniq -u < a.txt | wc -l; sort -f a.txt | wc -l; cut -f1 -d: <<< 'a:b'
+----
+tr -s '\n' <<< $'a\n\nb'
+----
+arr=(aa ab); echo "${arr[@]/a/b}" ${#arr[1]}
+----
+v='a b'; echo ${v@Q}
+----
+IFS=,; arr=(1 2); echo "${arr[*]}"; unset IFS
+----
+test -d d2 && echo dir; test a.txt -nt empty.txt; echo ntrc=$?
+----
+env | grep -c '^PATH='
+----
+printf '%s\n' "$TMPDIR" "$TEMP" "$TMP" | grep -c .
+----
+echo "$OSTYPE|$MACHTYPE|$HOSTTYPE|$HOSTNAME" | awk -F'|' '{print NF}'
+----
+n=$(( $(wc -l < a.txt) + 1 )); echo "n=$n"; echo "$(( $(echo 3) + $(echo 4) ))"
+----
+cat a.txt \
+  | sed 's/a/x/' \
+  | wc -l
+----
+t=0; t=$(( t + $(echo 3) )); x=$(( 1 + $(echo 3) )); echo "$t $x"
+----
+echo x (y) z; echo rc=$?
+----
+for f in //Guy-windows8/E/Claude/*.facts.md; do echo "$f"; done | grep -c '\*'; ls //Guy-windows8/E/Claude/*.facts.md 2>/dev/null | wc -l; echo //localhost/E/Claude/*.fdrs.md | grep -c '\*'
+----
+printf 'k1 x\nk2 x\nk3 x\n' | sed '0,/^k/s/x/F/'; printf 'k1 x\nk2 x\nk3 x\n' | sed -n '0,/k2/p'
+----
+x=12; [[ $x =~ ^[0-9]+$ ]] && echo num; [[ a$ == a$ ]] && echo lit; echo "a$" $ 'b$'; [[ ab =~ (a)(b)$ ]] && echo "${BASH_REMATCH[2]}"; echo $"loc"
+----
+echo $((10#0011)) $((16#ff)) $((2#101)); ( echo $((10#0010)) ) 2>&1 | head -1; x=$((10#0010)); echo "x=$x"; echo a#b $x#y; echo y #c
+----
+printf '%s' '//6AQcE=' | base64 -d > bb.bin; wc -c < bb.bin; cat bb.bin | wc -c; cat bb.bin | od -An -tx1 | tr -s ' '; head -c 2 < bb.bin | od -An -tx1 | tr -s ' '; cat bb.bin | cmp -s - bb.bin && echo same

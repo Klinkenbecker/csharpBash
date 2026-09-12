@@ -79,6 +79,20 @@ $tests = @(
     @{ Name = 'hash';        Script = 'cases\hash.sh';        Args = @() }   # hash -r/-p/name (PATH cache)
     @{ Name = 'grep';        Script = 'cases\grep.sh';        Args = @() }   # grep -i/-v/-n/-c/-w/-F + regex + rc
     @{ Name = 'sed';         Script = 'cases\sed.sh';         Args = @() }   # sed s///g/i/N, d, p, addresses, BRE groups; + which
+    @{ Name = 'claude_wrapper'; Script = 'cases\claude_wrapper.sh'; Args = @() }   # P1: Claude Code's exact per-command wrapper (MSYS paths, snapshot, eval, pwd >|)
+    @{ Name = 'flags';       Script = 'cases\flags.sh';       Args = @() }   # P1: -c -l order, -lc, --version, -o, -e, stdin script, $-, exit codes
+    @{ Name = 'shellbuiltins'; Script = 'cases\shellbuiltins.sh'; Args = @() } # P1: shopt/alias/command/type/builtin/declare/readonly/let/pushd/set/read/mapfile/getopts/printf/test/[[ ]]/fd3
+    @{ Name = 'specialvars'; Script = 'cases\specialvars.sh'; Args = @() }   # P1: OSTYPE PPID RANDOM UID BASH_VERSINFO LINENO PIPESTATUS $! $- FUNCNAME BASH_SOURCE, $(…) status
+    @{ Name = 'heredoc';     Script = 'cases\heredoc.sh';     Args = @() }   # P1: heredoc/herestring, &>, 2>&1 >f order, /tmp & /c/ paths, nested $( ), "…" escapes, ${x:n:m} etc.
+    @{ Name = 'pipes2';      Script = 'cases\pipes2.sh';      Args = @() }   # P2: threaded pipelines over managed pipes; yes|head, big producer|head -1, ext|builtin|builtin, captures, pipefail
+    @{ Name = 'awk';         Script = 'cases\awk.sh';         Args = @() }   # P4: in-process awk subset (decision 7) vs gawk; loud boundary
+    @{ Name = 'procsub';     Script = 'cases\procsub.sh';     Args = @() }   # P4: <( ) temp-file emulation (decision 6), |&, trap ERR (+errtrace), timeout
+    @{ Name = 'sysutils2';   Script = 'cases\sysutils2.sh';   Args = @() }   # P4: date -d/-u/-I/-R, uname family, id/whoami/nproc/printenv/tty/arch
+    @{ Name = 'procs';       Script = 'cases\procs.sh';       Args = @() }   # P5 follow-up: in-process pgrep/pkill/ps against a cmd.exe+ping guinea pig
+    @{ Name = 'parser2';     Script = 'cases\parser2.sh';     Args = @() }   # 2026-09-05 defect report: $( ) inside $(( )) keeps its text; backslash-newline is no word; quoted $(cmd arg); echo -e/printf
+    @{ Name = 'binary';      Script = 'cases\binary.sh';      Args = @() }   # 2026-09-11: bytes >= 0x80 through `<` and `|` are byte-faithful for cat/head -c/tail -c/wc -c/cmp/od/tee/checksums/base64
+    @{ Name = 'paths';       Script = 'cases\paths.sh';       Args = @() }   # 2026-09-11: pwd/PWD/mktemp/realpath return forward-slash Windows form; backslash still escapes in arguments
+    @{ Name = 'bytes';       Script = 'cases\bytes.sh';       Args = @() }   # 2026-09-12: byte transparency — printf/$'' escapes emit BYTES; non-UTF-8 survives variables, $( ), pipes, files
 )
 
 Push-Location $testsDir

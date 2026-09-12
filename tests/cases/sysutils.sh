@@ -1,4 +1,5 @@
-uname -s
+uname -s | cut -d- -f1
+uname -o
 factor 12
 factor 17
 factor 100

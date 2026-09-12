@@ -1,0 +1,48 @@
+--- nested substitution inside arithmetic
+n=4
+m=40
+7
+k=1
+3 14 24
+--- backslash-newline continuation
+L3
+L2
+L1
+3
+one two three
+ab
+quoted continuation
+--- $(cmd arg) inside double quotes
+[hi] [2] [x-y]
+hi there
+--- echo -e and printf escapes
+a
+b
+a
+b
+x\ny
+lit\nlit
+--- 2026-09-05 second report: nested $( ) anywhere inside $(( )); unseparated subshell is a syntax error
+t=3
+x=4
+y=12
+t=23
+z=12
+1
+rc=2
+double-quoted format
+a|b
+--- lone $ is literal (2026-09-08): =~ anchored at $, a$ operands, $"locale"
+num
+lit
+a$ $ b$ c$
+b
+locale-quoted
+--- # inside a word is not a comment (2026-09-08, installer-79): base#digits, a#b, $x#y
+11 255 5 15 35
+10
+x=10
+a#b c#d
+x
+val#y val#y #lit #q
+  $((10#0010)) -> 10

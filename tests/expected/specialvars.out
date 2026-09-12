@@ -1,0 +1,17 @@
+ostype=msys machtype=x86_64-pc-msys
+ppid-ok
+random-ok
+uid-ok
+versinfo=5.1
+lineno=6
+pipestatus=1 0
+bang-ok
+wait rc=0
+flags-ok
+fn=f
+src=specialvars.sh
+shlvl-ok
+seconds-ok
+home-set=y
+subst rc=3
+assign-fail-branch

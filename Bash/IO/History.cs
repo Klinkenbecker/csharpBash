@@ -23,7 +23,7 @@ public sealed class History
 			{
 			try
 				{
-				foreach (var line in File.ReadAllLines(_file))
+				foreach (var line in Bash.Evaluator.ShellEncoding.ReadAllLines(_file))
 					if (line.Length > 0) _items.Add(line);
 				}
 			catch { /* unreadable history is non-fatal */ }
@@ -61,7 +61,7 @@ public sealed class History
 		_items.Clear();
 		if (_file is not null)
 			{
-			try { File.WriteAllText(_file, ""); }
+			try { File.WriteAllText(_file, "", Bash.Evaluator.ShellEncoding.Utf8); }
 			catch { /* non-fatal */ }
 			}
 		}

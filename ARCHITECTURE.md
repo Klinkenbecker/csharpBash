@@ -79,9 +79,9 @@ expansions and `[[ ]]`.
 **(c) Where we deliberately diverge.** The interesting departures are all forced by the host
 platform and are detailed in §9. In short: Windows has no `fork()`, so where bash spawns a
 process per builtin and per pipeline stage, we run builtins **in-process** and wire pipelines
-with **threads**; where bash dup2's file descriptors, we swap **`Console` streams** for
-in-process commands and hand **OS handles** to child processes; and where bash uses glibc
-regex, we use **.NET regex** with a BRE→ERE translation shim.
+with **threads over managed pipes**; where bash dup2's file descriptors, we set **per-thread
+console slots** for in-process commands and hand **OS handles** to child processes; and where
+bash uses glibc regex, we use **.NET regex** with a BRE→ERE translation shim.
 
 ---
 
@@ -201,27 +201,40 @@ literals. *(DECISIONS: 2026-06-14 — Perf round 2: ArithParser inline rewrite.)
 
 This is where the platform divergences concentrate.
 
-### 9.1 Pipelines
+### 9.0 Per-thread console streams (`ConsoleMux`)
 
-`ExecPipeline` chooses a strategy based on `AllStagesInProcess`:
+Every builtin writes to `Console.Out` and reads `Console.In`; .NET's Console is
+process-global, and a Windows shell without `fork()` runs pipeline stages and background
+jobs as **threads**. The bridge is `ConsoleMux`: at startup the real Console writers/reader
+are replaced once by multiplexers that dispatch each call to a **thread-static slot** (null =
+the real stream). A redirect, a `$( )` capture, or a pipeline stage sets the slot for *its*
+thread; a child thread inherits its parent's slots (`Capture`/`Apply`); the builtins are
+untouched. The multiplexers are installed *unsynchronized* (bypassing `Console.SetOut`'s
+global `SyncTextWriter` via reflection, with a graceful fallback) because a global lock would
+let one stage blocked on a full pipe stall every other stage — a deadlock, not a slowdown;
+each target writer is locked individually instead. The per-thread state also carries the raw
+byte sink (§9.3), the capture flag, and the pipe ends an external child is given.
+*(DECISIONS: 2026-09-04 — P2 pipeline model.)*
+
+### 9.1 Pipelines
 
 ![Pipeline execution](docs/pipeline-exec.svg)
 
-- **All stages are builtins/functions → `ExecPipelineSequential`.** Builtins write to the
-  process-global `Console`, so running three+ of them concurrently would clobber each other's
-  stream redirection. Instead the stages run one at a time on a single thread, each stage's
-  stdout captured and replayed as the next stage's stdin.
+`ExecPipeline` runs **every stage on its own thread** — builtins, compound commands and
+externals alike — joined by `PipeBuffer`s: in-memory bounded byte queues with blocking
+writes (back-pressure), blocking reads, EOF when the writer closes, and a
+`BrokenPipeException` to the writer once the **reader** has closed. That last rule is bash's
+SIGPIPE: when a consumer exits early (`yes | head -3`, `seq 1 1000000 | head -1`) the
+producer's next write throws, a builtin producer unwinds with status 141, and an external
+producer is **killed** by its drain thread. A stage's `Console.In`/`Console.Out` are its pipe
+ends (per-thread, §9.0); the last stage inherits the caller's stdout, so `x=$(a | b)` captures
+and `{ a | b; } >f` writes the file. External stages get the pipe ends directly
+(`ConsoleMux.PipeIn/PipeOut`) with copy threads on either side.
 
-- **Any stage is an external process → `ExecPipelineViaThreads`.** External processes need
-  live OS pipe handles (synchronous draining before exit would deadlock on a full pipe
-  buffer), so each stage runs on its own thread wired with `AnonymousPipe` pairs passed via
-  `[ThreadStatic]` `_pipeStdin`/`_pipeStdout`. Every thread's `finally` closes its write end
-  to signal EOF downstream; stream draining is on background threads joined after
-  `WaitForExit`.
-
-The pipeline's exit status follows the last stage, or the first failure under
-`set -o pipefail`. *(DECISIONS: 2026-06-14 — builtin-pipeline race (sequential) + CRLF
-output; 2026-03-11 — Pipeline via thread + MemoryStream.)*
+Divergence from bash: stages share the shell's variables and cwd (bash isolates each in a
+subshell); `PIPESTATUS`, `pipefail` and `!` are honoured. *(Supersedes the 2026-03-11
+"thread + MemoryStream" and 2026-06-14 "sequential builtin pipeline" designs — DECISIONS
+2026-09-04.)*
 
 ### 9.2 Redirects
 
@@ -230,15 +243,20 @@ the I/O model:
 
 ![Redirect model](docs/redirect-model.svg)
 
-- **Builtins & functions** run in-process, so `ApplyRedirects` swaps the `Console` streams
-  (`SetOut`/`SetError`/`SetIn`) under a `RedirectScope` RAII guard that restores the streams
-  and disposes any opened `FileStream`s on exit.
+- **Builtins & functions** run in-process, so `ApplyRedirects` sets the thread's `ConsoleMux`
+  slots under a `RedirectScope` RAII guard that restores the slots and disposes any opened
+  `FileStream`s on exit. Numbered descriptors (`exec 3>f`, `>&3`, `read -u 3`, `3>&-`) live in
+  an in-process table (`Evaluator._fds`) managed by the same scope.
 
-- **External processes** can't be reached by a `Console` swap — a child writes to OS handles —
+- **External processes** can't be reached by a slot swap — a child writes to OS handles —
   so `ExecExternal` owns a self-contained fd-map and configures the child's
   `ProcessStartInfo` directly (file truncate/append, `/dev/null` → `Stream.Null`,
-  `/dev/stdout`·`/dev/stderr`, `2>&1`, `1>&2`, and pipeline handles), for stdin, stdout
-  **and** stderr.
+  `/dev/stdout`·`/dev/stderr`, `2>&1`, `1>&2`, `&>`, heredocs/here-strings as fed stdin, and
+  pipeline ends), for stdin, stdout **and** stderr. When an *in-process* redirect is already in
+  effect around the command (a `$( )` capture, `{ … } >file`, a heredoc on a loop) the child's
+  stdio is redirected and copied into the thread's current streams, so the output lands where
+  bash would put it. Every child is placed in a kill-on-close **job object** (`ChildJobs`) so
+  children die with the shell when a host kills it on a timeout.
 
 Running `ApplyRedirects` unconditionally *and* re-opening in `ExecExternal` was the bug that
 crashed the shell on `extcmd >file` (sharing violation) and silently dropped external
@@ -247,10 +265,10 @@ crashed the shell on `extcmd >file` (sharing violation) and silently dropped ext
 ### 9.3 Byte-faithful output
 
 Builtins that must emit exact bytes (e.g. `cat`, `od`) bypass the text `Console` via
-`CurrentRawStdout()`, which returns the raw byte sink in effect (a file-redirect `FileStream`,
-a pipe stream, or the real stdout) or `null` when output is being captured by `$( )`. Console
-newlines are forced to LF, not CRLF. *(DECISIONS: 2026-06-14 — Byte-faithful stdout for
-builtins.)*
+`CurrentRawStdout()`, which returns the raw byte sink in effect for the thread (a file-redirect
+`FileStream`, a pipe write end, or the real stdout) or `null` when output is being captured by
+`$( )`. Console newlines are forced to LF, not CRLF. *(DECISIONS: 2026-06-14 — Byte-faithful
+stdout for builtins.)*
 
 ---
 
@@ -269,8 +287,55 @@ Two model points:
   `BreToNet` shim (`\(…\)`, `\{m,n\}`, `\+ \? \|` are operators; bare `()/{}/+/?/|` are
   literal); `-E`/`-r` selects ERE; `-F` is literal. *(DECISIONS: 2026-06-14 — grep/sed
   default to BRE.)*
-- **Re-entrancy.** Builtins that drive other commands (`xargs`) call back through
+- **Re-entrancy.** Builtins that drive other commands (`xargs`, `timeout`) call back through
   `Evaluator.RunCommand`, which re-enters the builtin→function→external dispatch.
+- **Loud, never silent (DECISIONS 2026-09-04 #2).** Every tool parses its options with the
+  strict `Opts` parser; an option or construct it does not implement raises
+  `UnsupportedOptionException`. `Builtins.TryExecute` then re-runs the command through a PATH
+  external of the same name if one resolves, otherwise reports the option and exits 2.
+  `BASH_COREUTILS=builtin` forbids the fall-through, `=external` prefers the external whenever
+  one exists. A PATH that lacks the tool therefore fails visibly instead of returning a wrong
+  answer.
+- **awk is an interpreter of a contract, not a port (DECISIONS 2026-09-04 #7).** The supported
+  language is the list in that entry; the lexer decides regex-vs-division by the previous
+  token, the parser is a small recursive descent to an AST, and values carry awk's
+  number/string/strnum typing so comparisons follow POSIX (input-derived numeric text compares
+  numerically, string constants compare as strings). Unsupported constructs surface through the
+  same policy as an unsupported option. The one redirection form admitted (ratified 2026-09-04)
+  is `print … > "/dev/stderr"` / `"/dev/stdout"`; files and pipes stay loud.
+- **Processes without procps.** `pgrep`/`pkill`/`ps` are in-process (Toolhelp32 for the list,
+  `NtQueryInformationProcess` for command lines), because a Git-less Windows PATH has none and
+  Claude Code's own `pkill` shim ends in `command pkill`. Names match case-insensitively; the
+  shell itself is never a match, and `pkill` additionally refuses (aloud) to kill its own
+  ancestors, whose command lines with `-f` routinely contain the very pattern being killed.
+  Because Windows ppid chains break at every MSYS `exec` (the old pid is gone), a second,
+  ppid-free rule backs that up: a process whose command line carries this pkill invocation
+  itself (the pattern next to the word `pkill`/`pgrep`) is a relaying shell, never a target.
+- **Process substitution is a temp file (DECISIONS 2026-09-04 #6).** `<(cmd)` runs `cmd` to
+  completion into a temp file and expands to that file's native path; the file lives until the
+  node whose expansion created it has finished (`Evaluator.Execute` marks/releases per node), so
+  `diff <(a) <(b)`, `< <(cmd)` loops and external consumers all see a real path. `>(cmd)` is a
+  parse-time error with the workaround in the message.
+- **One encoding, byte-transparent (`ShellEncoding`).** A bash string is a byte sequence; a .NET
+  string is UTF-16, and plain UTF-8 between them loses data in both directions — `printf '\377'`
+  became a character and two bytes, and an undecodable input byte became U+FFFD forever. The
+  shell's encoding is therefore UTF-8 with Python's surrogateescape: an undecodable byte becomes
+  the lone surrogate U+DC00+byte and encodes back to that byte, so text is ordinary UTF-8 and
+  everything else round-trips anyway. It is used by every file, pipe, capture and console stream,
+  which is what makes it a *model* rather than a per-tool workaround: no code has to decide
+  whether its data is text. Escape handlers emit that range directly; `\u`/`\U` stay code points.
+  *(DECISIONS: 2026-09-12.)*
+- **Paths are forward-slash in both directions.** Backslash is the shell's escape character, so a
+  path containing one is a value the shell's own `${p#…}`, globs, `case` and `[[ … ]]` misread.
+  `TranslatePath` (inbound) and `ToShellPath` (outbound) both produce `E:/dir/file`, which every
+  Windows API accepts — so a path that leaves through `pwd` and returns as an argument is the same
+  string. The conversion is a path boundary only: arguments are never rewritten, so `grep '\.txt'`
+  and `printf 'a\tb'` keep their escapes. *(DECISIONS: 2026-09-11, 2026-09-12.)*
+- **PATH mirrors Git Bash.** When `git.exe` is discoverable on PATH the installation's
+  `usr/bin` and `mingw64/bin` are prepended (exactly what the MSYS runtime does), so externals
+  outside the in-process set resolve as they would under Git Bash; the shell's own directory is
+  appended so a nested `bash` resolves even on a Git-less machine. Command lookup reads the
+  process environment, and `$PATH` assignments are mirrored into it.
 
 ---
 

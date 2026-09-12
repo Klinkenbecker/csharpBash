@@ -1,0 +1,25 @@
+--- printf and echo -e emit BYTES, not code points
+ ff
+ ff
+ e9
+AB
+ ff 0a
+ ff
+A
+--- \u is still a CODE POINT escape (two bytes for U+00E9)
+ c3 a9
+--- ordinary text is ordinary UTF-8
+ 68 c3 a9 6c 6c 6f
+6
+--- bytes survive a variable and a command substitution
+capture-round-trip-ok
+variable-round-trip-ok
+5
+--- and through a pipe, a file and a here-string
+file-write-ok
+pipe-ok
+here-string-ok
+--- escapes compose with text
+ 61 ff 62
+3
+len=3

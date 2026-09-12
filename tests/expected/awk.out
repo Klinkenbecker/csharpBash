@@ -1,0 +1,143 @@
+alice
+bob
+carol
+dave
+30 alice
+25 bob
+35 carol
+40 dave
+
+
+k1=V1
+k2=V2
+3 c
+3 3
+1: alice 30 NY
+2: bob 25 LA
+3: carol 35 NY
+4: dave 40 SF
+bob 25 LA
+carol
+dave
+2
+130 32.5
+LA 1
+NY 2
+SF 1
+alice-30-NY
+bob-25-LA
+carol-35-NY
+dave-40-SF
+alice  NY
+bob  LA
+carol  NY
+dave  SF
+ 3.14|ab   |00042|ff|A|p%
+5 ell 3 X
+3 a c
+_l_c_ 30 NY
+b_b 25 LA
+c_r_l 35 NY
+d_v_ 40 SF
+[lead	tab  x ]
+[]
+[last]
+7 3
+bob 25 LA
+carol 35 NY
+bob 25 LA
+dave 40 SF
+11
+9
+11
+10
+0
+1
+2
+1 2 3 
+21 1 441 -21 0 3.5 3
+1 1 0 1 2 3
+0.3 1000000 10000000000000000 10000000000 0.333333 123456789
+hello hel lo ello el
+bob 25 LA
+alice
+bob
+carol
+dave
+both alice
+both bob
+0
+1 0
+alice young
+bob young
+carol old
+dave old
+4 dave 40 SF
+a-b
+3
+alice
+no bob
+carol
+no dave
+xyz 3
+bob 25 LA
+carol 35 NY
+dave 40 SF
+end
+rc=3
+end ran
+x y z  w
+5
+a b
+3 0 0.5 100 0 0 1
+c
+a
+b
+abc 007 1024 2 -1
+t
+f
+3 b
+3 c
+alice 30
+bob 25
+carol 35
+dave 40
+12 3    ab|7  |+5
+odd
+even
+odd
+even
+absent
+present
+people.txt
+ny: alice
+ny: carol
+done
+1 0
+a:b:c
+3
+0 1 1
+-------
+3 aaaaaa
+5
+0134
+alice
+bob
+carol
+dave
+n=4
+3
+3
+v
+1000000000000000000 9007199254740992 -100000000000000000
+to-out
+err-line
+pf|7
+alice
+bob
+awk: unsupported: getline
+awk: unsupported: user-defined function
+awk: unsupported: print redirection to a file (only "/dev/stderr" and "/dev/stdout" are supported)
+awk: unsupported: printf %e
+rc=2
+awk: unsupported: ENVIRON

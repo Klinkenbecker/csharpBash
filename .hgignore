@@ -16,3 +16,6 @@ glob:.git/*
 mercurial-history.hg
 MERCURIAL_HISTORY.md
 moosh-all-the-way-down.md
+glob:tests/compat/work/*
+glob:dist/*
+glob:tests/bench/.findtree/**

@@ -1,0 +1,4 @@
+alice 30 NY
+bob 25 LA
+carol 35 NY
+dave 40 SF

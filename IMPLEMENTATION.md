@@ -26,9 +26,24 @@
 | `Evaluator/Evaluator.cs` | Tree-walking executor: dispatch, pipelines, redirects, external launch, jobs, traps, interrupts. |
 | `Evaluator/WordExpander.cs` | The expansion passes. |
 | `Evaluator/ArithParser.cs` | Arithmetic precedence evaluator. |
-| `Evaluator/Builtins.cs` | All builtins + in-process coreutils + their helpers. |
-| `Evaluator/ShellEnvironment.cs` | Variables, arrays, exports, scope/positional stack, `TranslatePath`. |
-| `Evaluator/ShellOptions.cs` | `set -e/-u/-x/-n/-f/-o pipefail` flags. |
+| `Evaluator/Builtins.cs` | Dispatch (`Names`/`CoreutilNames`/`Has`/`TryExecute` with the decision-2 policy: `UnsupportedOptionException` → PATH external if present, else loud exit 2; `BASH_COREUTILS=auto\|builtin\|external`) + the small tools that stayed here (`factor` `cal` `expr` `which` `hash` `kill` `trap` `jobs`…). |
+| `Evaluator/Builtins.Shell.cs` | The shell builtins proper (partial class): echo/printf, cd/pwd/pushd/popd/dirs, export/unset/readonly/declare/local, set/shopt, alias, source/eval, type/command/builtin, test/[, read/mapfile/getopts, let, kill, env, sleep, exit/return/break/continue. |
+| `Evaluator/Opts.cs` | `Opts.Parse`: strict GNU-style option parser for every coreutil (short clusters, attached/separate/optional values `c:`/`c::`, long `name=`/`name=?`/aliases `name:c`, `--`, `stopAtFirstOperand`, numeric `-N`); anything unknown throws `UnsupportedOptionException`. |
+| `Evaluator/Builtins.Text.cs` | Text tools on `Opts`: cat head tail wc rev tac tr cut uniq nl fold paste comm seq split od sort tee base64 md5sum/sha*sum hexdump; helpers `OpenText`/`ReadLines`/`ReadBytes`/`FilesOrStdin`/`IoError`. |
+| `Evaluator/Builtins.Files.cs` | File/dir tools: basename dirname mkdir rmdir touch rm mv cp ls (long format) du cmp stat mktemp realpath readlink chmod ln truncate; `TryParseDate` delegates to `GnuDate`. |
+| `Evaluator/Builtins.Find.cs` | `find` (expression tree, `-exec ;`/`+`, `-printf`, `-delete`…), `diff` (normal/unified/recursive, GNU hunk order), `xargs` (`-0 -n -I -L -P -d -a -r -t`, exit codes 123/124/126/127). |
+| `Evaluator/Builtins.Search.cs` | `BreToNet`/`EreToNet`/`AppendBracket` (POSIX classes, `\<`/`\>`), `MakeRegex`; `grep` (all major flags) and `sed` (compiler + runtime: addresses, ranges, `{ }`, hold space, `s` flags, `-i[SUF]`, `-s`, `-z`). |
+| `Evaluator/Builtins.Sys.cs` | `date` (full `strftime`, `-d/-r/-u/-I/-R/-f`), `uname` (MSYS-style), `hostname`, `arch`, `nproc`, `tty`, `whoami`, `id`, `printenv`, `timeout` (worker thread + `RunAsJob` so an external child can be killed on expiry). |
+| `Evaluator/Builtins.Awk.cs` | The in-process `awk` subset (DECISIONS 2026-09-04 #7): lexer (regex-vs-division by previous token), recursive-descent parser to a small AST, interpreter with awk value typing (num/str/strnum), fields/NF rebuild, `printf`, `sub`/`gsub`/`split`/`match`…; unsupported constructs → `UnsupportedOptionException("awk","unsupported",…)`. |
+| `Evaluator/GnuDate.cs` | `GnuDate.TryParse`: GNU `-d` grammar subset (ISO/RFC/`Mon D YYYY`/`@epoch`/times/zones/relative items/weekdays), shared by `date -d` and `touch -d`. |
+| `Evaluator/Builtins.Proc.cs` | Minimal procps: `pgrep`/`pkill` (`-f -x -l -a -c -n -o -v -P -d`, signals accepted and forceful; self excluded, `pkill` also skips loudly this shell's ancestors and any process whose command line carries the pkill invocation itself) and `ps` (`-e/-ef/aux`, `-p`, `-o pid,ppid,comm,args`). Process list via Toolhelp32, command lines via `NtQueryInformationProcess(ProcessCommandLineInformation)`. |
+| `Evaluator/Printf.cs` | `PrintfFormatter`: bash `printf` semantics (flags/width/precision, `%q` `%b`, escapes, argument recycling); also used by `echo -e`. |
+| `Evaluator/FileTests.cs` | The file/string primaries shared by `test`/`[` and `[[ ]]` (paths translated). |
+| `Evaluator/Glob.cs` | Shell pattern → regex (`*` `?` `[…]` classes), `Match`, and the pathname-expansion walker (`dotglob`/`nullglob`/`nocaseglob`/`globstar`). |
+| `Evaluator/ConsoleMux.cs` | `ConsoleMux` (per-thread console slots + `Capture`/`Apply`), `PipeBuffer` (managed pipe with back-pressure, EOF and `BrokenPipeException`), `ChildJobs` (kill-on-close job object). |
+| `Evaluator/ShellEnvironment.cs` | Variables, arrays, exports, readonly/integer attributes, special parameters, scope/positional stack, snapshot/restore (subshells), `TranslatePath` (inbound: MSYS `/c/…`, `/tmp`, `~` → forward-slash Windows form) and `ToShellPath`/`ShellCwd`/`FullPath` (outbound: the same form, so the two directions agree), PATH normalisation and the Git-tools augmentation. |
+| `Evaluator/ShellEncoding.cs` | The shell's single encoding: UTF-8 with surrogateescape (an undecodable byte ↔ the lone surrogate U+DC00+byte), so bytes that are not text survive variables, `$( )`, pipes and files. `ByteChar` is what the `\xNN`/`\NNN` escape handlers emit; `ReadAllText`/`ReadAllLines` replace the `File.*` equivalents, which silently ignore their encoding argument on a file that starts with a BOM. Encode and decode are both overridden because an `EncoderFallback` cannot emit raw bytes. |
+| `Evaluator/ShellOptions.cs` | `set` flags (`-e/-u/-x/-n/-f/-v/-C/-a/-o …`), the `shopt` set, invocation facts, `$-`. |
 | `Evaluator/BackgroundJob.cs` | Background-job record. |
 | `Evaluator/EvalException.cs` | Runtime exception hierarchy (Exit/Return/Break/Continue/Interrupt/Eval). |
 | `IO/LineEditor.cs` | Interactive key-by-key line editor. |
@@ -94,6 +109,18 @@ Raises `LexException(Incomplete)` at EOF mid-construct.
 **`${…}` parameter expansion** (its `Raw` is the interior); literal `{a,b}` brace expansion is
 performed later in `WordExpander`, not as this node.
 
+P1 additions: every `Node` carries `Line` (for `$LINENO`); `FunctionDef.Source` keeps the
+definition's verbatim text (for `declare -f`), sliced from the source the parser was given
+(`Parser(tokens, source)`); `ArithmeticCommand` (`(( ))`) and `ArithForCommand` (`for ((;;))`)
+come from the lexer's `ArithCommand` token; `ArrayCompoundAssign.Append` is `arr+=(…)`; an
+assignment name ending in `+` is `var+=value`. A heredoc's `Redirect.Target` is the **body**
+(bound by `TryParseRedirect`, which pulls the `HeredocBody` token out of the stream);
+`RedirectKind` gained `HereString`, `OutputBoth`, `AppendBoth`. `ParseRegexOperand` gathers
+the raw right side of `=~`; `[[ ]]` accepts `&&`/`||`/`( )` as tokens. `ParseWords` (static)
+lets `declare -a x=(…)` expand an array literal passed as an argument (folded into one
+literal word by `CollectParenText`). `Parse()` throws on a token it cannot consume instead of
+looping.
+
 ---
 
 ## 4. Evaluator — `Evaluator/Evaluator.cs`
@@ -110,12 +137,10 @@ performed later in `WordExpander`, not as this node.
 
 | Method | Role |
 |--------|------|
-| `ExecPipeline` / `AllStagesInProcess` | Route to sequential vs threaded. |
-| `ExecPipelineSequential` / `ExecuteWithStdin` | Buffered single-thread pipeline; capture stdout → next stdin. |
-| `ExecPipelineViaThreads` | Thread-per-stage with `AnonymousPipe` pairs; `[ThreadStatic] _pipeStdin/_pipeStdout`. |
-| `ExecSimpleCommand` | Expand args; gate on `Builtins.Has(name)\|\|_functions` → `ApplyRedirects`+run, else `ExecExternal`. |
-| `ApplyRedirects` → `RedirectScope` | Console-swap redirects for in-process commands; RAII restore + dispose. |
-| `CurrentRawStdout` (+ `_rawStdout`, `_capturing`) | Byte-faithful sink for builtins. |
+| `ExecPipeline` → `ExecPipelineThreaded` | Thread per stage over `PipeBuffer`s; stage stdio via `ConsoleMux` slots; last stage inherits the caller's stdout; reader-close → `BrokenPipeException` (141) upstream; `PIPESTATUS`/`pipefail`/`!`. |
+| `ExecSimpleCommand` | Expand args (aliases, `+=`, `$( )` status); `exec` special case; gate on `Builtins.Has(name)\|\|_functions` → `ApplyRedirects`+`ApplyTempAssignments`+run, else `ExecExternal`. |
+| `ApplyRedirects` → `RedirectScope` | Sets the thread's `ConsoleMux` slots (and fd 3+ via `TrackFd`) for in-process commands; RAII restore + dispose. |
+| `CurrentRawStdout` (+ `ConsoleMux.Raw`, `ConsoleMux.Capturing`) | Byte-faithful sink for builtins. |
 
 **External commands & path** ([ARCHITECTURE §12](ARCHITECTURE.md#12-external-commands--the-path-model))
 
@@ -131,8 +156,21 @@ performed later in `WordExpander`, not as this node.
 (+ `EvalCondExpr`/`EvalCondUnary`/`EvalCondBinary`, and `GlobMatch` for `[[ ==` / `case`).
 
 **Jobs, traps, signals** ([ARCHITECTURE §14](ARCHITECTURE.md#14-signals--jobs)):
-`StartBackgroundJob`, `ListJobs`, `WaitJobs`, `SetTrap`/`RemoveTrap`/`RunTrap`/`RunExitTrap`,
-`RequestInterrupt`/`ClearInterrupt`/`CheckInterrupt`.
+`StartBackgroundJob`, `ListJobs`, `WaitJobs`, `FindJob`, `KillJob`, `SetTrap`/`RemoveTrap`/`RunTrap`/`RunExitTrap`,
+`RequestInterrupt`/`ClearInterrupt`/`CheckInterrupt`. A job's `$!` is a synthetic pid
+(`BackgroundJob.PidBase + Id`); `ChildPid` tracks the external it is running so `kill $!` works.
+
+**P1 surface** (see DECISIONS 2026-09-04): `Aliases`, `GetFunction`/`RemoveFunction`/`HasFunction`,
+`Keywords`, `Classify` (alias/keyword/function/builtin/file — backs `type`/`command -v`),
+`RunCommand(name,args,skipFunctions,extraEnv,clearEnv)`, `RunBuiltin`, `GetFd` (the fd 3+ table
+`_fds`, filled by `exec 3>f` / `cmd 3<f` through `RedirectScope.TrackFd`), `ExecArithmeticCommand`,
+`ExecArithFor`, `ExecCondition` (errexit-suppressed), `ApplyTempAssignments` (`VAR=x builtin`),
+`ExecExternalOrBuiltin` (`exec cmd`). `RunString(source, reportErrors, origin, syntaxErrorCode)`
+reports `bash: origin: line N: …`. `ExecSubshell` uses `ShellEnvironment.TakeSnapshot`/`RestoreSnapshot`.
+`ExecExternal` routes a child's stdio through swapped `Console` streams when an in-process redirect
+is in effect (`$( )` capture, `{ … } >file`, heredoc on a loop) — the `_origOut/_origErr/_origIn`
+comparison — and reports `command not found` (127) / `Permission denied` (126) to wherever the
+command's stderr was sent.
 
 ---
 
@@ -158,7 +196,7 @@ ParsePrimary` (`ParseNumber` handles hex/octal). Operates on `long`.
 
 ---
 
-## 7. Builtins & coreutils — `Evaluator/Builtins.cs`
+## 7. Builtins & coreutils — `Evaluator/Builtins*.cs`
 
 **Dispatch:** `TryExecute(name,args,out code)` is the `switch`; `Names` is the membership list
 (**keep in sync with the switch**); `Has(name)` is the O(1) membership test used by the
@@ -167,10 +205,21 @@ evaluator.
 | Family | Methods |
 |--------|---------|
 | Shell builtins | `Echo` `Printf` `Cd` `Pwd` `Export` `Unset` `Set` `Shift` `Read` `Source` `Local` `Declare` `DoEval` `Type` `Command` `Test`/`TestBracket`/`TestImpl` `Sleep` `Env` `HistoryCmd` `Trap` `Jobs` `Fg` `Bg` `DoExit`/`DoReturn`/`DoBreak`/`DoContinue` |
-| Text | `Cat` `Head` `Tail` `Wc` `Rev` `Tac` `Tr` `Cut` `Uniq` `Nl` `Fold` `Paste` `Comm` |
-| File / dir | `Touch` `Rmdir` `Mkdir` `Cmp` `Tee` `Rm` `Mv` `Cp` `Du` `Ls` `Find` `Split` `Basename` `Dirname` |
-| Search / transform | `Grep` `Sed` `Sort` `Od` `Diff` `Seq` `Factor` `Cal` `Date` `Expr` `Which` `Xargs` `Uname` `Hostname` `Kill` |
-| Shared helpers | `LinesOf` `BreToNet` `ExpandTrSet`/`TrClass` `ParseSize` `InterpretEscapes`/`UnescapeDelims` `CopyDir` `FindWalk`/`GrepCollect` `SedSub`/`SedParse`/`SedExpand`/`SedReadDelim` `Expr*` ladder `Du*` helpers `FindInPath`/`CanonSignal` |
+| Text (`Builtins.Text.cs`) | `Cat` `Head` (streaming) `Tail` (`-f` polls) `Wc` (GNU widths) `Rev` `Tac` `Tr` `Cut` `Uniq` `Nl` `Fold` `Paste` `Comm` `Seq` `Split` `Od` `Sort` (`SortKey`, `-k -n -V -h -s -u -o`) `Tee` `Base64` `Checksum` `Hexdump` |
+| File / dir (`Builtins.Files.cs`) | `Basename` `Dirname` `Mkdir` `Rmdir` `Touch` `Rm` `Mv` `Cp` `Ls` (`ModeString`/`LongLine`) `Du` `Cmp` `Stat` `Mktemp` `Realpath` `Readlink` `Chmod` `Ln` `Truncate` |
+| Find / diff / xargs (`Builtins.Find.cs`) | `Find` (`FindParseOr/And/Not/Primary` → `FindNode` tree, `FindPrintf`, `FindExecPlusFlush`) `Diff` (`DiffPaths/DiffDirs/DiffFiles`) `Xargs` |
+| Search (`Builtins.Search.cs`) | `Grep` `Sed` (`SedCompile`/`SedRun`/`SedSelect`/`SedExpand`) `BreToNet`/`EreToNet`/`AppendBracket`/`MakeRegex` |
+| System (`Builtins.Sys.cs`) | `Date`/`Strftime` `Uname` `Arch` `Hostname` `Nproc` `Tty` `Whoami` `Id` `Printenv` `Timeout` |
+| awk (`Builtins.Awk.cs`) | `Awk` → `AwkLex`/`AwkParser`/`AwkInterp`, `AwkVal`, `AwkFormat`/`FormatG`; `print`/`printf` may target `"/dev/stderr"`/`"/dev/stdout"` (ratified 2026-09-04), nothing else |
+| Processes (`Builtins.Proc.cs`) | `Pgrep`/`Pkill` → `PgrepImpl`, `Ps`, `ListProcesses`/`ReadCommandLine`/`AncestorsOf` |
+| Still in `Builtins.cs` | `Factor` `Cal` `Expr` ladder `Which` `Hash` `Exec` `Kill` `Trap`/`CanonSignal` `Jobs`/`Fg`/`Bg` `HistoryCmd` |
+| Shared helpers | `OpenText`/`ReadLines`/`ReadBytes`/`FilesOrStdin`/`IoError`/`ParseCount` (Text) · `P` path helper (Files) · `ExpandTrSet`/`TrClass` `InterpretEscapes`/`UnescapeDelims` `CopyDir` `FindInPath` |
+
+**Option policy (DECISIONS 2026-09-04 #2):** every tool parses with `Opts.Parse` and throws
+`UnsupportedOptionException` for anything it does not implement; `TryExecute` catches it and,
+unless `BASH_COREUTILS=builtin`, re-runs the command as a PATH external when one resolves,
+otherwise prints the message plus a one-line explanation and returns 2. `BASH_COREUTILS=external`
+skips the in-process tool entirely when a PATH external exists.
 
 Regex dialect (`BreToNet`) and re-entrancy (`Xargs` → `RunCommand`) are described in
 [ARCHITECTURE §10](ARCHITECTURE.md#10-in-process-coreutils).
@@ -211,20 +260,23 @@ Tracing `echo $x | grep a > out` (assume `x=cat`):
    `new Parser(tokens).Parse()` yields `Script[ List[ Pipeline[ SimpleCommand(echo,[$x]),
    SimpleCommand(grep,[a], redirects:[Output→out]) ] ] ]`.
 2. `Execute(Script)` → `ExecScript` → `RunStatement(List)` → `ExecList` → `ExecPipeline`.
-3. `AllStagesInProcess` is **true** (both `echo` and `grep` are in `Builtins.Names`) →
-   `ExecPipelineSequential`.
-4. **Stage 0** `ExecuteWithStdin(echo $x, stdin=null, capture=true)` → `ExecSimpleCommand`:
-   `WordExpander.ExpandToFields($x)` → `["cat"]`; `echo` writes `cat\n` to `Console.Out`, which
-   is captured to the buffer.
-5. **Stage 1 (last)** `ExecuteWithStdin(grep a >out, stdin=buffer, capture=false)`:
-   `Console.In` is set to the buffered bytes; `ExecSimpleCommand` sees `grep` is a builtin →
-   `ApplyRedirects([Output→out])` swaps `Console.Out` to the file `out` under a `RedirectScope`;
-   `Builtins.TryExecute("grep", ["a"])` reads stdin, keeps lines matching `a`, writes to
-   `Console.Out` (the file). `RedirectScope.Dispose` restores `Console.Out` and closes the file.
-6. The pipeline's exit code (last stage, or worst under `pipefail`) becomes `$?`.
+3. `ExecPipelineThreaded` creates one `PipeBuffer` and two stage threads, each starting
+   with a copy of the caller's `ConsoleMux` state.
+4. **Stage 0** (thread A): its `ConsoleMux` Out slot is a writer over the pipe's write end;
+   `ExecSimpleCommand`: `WordExpander.ExpandToFields($x)` → `["cat"]`; `echo` writes `cat\n`
+   to `Console.Out` → the multiplexer → the pipe. The thread's `finally` closes the write end
+   (EOF downstream).
+5. **Stage 1 (last)** (thread B): its In slot is a reader over the pipe's read end; the Out
+   slot is the caller's (the terminal). `ExecSimpleCommand` sees `grep` is a builtin →
+   `ApplyRedirects([Output→out])` sets the thread's Out slot to the file `out` under a
+   `RedirectScope`; `Builtins.TryExecute("grep", ["a"])` reads `Console.In` (the pipe), keeps
+   lines matching `a`, writes to `Console.Out` (the file). `RedirectScope.Dispose` restores the
+   slot and closes the file; the thread's `finally` closes the pipe's read end.
+6. Both threads are joined; `PIPESTATUS` is set; the pipeline's exit code (last stage, or
+   worst under `pipefail`) becomes `$?`.
 
-Touches: lexer/parser front-end, parameter expansion (§7), sequential pipeline (§9.1), builtin
-dispatch (§10-arch), and the builtin Console-swap redirect path (§9.2).
+Touches: lexer/parser front-end, parameter expansion (§7), threaded pipeline (§9.1), the
+console multiplexer (§9.0), builtin dispatch (§10-arch), and the builtin redirect path (§9.2).
 
 ---
 

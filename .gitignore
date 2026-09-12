@@ -25,3 +25,12 @@ Thumbs.db
 
 # The LinkedIn article lives elsewhere, not in the code repo.
 moosh-all-the-way-down.md
+
+# Compat-battery scratch fixtures
+tests/compat/work/
+
+# Generated benchmark fixture
+tests/bench/.findtree/
+
+# Published single-file build (see README: dotnet publish ... -o dist)
+dist/

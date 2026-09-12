@@ -1,0 +1,35 @@
+--- fixture sizes (file arguments)
+7
+300
+--- sizes: input redirect, pipe, chained pipes
+7
+7
+300
+300
+300
+300
+--- bytes survive: od through the three routes
+ ff fe 80 00 41 c1 0a
+ ff fe 80 00 41 c1 0a
+ ff fe 80 00 41 c1 0a
+--- head -c / tail -c on stdin
+ ff fe 80
+ 41 c1 0a
+ ff 80 c1 ff 80
+--- cmp / checksums agree between file and stdin
+cmp-redirect-ok
+cmp-pipe-ok
+head-pipe-identical
+md5-agrees
+sha-agrees
+//6AAEHBCg==
+--- tee is byte-faithful
+tee-ok
+7
+tee-redirect-ok
+--- text sources still work
+here-string
+4
+x
+y
+3

@@ -2,6 +2,7 @@
   "profiles": {
     "Bash": {
       "commandName": "Project",
+      "commandLineArgs": "--version",
       "workingDirectory": "F:\\Koliada\\Tools\\bash\\Bash"
     }
   }

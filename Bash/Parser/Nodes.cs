@@ -25,6 +25,8 @@ public sealed record BraceExpansionPart(string Raw) : WordPart;
 
 /// <summary>$(command) or `command`.</summary>
 public sealed record CommandSubstitutionPart(Node Command) : WordPart;
+/// <summary>`&lt;(cmd)`: expands to the path of a temp file holding cmd's output (DECISIONS 2026-09-04 #6).</summary>
+public sealed record ProcessSubstitutionPart(Node Command) : WordPart;
 
 /// <summary>$(( expr )).</summary>
 public sealed record ArithmeticExpansionPart(string Expression) : WordPart;
@@ -53,24 +55,32 @@ public enum RedirectKind
 	InputDup,       // <&
 	OutputDup,      // >&
 	ReadWrite,      // <>
-	Heredoc,        // <<
-	HeredocStrip,   // <<-
+	Heredoc,        // <<   (Target = the body word, bound by the parser; expansions apply)
+	HeredocStrip,   // <<-  (same; leading tabs already stripped by the lexer)
+	HereString,     // <<<  (Target = the word; a newline is appended)
+	OutputBoth,     // &>   (stdout and stderr to file)
+	AppendBoth,     // &>>  (append both)
 	}
 
 public sealed record Redirect(
 	int? Fd,            // explicit fd number (e.g. 2 in 2>&1); null = default (0 or 1)
 	RedirectKind Kind,
-	Word Target);       // file path, fd number, or heredoc delimiter
+	Word Target);       // file path, fd number, or heredoc body
 
 // ── Base node ─────────────────────────────────────────────────────────────────
 
-public abstract record Node;
+public abstract record Node
+	{
+	/// <summary>1-based source line of the node's first token (drives $LINENO). 0 = unknown.</summary>
+	public int Line { get; init; }
+	}
 
 // ── Simple command ────────────────────────────────────────────────────────────
 
 /// <summary>
 /// A single command: optional var assignments, a command word, arguments, redirects.
 /// e.g.  FOO=bar cmd arg1 arg2 >out.txt
+/// An assignment whose Name ends in '+' is an append (var+=value).
 /// </summary>
 public sealed record SimpleCommand(
 	List<(string Name, Word Value)> Assignments,
@@ -85,11 +95,17 @@ public sealed record ArrayElementAssign(
 	Word Value,
 	List<Redirect> Redirects) : Node;
 
-/// <summary>Compound array assignment: arr=(a b c)</summary>
+/// <summary>Compound array assignment: arr=(a b c) — or arr+=(…) when Append.</summary>
 public sealed record ArrayCompoundAssign(
 	string ArrayName,
 	List<Word> Values,
-	List<Redirect> Redirects) : Node;
+	List<Redirect> Redirects) : Node
+	{
+	public bool Append { get; init; }
+	}
+
+/// <summary>(( expr )) — arithmetic command; exit 0 when the value is non-zero.</summary>
+public sealed record ArithmeticCommand(string Expression, List<Redirect> Redirects) : Node;
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
@@ -98,7 +114,7 @@ public sealed record ArrayCompoundAssign(
 /// Negated = prefixed with !.
 /// </summary>
 public sealed record Pipeline(
-	List<(Node Command, bool StderrToo)> Commands,   // StderrToo = |&
+	List<(Node Command, bool StderrToo)> Commands,   // StderrToo: stage followed by |& (its stderr joins the pipe)
 	bool Negated) : Node;
 
 // ── Lists (&&, ||, ;, &, newline) ─────────────────────────────────────────────
@@ -140,6 +156,14 @@ public sealed record ForCommand(
 	Node Body,
 	List<Redirect> Redirects) : Node;
 
+/// <summary>for (( init; cond; step )); do body; done</summary>
+public sealed record ArithForCommand(
+	string Init,
+	string Condition,
+	string Step,
+	Node Body,
+	List<Redirect> Redirects) : Node;
+
 /// <summary>case word in pattern) list;; esac</summary>
 public sealed record CaseCommand(
 	Word Subject,
@@ -165,11 +189,15 @@ public sealed record CondWord(Word Value) : CondExpr;   // bare word — true if
 
 // ── Functions ─────────────────────────────────────────────────────────────────
 
-/// <summary>name() compound-command [redirect]</summary>
+/// <summary>name() compound-command [redirect]  /  function name [()] compound-command</summary>
 public sealed record FunctionDef(
 	string Name,
 	Node Body,
-	List<Redirect> Redirects) : Node;
+	List<Redirect> Redirects) : Node
+	{
+	/// <summary>The definition's source text as written (for `declare -f`); null when unavailable.</summary>
+	public string? Source { get; init; }
+	}
 
 // ── Script root ───────────────────────────────────────────────────────────────
 

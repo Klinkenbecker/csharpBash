@@ -1,0 +1,22 @@
+expanded 2 -end
+literal $v
+stripped
+to-file
+PIPED
+HERESTRING
+swap-done
+both
+tmp-ok
+msys-path-ok
+outer inner
+C:\Users\x C:\Users\y
+quote: "q" $notvar
+ell HELLO Hello lo heLLo 5
+b c 4 d
+xy
+12
+arith-true
+012
+indirect
+default||
+c.txt /a/b/c b/c.txt

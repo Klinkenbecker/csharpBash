@@ -24,3 +24,30 @@ hi
 == $ last line ==
 a
 b
+k1 FIRST
+k2 x
+other
+k3 x
+k1 FIRST
+k2 x
+other
+k3 x
+k1 x
+k2 x
+other
+k1 T
+k2 T
+other
+k3 x
+k1 x
+k2 T
+other
+k3 T
+k1 TAMPERED x
+k2 TAMPERED x
+other
+k3 x
+k1 I
+k2 x
+other
+k3 x

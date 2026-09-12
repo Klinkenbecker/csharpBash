@@ -1,0 +1,36 @@
+--- outbound paths carry no backslashes
+pwd clean
+PWD clean
+pwd == PWD
+mktemp clean
+realpath clean
+--- the value is usable by the shell's own string operations
+case-suffix-ok
+glob-match-ok
+basename-strip=tests
+dirname-strip-ok
+round-trip-cd-ok
+--- SYMMETRY: out then back in is the same string
+pwd->cd->pwd stable
+realpath agrees with pwd
+absolute read ok
+abs clean
+read from elsewhere ok
+--- INBOUND: the MSYS /<d>/... form resolves to the same file
+one
+msys-form read ok
+msys clean
+--- IO failures are LOUD, never fatal
+split rc=1 (shell alive)
+cat rc=1
+redirect rc=1
+md5sum rc=1
+still running after four failures
+--- OUTBOUND ONLY: backslash keeps its escape meaning in arguments
+ a \t b
+0
+1
+C:\temp
+a\b
+0
+lit\nlit

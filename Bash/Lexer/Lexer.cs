@@ -32,6 +32,9 @@ public sealed class Lexer
 		_col  = 1;
 		}
 
+	/// <summary>The source text being tokenised (the parser slices function definitions from it).</summary>
+	public string Source => _src;
+
 	// ── public API ───────────────────────────────────────────────────────────
 
 	public List<Token> Tokenize()
@@ -46,6 +49,7 @@ public sealed class Lexer
 
 			if (_pos >= _src.Length)
 				{
+				if (_heredocQueue.Count > 0) FlushHeredocs(tokens);   // heredoc delimited by EOF
 				tokens.Add(Token.Eof(_line, _col));
 				break;
 				}
@@ -93,7 +97,17 @@ public sealed class Lexer
 		char c = Peek();
 
 		if (c == '\n') return ConsumeNewline();
-		if (c == '#')  { SkipComment(); return null; }
+		if (c == '#')
+			{
+			// bash: `#` starts a comment only at the START of a word. Inside one it is an
+			// ordinary character: `$((10#0010))`, `a#b`, `$x#y`. Until 2026-09-08 the rest of the
+			// line vanished after `10` — `echo $((10#0010))` printed 10 by coincidence,
+			// `x=$((10#0010)); echo $x` printed nothing, `( echo $((10#0010)) )` never closed
+			// (installer-79's report).
+			bool wordStart = _pos == 0 || _src[_pos - 1] is ' ' or '\t' or '\n' or '\r' or ';' or '|' or '&' or '(' or ')' or '<' or '>';
+			if (wordStart) { SkipComment(); return null; }
+			return ConsumeWord(hashStart: true);
+			}
 		if (c == '\'') return ConsumeSingleQuoted();
 		if (c == '"')  return ConsumeDoubleQuoted();
 		if (c == '`')  return Consume1(TokenType.Backtick);
@@ -146,6 +160,12 @@ public sealed class Lexer
 
 			case '&':
 				if (Peek() == '&') { Advance(); return Make(TokenType.AmpersandAmpersand,  "&&",  startLine, startCol); }
+				if (Peek() == '>')
+					{
+					Advance();
+					if (Peek() == '>') { Advance(); return Make(TokenType.AmpersandGreaterGreater, "&>>", startLine, startCol); }
+					return Make(TokenType.AmpersandGreater, "&>", startLine, startCol);
+					}
 				return Make(TokenType.Ampersand, "&", startLine, startCol);
 
 			case ';':
@@ -156,6 +176,7 @@ public sealed class Lexer
 				if (Peek() == '<')
 					{
 					Advance();
+					if (Peek() == '<') { Advance(); return Make(TokenType.LessLessLess, "<<<", startLine, startCol); }
 					bool strip = Peek() == '-';
 					if (strip) Advance();
 					// Queue: delimiter token will be at currentTokenCount + 1
@@ -167,15 +188,51 @@ public sealed class Lexer
 					}
 				if (Peek() == '&') { Advance(); return Make(TokenType.LessAmpersand,  "<&", startLine, startCol); }
 				if (Peek() == '>') { Advance(); return Make(TokenType.LessGreater,     "<>", startLine, startCol); }
+				if (Peek() == '(') { Advance(); return Make(TokenType.LessLParen,      "<(", startLine, startCol); }
 				return Make(TokenType.Less, "<", startLine, startCol);
 
 			case '>':
 				if (Peek() == '>') { Advance(); return Make(TokenType.GreaterGreater,  ">>", startLine, startCol); }
 				if (Peek() == '&') { Advance(); return Make(TokenType.GreaterAmpersand,">&", startLine, startCol); }
 				if (Peek() == '|') { Advance(); return Make(TokenType.GreaterPipe,     ">|", startLine, startCol); }
+				if (Peek() == '(') { Advance(); return Make(TokenType.GreaterLParen,   ">(", startLine, startCol); }
 				return Make(TokenType.Greater, ">", startLine, startCol);
 
-			case '(':  return Make(TokenType.LParen, "(", startLine, startCol);
+			case '(':
+				// "((" opens an arithmetic command: capture the raw interior up to the
+				// matching "))" (balancing parentheses, skipping quoted text).
+				if (Peek() == '(')
+					{
+					int save = _pos, saveLine = _line, saveCol = _col;
+					Advance();
+					var sb = new System.Text.StringBuilder();
+					int depth = 0;
+					bool closed = false;
+					while (_pos < _src.Length)
+						{
+						char ch = Peek();
+						if (ch == '\'' || ch == '"')
+							{
+							sb.Append(Advance());
+							while (_pos < _src.Length && Peek() != ch) sb.Append(Advance());
+							if (_pos < _src.Length) sb.Append(Advance());
+							continue;
+							}
+						if (ch == '(') { depth++; sb.Append(Advance()); continue; }
+						if (ch == ')')
+							{
+							if (depth == 0 && _pos + 1 < _src.Length && _src[_pos + 1] == ')')
+								{ Advance(); Advance(); closed = true; break; }
+							if (depth > 0) depth--;
+							sb.Append(Advance()); continue;
+							}
+						sb.Append(Advance());
+						}
+					if (closed) return Make(TokenType.ArithCommand, sb.ToString(), startLine, startCol);
+					// no matching "))" — treat as an ordinary "(" (nested subshell)
+					_pos = save; _line = saveLine; _col = saveCol;
+					}
+				return Make(TokenType.LParen, "(", startLine, startCol);
 			case ')':  return Make(TokenType.RParen, ")", startLine, startCol);
 			case '{':  return Make(TokenType.LBrace, "{", startLine, startCol);
 			case '}':  return Make(TokenType.RBrace, "}", startLine, startCol);
@@ -329,20 +386,31 @@ public sealed class Lexer
 			'\''       => '\'',
 			'"'        => '"',
 			'?'        => '?',
-			'0'        => '\0',
-			'x'        => ConsumeHexEscape(2),
-			'u'        => ConsumeHexEscape(4),
-			'U'        => ConsumeHexEscape(8),
+			// `\xNN` and `\NNN` are BYTE escapes: $'\xff' is the byte 0xFF, not U+00FF (which would
+			// encode as two bytes). `\u`/`\U` are code-point escapes and stay characters.
+			'x'        => Bash.Evaluator.ShellEncoding.ByteChar(ConsumeHexEscape(2)),
+			'u'        => (char)ConsumeHexEscape(4),
+			'U'        => (char)ConsumeHexEscape(8),
+			>= '0' and <= '7' => Bash.Evaluator.ShellEncoding.ByteChar(ConsumeOctalEscape(c)),
 			_          => c
 			};
 		}
 
-	private char ConsumeHexEscape(int maxDigits)
+	private int ConsumeHexEscape(int maxDigits)
 		{
 		int val = 0;
 		for (int i = 0; i < maxDigits && _pos < _src.Length && IsHexDigit(Peek()); i++)
 			val = val * 16 + HexVal(Advance());
-		return (char)val;
+		return val;
+		}
+
+	/// <summary>`\NNN` — up to three octal digits, the first already consumed.</summary>
+	private int ConsumeOctalEscape(char first)
+		{
+		int val = first - '0';
+		for (int i = 1; i < 3 && _pos < _src.Length && Peek() is >= '0' and <= '7'; i++)
+			val = val * 8 + (Advance() - '0');
+		return val;
 		}
 
 	private static bool IsHexDigit(char c) =>
@@ -372,13 +440,62 @@ public sealed class Lexer
 		{
 		int startLine = _line, startCol = _col;
 		Advance(); // opening "
+		// The interior is kept RAW (backslashes preserved): the parser's
+		// ParseDoubleQuotedInterior applies bash's double-quote escape rules, where only
+		// \$ \` \" \\ and \<newline> are escapes and every other backslash is literal.
 		var sb = new System.Text.StringBuilder();
 		while (_pos < _src.Length && Peek() != '"')
 			{
 			if (Peek() == '\\' && _pos + 1 < _src.Length)
-				{ Advance(); sb.Append(Advance()); }
-			else
+				{ sb.Append(Advance()); sb.Append(Advance()); continue; }
+			// A nested $( … ), $(( … )), ${ … } or ` … ` may itself contain double quotes:
+			// copy it through as a balanced unit so its quotes don't end this string.
+			if (Peek() == '$' && _pos + 1 < _src.Length && (_src[_pos + 1] == '(' || _src[_pos + 1] == '{'))
+				{
+				sb.Append(Advance());                       // $
+				char open = Advance(); sb.Append(open);     // ( or {
+				char close = open == '(' ? ')' : '}';
+				int depth = 1;
+				while (_pos < _src.Length && depth > 0)
+					{
+					char ch = Peek();
+					if (ch == '\\' && _pos + 1 < _src.Length) { sb.Append(Advance()); sb.Append(Advance()); continue; }
+					if (ch == '\'' && open == '(')
+						{
+						sb.Append(Advance());
+						while (_pos < _src.Length && Peek() != '\'') sb.Append(Advance());
+						if (_pos < _src.Length) sb.Append(Advance());
+						continue;
+						}
+					if (ch == '"')
+						{
+						sb.Append(Advance());
+						while (_pos < _src.Length && Peek() != '"')
+							{
+							if (Peek() == '\\' && _pos + 1 < _src.Length) { sb.Append(Advance()); sb.Append(Advance()); continue; }
+							sb.Append(Advance());
+							}
+						if (_pos < _src.Length) sb.Append(Advance());
+						continue;
+						}
+					if (ch == open) depth++;
+					else if (ch == close) depth--;
+					sb.Append(Advance());
+					}
+				continue;
+				}
+			if (Peek() == '`')
+				{
 				sb.Append(Advance());
+				while (_pos < _src.Length && Peek() != '`')
+					{
+					if (Peek() == '\\' && _pos + 1 < _src.Length) { sb.Append(Advance()); sb.Append(Advance()); continue; }
+					sb.Append(Advance());
+					}
+				if (_pos < _src.Length) sb.Append(Advance());
+				continue;
+				}
+			sb.Append(Advance());
 			}
 		if (_pos >= _src.Length)
 			throw new LexException("Unterminated double-quoted string", startLine, startCol) { Incomplete = true };
@@ -392,21 +509,29 @@ public sealed class Lexer
 		c is not (' ' or '\t' or '\r' or '\n' or '|' or '&' or ';' or '<' or '>' or
 				  '(' or ')' or '\'' or '"' or '`' or '$' or '#');
 
-	private Token ConsumeWord()
+	/// <param name="hashStart">The word begins with a `#` that is not a comment (it follows
+	/// a word character); a `#` after the first character is always part of the word.</param>
+	private Token? ConsumeWord(bool hashStart = false)
 		{
 		int startLine = _line, startCol = _col;
 		var sb = new System.Text.StringBuilder();
-		while (_pos < _src.Length && IsWordChar(Peek()))
+		bool continued = false;
+		while (_pos < _src.Length && (IsWordChar(Peek()) || (Peek() == '#' && (sb.Length > 0 || hashStart))))
 			{
 			if (Peek() == '\\' && _pos + 1 < _src.Length)
 				{
 				Advance();
-				if (Peek() == '\n') { Advance(); continue; } // line continuation
+				// line continuation (LF or CRLF): the backslash-newline pair vanishes entirely
+				if (Peek() == '\n') { Advance(); continued = true; continue; }
+				if (Peek() == '\r' && _pos + 1 < _src.Length && _src[_pos + 1] == '\n') { Advance(); Advance(); continued = true; continue; }
 				sb.Append(Advance());
 				}
 			else
 				sb.Append(Advance());
 			}
+		// `cmd arg \<newline>| next`: the continuation was the whole "word" — there is no word.
+		// (Reported 2026-09-05: every downstream tool received an empty argument.)
+		if (sb.Length == 0 && continued) return null;
 		var value = sb.ToString();
 		var type = value.Length > 0 && value.All(char.IsAsciiDigit)
 			? TokenType.Digit

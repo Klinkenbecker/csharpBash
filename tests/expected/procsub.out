@@ -1,0 +1,56 @@
+--- <( )
+1c1
+< a
+---
+> b
+rc=1
+ps
+got 1
+got 2
+b
+x	y
+inner
+leftover=0
+1
+rc=2
+--- |&
+cat:
+1
+--- trap ERR
+1
+err:1
+2
+3
+4
+5
+in
+6
+err:1
+7
+err:1
+8
+err:1
+9
+10
+err:1
+11
+err:1
+12
+err:1
+13
+err:1
+14
+err:1
+15
+err:1
+inh
+16
+inh
+no trap
+--- timeout
+rc=124
+fast
+rc=0
+rc=0
+rc=125
+rc=143

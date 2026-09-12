@@ -6,5 +6,24 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <RootNamespace>Bash</RootNamespace>
+    <!-- The informational version (file properties "Product version", and the second line of
+         `bash -​-version`) is stamped from the Mercurial working revision by the StampHg target
+         below. Without it every build carried the git snapshot's hash, so a build from June
+         and a build from today were indistinguishable (2026-09-05 defect triage). -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
+
+  <Target Name="StampHg" BeforeTargets="GetAssemblyVersion" Condition="'$(HgStamp)' == ''">
+    <!-- `hg id -n -i` prints "<hash>[+] <rev>[+]"; the + marks an uncommitted working tree -->
+    <Exec Command="hg id -n -i"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true" ContinueOnError="true" IgnoreExitCode="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="HgStamp" />
+    </Exec>
+    <PropertyGroup>
+      <HgStamp Condition="'$(HgStamp)' == ''">unknown</HgStamp>
+      <InformationalVersion>1.0.0+hg.$(HgStamp)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
 </Project>

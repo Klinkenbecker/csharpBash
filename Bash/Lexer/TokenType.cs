@@ -5,7 +5,7 @@ public enum TokenType
 	// Literals
 	Word,             // any unquoted word or identifier
 	SingleQuoted,     // 'text'
-	DoubleQuoted,     // "text" (may contain expansions)
+	DoubleQuoted,     // "text" (may contain expansions; raw — backslashes preserved for the parser)
 	Digit,            // numeric word (for fd redirects: 2>)
 
 	// Operators
@@ -25,14 +25,22 @@ public enum TokenType
 	LessAmpersand,    // <&
 	LessLess,         // << (heredoc)
 	LessLessDash,     // <<- (heredoc strip tabs)
+	LessLessLess,     // <<< (here-string)
 	LessGreater,      // <> (read/write)
+	LessLParen,       // <( process substitution (input)
+	GreaterLParen,    // >( process substitution (output) — rejected loudly (DECISIONS 2026-09-04 #6)
 	GreaterPipe,      // >| (clobber)
+	AmpersandGreater, // &> (stdout+stderr to file)
+	AmpersandGreaterGreater, // &>> (append both)
 
 	// Grouping
 	LParen,           // (
 	RParen,           // )
 	LBrace,           // {
 	RBrace,           // }
+
+	// (( expr )) arithmetic command — value is the raw interior text
+	ArithCommand,
 
 	// Expansions (lexer emits these as distinct tokens)
 	Dollar,           // $ (prefix for expansions)

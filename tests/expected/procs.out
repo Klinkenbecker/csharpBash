@@ -1,0 +1,22 @@
+--- pgrep
+1
+1
+1
+PING
+rc=1
+rc=2
+rc=1
+--- ps
+1
+    PID COMMAND
+    PID    PPID COMMAND
+many
+rc=1
+ps: --forest: not available
+--- pkill
+rc=0
+rc=0
+rc=1
+rc=1
+pgrep: --uid: no such notion on Windows
+done
