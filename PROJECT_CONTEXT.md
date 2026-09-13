@@ -229,6 +229,7 @@ Diagrams and the bash-startup reference live in `docs/`.
   README.md            ← overview, features, embedded-command list
   ARCHITECTURE.md / IMPLEMENTATION.md / PROJECT_CONTEXT.md / DECISIONS.md  ← doc set
   MERCURIAL_HISTORY.md ← exported hg log    mercurial-history.hg ← full hg bundle
+  moosh-all-the-way-down.md / .png  ← the companion article (published on LinkedIn) + its art
   docs/                ← 5 architecture SVGs + bash-startup-reference.md
   Bash/                ← interpreter source + Bash.csproj
     Program.cs           ← REPL entry point

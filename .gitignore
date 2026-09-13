@@ -23,9 +23,6 @@ Thumbs.db
 # Local tool settings
 .claude/
 
-# The LinkedIn article lives elsewhere, not in the code repo.
-moosh-all-the-way-down.md
-
 # Compat-battery scratch fixtures
 tests/compat/work/
 

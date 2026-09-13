@@ -1890,3 +1890,41 @@ and `timeout`, the custom `ShellEncoding` subclass, and UNC globs.
 
 **Implemented by:** rev 80 -- `tools/publish-aot.cmd` (the ship recipe), README build section and
 Performance table re-measured against the AOT build.
+
+## 2026-09-13 -- The companion article ships inside the repo (reverses the `.gitignore` exclusion)
+
+**Status:** Active. Reverses the standing exclusion of `moosh-all-the-way-down.md`, which existed
+only as a comment in `.gitignore` ("The LinkedIn article lives elsewhere, not in the code repo")
+and was never recorded here, so there is no prior entry to supersede.
+
+**Context:** the article *It's moosh all the way down* was published on LinkedIn on 2026-09-13 and
+the README now links it (commit `e1b6495`). Its source markdown had been deliberately git-ignored
+since the initial public snapshot, and its hero image sat untracked in the working tree.
+
+**Decision:** ship both the article source and its art in the repository root --
+`moosh-all-the-way-down.md` and `moosh-all-the-way-down.png` (1024x559 RGB, 1.5 MB).
+
+**Rationale:** the article is this project's provenance statement. It is the only document that
+explains why a bash interpreter exists whose source no human has read, and it carries the same
+three-way benchmark the README reports. LinkedIn is not an archival host: the URL can rot, the
+piece can be edited or withdrawn, and it sits behind a login wall for some readers. A repository
+that already ships its complete Mercurial history precisely so the record does not depend on a
+third party should not then depend on a social network to preserve the one document that explains
+its method.
+
+**Alternatives considered:**
+- **Keep it out (the prior position)** -- rejected: it makes the README's outbound link a single
+  point of failure for the project's rationale.
+- **Ship the markdown but not the image** -- rejected: the art is part of the published piece, and
+  1.5 MB is immaterial beside the `mercurial-history.hg` bundle.
+
+**Note on drift:** the repo copy and the LinkedIn copy can now diverge, since LinkedIn holds its
+own rendering of the text. The repo copy is the source of truth; the published URL is the canonical
+public location. House style for the article, set the same day: no em-dashes, and the close stays
+flat (a closing rhetorical question was considered and rejected as selling past the close).
+
+**Conditions to revisit:** if the article is substantially rewritten for another venue, decide then
+whether the repo carries the original, the rewrite, or both.
+
+**Affects:** `.gitignore` (exclusion removed), `PROJECT_CONTEXT.md` (root file map), `README.md`
+(already links the published URL).
