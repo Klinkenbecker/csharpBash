@@ -298,3 +298,57 @@ public static class ChildJobs
 		try { AssignProcessToJobObject(_job, proc.Handle); } catch { }
 		}
 	}
+
+/// <summary>
+/// Claude Code starts the Bash tool's shell with NO console, and Windows gives each console
+/// program such a process starts a NEW console of its own -- a visible window flashing up for
+/// every external command. While the shell has no console, the child is started with
+/// CreateNoWindow (a windowless console) and the shell attaches to that console, so every later
+/// child inherits it at native cost. Once per shell. A lost race is harmless: that child was
+/// still hidden, and the next start tries again. DECISIONS 2026-09-14.
+/// </summary>
+public static class HiddenConsole
+	{
+	private static readonly object _lock = new();
+
+	[DllImport("kernel32.dll")] private static extern uint GetConsoleCP();
+	[DllImport("kernel32.dll", SetLastError = true)] private static extern bool AttachConsole(uint pid);
+	[DllImport("kernel32.dll")] private static extern bool SetConsoleCP(uint cp);
+	[DllImport("kernel32.dll")] private static extern bool SetConsoleOutputCP(uint cp);
+
+	// The new console accepts an attach ~17-23 ms after the child starts (spiked); before that
+	// AttachConsole fails with error 6. The bound only matters for a child that never has a
+	// console (a GUI program), which fails the same way until it runs out.
+	private const int AttachBudgetMs = 100;
+
+	/// <summary>True when this shell has no console, so the next child must be started hidden
+	/// and handed to <see cref="Adopt"/>. <c>GetConsoleCP()</c> is 0 only without a console;
+	/// <c>GetConsoleWindow()</c> is NOT a test -- it is also null for a windowless console.</summary>
+	public static bool NeedsHiding => OperatingSystem.IsWindows() && GetConsoleCP() == 0;
+
+	/// <summary>Attach this shell to the hidden console of a child started with CreateNoWindow.</summary>
+	public static void Adopt(System.Diagnostics.Process child)
+		{
+		lock (_lock)
+			{
+			if (GetConsoleCP() != 0) return;   // a concurrent pipeline stage attached first
+			try
+				{
+				var sw = System.Diagnostics.Stopwatch.StartNew();
+				while (sw.ElapsedMilliseconds < AttachBudgetMs)
+					{
+					if (AttachConsole((uint)child.Id))
+						{
+						// the same byte-transparent code page Program.cs gives a real console
+						SetConsoleCP(65001);
+						SetConsoleOutputCP(65001);
+						return;
+						}
+					if (child.HasExited) return;
+					Thread.Yield();
+					}
+				}
+			catch { }   // best effort: without the attach every child is still started hidden
+			}
+		}
+	}

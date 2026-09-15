@@ -40,7 +40,7 @@
 | `Evaluator/Printf.cs` | `PrintfFormatter`: bash `printf` semantics (flags/width/precision, `%q` `%b`, escapes, argument recycling); also used by `echo -e`. |
 | `Evaluator/FileTests.cs` | The file/string primaries shared by `test`/`[` and `[[ ]]` (paths translated). |
 | `Evaluator/Glob.cs` | Shell pattern → regex (`*` `?` `[…]` classes), `Match`, and the pathname-expansion walker (`dotglob`/`nullglob`/`nocaseglob`/`globstar`). |
-| `Evaluator/ConsoleMux.cs` | `ConsoleMux` (per-thread console slots + `Capture`/`Apply`), `PipeBuffer` (managed pipe with back-pressure, EOF and `BrokenPipeException`), `ChildJobs` (kill-on-close job object). |
+| `Evaluator/ConsoleMux.cs` | `ConsoleMux` (per-thread console slots + `Capture`/`Apply`), `PipeBuffer` (managed pipe with back-pressure, EOF and `BrokenPipeException`), `ChildJobs` (kill-on-close job object), `HiddenConsole` (a console-less shell -- Claude Code's Bash tool -- starts children with `CreateNoWindow` and attaches to the first one's hidden console, so no child ever opens a visible window). |
 | `Evaluator/ShellEnvironment.cs` | Variables, arrays, exports, readonly/integer attributes, special parameters, scope/positional stack, snapshot/restore (subshells), `TranslatePath` (inbound: MSYS `/c/…`, `/tmp`, `~` → forward-slash Windows form) and `ToShellPath`/`ShellCwd`/`FullPath` (outbound: the same form, so the two directions agree), PATH normalisation and the Git-tools augmentation. |
 | `Evaluator/ShellEncoding.cs` | The shell's single encoding: UTF-8 with surrogateescape (an undecodable byte ↔ the lone surrogate U+DC00+byte), so bytes that are not text survive variables, `$( )`, pipes and files. `ByteChar` is what the `\xNN`/`\NNN` escape handlers emit; `ReadAllText`/`ReadAllLines` replace the `File.*` equivalents, which silently ignore their encoding argument on a file that starts with a BOM. Encode and decode are both overridden because an `EncoderFallback` cannot emit raw bytes. |
 | `Evaluator/ShellOptions.cs` | `set` flags (`-e/-u/-x/-n/-f/-v/-C/-a/-o …`), the `shopt` set, invocation facts, `$-`. |
@@ -146,7 +146,7 @@ looping.
 
 | Method | Role |
 |--------|------|
-| `ExecExternal` | Self-contained fd-map + `Process.Start`. |
+| `ExecExternal` | Self-contained fd-map + `Process.Start`; `HiddenConsole.NeedsHiding` before the start, `ChildJobs.Attach` then `HiddenConsole.Adopt` after it. |
 | `ResolveOnPath` / `HashClear` / `HashSetPath` / `HashTable` | PATH(+PATHEXT) cache (the `hash` table). |
 | `TryResolveScriptFile` / `ResolveInterpreter` / `RunScriptInProcess` | Shebang dispatch. |
 | `RunCommand(name,args)` | Re-entrant builtin→function→external dispatch (used by `xargs`). |

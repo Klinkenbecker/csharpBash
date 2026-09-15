@@ -1,6 +1,22 @@
 # Project Context: Bash
 
 > ## RESUME ANCHOR (2026-09-04) — read this before anything else
+> **RATIFIED + BUILT 2026-09-14, UNCOMMITTED (hg 80+): no console window flashes under Claude Code.**
+> Claude Code starts the Bash TOOL shell with no console, so every external C#Bash spawned got its
+> own VISIBLE console. Fix: `HiddenConsole` (`ConsoleMux.cs`) — while `GetConsoleCP()==0`, a child
+> starts `CreateNoWindow` and the shell attaches to its hidden console ("piggyback"); later children
+> inherit it at native cost. Suite 50/50 with a console AND detached (Release + AOT) with a
+> desktop-wide window hook recording nothing; battery old-vs-new 237/237; live in a Claude Code
+> session, no window. **`dist/Bash.exe` IS the new build**; rollback copy `dist/Bash.exe.rev80`.
+> Accepted by the architect: a CONIN$-reading child now waits invisibly. **DO NOT undo** the
+> `GetConsoleCP` test (`GetConsoleWindow()==0` is WRONG — measured). Spike source:
+> `E:/Claude/csharpbash-findings-2026-09-14-hidden-console/`. Full record: DECISIONS 2026-09-14.
+> **Confirmed by the architect** from a second Claude Code session (`whereis bash.exe`): good.
+> **Open, not started:** `$?` after an external that exits -1 (0xFFFFFFFF) reads `-1` — bash masks
+> to 0-255 (`255`); seen with `F:\KoliadaES\ESDK\bin\whereis.EXE`. `date +%3N` ignores the width (prints 9 digits); the compat battery has no
+> valid Git reference while PortableGit's `bash.exe` is renamed `_bash.exe` (the architect's rename
+> so Claude Code discovers C#Bash) — pass `-Reference` to a working Git bash or restore the name
+> for battery runs; GUI-child 100 ms attach spin unmeasured.
 > **TRUE STATE (2026-09-04, after P3+P4, hg rev 42):** suite 45/45 green; the 228-probe **Claude Code
 > compatibility battery** (`tests/compat/`, Git Bash vs C#Bash) is at 217/228 with 0 hangs, baseline 217
 > (the 11 remaining DIFFs are environment/by-design: tools absent from Git Bash, `BASH_VERSINFO` 5 vs 4,

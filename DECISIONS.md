@@ -1928,3 +1928,115 @@ whether the repo carries the original, the rewrite, or both.
 
 **Affects:** `.gitignore` (exclusion removed), `PROJECT_CONTEXT.md` (root file map), `README.md`
 (already links the published URL).
+
+## 2026-09-14 -- PROPOSED (spiked, not built): a console window flashes for every external a Bash-tool call spawns; fix by attaching to a hidden console
+**Status:** Proposed. AWAITING THE ARCHITECT. Nothing in `Bash/` changed.
+
+**The defect (verified 2026-09-14, process-tree watcher + the architect's eyes):** Claude Code
+(2.1.271/2.1.272) starts the Bash TOOL shell with NO console -- no conhost child, in a Windows
+Terminal session and in a plain `cmd` window alike. (Statusline/hook `Bash.exe -c` spawns DO get a
+`conhost 0x4`.) `ExecExternal` starts children with `UseShellExecute = false` and nothing else, so
+Windows gives each console-subsystem child its OWN new console, with a visible window titled with
+the exe path. Seen as "bash opens its own cmd window" on `bash --version`; confirmed on
+`bash -c 'sleep 12'` (inner `bash.exe` had its own conhost and a non-zero `MainWindowHandle`).
+Builtins never show it (`echo`, `whoami` stayed quiet). Git Bash did not show it [recalled,
+unverified: the MSYS runtime handles a console-less parent itself].
+
+**Spike** (`E:/Claude/csharpbash-findings-2026-09-14-hidden-console/`): a launcher starts the probe
+with `DETACHED_PROCESS` (the Claude Code condition), stdio on an inheritable file. The probe applies
+one variant, then runs `ping -n 3` watching for a new visible `ConsoleWindowClass` window and a
+conhost under the child, then times 30 x `cmd /d /c exit 0` after 5 warm-ups (in-process Stopwatch,
+Native AOT build, same toolchain recipe as `tools/publish-aot.cmd`). Positive control: the no-fix
+variant DID detect the window, so the test can fail.
+
+| variant | window | one-time | per spawn (median) |
+|---|---|---|---|
+| none (the defect) | YES | -- | 54.1 ms |
+| `CreateNoWindow` on every child | no | -- | 15.5 ms |
+| helper: `cmd /c pause` CreateNoWindow, `AttachConsole`, release | no | 22.6-26.9 ms (5 runs) | 4.00 ms |
+| piggyback: first child CreateNoWindow, `AttachConsole` to IT | no | 22.0-22.3 ms (5 runs) INCLUDING that child's run | 4.05 ms |
+| `AllocConsole` + hide | FLASHES (visible immediately after alloc) | 47 ms | 4.28 ms |
+| reference: real inherited console | no | -- | 4.16 ms |
+
+Also measured: redirected stdout survives attach (handle value unchanged, markers written before
+and after reached the launcher); `AttachConsole` fails with error 6 until the new conhost is ready
+(1.2-4.4 k spin iterations, ~17 ms), so a bounded retry is required; piggyback attached 6/6 times
+even to `cmd /c exit`, the shortest child available -- a child evidently cannot finish before its
+console is ready [inferred from 6 samples, not from documentation]. `AllocConsole` is hidden only
+when the PARENT passed `SW_HIDE`, which we do not control. **`GetConsoleWindow() == 0` is NOT a
+valid "no console" test**: the reference run had a (windowless) console and still returned 0.
+
+**Proposal:** on the first external spawn when the shell has no console, spawn that child with
+`CreateNoWindow` and `AttachConsole` to it (bounded retry, once, thread-safe -- pipeline stages
+spawn concurrently); every later child inherits the hidden console at native cost. A lost race is
+benign: that child is still hidden, and the next spawn tries again. Calls that spawn nothing pay
+nothing. Break-even against per-child `CreateNoWindow` is the second spawn.
+
+**Alternatives:** per-child `CreateNoWindow` (simplest; ~11 ms extra per spawn forever -- rejected
+by the architect on cost, "it is so quick right now"); helper console (deterministic, ~5 ms dearer
+on the first spawn, one extra process); `AllocConsole` (flashes -- rejected).
+
+**Behaviour change to accept explicitly:** a child that reads the console directly (`CONIN$`: a
+password prompt, `pause`) today gets a visible window someone could type into; under ANY hidden
+fix it waits invisibly until killed. Claude Code already feeds stdin from `/dev/null`.
+
+**Open before building:** the correct no-console test (`GetConsoleCP() == 0` is the candidate,
+untested); interaction with the kill-on-close job object and with `timeout`; `ConsoleMux` and
+`Console.*` probes after attach; a suite + battery run.
+
+**Addendum, same session (appended, entry above unchanged):** the window checks above sampled only
+AFTER setup. Re-run with a `SetWinEventHook(EVENT_OBJECT_SHOW)` hook for the WHOLE run, which
+records any console window made visible however briefly. Positive controls fired: `alloc` 1 show
+event during setup (the flash, caught although hidden microseconds later), `none` 36 (one per
+child). piggyback 0 and helper 0 (2 runs each, setup included), `nowindow` 0. No initial flash.
+**CONTESTED (same session):** the architect saw flashes during that run but could not attribute them
+(the run also contained `alloc` and `none`, which flash by design). A desktop-wide hook (every
+top-level window, any class, any process) over piggyback, helper, nowindow, alloc recorded ONE
+show event, `alloc`'s. Awaiting a clean run of piggyback alone with the architect watching before
+"no flash" is treated as settled.
+**RESOLVED (same session, 18:31):** piggyback alone, 3 runs 5 s apart, nothing else running: the
+desktop-wide hook recorded no window shown, all 3 attached, and the architect, watching, saw no
+flash. The earlier sighting is attributed to the `alloc`/`none` controls in the mixed run.
+
+## 2026-09-14 -- RATIFIED + BUILT: a console-less shell attaches to its first child's hidden console ("piggyback")
+**Status:** Active. Ratifies and implements the PROPOSED entry of the same date. The architect:
+"ok, yes, go - it seemed to be working", after being told a console-reading child (a password
+prompt, `pause`) will now wait invisibly instead of showing a window.
+
+**Implementation:** `HiddenConsole` in `Evaluator/ConsoleMux.cs`, two call sites in `ExecExternal`
+(the ONLY process-start site in `Bash/`, verified by search). `NeedsHiding` = `GetConsoleCP() == 0`;
+when true the child is started with `CreateNoWindow`, added to the kill-on-close job as before,
+then `Adopt` attaches the shell to its console under a lock (a concurrent pipeline stage that
+attached first is detected by re-testing `GetConsoleCP`), with a 100 ms spin budget, and sets code
+page 65001 on the adopted console through `SetConsoleCP`/`SetConsoleOutputCP` -- the console
+`Program.cs` gives a real one. Deliberately NOT `Console.OutputEncoding`: that setter resets .NET's
+console writers, which `ConsoleMux` replaces by reflection.
+
+**The no-console test, measured with controls:** `GetConsoleCP()` is 0 detached, 437 under a
+windowless (CreateNoWindow) console, 65001 inherited; `GetConsoleWindow()` is 0 in all three.
+
+**Verified:**
+- Suite 50/50 from a console (the path unexercised), and 50/50 **detached** -- every case started
+  with `DETACHED_PROCESS`, the Claude Code condition -- on both the Release build and the Native AOT
+  build, with a desktop-wide show-event hook recording NO window. Positive control: the rev-80
+  binary on `redirect_ext` detached flashed 2 `where.exe` console windows in the same hook.
+- The attach really happens: 20 `cmd /c exit` spawns took 89.6-98.5 ms detached vs 92.4-100.5 ms
+  with a real console (3 runs each) -- native cost, not the ~15 ms of a per-child console.
+- Live: `dist/Bash.exe` replaced (rollback copy `dist/Bash.exe.rev80`, hg-ignored); a Bash-tool call
+  in a Claude Code session ran `bash --version`, `bash -c 'sleep 5'`, `cmd.exe`, `where.exe` with no
+  window recorded.
+- Compat battery, rev-80 binary as reference vs the new build (both with a console): 237/237
+  identical, 0 hung. The 11 "NEW PASS" it reports are artefacts of that reference; baseline untouched.
+
+**Not verified:** the GUI-child case (a program with no console makes `Adopt` spin its 100 ms
+budget each time until a console child comes along -- unmeasured); `timeout` killing a child on the
+adopted console; Ctrl+C semantics (nothing can send a console event to a hidden console).
+
+**Found on the way, not fixed:** `date +%3N` / `+%6N` ignore the width and print all nine digits
+(GNU prints 3 / 6). The compat battery has no valid Git reference on this machine while Git's
+`bash.exe` is renamed to `_bash.exe`: the launcher then fails every probe, and `usr/bin/_bash.exe`
+alone lacks `/usr/bin` on PATH (different `wc`/`sed`), so it was run old-binary-vs-new instead.
+
+**Revisit if:** Claude Code starts the Bash tool with a console (the path goes dormant by itself);
+a console-reading child under Claude Code turns out to be common; or the GUI-child spin is measured
+as noticeable.

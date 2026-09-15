@@ -1104,6 +1104,8 @@ public sealed class Evaluator
 
 		Process proc;
 		bool brokenPipe = false;
+		bool hideConsole = HiddenConsole.NeedsHiding;   // console-less shell: no window per child
+		if (hideConsole) psi.CreateNoWindow = true;
 		try
 			{
 			proc = Process.Start(psi)
@@ -1135,6 +1137,7 @@ public sealed class Evaluator
 
 		if (_currentJob is not null) _currentJob.ChildPid = proc.Id;
 		ChildJobs.Attach(proc);   // dies with us (host timeout kills) - best effort
+		if (hideConsole) HiddenConsole.Adopt(proc);
 
 		try
 			{
