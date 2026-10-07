@@ -1,0 +1,42 @@
+cat                    a \r \n b \r \n c \n
+awk                    a \r \n b \r \n c \n
+awk $NF                z \n 2 \r \n
+awk NF                 2 \n 1 \n
+head                   a \r \n b \r \n
+head lone              x \r y z \n
+tail                   b \r \n c \n
+grep                   a \r \n b \r \n c \n
+grep -c CR             2 \n
+grep -c lone           2 \n
+wc -l lone             2 \n
+sed                    a \r \n b \r \n c \n
+cut                    a \r \n b \r \n c \n
+sort                   a \r \n b \r \n c \n
+uniq                   b \r \n a \r \n b \r \n
+sort -u                a \r \n b \r \n
+tac                    c \n b \r \n a \r \n
+rev                    \r a \n \r b \n c \n
+nl                     1 \t a \r \n 2 \t b \r \n 3 \t c \n
+paste                  a \r \t a \r \n b \r \t b \r \n c \t c \n
+comm                   b \r \n a \r \n b \r \n
+tee                    a \r \n b \r \n c \n
+xargs                  [ a \r ] [ b \r ] [ c ]
+xargs -I               < a \r > < b \r > < c >
+pipe|head              a \r \n b \r \n
+pipe|awk               a \r \n b \r \n c \n
+pipe|grep              b \r \n
+capture                a \r \n b \r \n c
+read -r                a \r | b \r | c |
+read -r a b            x \r y | z | 2 \r | |
+mapfile -t             a \r | b \r | c |
+head;sed shared        a \r \n b \r \n c \n
+grep -m1;sed shared    a \r \n b \r \n c \n
+head bom8              357 273 277 h e l l o \r \n
+grep bom8              357 273 277 h e l l o \r \n
+awk bom8               357 273 277 h e l l o \r \n
+head bom16             377 376 A B \n
+pipe|head bom16        377 376 A B \n
+head < bom16           377 376 A B \n
+ext pipe               A 377 \r \n
+ext capture            A 377 \r \n
+ext 1>&2 group         A 377 \r \n

@@ -1,0 +1,14 @@
+a b
+x y tail
+split me
+pos args
+from array
++ printf %s|%s\n wrapped call
+wrapped|call
+printf via a variable
+a quoted name with spaces is one word: 127
+an empty name: the next word runs
+"$@" with no arguments: 0
+only an empty expansion: 0
+captured: []
+brace expansion

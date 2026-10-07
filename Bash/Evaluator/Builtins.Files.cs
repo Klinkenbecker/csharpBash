@@ -313,6 +313,7 @@ public sealed partial class Builtins
 					if (update && File.Exists(target) && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(sp)) continue;
 					File.Copy(sp, target, overwrite: true);
 					if (preserve) { File.SetLastWriteTime(target, File.GetLastWriteTime(sp)); File.SetAttributes(target, File.GetAttributes(sp)); }
+					else StampNow(target);
 					}
 				else { Console.Error.WriteLine($"cp: cannot stat '{s}': No such file or directory"); rc = 1; continue; }
 				if (verbose) Console.WriteLine($"'{s}' -> '{target}'");
@@ -320,6 +321,16 @@ public sealed partial class Builtins
 			catch (Exception ex) { Console.Error.WriteLine($"cp: cannot copy '{s}': {IoError(ex)}"); rc = 1; }
 			}
 		return rc;
+		}
+
+	/// <summary>A copy made without -p is a NEW file: its mtime is now, as GNU cp gives it. Windows'
+	/// CopyFile (behind File.Copy) keeps the source's time, so a restored `cp backup file` looked
+	/// older than its outputs and MSBuild silently kept a stale build (msp430-a2, 2026-10-03).</summary>
+	private static void StampNow(string path)
+		{
+		var now = DateTime.UtcNow;
+		try { File.SetLastWriteTimeUtc(path, now); File.SetLastAccessTimeUtc(path, now); }
+		catch (UnauthorizedAccessException) { }   // a read-only copy: the attribute came with it, as GNU keeps the mode
 		}
 
 	private static void CopyDir(string src, string dst, bool preserve)
@@ -330,6 +341,7 @@ public sealed partial class Builtins
 			var t = Path.Combine(dst, Path.GetFileName(f));
 			File.Copy(f, t, true);
 			if (preserve) File.SetLastWriteTime(t, File.GetLastWriteTime(f));
+			else StampNow(t);
 			}
 		foreach (var d in Directory.GetDirectories(src)) CopyDir(d, Path.Combine(dst, Path.GetFileName(d)), preserve);
 		if (preserve) Directory.SetLastWriteTime(dst, Directory.GetLastWriteTime(src));
@@ -857,7 +869,7 @@ public sealed partial class Builtins
 			try
 				{
 				if (!File.Exists(p)) { if (o.Has('c')) continue; File.Create(p).Dispose(); }
-				using var fs = new FileStream(p, FileMode.Open, FileAccess.ReadWrite);
+				using var fs = new FileStream(p, FileMode.Open, FileAccess.ReadWrite, ShellFile.Share);
 				long cur = fs.Length, size;
 				if (spec is null) size = refSize!.Value;
 				else

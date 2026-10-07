@@ -61,18 +61,66 @@ public sealed class ShellEncoding : Encoding
 	/// detectEncodingFromByteOrderMarks, so a file whose first bytes happen to be FF FE or EF BB BF
 	/// is decoded as UTF-16/UTF-8-with-BOM and the requested encoding is discarded — which silently
 	/// mangled binary data through `$(cat file)` (measured 2026-09-12). Bytes in, bytes out.</summary>
-	public static string ReadAllText(string path) => Utf8.GetString(File.ReadAllBytes(path));
+	public static string ReadAllText(string path) => Utf8.GetString(ShellFile.ReadAllBytes(path));
 
-	/// <summary>Lines of a file as shell text, splitting on LF and dropping a trailing CR.</summary>
+	/// <summary>Lines of a file as shell text, split on LF only. A CR is data and stays in the
+	/// line, as in every GNU tool (DECISIONS 2026-10-03).</summary>
 	public static string[] ReadAllLines(string path)
 		{
 		var text = ReadAllText(path);
 		if (text.Length == 0) return [];
 		var lines = text.Split('\n');
-		int n = lines.Length > 0 && lines[^1].Length == 0 ? lines.Length - 1 : lines.Length;
-		var result = new string[n];
-		for (int i = 0; i < n; i++) result[i] = lines[i].EndsWith('\r') ? lines[i][..^1] : lines[i];
-		return result;
+		return lines[^1].Length == 0 ? lines[..^1] : lines;
+		}
+
+	/// <summary>The next line of <paramref name="r"/>, ended by LF ONLY (the LF not included), or
+	/// null at end of input. Every line-reading tool uses this, never <c>TextReader.ReadLine</c>:
+	/// that also ends a line at a lone CR and drops the CR of CRLF, so data changed silently in
+	/// awk, head, grep and friends, and a `grep -c $'\r'` check read 0 (DECISIONS 2026-10-03).
+	/// An <see cref="LfReader"/> (every stdin the shell installs) answers by block scan; any other
+	/// reader -- a here-document, an interactive console -- is read char by char, so it is never
+	/// consumed past the line.</summary>
+	public static string? ReadLine(TextReader r)
+		{
+		if (ReferenceEquals(r, Console.In)) r = ConsoleMux.In;   // resolve the per-thread slot once
+		if (r is LfReader lf) return lf.ReadLine();
+		var sb = t_line ??= new StringBuilder(256);
+		sb.Clear();
+		int c;
+		while ((c = r.Read()) >= 0)
+			{
+			if (c == '\n') return sb.ToString();
+			sb.Append((char)c);
+			}
+		return sb.Length > 0 ? sb.ToString() : null;
+		}
+
+	[ThreadStatic] private static StringBuilder? t_line;
+
+	/// <summary>A next-line function for <paramref name="r"/>, LF only. Stdin is shared -- what
+	/// this command leaves unread belongs to the next one -- so it goes through
+	/// <see cref="ReadLine"/>, never read ahead of; any other reader is a file the caller opened
+	/// and owns, so it gets its own <see cref="LfReader"/>. Measured 2026-10-03: plain
+	/// char-by-char reading cost ~85 ns a line, +12.7 % on six tools over 200 k-line files.</summary>
+	public static Func<string?> LineReaderFor(TextReader r)
+		{
+		if (ReferenceEquals(r, Console.In) || ReferenceEquals(r, ConsoleMux.In))
+			return () => ReadLine(r);
+		return (r as LfReader ?? new LfReader(r)).ReadLine;
+		}
+
+	/// <summary>All lines of <paramref name="r"/>, LF only, as <see cref="LineReaderFor"/> reads
+	/// them -- written out rather than calling it, as a delegate call per line cost ~10 % (measured).</summary>
+	public static IEnumerable<string> Lines(TextReader r)
+		{
+		string? l;
+		if (ReferenceEquals(r, Console.In) || ReferenceEquals(r, ConsoleMux.In))
+			{
+			while ((l = ReadLine(r)) is not null) yield return l;
+			yield break;
+			}
+		var lf = r as LfReader ?? new LfReader(r);
+		while ((l = lf.ReadLine()) is not null) yield return l;
 		}
 
 	private static readonly UTF8Encoding Plain = new(false, false);
@@ -212,4 +260,151 @@ public sealed class ShellEncoding : Encoding
 		}
 
 	public override int GetMaxCharCount(int byteCount) => byteCount;   // worst case: one char per byte
+	}
+
+/// <summary>
+/// A text reader whose <see cref="ReadLine"/> ends a line at LF ONLY -- a CR is data -- found by
+/// a vectorised scan over its own buffer. The shell installs one as every stdin it creates (a
+/// pipeline stage, `&lt; file`, `&lt;&amp;n`, a redirected process stdin), so all the commands
+/// reading that stdin share this ONE buffer: lines are fast, and none of them reads past where
+/// another stopped. A tool also wraps a file it opened itself. DECISIONS 2026-10-03.
+/// </summary>
+public sealed class LfReader : TextReader
+	{
+	private readonly TextReader? _text;     // a reader of a file the caller owns
+	private readonly Stream? _stream;       // a stdin: decoded here, ONE read per fill
+	private readonly Decoder? _decoder;
+	private readonly byte[]? _bytes;
+	private readonly bool _leaveOpen;
+	private readonly char[] _buf = new char[8192];
+	private int _pos, _len;
+	private StringBuilder? _carry;
+
+	public LfReader(TextReader inner) => _text = inner;
+
+	/// <summary>Over a raw stdin stream. NOT over a StreamReader: asked for a block, a
+	/// StreamReader keeps reading until the block is full or a read comes back short, so a
+	/// pipeline stage waited on its producer instead of overlapping it -- measured 2026-10-03,
+	/// `head | tail` 132 -> 295 ms. One stream read per fill returns whatever has arrived.</summary>
+	public LfReader(Stream stream, bool leaveOpen = false)
+		{
+		_stream = stream;
+		_decoder = ShellEncoding.Utf8.GetDecoder();
+		_bytes = new byte[4096];
+		_leaveOpen = leaveOpen;
+		}
+
+	/// <summary>True when buffered chars are available, reading the next block if needed.</summary>
+	private bool Fill()
+		{
+		if (_pos < _len) return true;
+		_pos = 0;
+		_len = _text is not null ? _text.Read(_buf, 0, _buf.Length) : ReadStream();
+		if (_len > 0) return true;
+		_len = 0;
+		return false;
+		}
+
+	private int ReadStream()
+		{
+		while (true)
+			{
+			int nb = _stream!.Read(_bytes!, 0, _bytes!.Length);
+			bool eof = nb <= 0;
+			int nc = _decoder!.GetChars(_bytes, 0, eof ? 0 : nb, _buf, 0, flush: eof);
+			if (nc > 0 || eof) return nc;
+			}
+		}
+
+	public override int Peek() => Fill() ? _buf[_pos] : -1;
+	public override int Read() => Fill() ? _buf[_pos++] : -1;
+	public override int Read(char[] buffer, int index, int count) => Read(buffer.AsSpan(index, count));
+
+	public override int Read(Span<char> buffer)
+		{
+		if (buffer.Length == 0) return 0;
+		if (_pos == _len && _text is not null) return _text.Read(buffer);
+		if (!Fill()) return 0;
+		int n = Math.Min(buffer.Length, _len - _pos);
+		_buf.AsSpan(_pos, n).CopyTo(buffer);
+		_pos += n;
+		return n;
+		}
+
+	public override string? ReadLine()
+		{
+		StringBuilder? sb = null;
+		while (Fill())
+			{
+			int nl = Array.IndexOf(_buf, '\n', _pos, _len - _pos);
+			if (nl >= 0)
+				{
+				string line = sb is null ? new string(_buf, _pos, nl - _pos) : sb.Append(_buf, _pos, nl - _pos).ToString();
+				_pos = nl + 1;
+				return line;
+				}
+			(sb ??= (_carry ??= new StringBuilder()).Clear()).Append(_buf, _pos, _len - _pos);   // a line spanning blocks
+			_pos = _len;
+			}
+		return sb is { Length: > 0 } ? sb.ToString() : null;
+		}
+
+	/// <summary>Hand over (and drop) what has been read ahead but not consumed, for a byte reader
+	/// of the same stdin that takes over from here: `{ read -r x; cat; } &lt; f` lost the rest.</summary>
+	public string TakeBuffered()
+		{
+		var s = new string(_buf, _pos, _len - _pos);
+		_pos = _len;
+		return s;
+		}
+
+	public override string ReadToEnd()
+		{
+		var sb = new StringBuilder();
+		if (_pos < _len) { sb.Append(_buf, _pos, _len - _pos); _pos = _len; }
+		if (_text is not null) return sb.Append(_text.ReadToEnd()).ToString();
+		while (Fill()) { sb.Append(_buf, _pos, _len - _pos); _pos = _len; }
+		return sb.ToString();
+		}
+
+	protected override void Dispose(bool disposing)
+		{
+		if (disposing)
+			{
+			_text?.Dispose();
+			if (!_leaveOpen) _stream?.Dispose();
+			}
+		base.Dispose(disposing);
+		}
+	}
+
+/// <summary>Read-only: <paramref name="prefix"/>'s bytes, then <paramref name="rest"/>'s. Never
+/// disposes <paramref name="rest"/> (it is the stdin behind a redirect, owned elsewhere).</summary>
+public sealed class PrefixedStream(byte[] prefix, Stream rest) : Stream
+	{
+	private int _pos;
+
+	public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+	public override int Read(Span<byte> buffer)
+		{
+		if (_pos < prefix.Length)
+			{
+			int n = Math.Min(buffer.Length, prefix.Length - _pos);
+			prefix.AsSpan(_pos, n).CopyTo(buffer);
+			_pos += n;
+			return n;
+			}
+		return rest.Read(buffer);
+		}
+
+	public override bool CanRead => true;
+	public override bool CanSeek => false;
+	public override bool CanWrite => false;
+	public override long Length => throw new NotSupportedException();
+	public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+	public override void Flush() { }
+	public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+	public override void SetLength(long value) => throw new NotSupportedException();
+	public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 	}

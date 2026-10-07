@@ -1,0 +1,15 @@
+job 1
+job 2
+job 3
+external 1
+external 2
+external 3
+function got x
+function got y
+in the job n=5
+parent n=0
+parent stayed put
+function stayed in the job
+job sees v=visible
+killed loop: 143
+wait $!: 0

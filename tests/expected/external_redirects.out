@@ -1,0 +1,27 @@
+1 [captured]
+2 file: [to-file]
+3 [in-loop]
+4 read: a
+b
+c
+5 piped: err:A
+5 f2: [out:A]
+6 f3: [err:B out:B ]
+7 f4: [err:C out:C ]
+8 f5: [err:D out:D ]
+9 f5 lines: 4
+10 appended lines: 30, distinct: 30
+11 while running: [first]
+12 after: [first second ]
+13 order: [a b c ]
+14 status 0
+15 here-string
+16 rw
+17 bad target: 1
+18 an earlier 2>/dev/null silences it: 1
+19 noclobber: 1 [keep]
+20 >|: [forced]
+22 the group carries on: 1
+23 function, earlier 2>/dev/null: 1
+21 script: [out FOO=tmp] [err]
+OUT FOO=

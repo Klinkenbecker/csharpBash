@@ -2040,3 +2040,1478 @@ alone lacks `/usr/bin` on PATH (different `wc`/`sed`), so it was run old-binary-
 **Revisit if:** Claude Code starts the Bash tool with a console (the path goes dormant by itself);
 a console-reading child under Claude Code turns out to be common; or the GUI-child spin is measured
 as noticeable.
+
+## 2026-10-03 -- FOUND: under Claude Code, the first external in any command containing `<` loses its output silently
+**Status:** Found and attributed; fix PROPOSED, AWAITING THE ARCHITECT. Nothing in `Bash/` changed.
+
+**Defect.** Exit status 0, no output, and the child really did run (its side-effect file exists).
+Reported by session msp430-a2 as "`hg status` intermittently empty". Reproduced twice by hand in
+this session, then attributed by a spike. Evidence, launcher source and counts are in
+`E:/Claude/csharpbash-findings-2026-10-03-empty-output/FINDINGS.md`.
+
+**Trigger [verified, live, both polarities]:** Claude Code appends ` < /dev/null` to its
+`eval '<cmd>'` only when the command text contains no `<`. Any `<` at all removes it: a
+redirect, a heredoc, `<<<`, `<( )`, even a `<` inside a quoted string. Live Bash tool on rev 81:
+commands containing `<` lost the first external's output 11/11; without `<`, 12/12 were delivered.
+
+**Mechanism.** The code path is verified; the .NET handle behaviour is recalled, not read.
+- An external with fully inherited stdio sets no `Redirect*` (`Evaluator.cs:1052-1103`), so .NET
+  does not pass the shell's std handles.
+- The console-less shell starts the child `CreateNoWindow` (`Evaluator.cs:1107-1108`). Its handles
+  therefore point at its own new hidden console.
+- Rev 81 then adopts that console (`Evaluator.cs:1140`), so later children inherit correctly and
+  only the FIRST external is lost.
+
+**This is NOT a rev-81 regression.** Rev 80 loses every such external (second external 0/50 vs
+rev 81's 50/50), into a visible window. The hole has existed since C#Bash became Claude Code's shell
+(P5, 2026-09-04); rev 81 narrowed it.
+
+**Second hazard:** in the same condition, a first external that reads stdin reads the hidden
+console and waits invisibly until killed.
+
+**Proposed fix (Claude's position, PROVISIONAL):** in the console-less case only, and only when
+all three streams would be inherited, start the child with `CreateProcess` +
+`STARTF_USESTDHANDLES`, passing the shell's own three std handles. Keep `CREATE_NO_WINDOW` and the
+adoption.
+- Exact bash semantics: the child gets precisely the shell's handles, with no pumping.
+- The stdin hang goes too [inferred]. Added latency should be zero [unmeasured].
+- The change is local to one branch of `ExecExternal`.
+- **Falsifier:** if that branch cannot be kept local (job object, `Exited`, wait and `timeout` all
+  hang off `Process`), or if it measurably costs startup latency.
+
+**Alternatives:**
+- **Helper-first console:** acquire the hidden console before the first child. Smallest code
+  change, but ~5 ms dearer on the first spawn (measured 2026-09-14, other conditions). That is
+  per external-spawning call, so it is a cost against the speed floor.
+- **Pump the first child's stdio:** works, but changes the child's handle types and adds threads.
+- **Redirect stdin only:** stdout and stderr then pass correctly, but a pump over-reads a shared
+  stdin that later commands should see.
+
+**Before building:** measure what stdin Claude Code hands the shell when it omits `< /dev/null`;
+gate the fix on the launcher matrix above (first external 50/50 delivered, both stdout modes); add
+a suite case that runs detached with no `< /dev/null`.
+
+## 2026-10-03 -- FOUND: CR is stripped by most line-reading tools, and a lone CR splits a line
+**Status:** Found; fix direction = byte-transparent, CR is data. This is Claude's position, applying
+the principle of the 2026-09-12 encoding entry ("the shell never has to decide whether its data is
+text"; "losing data to match a limitation is not worth doing"). The architect has said Git Bash is
+NOT a target. Not built.
+
+**Verified, dist/Bash.exe:**
+- On `printf 'a\r\nb\r\nc\n'`, these drop both CRs: awk, head, tail, grep, `read`, `mapfile`, cut,
+  sort, and piped head and awk. `grep -c $'\r'` reads 0.
+- sed, cat and `$(cat)` keep them.
+- `printf 'a\rb\n' | head -n1` emits `a\n`, and `grep -c ""` counts 2 lines: a lone CR is treated
+  as a line terminator. The cause is consistent with .NET `ReadLine()` semantics; there are 7 call
+  sites in `Evaluator/` [cause inferred].
+
+**Real damage, reported by msp430-a2:** an awk edit silently rewrote a mixed-EOL decision log
+(590 CRLF lines) as all-LF, and the `grep -c $'\r'` check meant to catch it read 0 before and
+after.
+
+**Git Bash (4.4.23, PortableGit) for the record, not as a target:** its gawk and sed strip CR;
+its head, tail, grep, read, cut and sort keep it. It is inconsistent.
+
+**Accepted consequence:** `nativecmd | awk '{print $NF}'` will carry a trailing `\r` from CRLF
+output. That is visible, not silent. Revisit if that idiom proves habitual.
+
+**Addendum to the 2026-10-03 empty-output entry (same session; entry above unchanged):** msp430-a2
+corroborated it. Every one of its empty-output cases contained a `<`: heredocs, and a `tr … < file`
+placed before `hg diff --stat`. The routine case is the commit attribution trailer itself. A
+`Co-Authored-By: … <noreply@anthropic.com>` inside `-m "…"` puts a `<` in the command text, so
+`hg status && hg commit -m "…<noreply@…>"` loses the status output on every attributed commit.
+Make that the regression test for the fix.
+
+## 2026-10-03 -- The goal order: C#Bash for itself, then no PowerShell for non-Windows work, then a seamlessly faster Claude
+**Status:** Active. Stated by the architect. It replaces the purpose line in `PROJECT_CONTEXT.md`
+("drop-in replacement for msys2 bash"). The 2026-09-04 goal entry ("C#Bash as Claude Code's
+Windows shell") is not superseded; it becomes goal 3 of three.
+
+**The architect's words:** "C#Bash is primarily for itself, on windows, secondarily to eliminate
+powershell for _everything_ not windows dependent (system tools, etc) and thirdly to make claude
+(seamlessly) faster. The latter goal is already achieved and should be maintained at all costs."
+And: "I'm not interested in git Bash as a target."
+
+**Clarified the same day:**
+- **Goal 3 against goals 1 and 2: "depends on circumstance".** Nothing takes precedence
+  automatically. A change made for goal 1 or 2 that costs goal 3 (latency, a window, a silent
+  failure) is surfaced with its numbers for a case-by-case call. It is never traded silently.
+- **Where goal 2 stops: "inside if the _command_ requires powershell for some reason, not if
+  the output is windows specific."** Claude's reading, provisional until the architect confirms
+  it: tools that today force a detour into PowerShell (`df`, `free`, `uptime` and the like) are in
+  scope; things whose output is inherently Windows (services, the registry, the event log) are
+  out.
+- **Git Bash is not a target.** The compat battery stays, as a ratchet and as a corpus of
+  Claude's habits. A difference from Git Bash is no longer a defect by definition. The first
+  instance is CR handling (entry above): Git's gawk and sed strip CR, and C#Bash will not.
+
+**Claude's recommendations, NOT ratified:**
+- Park the steroids investigation, since further speed is not a goal. Its findings are in
+  `E:/Claude/csharpbash-findings-2026-09-13/`. Revisit if goal-1 or goal-2 work threatens goal 3.
+- Scope goal 2 from evidence: scan the session transcripts for PowerShell tool calls and sort
+  each into "Windows-dependent" or "C#Bash could have done it".
+
+## 2026-10-03 -- RATIFIED + BUILT: a console-less shell starts an all-inherited child on its own std handles
+**Status:** Active. Ratifies and implements the empty-output proposal above. The architect said
+"1/ yes" to the explicit-handle direction.
+
+**Implementation:** `HiddenConsole.StartInherited` in `Evaluator/ConsoleMux.cs`.
+- `CreateProcessW` with `STARTF_USESTDHANDLES`, passing the shell's own three std handles as
+  inheritable duplicates (stderr gets stdout under `2>&1`).
+- Flags: `CREATE_NO_WINDOW | CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT`.
+- The command line and environment block are built the way .NET builds them: PasteArguments
+  quoting, and a block sorted OrdinalIgnoreCase.
+- While the child is suspended, `Process.GetProcessById` and its `Handle` are taken, so
+  `ExitCode` survives however fast the child exits.
+- Failure throws `Win32Exception`, so the caller's "command not found" and "Permission denied"
+  messages are unchanged.
+- `ExecExternal` calls it only when `NeedsHiding` and no stream is redirected. Every other spawn
+  is unchanged; with a console the path cannot be reached.
+
+**Verified:**
+- **Launcher matrix** (DETACHED_PROCESS, no `< /dev/null`, N=50 per cell):
+  - The first external was delivered 50/50 for: a probe with pipe stdout and with file stdout, a
+    C#Bash child, `hg status`, and `2>&1`.
+  - `exit 7` gave 7 (20/20); command not found gave 127 (20/20).
+  - Control, same trials on rev 81: 0/50 in every output cell.
+  - Medians match rev 81 at whole-process resolution: 69.0/68.9, 37.6/37.6, 283.6/283.3 and
+    38.9/38.0 ms. Any sub-millisecond cost is NOT measured.
+- **No windows:** a probe child reported `GetConsoleWindow()` = 0, not visible, on 10/10 first and
+  10/10 second externals. Control: rev 80 showed a visible window 20/20.
+- **Suite:**
+  - New case `inherit_ext`, plus two new runner options: `-Detached` (DETACHED_PROCESS, stdin
+    NUL, stdout to a file, stderr NUL: Claude Code's launch condition) and `-Interpreter <exe>`.
+  - Results: 51/51 with a console and 51/51 detached, for both the Release and the AOT build.
+  - Control: rev 81 detached fails `inherit_ext` only. It passes the other 50, so the suite had no
+    coverage of this defect before.
+
+**An instrument bug the control caught:** the parameter was first named `-Exe`. PowerShell names
+are case-insensitive, so it WAS the runner's `$exe`, and the runner overwrote it. The first
+"rev 81 detached" run silently tested the Release build and passed. It is now `-Interpreter`, and
+the runner prints the interpreter and build it is testing.
+
+**Found on the way, NOT fixed (needs a ruling):** with a console, an external's `2>&1` does not
+reach the shell's stdout when that stdout is a pipe or file and is not otherwise redirected.
+- The comment in `ExecExternal` ("both inherit the console -- nothing to redirect") holds only
+  when stdout IS the console.
+- Verified: `echo OUT; "$BASH" -c 'echo EXT-ERR 1>&2' 2>&1; echo after`, run with stdout captured
+  and stderr discarded. C#Bash gives OUT, after; Git Bash gives OUT, EXT-ERR, after.
+- Under Claude Code this applies to every external after the first, because the shell has a
+  console once it adopts one. It mostly does not show there, since the tool reports both streams.
+- The same mechanism would fix it: `StartInherited` without `CREATE_NO_WINDOW`, for an inherited
+  stdout under `2>&1`.
+
+**Not verified:** what stdin Claude Code hands the shell when it omits `< /dev/null`; GUI children;
+Ctrl+C.
+
+**Deployed and verified live (same day, appended; the entry above is unchanged).** Rev 82 was
+published AOT (`1.0.0+hg.e8446ad8170d+ 82+`). The `+` is git's README and `.gitignore` changes,
+still uncommitted in hg; they are not code.
+- The shipped binary was re-gated: first external delivered 50/50 for the probe with pipe stdout,
+  with file stdout, and for `hg status`; no visible window 50/50; suite 51/51 detached and with a
+  console.
+- Deployed to `dist/Bash.exe`; rollback copy `dist/Bash.exe.rev81`.
+- Live, from a Claude Code Bash tool on the new binary: `hg status` as the first external of a
+  command containing `<` delivered its output (11/11 lost before), and so did `whoami.exe` ahead
+  of a heredoc.
+
+**Correction to the proposal's "the stdin hang goes too [inferred]": it does not, and it is not
+C#Bash's to fix.** Measured live: in a command containing `<`, `timeout 5 sort.exe` blocked the
+full 5 s (rc 124).
+- When Claude Code omits `< /dev/null`, the shell's stdin is an open pipe that never reaches EOF.
+- A child reading inherited stdin now waits on that pipe instead of the hidden console. Any bash
+  under that parent behaves the same.
+- Workaround: in a command that needs a `<` AND an external that reads stdin, give the external
+  its own `< /dev/null`.
+
+**Independent confirmation (same day, appended).** msp430-a2 checked build
+`1.0.0+hg.e8446ad8170d+ 82+` on its own repository. In each of its three original failing cases,
+`hg status` was the first external and its output was delivered: a heredoc later in the call, the
+`<noreply@anthropic.com>` trailer later in the call, and a `$(tr -cd '\r' < file | wc -c)` later
+in the call. Its control call, with no `<`, printed the same status line. It found no
+counter-example.
+
+## 2026-10-03 -- RATIFIED + BUILT: `ext 2>&1` with an inherited stdout puts the child's stderr on the shell's stdout
+**Status:** Active. The architect said "1/ Yes" to fixing the misroute found in the previous entry.
+
+**Defect.** An external under `2>&1`, whose stdout was inherited and not otherwise redirected,
+kept its stderr on the shell's stderr. That was correct only when the shell's stdout IS the
+console. With stdout a pipe or a file, the merge silently did not happen, console or not. Under
+Claude Code this hit every external after the first: the shell has a console once it adopts one.
+
+**Fix.** The same mechanism as the console-less fix. `ExecExternal` now uses
+`HiddenConsole.StartInherited` for any all-inherited child that is console-less OR under
+`2>&1`, and `CREATE_NO_WINDOW` is passed only when console-less.
+- With a console, the creation flags are exactly the ones Process.Start uses, so the child
+  shares the console as before [inferred from the flags; not observed on a TTY].
+- What changes is that the child's stderr handle is the shell's stdout.
+
+**Verified:**
+- `inherit_ext` gained a `2>&1` line. The rev 82 control fails exactly that line, both with a
+  console and `-Detached`.
+- The new build passes 51/51 in both modes, Release and AOT.
+- The launcher's first-external cells still deliver 50/50, with no visible window 50/50.
+
+**Not verified:** a real TTY. This dev sandbox has none.
+
+**Two process rulings, same day:**
+- **hg/git sync happens ONLY on a push to GitHub** (the architect: "No, that _only_ happens on push
+  to github"). Git's README link, `.gitignore` change and the article png therefore stay
+  uncommitted in hg until then, and every build stamp shows `+` meanwhile. The `+` alone does not
+  mean the code was uncommitted.
+- **Steroids:** the architect did not recognise the question ("what now??"). Recorded as NOT
+  ACTIVE, NO RULING. Claude stops asking. Its findings stay in
+  `E:/Claude/csharpbash-findings-2026-09-13/` and memory.
+
+**Deployed (same day, appended):** the rev 84 AOT build (`1.0.0+hg.68312ac6a08a+ 84+`) was re-gated as
+shipped: suite 51/51 with a console and detached; first external 50/50; no visible window 50/50.
+It is in `dist/Bash.exe`, with rollback copy `dist/Bash.exe.rev82`. Live in a Claude Code Bash
+tool, `hg log` was the first external of a command containing `<`, and `ext 2>&1` both captured
+and direct reached stdout.
+
+## 2026-10-03 -- RULE: where C#Bash's behaviour is open, match what Claude assumes (GNU/Linux), not what Git for Windows happens to do
+**Status:** Active. Ratified by the architect ("Yes") after he asked: "Why are we doing anything
+different to what claude assumes?"
+
+**The rule.** When a behaviour is undecided, the reference is GNU bash plus GNU coreutils on
+Linux, because that is what Claude's habits were formed on and what its idioms presuppose.
+Git for Windows' quirks are not the reference: its gawk and sed strip CR, a text-mode build
+choice Claude neither knows nor relies on. This is "Git Bash is not a target" (the goal-order
+entry) restated as a tie-breaker. The live reference is WSL's Ubuntu (`wsl.exe -e bash …`), which
+is available on this machine.
+
+**Correction, superseding a claim in the CR entry earlier today.** That entry's "Accepted
+consequence: `nativecmd | awk '{print $NF}'` will carry a trailing `\r` … Revisit if that idiom
+proves habitual" was framed backwards. Keeping the `\r` is what Claude assumes, so it is no cost.
+The evidence is in this session: msp430-a2's report predicted "GNU: 2" (CR kept) for every tool,
+including awk, and its `grep -c $'\r'` safety check presupposed it.
+
+## 2026-10-03 -- RATIFIED + BUILT: CR is data in every line-reading tool; no BOM sniffing; child streams byte-transparent
+**Status:** Active. Ratified by the architect ("Yes": build it byte-transparent across every tool).
+
+**What changed** (a new `LfReader`, plus `ShellEncoding.ReadLine`/`Lines`/`LineReaderFor`):
+- Lines end at LF ONLY: a CR stays in the line, and a lone CR ends nothing. This applies to
+  head, tail, grep, awk, sort, cut, uniq, tac, rev, nl, paste, comm, split, factor, `date -f`,
+  `grep -f`, xargs (default mode and `-I`; CR is not a blank to GNU xargs), `read` and
+  `mapfile -t`, which each stripped a trailing CR explicitly, and the history file.
+- No BOM sniffing. `StreamReader(path|stream, enc)` defaults to `detectEncodingFromByteOrderMarks`,
+  so the text tools decoded a file starting `FF FE` as UTF-16 (garbage) and dropped a UTF-8 BOM.
+  Verified against GNU, which passes both through.
+- An external's redirected streams use `ShellEncoding`. .NET's default turned 0xFF into U+FFFD
+  inside `$(ext)`.
+- `ext 1>&2` is copied as it arrives, and to the CALLING thread's stderr. It used to go line by
+  line, dropping CR, and to the copy thread's own stderr: the real one, so `{ ext 1>&2; } 2>&1`
+  escaped a `$( )` capture. Both verified against GNU.
+
+**`LfReader`, and why it took three measured iterations.** Speed is the goal-3 floor:
+1. **Char-by-char reading** through the console multiplexer was correct but cost +12.7 % (+102 ms)
+   on six tools over 200 k-line files, about 85 ns a line.
+2. **An `LfReader` wrapped around a `StreamReader`** was +48.8 %. Asked for an 8 K block, a
+   StreamReader keeps reading until the block is full or a read comes back short, so a pipeline
+   stage waited on its producer instead of overlapping it (`head | tail` 132 -> 295 ms; JIT and
+   AOT alike). Over a file it was also ~30 % slower than `StreamReader.ReadLine`, measured
+   in-process.
+3. **An `LfReader` over the raw stream**, ONE read and one decode per fill: lines bench -0.3 %,
+   pipeline bench +1.3 %, startup 12.1 vs 12.1 ms, every per-command timing within ±3 ms of
+   rev 84. In-process it is at least as fast as `StreamReader.ReadLine` (26.3 vs 26.8 ms keeping
+   200 k lines).
+
+**Shared stdin.** Every stdin the shell installs is one `LfReader` (pipeline stages, `< file`,
+`<&n`, a redirected process stdin), so all the commands reading it share one buffer and none
+reads past where another stopped. Verified: `{ head -n 1; sed -n p; } < f` and
+`{ grep -m1 a; sed -n p; } < f` match GNU. A reader that is not an `LfReader` (a here-document,
+an interactive console) is read char by char.
+
+**Verified:**
+- `tests/cases/crlf.sh`: 42 probes, expected output GENERATED BY GNU via WSL. Regenerate with
+  `wsl.exe -e bash tests/cases/crlf.sh > tests/expected/crlf.out`, run from `tests/`. The new
+  build matches byte for byte; rev 84 differs on 33.
+- Suite 52/52 with a console and `-Detached`.
+- Battery 237/237 identical to rev 84: none of Claude's habitual probes changed.
+
+**Found on the way, NOT fixed (each pre-existing, verified on rev 84 unless marked):**
+1. **Pipeline stages race on shared shell state.** Stages are threads over ONE environment, so a
+   `$( )` in one stage can take another stage's positional parameters, and its output.
+   - `scratchpad/cr/amplify.sh` (stage 1 runs 3000 `$( )`, stage 2 calls a function 3000 times)
+     printed `LOST: got ''`, or lost the "stage2 done" line entirely, rc 0, on rev 84 and rev 80.
+   - In bash, each stage is a subshell. Silent; architectural; needs a design discussion.
+2. **Text then bytes on one stdin.** `{ read -r x; cat; } < f` prints nothing; GNU prints the rest.
+   The text reader buffered the file, and `cat` reads the raw stream beneath it. Silent; it hits
+   the skip-a-header idiom.
+3. **No stateful decoder** [inferred from the code; not demonstrated]. `ShellEncoding` does not
+   override `GetDecoder`, so a UTF-8 character split across two reads becomes escaped bytes
+   inside the shell (wrong `${#x}` and `cut -c` at that boundary). It is written back as the same
+   bytes.
+4. **fold** treats `\r` as a column, where GNU resets the column.
+5. **`tee /dev/null`** fails with "No such file or directory".
+
+**Left as is, on purpose:** the lexer treats `\r` as whitespace in script text, and the shebang
+read strips CR. A CRLF script still runs, where Linux bash would fail on it. That is script
+loading, not data: no tool changes bytes there. Revisit if the architect wants Linux-strict.
+
+**Deployed (same day, appended):** the rev 86 AOT build (`1.0.0+hg.b0bf88907cc5+ 86+`) was re-gated as
+shipped: suite 52/52 with a console and detached; `crlf.sh` byte-identical to GNU;
+first external 50/50; no visible window 50/50. It is in `dist/Bash.exe`, with rollback copy
+`dist/Bash.exe.rev84`. Live in a Claude Code Bash tool, msp430-a2's original repro reads 2 CRs
+for awk, head, tail, grep, `read` and `grep -c $'\r'` (it read 0).
+
+**Independent confirmation (same day, appended).** msp430-a2 checked build
+`1.0.0+hg.b0bf88907cc5+ 86+` on its real data, with no counter-example:
+- Its original repro reads 2 everywhere; a lone CR survives `head -n1`.
+- A committed copy of its mixed-EOL decision log (591 CRLF + 61 LF lines) passes through
+  `awk '{print}'`, `head`, `grep ''` and `sed -n p` byte-identical (cmp, with a positive control
+  that cmp flags a one-byte change).
+- The exact awk insert that corrupted the log this morning now adds one row and touches no line
+  ending; removing the row round-trips byte-identical.
+
+## 2026-10-03 -- RATIFIED + BUILT: commands sharing one stdin; `head -c` streams exactly N bytes
+**Status:** Active. The architect said "Yes" to fixing `{ read; cat; } < f` first.
+
+**Defects:** all silent or hanging, all present on rev 86, all verified against GNU (WSL).
+1. **A byte builtin after a text reader on the same stdin got nothing.** `{ read -r header; cat;
+   } < f`, `{ head -n 1; cat; }`, `{ read; od; }`, `{ read; wc -c; }` and a pipe into
+   `{ read; cat; }` all lost the rest. The text reader's buffer had read ahead, and byte builtins
+   read the raw stream beneath it. `CurrentRawStdin`'s own comment said "read one or the other,
+   never both".
+2. **`yes | head -c 5` HUNG.** It printed nothing and was killed by `timeout` after 5 s; GNU takes
+   6 ms. `head -c N` read ALL of its input before taking N bytes, which also left nothing for a
+   following `read` on a shared stdin.
+
+**Fix:**
+- `CurrentRawStdin` hands a byte builtin the bytes this stdin's `LfReader` read ahead and did not
+  consume (`LfReader.TakeBuffered`, re-encoded through `ShellEncoding`, which round-trips
+  exactly), then the raw stream (`PrefixedStream`).
+- `head -c N` streams exactly N bytes and stops. Only `head -c -N` ("all but the last N") still
+  reads everything, because it has to.
+- Hazard: `CurrentRawStdin` now has a side effect, taking the read-ahead, so a caller must call it
+  ONCE per use.
+
+**Verified:**
+- New case `stdin_shared.sh`: 9 probes, expected output generated by GNU via WSL. The new build
+  matches byte for byte; rev 86 fails all 9.
+- Suite 53/53 with a console and `-Detached`; battery 237/237 identical to rev 86.
+- An instrument error caught on the way: a `bash -c` probe resolved `bash` through PATH to the
+  OLD `dist/Bash.exe`, so the first hang check "failed" on the fixed build. Probes now use `$BASH`.
+
+**A divergence kept on purpose:** `producer | { head -n 1; sed -n p; }` gives sed the rest here.
+GNU's head reads ahead on a pipe and swallows it, so GNU prints only the first line. Emulating
+that would be emulating data loss, the same reasoning as keeping NULs (2026-09-12).
+
+**Deployed (same day, appended):** the rev 88 AOT build (`1.0.0+hg.80ac45ee3f33+ 88+`) passes 53/53 with a
+console and detached. Speed is level with rev 86: lines 812 vs 822 ms, pipeline 251 vs 252, startup
+12.4 vs 12.0. It is in `dist/Bash.exe`, with rollback copy `dist/Bash.exe.rev86`. Live in a Claude Code
+Bash tool: `{ read -r h; cat; } < f` returns the rows, and `yes | head -c 5` ends in 15 ms.
+
+## 2026-10-03 -- SPIKE (measured) + PROPOSAL: pipeline stages on isolated shell state
+**Status:** PROPOSED. AWAITING THE ARCHITECT; the design is his. The spike was greenlit ("Yes")
+as measurement only, and nothing in `Bash/` changed. Spike source:
+`E:/Claude/csharpbash-findings-2026-10-03-empty-output/stage-isolation-clonecost.csx`.
+
+**The question, and why it is hard to reverse.** Should every pipeline stage run on its own copy
+of shell state, as each is a subshell in bash? It reopens P2's pipeline model (2026-09-04), whose
+"Known limits" recorded "stages share variables and cwd (bash: subshells)". It was accepted then;
+the race it causes was not foreseen.
+
+**Verified facts:**
+- **Stages share one `ShellEnvironment` and the process cwd.** `echo x | read v` leaves `v=x`,
+  and a `| while read` counter survives the pipe. GNU (WSL) leaves both unset.
+- **`( )` and `$( )` "isolate" by snapshot-and-restore of that SAME environment**
+  (`Evaluator.cs:1533-1537`, `WordExpander.cs:790`). That is sound on one thread and unsound
+  across stage threads: stage 1's `$( )` restores its snapshot over stage 2's pushed `$1`.
+  Reproduced as `LOST: got ''` and as a stage's output going missing, rc 0, on rev 80 and rev 84
+  (`pipeline-stage-race-amplify.sh`).
+- **Cwd is process-global.** A `cd` in any stage, including inside `( )` in a stage, moves every
+  stage. `( cd sub && make ) | tee log` can open `log` in `sub` [inferred from the mechanism;
+  not reproduced].
+
+**Measured** (in-process, best of 5, null loop subtracted). Environment: Claude Code's real
+58 KB snapshot sourced (72 functions, 95 exported) plus 100 variables, an array and an assoc.
+Gated: populated environment, and a pipe that really piped.
+
+| operation | µs |
+|---|---:|
+| deep copy of all variable state (`TakeSnapshot`) | 2.03 |
+| `new Evaluator` over an existing environment | 0.31 |
+| `new ShellEnvironment()` (imports the process env and probes PATH) | 1,428 |
+| a builtin pipeline today, `echo x \| read v` | 130 |
+| a pipeline with an external, `echo x \| cmd /c rem` | 4,376 |
+
+So a per-stage clone costs ~2.3 µs: about 1.8 % of a builtin pipeline per stage, and noise
+against any pipeline with an external. **One constraint:** a clone must NOT go through the
+`ShellEnvironment` constructor (1.4 ms); it needs a dedicated copy path. Not measured: copying
+functions, aliases, options and traps (dictionaries of references) [unmeasured estimate: ~1 µs].
+
+**Options:**
+- **(a) Every stage gets a clone** (bash's default). Variables, positionals, functions, options
+  and traps are isolated; the parent's state is unchanged after the pipeline.
+- **(b) All stages but the last** (bash's `shopt -s lastpipe`): `cmd | read v` would work, but that
+  is not default bash.
+- **(c) Keep sharing, add locks:** fixes the race, keeps the leak.
+- **(d) Status quo:** silent race.
+
+**Claude's recommendation (provisional): (a).**
+- **Criteria:** bash semantics, which Claude assumes (rule of 2026-10-03; Claude knows the
+  `| while read` subshell gotcha and writes `done < <(cmd)` for it); no silent race; within the
+  speed floor.
+- (b) fails the first criterion, (c) the first, (d) the second. (a) meets all three on the
+  numbers above.
+- **What would change my mind:** a probe or real session that depends on the leak, or a measured
+  per-stage cost above ~5 % once functions, options and traps are included.
+
+**Cwd is a SEPARATE question, and needs its own ruling.** A clone cannot isolate a process-global
+cwd. The fix is a logical cwd per evaluator: externals get `WorkingDirectory`, relative paths
+resolve against it, and `( )`/`$( )` stop calling `SetCurrentDirectory`. The change is mechanical
+but wide (every path resolution). Claude's position: do (a) first, then the logical cwd as its
+own step. Until then, cwd sharing stays a documented limit.
+
+**Behaviour change to accept under (a):** a script that relies on the leak changes. Example:
+`n=0; cmd | while read; do n=$((n+1)); done; echo $n` prints 0, as in bash.
+
+## 2026-10-03 -- FOUND, not fixed: a function in Claude Code's git snapshot fails to parse (silently dropped)
+**Status:** Found; repro saved; not isolated to one construct.
+- Sourcing the 58 KB Claude Code snapshot (Git-Bash-generated, 2026-09-07) defines 72 functions in
+  C#Bash and 73 in Git Bash. `__git_ps1_show_upstream` is missing.
+- Git Bash's own `declare -f` of it (136 lines,
+  `E:/Claude/csharpbash-findings-2026-10-03-empty-output/parse-defect-git_ps1_show_upstream.sh`),
+  sourced in C#Bash, fails with `Expected 'fi' but got '' at 137:1`.
+- Sourcing the whole snapshot printed that error in one harness and nothing in another: the
+  snapshot itself is sourced with `2>/dev/null` by Claude Code's wrapper.
+- Bisecting by prefix is useless (every cut leaves a construct open); it needs bisection by
+  statement.
+- Impact today: only git-prompt completion, which a non-interactive tool call never uses. But a
+  parser that silently drops a function on valid bash is a goal-1 defect.
+
+## 2026-10-03 -- RATIFIED + BUILT, NOT DEPLOYED: every pipeline stage runs on its own interpreter (a subshell)
+**Status:** Built and committed. Deployment is AWAITING THE ARCHITECT, because Claude's stated
+falsifier fired (below). The architect: "Ok, your recommendation; go", for option (a) of the
+SPIKE entry above.
+
+**Implementation:**
+- `Evaluator(Evaluator parent)`, a private constructor, builds a stage interpreter.
+  `ExecPipelineThreaded` builds one per stage, before any stage runs, and runs the stage on it.
+- **What the stage gets:** `ShellEnvironment.CloneForSubshell()`, a private copy constructor
+  that bypasses the 1.4 ms process-environment import, plus `ShellOptions.Clone()` (memberwise,
+  plus its shopt set), functions, aliases, traps, fds 3+, the PATH hash, the FUNCNAME and source
+  stacks, the errexit-suppression depth, and the `pushd` stack.
+- **Fresh per stage**, as in a bash subshell: jobs, getopts position, `exec` redirects.
+- **Interrupts:** a stage's `CheckInterrupt` also honours its parent's flag, so Ctrl+C and
+  `timeout` still end a pipeline loop.
+- **Not covered:** the cwd. It is still process-wide; that is the separate step.
+
+**Verified:**
+- New case `pipeline_isolation.sh`: 16 lines, expected output generated by GNU via WSL. The new
+  build matches byte for byte; rev 88 differs on 8 (`read` in a stage, the `| while read`
+  counter, functions, `export`, arrays, positionals, sibling isolation).
+- **Race (`pipeline-stage-race-amplify.sh`, 20 runs x 3000 calls):** new 0 LOST, "stage2 done"
+  20/20. **Control rev 88: 5 LOST, and stage 2's last output MISSING in 14 of 20 runs.** The old
+  defect was worse than the first sample suggested.
+- Suite 54/54 with a console and `-Detached`; battery 237/237 identical to rev 88 (no probe
+  relied on the leak).
+
+**Cost, measured. The SPIKE's estimate was WRONG.** The spike said ~2.3 µs a stage (1.8 %). It
+summed the cost of parts, not of a working stage.
+- **In-process A/B** (rev 90 built in a scratch clone, same harness, alternating, twice):
+  - 2-stage builtin pipeline: 136/134 -> 146/144 µs, about +10 µs (+7.5 %).
+  - 3-stage with a function call: 199/196 -> 250/237 µs, about +45 µs (+22 %).
+- **Constructor parts:** environment clone 1.42 µs, options 0.12, evaluator 0.38; the function
+  and table copies and harness reflection make up the rest of ~5-6 µs. The extra ~30 µs in the
+  3-stage case is NOT attributed [inferred: allocation and GC from per-stage copies].
+- **Whole process, AOT:**
+  - A loop of 4000 pipelines: 538 -> 602 ms (+11.8 %, ~16 µs a pipeline).
+  - Pipeline bench +1.5 %; line tools -4.3 % (noise); coreutils +3.5 % (+2 ms, at the noise
+    floor); startup 12.9 vs 12.7 ms.
+
+**Why deployment waits.** Claude's recommendation named its own falsifier: "a measured per-stage
+cost above ~5 %". A pipeline-heavy loop pays 11.8 %. Under the architect's goal-3 ruling ("depends
+on circumstance": surface each collision with numbers, never trade silently), that is his call.
+- **Claude's position:** deploy. The defect it removes is silent: output lost in 14/20 stress
+  runs, rc 0. The cost lands only on scripts that run thousands of pipelines in a loop; a tool
+  call's latency is unchanged.
+- **A cheaper design if the cost matters:** copy-on-write variable frames, so a stage that never
+  writes copies nothing [unmeasured].
+
+**The README performance table, re-measured (same day, appended).** Asked for by the architect
+before deciding on deployment.
+- Method: `compare3.sh`'s, wall clock via `time` under Git Bash, with a rev 91 column added.
+- Final rev 88 vs rev 91 figures: best of 9, the two builds interleaved round by round (the
+  earlier best-of-3 runs disagreed by up to 12 % on the small rows).
+- Git and WSL: best of 3. WSL is now `wsl.exe -e bash`, because `System32\bash.exe`, which the
+  published table used, no longer exists here.
+- All outputs agree: rev91 = rev88 = Git = WSL on every row.
+
+| benchmark | rev 88 | rev 91 | change | Git Bash | WSL |
+|---|---:|---:|---:|---:|---:|
+| loop | 0.174 | 0.171 | -1.7 % | 1.557 | 0.443 |
+| arith | 0.257 | 0.255 | -0.8 % | 2.086 | 0.633 |
+| func | 0.228 | 0.225 | -1.3 % | 2.302 | 0.593 |
+| loop_big | 1.363 | 1.349 | -1.0 % | 18.947 | 3.512 |
+| coreutils | 0.078 | 0.080 | +2.6 % | 21.438 | 0.885 |
+| pipeline | 0.277 | 0.278 | +0.4 % | 0.411 | 0.137 |
+| find | 0.043 | 0.043 | +0.0 % | 0.174 | 0.259 |
+| startup | 0.035 | 0.035 | +0.0 % | 0.029 | 0.111 |
+
+- **No published row moves beyond noise.** The one real effect is `coreutils` at +2 ms: its 300
+  `$(echo | wc)` pipelines at ~7 µs a stage.
+- The isolation cost shows only in a loop of thousands of pipelines (+11.8 % on 4000), which no
+  published row is.
+- Today's startup (0.035) is above the published 0.030 for BOTH builds. That is machine state,
+  not this change.
+- Two runs were discarded, and they are worth knowing about. In the first, the scratch harness's
+  `#!/usr/bin/env bash` resolved `bash` to C#Bash (Git's `bash.exe` is renamed here), so C#Bash
+  ran the harness and timed nothing. The second was best-of-3 noise.
+
+## 2026-10-03 -- FOUND, not fixed: `arr[$var]=value` is not recognised as an assignment
+**Status:** Found (verified against GNU on rev 88); not fixed.
+- `declare -A st; k=old; st[$k]=5` prints `bash: st[old]=5: command not found` (rc 127) and
+  leaves the element unset. So does `for k2 in a b; do st[$k2]=7; done`, and on an indexed array
+  `ix[$i]=x`.
+- A literal index (`st[new]=6`) and an arithmetic one (`ix[i+1]=y`) work.
+- GNU sets all of them.
+- Loud, not silent, but `map[$key]=$val` and `count[$w]=…` are common idioms, so it breaks
+  ordinary scripts. Found when a scratch harness ran under C#Bash by accident.
+
+**Deployed (same day, appended):** the architect said "Yes, deploy", having seen the re-measured
+table above.
+- **What is in `dist/Bash.exe`:** a build of rev 91's code, from committed rev 92 (docs only on
+  top; stamp `1.0.0+hg.027164439941+ 92+`). Suite 54/54 with a console and detached. Rollback
+  copy `dist/Bash.exe.rev88`.
+- **Live in a Claude Code Bash tool:** `echo x | read v` leaves `v` unset, and a `| while read`
+  counter reads 0, as in bash.
+- **The README performance table now carries the re-measured figures.** The C#Bash column is the
+  deployed build (best of 9); Git and WSL are best of 3. The prose ratios are updated (8-14x Git;
+  startup within 6 ms of Git), with a caveat that Git Bash's own times vary between runs.
+  `README.md` stays UNCOMMITTED in hg, under the sync-on-push ruling: it already carries git's
+  article-link change, and both go out with the next GitHub push.
+- **The companion article's copy of the table is NOT changed.** It is a dated publication
+  (2026-09-13) that matches what LinkedIn shows; the architect's call is pending.
+- **Why `System32\bash.exe` is missing, and the harness fix.** The architect moved it because it
+  was pre-empting C#Bash: it ranks first on a default Windows PATH (see #94077 in memory). Git's
+  `bash.exe` is likewise renamed `_bash.exe`.
+  - `tests/bench/compare3.sh` now reaches WSL through `wsl.exe -e bash`, with `bash.exe` only as a
+    fallback. Verified: one round finds WSL 5.1.16 and all outputs agree.
+  - **Run it as `"$BASH" tests/bench/compare3.sh` from Git Bash.** Its `#!/usr/bin/env bash`
+    resolves to C#Bash on this machine; that is how the first A/B run timed nothing.
+
+**The article stays as published (same day, appended):** the architect said "Leave the article".
+Its table is a dated record that matches LinkedIn; only the README carries current figures.
+
+## 2026-10-03 -- RATIFIED + BUILT: array element assignment with an expanded index
+**Status:** Active. The architect said "go for both follow-on fixes" (this one, then the logical
+cwd).
+
+**Defects, verified against GNU on rev 88-91:**
+- `map[$key]=v`, `st[$k2]=7` in a loop and `ix[$i]=x` ran as a COMMAND ("command not found",
+  rc 127) and left the element unset.
+- `m+=(["$k"]=v [$i]=x)` set NOTHING, silently.
+- Cause: the parser and the compound-assignment path only recognised an index lying wholly
+  inside the first literal part of the word.
+
+**Fix:** `Word.TrySplitIndexedAssignment`. The index ends at the first `]` followed by `=` in a
+LITERAL part (an expansion cannot close the bracket); everything before is the index, whatever
+expansions or quotes it spans, and everything after is the value. Both the element-assignment
+parser and compound `[k]=v` elements use it. Compound elements now expand the key and the value
+separately, so a key containing `]=` stays intact.
+
+**Verified:**
+- New case `array_index_assign.sh`, expected output generated by GNU via WSL. Covered: expanded,
+  quoted, braced and arithmetic indexes, compound with expanded keys, and the literal forms as a
+  regression guard. The new build matches; rev 91 differs on 17 lines.
+- Suite 55/55 with a console and `-Detached`; battery 237/237 identical.
+
+**Found on the way, NOT fixed (read side, rare):** `${odd["a]=b"]}`, a quoted subscript
+containing `]` inside `${…}`, reads back wrong (reading through `${odd[$k]}` works). And
+`declare -p` does not quote such a key. Both pre-existing. Not supported (also pre-existing): the
+append form `arr[i]+=x`.
+
+**A correction sent to a peer:** an `eval "map[\$key]=\$val"` workaround was suggested to
+msp430-a2 untested, then tested and found to FAIL (eval re-parses the same construct). The
+correction gave `printf -v "map[$key]" %s "$val"`, verified on both shells. Lesson recorded:
+never send an untested workaround, even labelled as such, when testing it takes seconds.
+
+## 2026-10-03 -- RATIFIED + BUILT: each shell has its own working directory
+**Status:** Active. The architect said "go for both follow-on fixes" (the second, after the
+array-index fix).
+
+**Defects, measured on rev 91 (all silent; GNU 0 in every case):**
+- `(cd sub && echo x) | tee out.log` put `out.log` in `sub/` in **148-165 of 200 runs**.
+- `cd sub | true` moved the shell.
+- An in-process script's `cd` moved its caller.
+- Cause: one process-global cwd, which `cd` and subshell restores set from whichever thread ran
+  them.
+
+**Design (why not the simple version).** Resolving every relative path inside `TranslatePath`
+would have touched output: tools that echo a translated path would print absolute paths. The
+inventory found ~180 raw file-system calls, but the path-printing tools already keep display and
+I/O apart (`find`: `Display` vs `Fs`; glob: `display` vs `dir`). So:
+- `ShellEnvironment.Cwd`: each shell's own cwd. The shell itself (`OwnsProcessCwd`) keeps the
+  PROCESS cwd equal to it, so nothing changes outside pipelines.
+- A pipeline stage's copy never touches the process cwd.
+- `TranslatePath` resolves a relative path against the running shell's cwd ONLY when that shell
+  is a stage that has moved off its starting directory (`_baseCwd`). Everywhere else paths stay
+  relative, exactly as before.
+- `ShellEnvironment.Active` (thread-static) is set at each entry where a thread starts running
+  shell code: `RunString`, pipeline stages, background jobs, `timeout`'s worker.
+- Externals start in the running shell's `Cwd`.
+- `cd`, `pushd`, subshell snapshot/restore and `pwd` use the shell's `Cwd`.
+- An in-process script's child adopts its caller's cwd; the caller re-asserts its own afterwards.
+
+**A regression the suite caught in the first version:** stages resolved relative paths even
+before moving, and the dup-redirect code tested the TRANSLATED target. So the `1` of `2>&1` became
+`<cwd>/1`: "ambiguous redirect", 2 suite cases and 2 battery probes failing. Fixed at the root
+(dup targets are fd numbers: test the raw word) and by the `_baseCwd` condition. The new case
+covers `2>&1` in a stage that has changed directory.
+
+**Verified:**
+- New case `cwd_isolation.sh`: 17 lines, expected output generated by GNU via WSL. Covered:
+  stage `cd`, subshells, the `tee` race (10 rounds), `cat`, redirects, globs, `test -f`, `find`,
+  `2>&1`, an external child and in-process scripts, all in a stage that has changed directory.
+  The new build matches; rev 91 differs on 25 lines.
+- Race test (200 rounds): 0 misplaced, parent never moved.
+- Suite 56/56 with a console and `-Detached`; battery 237/237 identical to rev 91.
+
+**Not covered:** background jobs still run on the parent shell (a `cd` in `… &` still moves the
+parent, as before). A raw file-system call on a user path that bypasses `TranslatePath`, run
+inside a stage that changed directory, would resolve against the process cwd [none known].
+
+## 2026-10-03 -- FOUND, not fixed: pattern operators ignore expansions and quotes in the pattern
+**Status:** Found (verified against GNU on rev 91); widens the 2026-09-12 open item
+"`${v//$o/$n}` is a silent no-op". Claude's recommendation: the next fix.
+- With `a=/x/y/z`: `${a#"$s"/}`, `${a#$s/}`, `${a//$o/$n}`, `${a%%"/z"}` and `${a%%$suf}` ALL
+  return the input unchanged. Only a bare literal pattern (`${a#/x/}`) works.
+- So `$var` in a pattern is never expanded, and a quoted pattern is never quote-removed.
+- SILENT (a plausible wrong value, rc 0), and `${path#"$prefix"}` and `${f%"$ext"}` are everyday
+  idioms.
+
+**Performance re-test and deployment (same day, appended).** The architect asked to re-test
+performance after both follow-on fixes.
+- **Rev 95 (both fixes) against deployed rev 91**, `compare3.sh`'s method under Git Bash:
+  - Best of 9, interleaved: every README row within noise. `loop` +5.7 % and `func` +3.1 % looked
+    like a cost, so they were re-timed at best of 21: `loop` 0.170 vs 0.170 (+0.0 %), `func` +0.4 %,
+    `loop_big` +0.5 %. Noise; nothing in either fix runs per loop iteration.
+  - Whole process (best of 9): pipeline loop +0.9 %, line tools -0.5 %, coreutils -0.9 %,
+    pipeline -1.3 %; startup 13.0 vs 12.9 ms. All outputs identical, and identical to Git and WSL.
+- **So the README table stands as published today.** It describes the subshell-per-stage build,
+  and swapping its figures for this run's would trade noise for noise.
+- **Deployed:** rev 95 (`1.0.0+hg.588b06d2ac33+ 95+`) in `dist/Bash.exe`; rollback copy
+  `dist/Bash.exe.rev91`. Suite 56/56 with a console and detached on the shipped binary.
+- **Live in a Claude Code Bash tool:** `map[$key]=v` and `map+=(["beta"]=v [$key-2]=v)` set their
+  elements; `(cd sub && …) | tee out.log` puts the file in the right place; `cd sub | true` does
+  not move the shell.
+- **For peers until the pattern-operator fix:** `${p:${#s}+1}` strips a known prefix. Verified
+  live; it is standard bash.
+
+## 2026-10-03 -- RATIFIED + BUILT: the pattern and replacement of `${x#pat}`, `${x%pat}`, `${x/pat/rep}` are expanded
+**Status:** Active. The architect said "Yes" to fixing the pattern operators.
+
+**Defect (verified against GNU on rev 91-95):** `#`, `##`, `%`, `%%`, `/` and `//` used their
+operand RAW. So `${p#"$s"/}`, `${p#$s/}`, `${p//$o/$n}`, `${p%%"/z"}` and `${a%%$suf}` all
+silently returned the input; only a bare literal pattern worked. The replacement had no quote
+removal either (`${V//b/\\}` gave `a\\`; the 2026-09-12 open item).
+
+**Fix:** `WordExpander.ExpandOperand(raw, pattern)`.
+- **Why it scans the RAW text instead of using the word parser:** the lexer drops an unquoted
+  backslash's quoting, so `\*` would turn into a live `*`.
+- **In a pattern:**
+  - a backslash escape is kept, for the glob engine;
+  - a quoted part (`'…'`, `"…"`, `$'…'`) is expanded and then glob-escaped (`Glob.Escape`), so it
+    matches literally;
+  - an unquoted `$var`, `${…}`, `$(…)`, `$((…))` or backtick is expanded and STAYS a pattern, as
+    in bash;
+  - a leading `~` is tilde-expanded.
+- **In the replacement:** the same expansions, plus quote removal.
+- **The `/` that ends the pattern** is now the first one outside quotes and expansions
+  (`FindPatternSlash`), so `${p//"/x"/y}` works.
+
+**Speed, measured:** 50k iterations of three pattern operations with variables, JIT build including
+its startup.
+- First correct version: 0.68 s, against Git Bash 0.82 s.
+- Two fixes:
+  - **a parse cache per segment** (words are immutable): 0.52 s;
+  - **a plain-string path** for any pattern with no live glob character (`Glob.TryLiteral`, used
+    by `#`/`%` and `/`), plus **a regex cache** for replacements, which built a new Regex on
+    EVERY call (pre-existing): 0.40 s.
+- That is about 2x Git Bash; WSL 2.28 s.
+
+**Verified:**
+- New case `pattern_operands.sh`: 12 lines, expected output generated by GNU via WSL. Covered:
+  quoted vs unquoted variables, an escaped `\*`, a quoted glob vs a live glob, backslashes,
+  replacement escapes, `$( )`, `~`, arrays, spaces, a slash inside quotes. The new build matches;
+  rev 95 differs on 11 of 12.
+- Suite 57/57 with a console and `-Detached`; battery 237/237 identical. No battery probe uses a
+  variable in a pattern: a coverage gap the new case fills.
+
+## 2026-10-03 -- FOUND, not fixed: an escaped glob character in an argument still globs
+**Status:** Found (verified against GNU on rev 95). Claude's recommendation: fix next. The architect
+has not yet ruled.
+- `echo \*` and `echo \?` print matching file names; GNU prints `*` and `?`. `echo "\*"` is right.
+- Cause: the lexer's word reader appends the escaped character and DROPS its quoting (`\*` becomes
+  a plain `*` in a `LiteralPart`), so field expansion sees a live metacharacter.
+- SILENT: `find . -name \*.txt` (a common idiom) receives the list of matching files in the cwd,
+  not the pattern.
+
+## 2026-10-03 -- FOUND (msp430-a2's report), not fixed: plain `cp` preserves the source's mtime
+**Status:** Found (verified against GNU on rev 95). Awaiting the architect.
+- GNU `cp` without `-p` gives the copy the CURRENT time; C#Bash keeps the source's (2020 in the
+  repro). `cp -p` is correct.
+- Real consequence: a file restored with `cp backup file` kept the backup's OLDER mtime, so
+  MSBuild's incremental build judged it up to date and silently kept the broken copy.
+- Likely cause [inferred]: .NET `File.Copy` copies timestamps, and plain `cp` never resets them.
+- Workaround, verified on rev 95: `cp src dst && touch dst`.
+
+**Deployed (same day, appended):** the rev 98 AOT build (rev 97's code plus a docs-only commit;
+stamp `1.0.0+hg.0736501d7dee+ 98+`).
+- Suite 57/57 with a console and detached; every README row within noise (best of 9).
+- The pattern loop (50k x 3) takes 0.123 s, against 0.143 s for rev 95 (which gave WRONG answers)
+  and 0.789 s for Git Bash. The plain-string and regex-cache paths more than pay for the expansion.
+- `dist/Bash.exe`, rollback copy `dist/Bash.exe.rev95`. Verified live in a Claude Code Bash tool:
+  `${p#"$s"/}`, `${p%$suf}`, `${p//$o/$n}`, `${p%%"…"}` and `${V//b/\\}` match bash.
+
+## 2026-10-03 -- RATIFIED + BUILT: a copy made without -p gets the current mtime
+**Status:** Active. The architect said "go" (for this, then the `\*` fix). It answers the FOUND
+entry above.
+
+**Fix:** `Builtins.Files.StampNow`. After `File.Copy` (Windows' CopyFile keeps the source's
+times), a copy made without `-p`/`-a`/`--preserve` gets mtime and atime = now, in both `cp` and
+the recursive path. `-p` behaviour is unchanged. A read-only copy is tolerated (the attribute
+came with it, as GNU keeps the mode).
+
+**Verified:**
+- New case `cp_mtime.sh`: 10 lines, expected output generated by GNU coreutils via WSL. Covered:
+  plain, `-p`, `-a`, `--preserve`, over an old file, into a directory, `-r` vs `-rp`, a
+  read-only source, contents identical. The new build matches; rev 98 differs on 5.
+- Suite 58/58 with a console and `-Detached`; battery 237/237 identical.
+
+## 2026-10-03 -- RATIFIED + BUILT: a backslash-escaped glob, brace or tilde character stays quoted
+**Status:** Active. The architect said "go". It answers the FOUND entry on `\*`.
+
+**Fix:** `Lexer.EscapeMark` (U+FDD0, a Unicode noncharacter, so it never occurs in text).
+- The lexer's word reader marks an escaped `* ? [ { } , ~`, and `ParseWordParts` emits each
+  marked character as a `SingleQuotedPart`. Every later stage already treats a quoted part as
+  literal: field glob and brace eligibility, `ExpandToPattern` for `case`/`[[ ]]`, assignments.
+- Other escaped characters are unchanged: their meaning was purely lexical and is already spent.
+- Arithmetic, `${…}` bodies and double-quoted interiors are lexed elsewhere and are untouched.
+
+**Verified:**
+- New case `escaped_glob.sh`: 22 lines, expected output generated by GNU via WSL. Covered:
+  `echo \*`, `\?`, `\*.txt`, `\[ab\]`, `find -name \*.txt` and `-path ./sub/\*`, `\{a,b\}`,
+  `\~`, `a\,b`, an assignment, `case`, `[[ ]]`, `for`, and a live `*.txt` alongside. The new
+  build matches; rev 98 differs on 12.
+- Suite 59/59 with a console and `-Detached`; battery 237/237 identical.
+
+**KNOWN LIMITATION, pre-existing and NOT fixed: glob and brace quoting is tracked per FIELD, not
+per character** (`ExpandToFields`' `fieldGlob`). A field with any unquoted metacharacter is
+brace-expanded and globbed as a whole string, so a quoted metacharacter in the SAME word acts
+live: `{x\,y,z}` gives `x y z` where GNU gives `x,y z`, and `"*"*` and `\**` treat the quoted `*`
+as a glob.
+- A real fix needs a parallel pattern string with quoted metacharacters escaped.
+- It cannot use backslash as that escape: a backslash inside an UNQUOTED expansion's value must
+  survive into the output, as in bash. So it needs its own marker, honoured by the brace and glob
+  engines.
+- Core expansion path; a separate decision. Rare in practice.
+
+**Deployed (same day, appended):** the rev 102 AOT build (code from revs 100-101; stamp
+`1.0.0+hg.b2f76c56bf68+ 102+`).
+- Suite 59/59 with a console and detached; battery 237/237.
+- README rows: within noise at best of 9. `func` +4.5 % was re-timed at best of 21: +0.4 %;
+  `arith` -0.8 %.
+- `dist/Bash.exe`, rollback copy `dist/Bash.exe.rev98`.
+- Live in a Claude Code Bash tool: `echo \*` prints `*`; `find . -name \*.txt` finds all three
+  files, including the one in a subdirectory, which it missed when the pattern globbed; a plain
+  `cp` of a 2020 file has an mtime 0 s old.
+
+## 2026-10-04 -- Goal-2 scan: what Claude needed PowerShell for, and the backlog it implies
+**Status:** Scan DONE (the architect said "Sure"). The backlog is PROPOSED and AWAITING THE
+ARCHITECT. Report, scripts and inputs: `E:/Claude/csharpbash-findings-2026-10-04-goal2-scan/`.
+
+**Corpus:**
+- 502 transcripts (211 sessions and 291 subagent transcripts): `~/.claude/projects` plus the
+  session logs archived under E:/Claude, which the architect pointed to. That is where most
+  transcripts were.
+- 2026-06-19 to 2026-10-04; 1,271 PowerShell tool calls against 10,215 Bash calls, de-duplicated
+  by tool_use id.
+
+**Result**, using the architect's goal-2 rule (in scope if the command needed PowerShell, out if
+the output is Windows-specific):
+
+| bucket | calls | share |
+|---|---:|---:|
+| needed no PowerShell | 943 | 74.2 % |
+| needed it for a generic capability | 254 | 20.0 % |
+| Windows-specific | 65 | 5.1 % |
+| unclassified | 9 | 0.7 % |
+
+- Of the 943, 371 are the "launcher line" (`& $env:CLAUDE_CODE_GIT_BASH_PATH script.sh`), the
+  workaround for #94077. It was used only in September and stopped when C#Bash became the shell
+  the Bash tool spawns.
+- The PowerShell share fell from 43 % (June) to 9 % (October).
+- **Real gaps, after reading the examples:**
+  - serial-port I/O: 55 calls, MSP430 only;
+  - the `time` keyword: 37 calls ("time: command not found");
+  - a launch that outlives the call: 22 calls. Children die in the kill-on-close job object, and
+    there is no `nohup`/`setsid` that breaks away;
+  - `jq`: 12 calls, plus the parsing half of 10 HTTP calls;
+  - `df`: 2 calls.
+- Everything else in scope proved covered: `pkill`/`pgrep`, byte-transparent tools, curl.exe,
+  awk/`$(( ))`, `netstat`, tar.exe.
+
+**Claude's proposed order** (criteria: calls x number of projects x cost):
+1. **`time`.** Broad, cheap, and also a goal-1 defect.
+2. **A detached launch that survives the call.** Medium; a job-object breakaway design.
+3. **A `jq` subset.** Medium to large.
+4. **Serial I/O** (COMn as a device file, plus `stty`). Large, one project.
+5. **`df`.** Small.
+
+Not code: this repo's own test runners (`run-tests.ps1`, `run-compat.ps1`; 80 calls) are
+PowerShell, which is goal 2 applied to our own tooling. The launcher-line guidance in the global
+CLAUDE.md is obsolete since the rename; that is the architect's file, so suggested only.
+
+**What would change this order:** the architect weighting the hardware work (serial) above
+breadth.
+
+**Found on the way:**
+- Claude Code sets `NoDefaultCurrentDirectoryInExePath=1`, so `cmd /c x.cmd` will not find a
+  script in the current directory (`./x.cmd` from C#Bash works). An environment fact, not a
+  defect.
+- **C#Bash defect:** `env -u VAR cmd` does not remove VAR for the command (GNU does). Not fixed.
+
+## 2026-10-04 -- RATIFIED + BUILT: the `time` reserved word (goal-2 backlog item 1)
+**Status:** Active. The architect said "Yes, then 2, 3 and 5 (commit between, stop for
+ambiguities/forks)".
+
+**Defect:** `time` was parsed as a command name: "time: command not found", rc 127. That pushed
+37 transcript calls to PowerShell's `Measure-Command`.
+
+**Build:**
+- **Parser:** `time [-p] [!] pipeline` sets `Pipeline.Timed` / `TimePosix`; a bare `time` times
+  an empty command.
+- **`ExecTimedPipeline`:** wall clock, plus user and system CPU of this process AND of the
+  external children it waited for. Windows counts only a process's own CPU, while bash counts its
+  children too; `AddChildCpu` after each `WaitForExit` closes the gap.
+- **Output:** written to the shell's stderr (`ConsoleMux.Err`), so `time cmd 2>/dev/null` still
+  reports and `{ time cmd; } 2>&1` captures it.
+- **Format:** `TIMEFORMAT` per bash:
+  - `%[0-3][l]R|U|S`, `%P`, `%%`;
+  - fractions truncated;
+  - unset means bash's default `\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS`; empty means no report;
+  - `-p` gives `real %2R` / `user %2U` / `sys %2S`;
+  - an unknown character gives bash's "invalid format character" error and no report.
+
+**Verified:**
+- New case `time_keyword.sh`: 22 lines, expected output generated by GNU via WSL with digits
+  masked. Covered: default and `-p` formats, precision and long forms, a pipeline, a group, exit
+  status kept, `!`, a command-level `2>/dev/null`, empty `TIMEFORMAT`, capture.
+- Values sanity-checked: `sleep 0.25` reads 0.285 real and 0 user. An external CPU-bound child
+  reads 0.718 user against 0.661 real, so children ARE counted.
+- Suite 60/60 with a console and `-Detached`; battery 237/237.
+
+## 2026-10-04 -- DEFECT FIXED: a function named after a builtin utility never ran
+**Status:** Active. Reported by peer session nupkg-28 at the architect's request.
+
+**Defect:** simple-command dispatch tried `_builtins.TryExecute` BEFORE the function table, so
+`rev(){ ...; }; rev` ran the builtin `rev` (reading stdin, so it hung without `</dev/null`) while
+`type -t rev` said "function". It failed silently: the reporter's `rev(){ hg log -r . ...; }`
+returned "", `hg update -r ""` went to tip, and later commits landed on the wrong branch.
+
+**Fix:** bash's lookup order, function -> builtin -> PATH, in the one dispatch site that had it
+backwards (`ExecSimple`). `Classify` (`type`, `command -v`) and `RunCommand` (xargs, env, timeout)
+already had the right order. Cost: one function-table lookup before each builtin. On an empty
+table it is a null check; with functions defined (Claude Code's snapshot defines several) it is
+one short-string hash [unmeasured estimate: tens of ns against a per-command cost in microseconds].
+
+**Verified:** new case `function_shadows_builtin.sh` (15 lines, expected = GNU via WSL): shadowing
+with and without redirects, in `$( )`, in a pipeline stage, from inside another function,
+`command`/`builtin` call-through wrappers, `unset -f` restoring the builtin. Deployed rev 102
+differs on 17 lines (polarity). Suite 61/61 with a console and `-Detached`; battery 237/237.
+
+**Found on the way, NOT fixed (open):** the `diff` builtin rejects `-` as stdin ("diff: -: No such
+file or directory"); GNU diff accepts it.
+
+## 2026-10-04 -- DEFECT FIXED: functions defined in a subshell leaked into the parent
+**Status:** Active. Reported by peer session nupkg-28, verifying rev 107.
+
+**Defect:** `( )`, `$( )` and `<( )` run in-process with only the VARIABLES snapshotted
+(`ShellEnvironment.TakeSnapshot`); the function table was shared, a documented limitation
+("Not isolated: shell options, traps, functions, aliases"). Rev 106 (functions shadow builtins)
+turned it from latent into wrong output: `y=$( rev(){ ...; }; true )` made every later `rev`
+in the script run the function.
+
+**Fix:** copy-on-write isolation of the function table. `EnterSubshell`/`LeaveSubshell` bracket
+the three in-process subshells; the first define or `unset -f` inside a level saves the table,
+and leaving that level puts it back. A subshell that changes no function pays a counter
+increment and a stack peek [unmeasured estimate: nanoseconds]. A full copy per `$( )` was
+rejected: `$( )` is the hottest construct in Claude's scripts (goal 3).
+
+**Verified:** new case `subshell_functions.sh` (20 lines, expected = GNU via WSL): all three
+subshell forms, redefining and unsetting an existing function inside one, nested levels.
+Deployed rev 107 differs on 20 lines (polarity). Suite 62/62 with a console and `-Detached`;
+battery 237/237.
+
+**Same class, still open (checked against GNU, all differ):** options (`set -e/-u`, `pipefail`),
+`shopt`, traps (an EXIT trap set in `( )` fires at the PARENT's exit), and aliases all leak out of
+a subshell.
+
+## 2026-10-04 -- DEFECT FIXED: options, shopts, traps and aliases leaked out of a subshell
+**Status:** Active. The architect: "Yes, go" (fix the rest of the rev-109 class before the
+redirect rewrite).
+
+**Defect:** the rest of the documented limitation behind rev 109. All checked against GNU, all
+differed:
+- `( set -e )`, `$( set -u )`, `( set -o pipefail )` and `( shopt -s nullglob )` stayed set;
+- an EXIT trap set in `( )` fired at the PARENT's exit, not the subshell's;
+- `( alias x=... )` survived.
+
+`( set -euo pipefail; ... )` is a pattern Claude writes, and the leak left -e/-u on for the rest
+of the script.
+
+**Fix:** one record per in-process subshell level (`EnterSubshell` / `SubshellExitTrap` /
+`LeaveSubshell`, around `( )`, `$( )` and `<( )`):
+- Options: saved BY VALUE on entry (`ShellOptions.Save`: the `set` flags packed in an int, the
+  shopt set shared and copied only when the subshell changes it). Every `set`-settable flag must
+  be in `PackFlags`/`UnpackFlags`, or a subshell leaks it.
+- Functions, traps, aliases: copy-on-write, saved on the first change inside a level.
+- An EXIT trap the subshell set for itself fires as it ends, still inside its own redirects or
+  capture; an `exit` in that trap sets the subshell's status. The parent's EXIT trap is visible
+  inside (`$(trap -p)`) but does not fire there, as in bash.
+
+**Alternative rejected:** cloning options and tables on every subshell. A `$( )` that changes
+nothing now costs a few field reads and no allocation. Measured on AOT, 20,000 `x=$(echo hi)`,
+best of 5: 0.091 / 0.090 s new against 0.092 / 0.096 s for deployed rev 109 (no difference).
+
+**Verified:** new case `subshell_isolation.sh` (24 lines, expected = GNU via WSL); deployed rev
+109 differs on 29 lines (polarity: it also lost output after a leaked trap). Suite 63/63 with a
+console and `-Detached`; battery 237/237.
+
+## 2026-10-04 -- RATIFIED + BUILT: background children outlive the shell (goal-2 item 2, option b)
+**Status:** Active. The architect chose (b), "b/ go".
+
+**Context:**
+- Measured: the Bash tool's shell is in NO job object, and its stdout is a file. So the only
+  thing that killed `server &` at the end of a call was C#Bash's own kill-on-close job, which
+  every child joined.
+- Claude's habit is `server &` in one call and talking to it in the next. On Linux that works.
+
+**Decision:** bash's own rule.
+- External children of a background job (`cmd &`, a background pipeline or function), and those
+  started under `nohup` or `setsid`, are NOT put in the kill-on-close job (`ChildOutlivesShell`).
+- Foreground children stay in it, so a host that kills the shell on a timeout still takes the
+  foreground work with it. `timeout`'s internal job is not a background job.
+- New builtins:
+  - `nohup`: GNU's terminal rules for stdin, stdout and stderr; 125 for a missing operand.
+  - `setsid [-f] [-w]`: foreground in a non-interactive shell, as util-linux behaves without job
+    control; `-f` starts it and returns.
+  - `disown [-a] [-r] [-h] [jobspec]`.
+- Pipeline stages carry the job and the detach flag (they run on their own threads).
+- At shell exit, a job is a thread, not a forked process, so a job that has not yet started its
+  program gets up to 1 s to do so (`SettleBackgroundJobs`). Otherwise `server &` as the last line
+  would never start.
+  - The wait is a monitor (`BackgroundJob.WaitSettled`), never a `Thread.Sleep` poll (the
+    architect: "Never ever use thread.Sleep for any kind of sync purposes").
+  - A job parked in the `sleep` builtin is not waited for. Measured: the first version cost
+    1.07 s at every exit with a pending `sleep 30 &`.
+
+**Measured (AOT, best of 11):**
+- exit with a pending `sleep 30 &`: +2 ms;
+- with `(sleep 5; kill 1) &`: +5 ms;
+- with a background builtin-only busy loop: +1.0 s (accepted, rare).
+
+**Not solved here (the survival spike, `scratchpad/detach/survive.sh`):**
+- `server > log &` still loses its output when the shell exits: the redirect is a pipe pumped by
+  a shell thread. This is the redirect rewrite, ratified separately and next.
+- A nested shell (`bash -c 'server &'`) is a separate process inside the parent's job, and
+  Windows children inherit job membership, so the server dies with the outermost C#Bash. OPEN.
+- A builtin or function cannot outlive the shell: it is a thread.
+
+**Verified:** new case `detach_builtins.sh` (13 lines, expected = GNU via WSL); deployed rev
+111 differs on 17 lines. Suite 64/64 with a console and `-Detached`; battery 237/237.
+
+## 2026-10-04 -- RATIFIED + BUILT: an external child gets the REAL file handle (the redirect rewrite)
+**Status:** Active. The architect: "Yes" (every external child, foreground included; `/dev/null`
+becomes the NUL device), then "Yes, go".
+
+**Context:** the phase-2 survival spike. ExecExternal gave a redirected child a PIPE, and a
+shell thread pumped it into a FileStream the shell opened UNSHARED. So:
+- `server > log &` lost all its output when the shell exited (measured: 0 lines against 7);
+- `cat log` failed while the job ran ("used by another process");
+- an outer shell waited for EOF that a detached grandchild held.
+
+**Decision:**
+- **One launcher (`ChildLauncher.Start`).** `CreateProcessW` with exactly three std handles and
+  PROC_THREAD_ATTRIBUTE_HANDLE_LIST, so a child inherits nothing else (Windows otherwise hands it
+  every inheritable handle in the process, so one stage's child could hold another stage's pipe
+  open). `Process.Start` and `HiddenConsole.StartInherited` are gone from the launch path.
+- **Each fd 0-2 starts where the shell's stream points NOW, and redirects apply LEFT TO RIGHT**,
+  as dup2 does (`2>&1 >f` leaves stderr on the old stdout).
+- **A file is a handle the child holds.**
+  - `>`: OPEN_ALWAYS + SetEndOfFile, so attributes are kept and a hidden file works.
+  - `>>`: FILE_APPEND_DATA, so concurrent appenders interleave, as O_APPEND does.
+  - `<`, `<>`, and `/dev/null` as NUL.
+  - Every handle shares read, write and delete.
+- **The shell's OWN file redirect is handed to the child as its own append handle**, not pumped.
+  This covers `nohup server > log 2>&1 &`, where the redirect belongs to the builtin, plus
+  `{ ext; } > f` and `exec 3>f`. The shell flushes before the launch and seeks to the end after
+  the child, so `{ echo a; ext; echo b; } > f` keeps the order.
+- **Only in-process ends keep a pipe and a pump:** a pipeline stage, a `$( )` capture, a here-doc,
+  a non-file fd. `2>&1` into one of them is ONE pipe, so the order holds.
+- **`ShellFile`:** every file the shell itself opens for a command shares read, write and delete
+  (File.OpenRead / File.Create lock other processes out).
+
+**Defects fixed on the way.** All were verified against GNU, and all were present in deployed rev 111:
+1. An external inside `$( )` or `{ } > f` IN A PIPELINE STAGE wrote into the stage's pipe:
+   `for ...; do x=$(git ...); done | sort` captured nothing. The newest stdout now wins.
+2. Text a `read` had buffered was lost to an external that followed (`printf 'a\nb\n' | { read x;
+   ext; }`).
+3. `./script.sh > out 2> err` ignored both redirects, and `FOO=1 ./script.sh` passed no FOO. An
+   in-process script now takes its redirects and temp assignments.
+4. A redirect failure abandoned the whole statement (the rest of a `{ }` group) and was printed
+   outside the enclosing `2>/dev/null`. It now fails that one command with status 1 and is
+   reported where its stderr points (`ApplyRedirects` reports before undoing its partial scope).
+5. noclobber, "ambiguous redirect" and a bad fd were status 2; bash gives 1.
+6. `<>` was ignored for externals; `n<file` with n>0 hijacked stdin.
+
+**Measured:**
+- **Survival** (`scratchpad/detach/survive2.sh`, Release): the shell exits and the probe keeps
+  writing all 7 lines for `> f 2>&1 &`, `>> f &`, `nohup ... > f 2>&1 &`, `setsid -f ... > f`, a
+  background function, `cd && ... &` as the last line, and an outer shell owning the file. Also:
+  `> /dev/null 2>&1 &` stays alive; `cat log` reads while the job writes; a foreground child of a
+  killed shell still dies (polarity).
+- **Speed** (AOT, deployed rev 111 against this): README rows -2 % to +3 % (noise). External
+  launches best of 21: inherited +0.00 ms, `> f` -0.07 ms, `>> f` -0.55 ms a launch.
+- **A finding worth keeping:** when the CHILD made the last close of a file it had rewritten, it
+  cost +0.65 ms a launch. CREATE_ALWAYS made no difference; holding the shell's handle until the
+  child exits removed it entirely. Cause [inferred]: on-close scanning in the child's teardown.
+
+**Accepted risk:** the C runtime reports NUL as a terminal (`isatty`), so a program that checks
+may act as if interactive. cmd's `> nul` and Git Bash have done the same for decades.
+
+**Still open:**
+- nested shells (`bash -c 'server &'`) die with the outermost C#Bash (job inheritance);
+- stdin from an in-process `< file` is still pumped;
+- found while testing, separate items: background jobs share the parent's variables (all three
+  `$i` read 3); `"$@"` / an unquoted `$cmd` in COMMAND position is not word-split (every build
+  back to rev 80).
+
+**Verified:** new case `external_redirects.sh` (27 lines, expected = GNU via WSL); deployed rev
+111 differs on 33 lines. Suite 65/65 with a console and `-Detached`; battery 237/237.
+
+## 2026-10-04 -- DEFECT FIXED: "$@" and an unquoted $cmd in command position were one word
+**Status:** Active. Found while writing the redirect rewrite's spike (a `ms() { ...; "$@"; }`
+timing wrapper failed). Present in every build back to rev 80.
+
+**Defect:** `ExecSimpleCommand` expanded the command word with `ExpandToString`, as ONE string,
+while the arguments got full field expansion. So `f() { "$@"; }; f echo a b`,
+`c="ls -l"; $c`, `"${arr[@]}"` and every `run() { ...; "$@"; }` wrapper failed with
+"echo a b: command not found".
+
+**Fix:** the command word is expanded like any word (field splitting, "$@", globs, braces), and
+its first field is the command; the rest lead the arguments. If it expands to nothing, the first
+argument is the command; if nothing remains at all, no command runs, but its redirects are still
+made. A plain literal name (nearly every command) keeps the old single-string path, so the hot
+path is unchanged.
+
+**Verified:** new case `command_word_split.sh` (expected = GNU via WSL), covering "$@", `$cmd`,
+an array, a wrapper, a quoted name with spaces (one word, 127), an empty name, "$@" with no
+arguments, and `{echo,brace,expansion}`. Deployed rev 114 differs on 23 lines. Suite 66/66 with a
+console and `-Detached`; battery 237/237.
+
+## 2026-10-04 -- `sleep` and `tail -f` wait on signals; no Thread.Sleep left
+**Status:** Active. The architect: "Never ever use thread.Sleep for any kind of sync purposes -
+there are better ways"; converting these two older offenders was agreed with the leak-class "Yes, go".
+
+**Change:**
+- Each interpreter has an interrupt EVENT beside its flag. `RequestInterrupt` (Ctrl+C,
+  `timeout`) sets it; `ClearInterrupt` / `CheckInterrupt` reset it. `InterruptHandles()` returns
+  this shell's event and its pipeline parents'.
+- `sleep`: one timed wait on those handles, instead of 50 ms Thread.Sleep slices polling the
+  flag. An INT trap still runs and the sleep goes on, as before.
+- `tail -f`: waits on the interrupt handles plus a FileSystemWatcher event. The interval (GNU's
+  `-s`) remains the backstop, because NTFS reports a growing file's size lazily, so the watcher
+  alone can miss growth.
+- Also fixed: a `tail -f` ended by Ctrl+C or `timeout` printed "tail: cannot open 'f' for
+  reading: Interrupted"; GNU prints nothing.
+
+**Measured (Release):**
+
+| | deployed rev 114 | new |
+|---|---|---|
+| `time sleep 0.3` | 0.358 s | 0.316 s |
+| `timeout 0.3 sleep 5` | 0.372 s | 0.318 s |
+
+The slicing overshoot is gone. `timeout 1 tail -f` on a growing file matches GNU (lines, then rc 124).
+
+**Verified:** suite 66/66 with a console and `-Detached`; battery 237/237. `Thread.Sleep` now
+appears in the source only in comments.
+
+## 2026-10-04 -- CORRECTION to the rev-116 entry: its fast path made `[` 20x slower (fixed, never deployed)
+**Status:** Active. Corrects the 2026-10-04 "$@ in command position" entry, which said "the hot
+path is unchanged". It was not.
+
+**What happened:** rev 116 sent any command name containing `*`, `?`, `[` or `{` down the full
+expansion path, and that included `[` itself. Measured on AOT before deploy (deployed rev 114
+against the rev 116 build, best of 21):
+- loop.sh 0.141 -> 3.202 s;
+- func.sh 0.195 -> 1.752 s;
+- arith.sh 0.226 -> 3.277 s.
+
+The suite passed: it checks output, not speed. The benchmark caught it.
+
+**Fix:**
+- `Word.IsPlainLiteral`: computed once per AST node and cached, since loops reuse the node. Only
+  a real pattern takes the slow path: `*`, `?`, a `[` closed later, or a `{` closed later.
+- The non-literal path (`ExpandCommandWord`) and the "nothing left" path (`NoCommandLeft`) moved
+  out of line, so `ExecSimpleCommand` stays compact.
+
+**Measured after (AOT, best of 21, deployed rev 114 shown as two control runs):**
+
+| | rev 114 | current |
+|---|---|---|
+| loop.sh | 0.143 / 0.141 | 0.144 |
+| func.sh | 0.195 / 0.196 | 0.202 |
+| arith.sh | 0.226 / 0.226 | 0.230 |
+
+loop is level. func and arith stay +2-3 % over three rounds. The cause is NOT isolated: by
+inspection the added per-command work is a cached byte test, and rev 117 is not on these paths.
+Suspected code layout [inferred]. AWAITING THE ARCHITECT: whether that residual blocks deploying
+revs 116-118.
+
+**Verified:** `command_word_split` still matches GNU; suite 66/66 with a console and `-Detached`;
+battery 237/237.
+
+## 2026-10-05 -- RATIFIED: deploy revs 116-118 despite func +3 % / arith +2 % (Q1 "yes")
+**Status:** Active. The architect: "Q1/ yes", with the residual unexplained (see the rev-118
+correction entry). Deployed as rev 120 (AOT suite 66/66 with a console and `-Detached`; verified
+live: wrappers split, `sleep 0.2` = 0.208 s).
+
+## 2026-10-05 -- RATIFIED + BUILT: a background job runs on its own copy of the shell (Q2 "Yes")
+**Status:** Active. The same decision as the 2026-10-03 pipeline-stage interpreters, applied to
+`cmd &` and `setsid -f`.
+
+**Defect:** a job ran on the parent shell's own state. So:
+- `for f in *; do gzip "$f" & done` read `$f` after the loop had moved on (measured: three jobs
+  with `$i` = 1, 2, 3 all wrote "w3");
+- a job's `cd`, assignment or function definition changed the parent;
+- `kill %n` killed only the program the job was running, so a `while` loop went on to its next
+  iteration.
+
+**Decision:**
+- At `&` the shell builds the job's interpreter (`new Evaluator(this, sharesInterrupts: false)`)
+  on the CALLING thread, so the job sees the state as it was at `&`, as bash forks it.
+- A job does not chain to its parent's Ctrl+C: an asynchronous job ignores the terminal's
+  interrupt in bash.
+- `kill %n` interrupts the job's own interpreter as well as killing its current program. An
+  in-process loop then ends, with status 143 (128 + SIGTERM).
+- Job numbers follow bash: one past the highest still in the table, so after `wait` the next job
+  is %1 again. A counter that never reset made `kill %1` "no such job" after a loop of jobs.
+
+**Measured (AOT, best of 11):**
+- 500 x `: &` plus `wait`: 0.035 -> 0.040 s, about 10 us a job (the copy);
+- README loop/func/arith level against a same-run control.
+
+**Verified:** new case `background_isolation.sh` (15 lines, expected = GNU via WSL); deployed rev
+120 differs on 18 lines. Suite 67/67 with a console and `-Detached`; battery 237/237.
+
+## 2026-10-05 -- RATIFIED + BUILT: a nested shell's detached child leaves the outer kill job (Q3)
+**Status:** Active. The architect: "Q3/ Spike", then "Yes adopt".
+
+**Context:** `bash -c 'server &'`, or `bash start.sh` whose script backgrounds a server, is a
+separate C#Bash process inside the outer shell's kill-on-close job. A Windows child inherits its
+parent's job, so the server died with the OUTERMOST C#Bash even though no job of its own shell
+held it.
+
+**Decision:**
+- C#Bash's job allows breakaway (JOB_OBJECT_LIMIT_BREAKAWAY_OK).
+- A child that outlives the shell (`ChildOutlivesShell`) starts with CREATE_BREAKAWAY_FROM_JOB.
+- Where a job above us forbids breakaway (a host's own job), CreateProcess fails with access
+  denied and the launcher starts the child normally inside that job: the old behaviour, no new
+  failure.
+
+**Cost accepted:** any program in our job may now leave it by asking for breakaway itself. Only a
+program written to outlive its parent does that.
+
+**Spike, kept as manual checks** (`tests/detach/nested.sh`; `tests/detach/survive.sh` for the
+top-level matrix):
+
+| Case | Result |
+|---|---|
+| nested background child | survives (7/7; the deployed rev 121 control 0/7) |
+| doubly nested | survives (7/7) |
+| a nested FOREGROUND child, outer shell killed | still dies |
+| inside a job forbidding breakaway | still starts, and dies with that job |
+
+The top-level survival matrix is unchanged, and its nested row now survives.
+
+**Verified:** suite 67/67 with a console and `-Detached`; battery 237/237.
+
+**Found on the way, OPEN:** C#Bash's sed treats a `$` or `^` in the MIDDLE of a basic regex as an
+anchor; GNU treats it as a literal (`echo 'S=$1' | sed 's/^S=$1/X/'` matches in GNU, not here).
+
+## 2026-10-05 -- DEFECT FIXED (in rev 123, found by its live test): a detached child must not share a hidden console
+**Status:** Active. Completes the nested-shell decision above.
+
+**Defect:** in the LIVE cross-call test of rev 123, the nested probe survived but every `ping` in
+it failed at once, after the call ended. Measured with a console-less outer shell
+(`tests/detach/consoleless.ps1`): 15 of 15 pings failed, 15 ticks in under 4 s.
+
+**Cause:** Claude Code's tool shell has no console, so it starts each child with a NEW hidden
+console. That console's host (`conhost.exe`) is created inside the tool shell's kill-on-close
+job. The nested shell's detached child inherited that console, so when the call ended and the job
+closed, the host died. The child had broken away and lived on, but without a console every
+console program it started failed. Two observations support this:
+- conhost was parented to the (exited) inner shell, and gone after the call;
+- the earlier spike missed it because its outermost shell already had a console that no C#Bash
+  job held.
+
+**Fix:**
+- A child that outlives the shell starts with CREATE_NO_WINDOW, giving it a hidden console of
+  its own, whenever this shell's console may die with a shell: no console, or a windowless one
+  (`HiddenConsole.ConsoleMayDieWithAShell`).
+- A real terminal, which has a window, is still shared, so `server &` there prints to the
+  terminal.
+- The shell no longer attaches itself (`Adopt`) to a detached child's console.
+
+**Verified:**
+- `tests/detach/consoleless.ps1`: 0 of 15 pings failed, normal pace.
+- `tests/detach/nested.sh` against rev 121 as the old build: unchanged.
+- `tests/detach/survive.sh`: unchanged.
+- Suite 67/67 with a console and `-Detached`; battery 237/237.
+
+**Not verified:** `server &` from an interactive C#Bash in a real terminal (no terminal here).
+
+## 2026-10-05 -- DEFECTS FIXED: basic-regex `$`/`^`/`*`, grep -P `\K`, `diff -`
+**Status:** Active. The architect: "fix first, then jq". The first two were hit by peer sessions.
+
+1. **Basic regex (sed, grep).** A `$` or `^` in the middle of a basic regex is a literal in
+   POSIX/GNU; `BreToNet` passed both through and .NET took them as anchors. daq-67's
+   `s|^REV=$(hg id -n)$|...|` silently matched nothing.
+   - Now `^` anchors only at the start or right after `\(` / `\|`, and `$` only at the end or
+     right before `\)` / `\|`.
+   - A leading `*` (also after `\(`, `\|`, `^`) is a literal; .NET rejected it ("Quantifier
+     following nothing"). Extended regex: the same for a leading `*`; its `^`/`$` stay anchors,
+     as in GNU.
+   - Matrix measured against GNU first (15 cases), all now equal.
+2. **`grep -P` `\K`** (koliada-net-dd): .NET has no `\K`. Each top-level branch `X\KY` becomes
+   `X(?<csbashKeep>Y)`, and `-o` reports that group's span (`KeptSpan`). The last `\K` of a
+   branch wins; a `\K` inside a group is refused loudly.
+   - **Rejected: the lookbehind `(?<=X)Y`.** It does not consume X, so `\w+ \K\w+` over
+     "public void Alpha()" also matched "Alpha", which GNU does not. Measured with the
+     top-level-`|` case.
+3. **`diff -`** now reads stdin: copied once, byte-faithfully with any read-ahead, to a temp file
+   that is diffed while still labelled `-`. `diff - -` is 0.
+
+**Verified:** new case `regex_k_diff_stdin.sh` (36 lines, expected = GNU via WSL); deployed rev
+124 differs on 49 lines. Suite 68/68 with a console and `-Detached`; battery 237/237. README rows
+on AOT level with rev 124 (best of 9).
+
+## 2026-10-05 -- RATIFIED + BUILT (not deployed): the in-process jq subset (goal-2 item 3, option (c))
+**Status:** Active. Built; NOT deployed until it is checked against the oracle. The architect:
+"1/ c. 2/ Yes 3/ noted".
+
+**Evidence** (`E:/Claude/csharpbash-findings-2026-10-05-jq/`, 529 transcripts):
+- 23 PowerShell JSON calls: read a JSON/JSONL file or a GitHub API reply, navigate fields, iterate
+  arrays, count, pick the longest, format text.
+- 100 python-json calls, mostly real programs.
+- 8 `jq` calls, all probes (`jq --version`).
+- jq is on neither Windows nor WSL.
+
+**Decision (c):** an in-process subset. A filter or option outside it is refused while PARSING,
+before input is read, and the dispatcher hands the command to a PATH `jq` if there is one, else
+fails loudly (`UnsupportedOptionException`, DECISIONS 2026-09-04 #2).
+
+**Alternatives:**
+- (a) Ship or require the real jq.exe: rejected, it adds a dependency for every C#Bash user.
+- (b) A subset with no deferral: rejected, it would leave no path to the full language.
+
+**Design:**
+- Values are CLR objects (null, bool, double, string, `List<object?>`, `JObj`), and `JObj` keeps
+  insertion order. Nothing is mutated; assignment copies along its path.
+- Filters are generators (`IEnumerable`).
+- `=`, `|=`, `op=`, `//=` and `del` work on paths (`JqInterp.Paths`), as jq's do.
+- Evaluation orders follow jq 1.6: in binary operators the right operand varies slowest; in
+  `{}` construction the first key varies slowest; in string interpolation the first part varies
+  fastest.
+- Files: `JqJson.cs` (values, reader, printer, order), `JqParser.cs`, `JqInterp.cs`,
+  `Builtins.Jq.cs` (options, inputs, errors, exit codes 0/1/2/3/4/5).
+- `jq --version` answers `jq-1.6 (C#Bash in-process subset)`: it was Claude's usual first jq
+  call, and an error there reads as "no jq".
+
+**Scope as ratified:**
+- input: files, stdin, JSONL, BOM tolerated; options `-n -s -c -r -j -e -M --arg --argjson`;
+- navigation: `.a`, `."k"`, `.[n]`, slices, `.[]`, `?`, `..`;
+- `|`, `,`, construction, interpolation, arithmetic, comparison, `and`/`or`/`not`, `//`,
+  `if`/`elif`/`else`, `as` (with array and object destructuring), `reduce`, `try`/`catch`,
+  `= |= += -= *= /= %= //=`, `del`;
+- builtins: select, empty, error, length, keys(_unsorted), values, has, map(_values),
+  to/from/with_entries, add, any, all, sort(_by), group_by, unique(_by), min/max(_by),
+  first/last, reverse, flatten, range, tostring, tonumber, type, tojson, fromjson, split, join,
+  test, sub, gsub, startswith, endswith, ltrimstr, rtrimstr, ascii_downcase/upcase, contains,
+  env/$ENV, recurse, floor, ceil, round, sqrt, fabs;
+- formats: @text, @json, @csv, @tsv, @base64.
+
+Refused (or deferred): def, foreach, label, `$__loc__`, `@fmt "..."`, `?//`, paths/getpath and
+the rest. The type filters (`numbers`, `strings`, ...) are outside the agreed list: a candidate
+for a small extension.
+
+**Verified so far:**
+- The evidence cases and a sweep (`tests/cases/jq_subset.sh`) agree with jq's documented
+  behaviour BY INSPECTION; the non-ASCII output bytes were checked.
+- 1 MB JSONL select+project: 0.104 s against python's 0.092 s (JIT build); output identical
+  apart from python's CRLF.
+- Suite 68/68; battery 236/237. The one difference is probe 212 (`jq --version`, not in the
+  baseline): a reference shell without jq prints "ba...".
+
+**OPEN, blocks deploy:** the oracle. Real jq 1.6 in WSL (`sudo apt-get install -y jq`, the
+architect) generates `tests/expected/jq_subset.out`; then tune the `[TUNE]` items:
+- number format (`-0`, `1e17`, exponents);
+- `Brief` truncation in error messages;
+- parse-error and syntax-error wording;
+- the error location `(at <stdin>:N)`;
+- `"x" * 1.5`.
+
+## 2026-10-05 -- DEFECTS FIXED: builtins' non-ASCII output with no console; `${#s}` and substrings count characters
+**Status:** Active. Found while checking the jq subset against jq 1.6 (the suite's `-Detached`
+mode, which runs C#Bash as Claude Code does).
+
+1. **Non-ASCII text from builtins reached Claude Code in the ANSI code page.** `echo 'é — ✓'`
+   arrived as "� � ?" (measured live on deployed rev 127).
+   - Cause: `Console.OutputEncoding = UTF-8` needs a console. Without one it throws, the failure
+     was swallowed, and .NET kept cp1252 for stdout and stderr. The comment there assumed "the
+     default UTF-8 writer is what we want anyway"; it was not.
+   - Fix (Program.cs): when that setter fails, stdout and stderr get UTF-8 `StreamWriter`s of our
+     own before ConsoleMux captures them.
+   - Pipes, files and external programs were never affected.
+2. **`${#s}`, `${#a[i]}` and `${s:off:len}` counted UTF-16 units,** so "😀" was 2 characters
+   (bash: 1). `CharCount` / `Utf16Offset`: a surrogate PAIR is one character, and a lone
+   surrogate (an undecodable byte kept by ShellEncoding) is one too. Rune enumeration would have
+   turned those bytes into U+FFFD.
+3. **The test harness** read expected files as ANSI (PowerShell 5.1's `Get-Content` default) and
+   detached output in the console's code page. Both are UTF-8 now. Every earlier case was pure
+   ASCII, which is why nothing failed before.
+
+**Verified:** new case `non_ascii_output.sh` (expected = GNU via WSL); deployed rev 127 fails it
+in `-Detached` mode ("echo: � � ? ?? ??"). Suite 71/71 with a console and `-Detached`.
+
+## 2026-10-05 -- jq subset VERIFIED against jq 1.6 (the oracle) and tuned to it; type filters added
+**Status:** Active; NOT deployed (see the startup note). The architect installed jq 1.6 in WSL
+("should be installed") and approved the type filters ("2/ yes").
+
+**Byte-identical to jq 1.6:** `jq_subset.sh` (84 lines) and `jq_messages.sh` (68 lines). The
+second is the probes that tuned it, now regression tests.
+
+**Tuned to the oracle; several of these overturned my assumptions:**
+- `//` does NOT suppress an error on its left in jq 1.6.
+- `from_entries` takes key/Key/name/Name (not k/K) and value/Value (not v); a non-string key is
+  an error.
+- Index errors read `Cannot index number with string "a"`.
+- A value quoted in a message is cut to 11 characters plus "..." when its JSON exceeds 14.
+- `"ab" * 1.5` is "ab". `1 / 0` between literals is a COMPILE error ("Division by zero?"); `%`
+  by zero is a runtime one with "(remainder)".
+- Numbers follow jvp_dtoa_fmt (12345678901234567890 prints 12345678901234567000; 1e17 prints
+  1e+17; -0 prints -0).
+- Input parsing is a port of jv_parse.c: its messages and line/column, "at EOF", and "parse
+  error: ..." with exit 2.
+- An error's location counts the lines READ when the value completed (jq reads line by line).
+- Compile errors: bison token names, "(Unix shell quoting issues?)", ", expecting $end" after a
+  complete filter, the line padded to the error's column, `$x` / `foo/0` "is not defined" (exit 3).
+- `error(null)` prints nothing.
+- stdout is buffered like stdio (4 KB), so with `2>&1` error lines precede earlier results.
+- A real defect found here: a comma ran its RIGHT side eagerly (`Concat(Eval(right))`), so
+  `"a", error("x")` lost "a". Now a true generator.
+
+**A misspelling is not "unsupported":** a name/arity outside jq 1.6's own `builtins` list
+(embedded) is jq's compile error; only a real builtin outside the subset defers or is refused.
+
+**Kept on purpose:** `jq --` ends options as in jq 1.7 (jq 1.6 prints its usage).
+
+**Measured:**
+- AOT README rows level against deployed rev 127 (best of 9).
+- **Startup +1 ms: 0.035 -> 0.036 s** (best of 21, interleaved, twice, Git Bash timing). The
+  binary grew 6.08 -> 6.57 MB with the engine [inferred cause].
+- AWAITING THE ARCHITECT: deploy with +1 ms startup, or shrink first.
+
+**Verified:** suite 71/71 with a console and `-Detached` (the two jq cases included); battery
+236/237 (probe 212 `jq --version`, not in the baseline).
+
+## 2026-10-06 -- CORRECTION: the jq build's "+1 ms startup" does not exist (a measuring artefact)
+**Status:** Active. Corrects the 2026-10-05 entry "jq subset VERIFIED...", which reported
+"Startup +1 ms: 0.035 -> 0.036 s" and held the deploy on it. The architect asked "Where is the 1ms
+coming from?".
+
+**Measured properly** (AOT builds of revs 129, 130, 132 and 133 from `hg archive`; per-launch
+time = the total for 200 consecutive `-c 'exit 0'` launches / 200; rounds interleaved):
+
+| launcher | rev 129 (no jq) | rev 133 | difference |
+|---|---|---|---|
+| C#Bash (direct CreateProcess, as Claude Code launches a shell), best of 5 rounds | 11.11 ms | 11.16 ms (r130 11.19, r132 11.12) | noise |
+| Git Bash (the README's method), mean of 10 rounds | 38.10 ms | 38.00 ms | -0.10 ms, sd 0.44, se 0.14 |
+
+**Cause of the false reading:** a best-of-21 MINIMUM on a 1 ms clock. True startup sits at about
+35.5 ms, so the minimum flips between 0.035 and 0.036 on noise. The binary did grow (6.08 -> 6.57
+MB: jq +390 KB, its tuning +92 KB), but that costs nothing measurable at startup.
+
+**Method from now on:** a startup difference under 1 ms is measured as a total over many launches,
+interleaved, with the spread reported, never as a best-of-N on a 1 ms clock.
+
+## 2026-10-06 -- The benchmark is one fixed command: `tests/bench/compare3.sh`, method frozen in it
+**Status:** Active. The architect: "the benchmark should 'just run' - every time, the same way
+(unless we explicitly change it). otherwise it is not a benchmark!?"; method approved ("Yes, yes,
+yes") the same day.
+
+**Context:** in one session the C#Bash builds were timed with half a dozen ad-hoc harnesses
+(different launchers, round counts, statistics, a scratch root under TEMP that Git Bash maps to
+/tmp, a binary on drive E:) and the numbers were reported as if interchangeable with the
+benchmark. That produced the false "+1 ms startup" (see the CORRECTION entry above). The README's
+method ("C#Bash best of nine, the other two best of three") was not encoded anywhere: the script
+had one `[rounds]` argument for all three shells, and no defined way to time an undeployed build.
+
+**Decision:** the method lives in the script, and the caller cannot vary it.
+- Rows: C#Bash best of 9, Git Bash and WSL best of 3 (the README's documented method).
+- Startup: the total of 100 consecutive `-c 'exit 0'` launches / 100, the same for all three
+  shells, gated on a control (`-c 'exit 7'` must return 7). Was: best of 7 single launches.
+  **This changes the startup row's method**: rows before 2026-10-06 are not comparable to it.
+- One option, `--cs <exe>`, times an undeployed build; the header says so in the output
+  ("NOT the deployed build"). Any other argument is refused. The `bin/Release` fallback is gone
+  (it silently timed a different build when `dist/` was missing).
+- Every run prints the date, build stamp, shell versions and method, and appends its full output
+  to `tests/bench/results.md`, so runs compare over time.
+- It refuses to run under C#Bash (there, "Git Bash" would be C#Bash and so would the `time`).
+  The exact launcher for this machine is in its header.
+
+**Alternatives considered:**
+- **Keep best-of-7 startup** -- rejected: a minimum on a 1 ms clock cannot resolve the sub-ms
+  differences the row gets used to judge; it invented the +1 ms.
+- **Best of 3 batches of 100** -- not chosen: the approved wording is one total; a batch of 100
+  already resolves 10 us. Revisit if the row proves noisy run to run (results.md will show it).
+- **Leave method as caller arguments** -- rejected: that is how the runs drifted.
+
+**Not changed:** the seven row scripts, the output-agreement check, inherited stdin.
+
+**Revisit if:** results.md shows run-to-run spread on a row larger than the differences being
+judged; a method change is the architect's call and gets its own entry.
+
+## 2026-10-06 -- The benchmark launches every shell directly: `tools/benchtimer`
+**Status:** Active. Amends the same-day entry "The benchmark is one fixed command" (its rounds,
+rows, log and startup statistic stand; only the launcher and clock change). The architect: "Why
+are we using Git bash to measure the startup time of C#Bash - that is stupid." / "yes, make it so!"
+
+**Context:** `compare3.sh` timed with bash's `time` inside Git Bash, so Git Bash launched every
+shell. Starting a NATIVE program from Git Bash costs about 30 ms (C#Bash read 42 ms per launch
+that way, 11 ms launched directly), and Git Bash launching itself does not pay it. Every row
+carried that bias against C#Bash and WSL, most visibly startup (0.6x Git Bash) and the short rows.
+
+**Decision:** `tools/benchtimer` (C#, built with `dotnet build tools/benchtimer -c Release -o
+tools/benchtimer/bin`) launches each shell straight from CreateProcessW, as Claude Code launches
+a shell, and times CreateProcessW-to-exit on the high-resolution clock. NUL for stdin/stdout/
+stderr, only that handle inherited, the timer's console inherited (no console created per
+launch; it refuses to run with no console). One untimed launch first. Any non-zero exit fails
+the run. `compare3.sh` still drives (from Git Bash) and fails loudly if the timer is not built.
+Git Bash's path is configured, not searched (rev 138).
+
+**Verified before switching:** every row's output from timer-launched Git Bash equals its
+output from Git Bash as before; a launch exiting 3 fails the run; timer-launched Git Bash still
+resolves `/usr/bin` tools.
+
+**First run (rev 136 deployed):** startup C#Bash 0.0152 / Git Bash 0.0162 / WSL 0.1036; find
+0.020 (was 0.047); coreutils 0.055 (was 0.091). Rows before this entry are not comparable.
+
+**Not chosen:** CREATE_NO_WINDOW per launch (what Claude Code does today): it allocates a conhost
+per launch, ~10 ms for every shell alike, and is Claude Code's defect (issue filed), not a shell
+cost.

@@ -1,0 +1,9 @@
+read;cat < f                 b \r \n c \n 377 d \n
+head;cat < f                 a \n b \r \n c \n 377 d \n
+read;read;cat < f            c \n 377 d \n
+read;od < f                  b \ r \ n c \ n 3 7 7 d \ n \n
+read;wc -c < f               8 \n
+grep -m1;cat < f             a \n b \r \n c \n 377 d \n
+pipe: read;cat               b \r \n c \n 377 d \n
+head -c;read < f             a \n \n [ b \r ] \n
+yes|head -c 5                y \n y \n y

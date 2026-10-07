@@ -1,3 +1,4 @@
+using Microsoft.Win32.SafeHandles;
 using System.Diagnostics;
 using Bash.Parser;
 
@@ -29,8 +30,102 @@ public sealed class Evaluator
 	/// <summary>Names of currently-defined functions (for tab completion).</summary>
 	public IEnumerable<string> FunctionNames => _functions.Keys;
 	public FunctionDef? GetFunction(string name) => _functions.TryGetValue(name, out var f) ? f : null;
-	public bool RemoveFunction(string name) => _functions.Remove(name);
+	public bool RemoveFunction(string name)
+		{
+		if (!_functions.ContainsKey(name)) return false;
+		SaveFunctionsForSubshell();
+		return _functions.Remove(name);
+		}
 	public bool HasFunction(string name) => _functions.ContainsKey(name);
+
+	// ── isolation for in-process subshells ────────────────────────────────────
+	// `( )`, `$( )` and `<( )` run on this interpreter with the variables snapshotted
+	// (ShellEnvironment.TakeSnapshot). Everything else a subshell changes must vanish with it too,
+	// as in bash: functions (a `rev` defined in one `$( )` replaced the utility for the rest of the
+	// script, rev 109), options and shopts (`( set -e )` left -e on), traps and aliases.
+	// Options are saved by value on entry (a few field reads). The tables are copy-on-write: saved
+	// only on the first change inside a level, so a `$( )` that changes none allocates nothing.
+	private int _subshellDepth;
+
+	private sealed class SavedTables
+		{
+		public int Depth;
+		public Dictionary<string, FunctionDef>? Functions;
+		public Dictionary<string, string>? Traps, Aliases;
+		public bool ExitTrapSet;   // the subshell set its own EXIT trap: it fires as the subshell ends
+		}
+	private readonly Stack<SavedTables> _savedTables = new();
+
+	internal readonly struct SubshellMark
+		{
+		internal readonly int Depth;
+		internal readonly ShellOptions.State Options;
+		internal SubshellMark(int depth, ShellOptions.State options) { Depth = depth; Options = options; }
+		}
+
+	/// <summary>Enter an in-process subshell. Pair with <see cref="SubshellExitTrap"/> (while its
+	/// output is still redirected) and then <see cref="LeaveSubshell"/>.</summary>
+	internal SubshellMark EnterSubshell() => new(++_subshellDepth, Options.Save());
+
+	/// <summary>Run the EXIT trap the subshell <paramref name="mark"/> set for itself, if any.
+	/// An `exit` inside the trap propagates, as it would from the subshell's last command.</summary>
+	internal void SubshellExitTrap(SubshellMark mark)
+		{
+		if (_savedTables.TryPeek(out var top) && top.Depth == mark.Depth && top.ExitTrapSet
+		    && _traps.TryGetValue("EXIT", out var cmd) && cmd.Length > 0)
+			{
+			top.ExitTrapSet = false;   // once
+			RunTrap(cmd);
+			}
+		}
+
+	/// <summary>Leave the subshell <paramref name="mark"/>: put back the options it started with
+	/// and every table it changed.</summary>
+	internal void LeaveSubshell(SubshellMark mark)
+		{
+		if (_savedTables.TryPeek(out var top) && top.Depth == mark.Depth)
+			{
+			_savedTables.Pop();
+			if (top.Functions is not null) Refill(_functions, top.Functions);
+			if (top.Traps is not null)     Refill(_traps, top.Traps);
+			if (top.Aliases is not null)   Refill(Aliases, top.Aliases);
+			}
+		Options.Restore(mark.Options);
+		_subshellDepth = mark.Depth - 1;
+
+		static void Refill<T>(Dictionary<string, T> table, Dictionary<string, T> saved)
+			{
+			table.Clear();
+			foreach (var kv in saved) table[kv.Key] = kv.Value;
+			}
+		}
+
+	private SavedTables? TablesForThisLevel()
+		{
+		if (_subshellDepth == 0) return null;
+		if (_savedTables.TryPeek(out var top) && top.Depth == _subshellDepth) return top;
+		var s = new SavedTables { Depth = _subshellDepth };
+		_savedTables.Push(s);
+		return s;
+		}
+
+	private void SaveFunctionsForSubshell()
+		{
+		if (TablesForThisLevel() is { } s) s.Functions ??= new(_functions, StringComparer.Ordinal);
+		}
+
+	/// <summary>Call before the `alias`/`unalias` builtins change <see cref="Aliases"/>.</summary>
+	internal void SaveAliasesForSubshell()
+		{
+		if (TablesForThisLevel() is { } s) s.Aliases ??= new(Aliases, StringComparer.Ordinal);
+		}
+
+	private void SaveTrapsForSubshell(string sig)
+		{
+		if (TablesForThisLevel() is not { } s) return;
+		s.Traps ??= new(_traps, StringComparer.Ordinal);
+		if (sig == "EXIT") s.ExitTrapSet = true;
+		}
 
 	public static readonly HashSet<string> Keywords =
 		["if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac",
@@ -52,23 +147,45 @@ public sealed class Evaluator
 
 	// The background job a thread belongs to (so ExecExternal can record the child pid)
 	[ThreadStatic] private static BackgroundJob? _currentJob;
+	internal static BackgroundJob? CurrentJob => _currentJob;
 
 	/// <summary>Command history, set by the REPL; used by the `history` builtin. Null in script mode.</summary>
 	public Bash.IO.History? History { get; set; }
 
-	// SIGINT (Ctrl+C) handling. The REPL's CancelKeyPress handler sets the flag from
-	// another thread; loop/command boundaries poll it and throw InterruptException.
+	// SIGINT (Ctrl+C) handling. The REPL's CancelKeyPress handler (or `timeout`) sets the flag from
+	// another thread; loop/command boundaries check it and throw InterruptException. A builtin that
+	// blocks (`sleep`, `tail -f`) WAITS on InterruptHandles instead of polling the flag (the
+	// architect, 2026-10-04: never Thread.Sleep for synchronization).
 	private volatile bool _interrupted;
-	public void RequestInterrupt() => _interrupted = true;
-	public void ClearInterrupt()   => _interrupted = false;
-	public bool Interrupted => _interrupted;
+	private readonly ManualResetEventSlim _interruptEvent = new(false);
+	public void RequestInterrupt() { _interrupted = true;  _interruptEvent.Set(); }
+	public void ClearInterrupt()   { _interrupted = false; _interruptEvent.Reset(); }
+	public bool Interrupted => _interrupted || (_parent?.Interrupted ?? false);
+
+	/// <summary>Signalled when this shell, or the shell whose pipeline it is a stage of, is
+	/// interrupted. Wait on these, then call <see cref="CheckInterrupt"/>.</summary>
+	internal WaitHandle[] InterruptHandles()
+		{
+		var list = new List<WaitHandle>(2);
+		for (var e = this; e is not null; e = e._parent) list.Add(e._interruptEvent.WaitHandle);
+		return [.. list];
+		}
+
+	// The shell whose pipeline this interpreter is a stage of (null for the shell itself)
+	private readonly Evaluator? _parent;
 
 	/// <summary>If a SIGINT is pending: run the INT trap if one is set (or ignore it
 	/// when the trap is empty), otherwise throw InterruptException. Clears the flag.</summary>
 	public void CheckInterrupt()
 		{
-		if (!_interrupted) return;
-		_interrupted = false;
+		if (!_interrupted)
+			{
+			// a pipeline stage's own interpreter: an interrupt of the shell running the pipeline
+			// (Ctrl+C, `timeout`) ends the stage, as SIGINT ends every process of the pipeline
+			if (_parent is { Interrupted: true }) throw new InterruptException();
+			return;
+			}
+		ClearInterrupt();
 		if (_traps.TryGetValue("INT", out var cmd))
 			{
 			if (cmd.Length > 0) RunTrap(cmd);   // empty => ignore the signal
@@ -84,8 +201,8 @@ public sealed class Evaluator
 	private bool _inTrap;       // guard against trap handlers re-triggering traps
 	private bool _exitTrapRan;
 
-	public void SetTrap(string sig, string command) => _traps[sig] = command;
-	public void RemoveTrap(string sig) => _traps.Remove(sig);
+	public void SetTrap(string sig, string command) { SaveTrapsForSubshell(sig); _traps[sig] = command; }
+	public void RemoveTrap(string sig) { SaveTrapsForSubshell(sig); _traps.Remove(sig); }
 	public IReadOnlyDictionary<string, string> Traps => _traps;
 
 	private void RunTrap(string command)
@@ -101,6 +218,7 @@ public sealed class Evaluator
 		{
 		if (_exitTrapRan) return;
 		_exitTrapRan = true;
+		SettleBackgroundJobs();   // every exit path passes here
 		if (_traps.TryGetValue("EXIT", out var cmd) && cmd.Length > 0)
 			RunTrap(cmd);
 		}
@@ -112,6 +230,39 @@ public sealed class Evaluator
 		_expander = new WordExpander(_env, this);
 		_env.FlagsProvider = () => Options.FlagString();
 		_env.ArithEval     = e => _expander.EvalArithmetic(e);
+		}
+
+	/// <summary>
+	/// A pipeline stage's own interpreter. Bash runs every stage of a pipeline in a subshell, so
+	/// nothing a stage sets -- variables, positionals, functions, options, traps, aliases --
+	/// reaches the parent or a sibling stage. Stages used to share this shell's state on their
+	/// threads: `echo x | read v` left v=x, and a `$( )` in one stage restored its snapshot over
+	/// another stage's `$1` (lost parameters, lost output; DECISIONS 2026-10-03). ~2.5 µs a stage.
+	/// Each has its own cwd (DECISIONS 2026-10-03). Jobs, getopts position and `exec` redirects
+	/// start fresh, as in a bash subshell.
+	/// Also a background job's own shell (`cmd &amp;`, DECISIONS 2026-10-05): then
+	/// <paramref name="sharesInterrupts"/> is false, because an asynchronous job ignores the
+	/// terminal's Ctrl+C in bash, while a pipeline stage ends with its shell.
+	/// </summary>
+	private Evaluator(Evaluator parent, bool sharesInterrupts = true)
+		{
+		_parent   = sharesInterrupts ? parent : null;
+		_env      = parent._env.CloneForSubshell();
+		Options   = parent.Options.Clone();
+		_builtins = new Builtins(_env, this);
+		_expander = new WordExpander(_env, this);
+		_env.FlagsProvider = () => Options.FlagString();
+		_env.ArithEval     = e => _expander.EvalArithmetic(e);
+		_builtins.InheritFrom(parent._builtins);
+		foreach (var kv in parent._functions) _functions[kv.Key] = kv.Value;
+		foreach (var kv in parent.Aliases)    Aliases[kv.Key]    = kv.Value;
+		foreach (var kv in parent._traps)     _traps[kv.Key]     = kv.Value;
+		foreach (var kv in parent._fds)       _fds[kv.Key]       = kv.Value;
+		foreach (var kv in parent._pathHash)  _pathHash[kv.Key]  = kv.Value;
+		_funcStack.AddRange(parent._funcStack);
+		_sourceStack.AddRange(parent._sourceStack);
+		_errexitSuppress = parent._errexitSuppress;
+		History = parent.History;
 		}
 
 	// ── public entry point ────────────────────────────────────────────────────
@@ -133,26 +284,37 @@ public sealed class Evaluator
 		if (Options.NoExec) return 0;
 		if (node.Line > 0) _env.CurrentLine = node.Line;
 
-		int code = node switch
+		int code;
+		try
 			{
-			Script s                  => ExecScript(s),
-			List l                    => ExecList(l),
-			Pipeline p                => ExecPipeline(p),
-			SimpleCommand cmd         => ExecSimpleCommand(cmd),
-			ArrayElementAssign ae     => ExecArrayElementAssign(ae),
-			ArrayCompoundAssign ac    => ExecArrayCompoundAssign(ac),
-			ArithmeticCommand am      => ExecArithmeticCommand(am),
-			BraceGroup bg             => ExecWithRedirects(bg.Body, bg.Redirects),
-			Subshell ss               => ExecSubshell(ss),
-			IfCommand ic              => ExecIf(ic),
-			WhileCommand wc           => ExecWhile(wc),
-			ForCommand fc             => ExecFor(fc),
-			ArithForCommand af        => ExecArithFor(af),
-			CaseCommand cc            => ExecCase(cc),
-			FunctionDef fd            => ExecFunctionDef(fd),
-			ConditionalExpression ce  => ExecConditional(ce),
-			_ => throw new EvalException($"Unhandled node type: {node.GetType().Name}")
-			};
+			code = node switch
+				{
+				Script s                  => ExecScript(s),
+				List l                    => ExecList(l),
+				Pipeline p                => ExecPipeline(p),
+				SimpleCommand cmd         => ExecSimpleCommand(cmd),
+				ArrayElementAssign ae     => ExecArrayElementAssign(ae),
+				ArrayCompoundAssign ac    => ExecArrayCompoundAssign(ac),
+				ArithmeticCommand am      => ExecArithmeticCommand(am),
+				BraceGroup bg             => ExecWithRedirects(bg.Body, bg.Redirects),
+				Subshell ss               => ExecSubshell(ss),
+				IfCommand ic              => ExecIf(ic),
+				WhileCommand wc           => ExecWhile(wc),
+				ForCommand fc             => ExecFor(fc),
+				ArithForCommand af        => ExecArithFor(af),
+				CaseCommand cc            => ExecCase(cc),
+				FunctionDef fd            => ExecFunctionDef(fd),
+				ConditionalExpression ce  => ExecConditional(ce),
+				_ => throw new EvalException($"Unhandled node type: {node.GetType().Name}")
+				};
+			}
+		catch (RedirectException ex)
+			{
+			// this node's own redirect failed: it fails with status 1, as in bash, and whatever
+			// encloses it carries on (it used to abandon the whole statement)
+			if (!ex.Reported) Console.Error.WriteLine($"bash: {ex.Message}");
+			code = 1;
+			}
 
 		_env.LastExitCode = code;
 
@@ -183,6 +345,8 @@ public sealed class Evaluator
 	/// runtime error yields 1.</summary>
 	public int RunString(string source, bool reportErrors = true, string origin = "bash", int syntaxErrorCode = 2)
 		{
+		var callerEnv = ShellEnvironment.Active;   // this thread runs THIS shell's code (its cwd) from here
+		ShellEnvironment.Active = _env;
 		try
 			{
 			var tokens = new Lexer.Lexer(source).Tokenize();
@@ -202,6 +366,7 @@ public sealed class Evaluator
 		                            && ex is IOException or UnauthorizedAccessException
 		                                or NotSupportedException or System.Security.SecurityException)
 			{ if (reportErrors) Console.Error.WriteLine($"bash: {origin}: {ex.Message}"); _env.LastExitCode = 1; return 1; }
+		finally { ShellEnvironment.Active = callerEnv; }
 		}
 
 	/// <summary>Source a file (startup files, BASH_ENV, `source`/`.`). When silentIfMissing
@@ -268,7 +433,7 @@ public sealed class Evaluator
 			_env.LastExitCode = ex.Code; return ex.Code;
 			}
 		// bash: a redirection failure is status 1; 2 is reserved for syntax-level errors
-		catch (RedirectException ex) { Console.Error.WriteLine($"bash: {ex.Message}"); _env.LastExitCode = 1; return 1; }
+		catch (RedirectException ex) { if (!ex.Reported) Console.Error.WriteLine($"bash: {ex.Message}"); _env.LastExitCode = 1; return 1; }
 		catch (EvalException ex) { Console.Error.WriteLine($"bash: {ex.Message}"); _env.LastExitCode = 2; return 2; }
 		}
 
@@ -313,18 +478,28 @@ public sealed class Evaluator
 
 	// ── background jobs ─────────────────────────────────────────────────────────
 	private readonly List<BackgroundJob> _jobs = [];
-	private int _nextJobId = 1;
+	/// <summary>bash's job number: one past the highest still in the table, so once `wait` has
+	/// emptied it the next job is %1 again. A counter that never reset made `kill %1` after a
+	/// loop of jobs "no such job".</summary>
+	private int NextJobId() => _jobs.Count == 0 ? 1 : _jobs.Max(j => j.Id) + 1;
 
 	private void StartBackgroundJob(Node node)
 		{
-		var job = new BackgroundJob { Id = _nextJobId++, Command = DescribeNode(node) };
+		var job = new BackgroundJob { Id = NextJobId(), Command = DescribeNode(node), Background = true };
 		var stdio = ConsoleMux.Capture();   // the job writes wherever its parent was writing
+		// Its own copy of the shell, taken NOW, as bash forks one at `&`. Jobs ran on this shell's own
+		// state: `for f in *; do gzip "$f" & done` read $f after the loop had moved on (the last file,
+		// every time), and a job's `cd` or assignment changed the parent (DECISIONS 2026-10-05).
+		var shell = new Evaluator(this, sharesInterrupts: false);
+		job.Shell = shell;
 		job.Thread = new Thread(() =>
 			{
 			ConsoleMux.Apply(stdio);
+			ShellEnvironment.Active = shell._env;
 			_currentJob = job;
-			try            { job.ExitCode = Execute(node); }
+			try            { job.ExitCode = shell.Execute(node); }
 			catch (ExitException ex) { job.ExitCode = ex.Code; }
+			catch (InterruptException) { job.ExitCode = 143; }   // `kill %n`: 128 + SIGTERM
 			catch          { job.ExitCode = 1; }
 			finally        { job.Done = true; }
 			}) { IsBackground = true };
@@ -332,6 +507,126 @@ public sealed class Evaluator
 		_env.LastBackgroundPid = job.Pid;
 		job.Thread.Start();
 		if (Options.Interactive) Console.Error.WriteLine($"[{job.Id}] {job.Pid}");
+		}
+
+	// ── children that outlive the shell (DECISIONS 2026-10-04, option b) ──────
+	// Every external child goes into the kill-on-close job (P2), so a host that kills the shell on
+	// a timeout takes its foreground work with it. A background job's children (`server &`) and
+	// those started under `nohup`/`setsid` are left out of it and outlive the shell, as in bash.
+
+	[ThreadStatic] private static bool t_detach;
+
+	private static bool ChildOutlivesShell => t_detach || _currentJob is { Background: true };
+
+	/// <summary>`nohup cmd [args]`: run it here, its children outliving the shell. GNU's terminal
+	/// rules: stdin from a terminal reads /dev/null, stdout to a terminal appends to nohup.out, stderr
+	/// to a terminal follows stdout. Under Claude Code none of them is a terminal.</summary>
+	public int Nohup(List<string> args)
+		{
+		if (args.Count > 0 && args[0] == "--") args = args[1..];
+		if (args.Count == 0) { Console.Error.WriteLine("nohup: missing operand\nTry 'nohup --help' for more information."); return 125; }
+		bool inTty  = !ConsoleMux.InSwapped && ConsoleMux.PipeIn is null && ConsoleMux.RawIn is null && !Console.IsInputRedirected;
+		bool outTty = !ConsoleMux.OutSwapped && ConsoleMux.PipeOut is null && !Console.IsOutputRedirected;
+		bool errTty = !ConsoleMux.ErrSwapped && !Console.IsErrorRedirected;
+		var redirects = new List<Redirect>();
+		if (inTty) redirects.Add(new Redirect(0, RedirectKind.Input, Word.Literal("/dev/null")));
+		if (outTty)
+			{
+			Console.Error.WriteLine(inTty ? "nohup: ignoring input and appending output to 'nohup.out'" : "nohup: appending output to 'nohup.out'");
+			redirects.Add(new Redirect(1, RedirectKind.Append, Word.Literal("nohup.out")));
+			}
+		if (errTty) redirects.Add(new Redirect(2, RedirectKind.OutputDup, Word.Literal("1")));
+		using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
+		return RunDetached(args[0], args[1..]);
+		}
+
+	/// <summary>`setsid [-w] [-f] cmd [args]`: its children outlive the shell. As in a bash without
+	/// job control (a script, a Claude Code call) the command runs in the foreground; `-f` -- or an
+	/// interactive shell -- starts it and returns at once, `-w` waits.</summary>
+	public int Setsid(List<string> args)
+		{
+		bool fork = Options.Interactive, wait = false;
+		while (args.Count > 0 && args[0].StartsWith('-') && args[0].Length > 1)
+			{
+			var a = args[0]; args = args[1..];
+			if (a == "--") break;
+			if (a is "-f" or "--fork") fork = true;
+			else if (a is "-w" or "--wait") wait = true;
+			else if (a is "-c" or "--ctty") { }
+			else { Console.Error.WriteLine($"setsid: invalid option -- '{a.TrimStart('-')}'"); return 1; }
+			}
+		if (args.Count == 0) { Console.Error.WriteLine("setsid: no command specified"); return 1; }
+		if (!fork || wait) return RunDetached(args[0], args[1..]);
+		var job = new BackgroundJob { Id = 0, Command = string.Join(' ', args), Background = true };
+		var stdio = ConsoleMux.Capture();
+		var name = args[0]; var rest = args[1..];
+		var shell = new Evaluator(this, sharesInterrupts: false);   // its own copy, like a `&` job
+		job.Shell = shell;
+		job.Thread = new Thread(() =>
+			{
+			ConsoleMux.Apply(stdio);
+			ShellEnvironment.Active = shell._env;
+			try { shell.RunAsJob(job, name, rest); } catch { }
+			finally { job.Done = true; }
+			}) { IsBackground = true };
+		job.Thread.Start();
+		AwaitSpawn(job, 1000);   // the program must exist before we return: the shell may exit next
+		return 0;
+		}
+
+	private int RunDetached(string name, List<string> args)
+		{
+		var prev = t_detach;
+		t_detach = true;
+		try { return RunCommand(name, args); }
+		finally { t_detach = prev; }
+		}
+
+	/// <summary>`disown [-a] [-r] [-h] [jobspec…]`: remove jobs from the table. A job's external
+	/// children already outlive the shell (option b), so `-h` changes nothing here.</summary>
+	public int Disown(List<string> args)
+		{
+		bool all = false, running = false, keep = false;
+		var specs = new List<string>();
+		foreach (var a in args)
+			{
+			if (a.StartsWith('-') && a.Length > 1 && !a.StartsWith("-%"))
+				foreach (var c in a[1..]) { if (c == 'a') all = true; else if (c == 'r') running = true; else if (c == 'h') keep = true;
+				                            else { Console.Error.WriteLine($"bash: disown: -{c}: invalid option"); return 2; } }
+			else specs.Add(a);
+			}
+		if (keep) return 0;
+		if (all || running) { _jobs.RemoveAll(j => !running || !j.Done); return 0; }
+		if (specs.Count == 0)
+			{
+			if (_jobs.Count == 0) { Console.Error.WriteLine("bash: disown: current: no such job"); return 1; }
+			_jobs.RemoveAt(_jobs.Count - 1);
+			return 0;
+			}
+		int rc = 0;
+		foreach (var s in specs)
+			{
+			var j = FindJob(s);
+			if (j is null) { Console.Error.WriteLine($"bash: disown: {s}: no such job"); rc = 1; }
+			else _jobs.Remove(j);
+			}
+		return rc;
+		}
+
+	/// <summary>Wait (bounded) until <paramref name="job"/> has started its external child, ended,
+	/// or parked in `sleep`.</summary>
+	private static void AwaitSpawn(BackgroundJob job, int budgetMs) => job.WaitSettled(budgetMs);
+
+	/// <summary>At shell exit: bash has FORKED `server &` before its next line, so the process
+	/// exists even if the shell exits at once. Here a job is a thread, so give any job that has not
+	/// yet started its program a moment to do so (bounded, 1 s in all), or it would never start.
+	/// A job parked in `sleep` is not waited for: it would cost the full second at every exit
+	/// (measured 1.07 s vs 0.013 s for `sleep 30 &`). A builtin-only loop still can.</summary>
+	private void SettleBackgroundJobs()
+		{
+		var sw = Stopwatch.StartNew();
+		foreach (var j in _jobs.ToList())
+			AwaitSpawn(j, (int)Math.Max(0, 1000 - sw.ElapsedMilliseconds));
 		}
 
 	/// <summary>Find a job by `%n` spec, job number, or synthetic pid.</summary>
@@ -351,13 +646,16 @@ public sealed class Evaluator
 		error = null;
 		var job = FindJob(spec);
 		if (job is null) { error = $"{spec}: no such job"; return 1; }
+		// the job's own shell first, so its loop does not go on to the next command; then the program
+		// it is running, if any
+		if (!job.Done) job.Shell?.RequestInterrupt();
 		int pid = job.ChildPid;
 		if (pid > 0)
 			{
 			try { System.Diagnostics.Process.GetProcessById(pid).Kill(true); } catch { }
 			return 0;
 			}
-		if (job.Done) return 0;
+		if (job.Done || job.Shell is not null) return 0;
 		error = $"{spec}: job runs in-process and has no child to signal";
 		return 1;
 		}
@@ -456,18 +754,110 @@ public sealed class Evaluator
 	/// <summary>Byte-faithful view of the current stdin for byte builtins (cat, head/tail -c, wc -c,
 	/// cmp, od, tee, checksums…): the pipe or `&lt; file` behind this thread's stdin, the process's
 	/// own stdin when nothing was installed, or null when stdin is text (here-doc/here-string),
-	/// in which case the caller reads <c>Console.In</c>. Read one or the other, never both.</summary>
+	/// in which case the caller reads <c>Console.In</c>. A text read of the same stdin may have
+	/// read ahead (`{ read -r x; cat; } &lt; f`), so what it buffered and did not consume comes
+	/// first -- the stream used to start past it and the rest of the file was lost (2026-10-03).</summary>
 	public static System.IO.Stream? CurrentRawStdin()
 		{
-		if (ConsoleMux.RawIn is not null) return ConsoleMux.RawIn;
-		if (ConsoleMux.InSlot is null && Console.IsInputRedirected) return Console.OpenStandardInput();
-		return null;
+		var raw = ConsoleMux.RawIn
+		       ?? (ConsoleMux.InSlot is null && Console.IsInputRedirected ? Console.OpenStandardInput() : null);
+		if (raw is null) return null;
+		if (ConsoleMux.In is LfReader lf && lf.TakeBuffered() is { Length: > 0 } pending)
+			return new PrefixedStream(ShellEncoding.Utf8.GetBytes(pending), raw);
+		return raw;
 		}
 
 	// ── pipeline ──────────────────────────────────────────────────────────────
 
+	// CPU time of the external children this process has waited for (bash's `time` counts the
+	// shell's own CPU plus its children's; Windows counts a process's own only). Ticks.
+	private static long s_childUserTicks, s_childSysTicks;
+
+	internal static void AddChildCpu(Process p)
+		{
+		try
+			{
+			System.Threading.Interlocked.Add(ref s_childUserTicks, p.UserProcessorTime.Ticks);
+			System.Threading.Interlocked.Add(ref s_childSysTicks, p.PrivilegedProcessorTime.Ticks);
+			}
+		catch { }   // a process whose times cannot be read: counted as zero
+		}
+
+	/// <summary>`time [-p] pipeline`: run it, then report real/user/sys on the shell's stderr in
+	/// TIMEFORMAT (bash's default when unset; nothing when set but empty). DECISIONS 2026-10-04.</summary>
+	private int ExecTimedPipeline(Pipeline p)
+		{
+		var self = Process.GetCurrentProcess();
+		var u0 = self.UserProcessorTime.Ticks + System.Threading.Interlocked.Read(ref s_childUserTicks);
+		var s0 = self.PrivilegedProcessorTime.Ticks + System.Threading.Interlocked.Read(ref s_childSysTicks);
+		var sw = Stopwatch.StartNew();
+		int rc = ExecPipeline(p with { Timed = false });
+		double real = sw.Elapsed.TotalSeconds;
+		self.Refresh();
+		double user = (self.UserProcessorTime.Ticks + System.Threading.Interlocked.Read(ref s_childUserTicks) - u0) / (double)TimeSpan.TicksPerSecond;
+		double sys  = (self.PrivilegedProcessorTime.Ticks + System.Threading.Interlocked.Read(ref s_childSysTicks) - s0) / (double)TimeSpan.TicksPerSecond;
+		string? fmt = p.TimePosix ? "real %2R\nuser %2U\nsys %2S"
+		            : _env.IsSet("TIMEFORMAT") ? _env.Get("TIMEFORMAT")
+		            : "\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS";
+		if (fmt.Length > 0)
+			{
+			var err = ConsoleMux.Err;
+			string report;
+			try { report = FormatTime(fmt, real, user, sys) + "\n"; }
+			catch (TimeFormatException ex) { report = $"bash: TIMEFORMAT: `{ex.Char}': invalid format character\n"; }
+			lock (err) { err.Write(report); err.Flush(); }
+			}
+		return rc;
+		}
+
+	private sealed class TimeFormatException(char c) : Exception { public char Char { get; } = c; }
+
+	/// <summary>bash's TIMEFORMAT: `%%`, and `%[p][l]R|U|S` (p = 0-3 decimals, default 3; l = MmSS.FFFs),
+	/// `%P` = CPU percentage (user+sys)/real. Fractions are truncated, as bash does.</summary>
+	private static string FormatTime(string fmt, double real, double user, double sys)
+		{
+		var sb = new System.Text.StringBuilder();
+		for (int i = 0; i < fmt.Length; i++)
+			{
+			char c = fmt[i];
+			if (c != '%' || i + 1 >= fmt.Length) { sb.Append(c); continue; }
+			int j = i + 1;
+			if (fmt[j] == '%') { sb.Append('%'); i = j; continue; }
+			int prec = 3; bool lng = false;
+			if (char.IsAsciiDigit(fmt[j])) { prec = Math.Min(3, fmt[j] - '0'); j++; }
+			if (j < fmt.Length && fmt[j] == 'l') { lng = true; j++; }
+			if (j >= fmt.Length) { sb.Append(fmt, i, fmt.Length - i); break; }
+			double? v = fmt[j] switch { 'R' => real, 'U' => user, 'S' => sys, _ => null };
+			if (fmt[j] == 'P')
+				{
+				sb.Append((real > 0 ? (user + sys) * 100 / real : 0).ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+				i = j;
+				continue;
+				}
+			if (v is null) throw new TimeFormatException(fmt[j]);   // bash: an error, and no report
+			sb.Append(lng ? LongSeconds(v.Value, prec) : Truncated(v.Value, prec));
+			i = j;
+			}
+		return sb.ToString();
+		}
+
+	private static string Truncated(double seconds, int prec)
+		{
+		double scale = Math.Pow(10, prec);
+		double t = Math.Floor(Math.Max(0, seconds) * scale) / scale;
+		return t.ToString("F" + prec, System.Globalization.CultureInfo.InvariantCulture);
+		}
+
+	private static string LongSeconds(double seconds, int prec)
+		{
+		seconds = Math.Max(0, seconds);
+		long minutes = (long)(seconds / 60);
+		return $"{minutes}m{Truncated(seconds - minutes * 60, prec)}s";
+		}
+
 	private int ExecPipeline(Pipeline p)
 		{
+		if (p.Timed) return ExecTimedPipeline(p);
 		if (p.Commands.Count == 1)
 			{
 			int c;
@@ -488,8 +878,8 @@ public sealed class Evaluator
 	/// stdout (so `x=$(a | b)` captures and `{ a | b; } >f` writes the file). When a stage
 	/// finishes it closes its read end, so an upstream producer's next write raises
 	/// <see cref="BrokenPipeException"/> (status 141) — bash's SIGPIPE — which also ends an
-	/// external producer (ExecExternal kills it). No fork: stages share the shell's
-	/// variables, which bash would isolate in subshells (documented).
+	/// external producer (ExecExternal kills it). Each stage runs on its OWN interpreter, a
+	/// copy of this shell's state, as bash runs each stage in a subshell (DECISIONS 2026-10-03).
 	/// </summary>
 	private int ExecPipelineThreaded(Pipeline p)
 		{
@@ -497,11 +887,15 @@ public sealed class Evaluator
 		int n = stages.Count;
 		var pipes = new PipeBuffer[n - 1];
 		for (int i = 0; i < n - 1; i++) pipes[i] = new PipeBuffer();
+		var shells = new Evaluator[n];   // built here, before any stage runs: the parent is idle
+		for (int i = 0; i < n; i++) shells[i] = new Evaluator(this);
 
 		var exitCodes = new int[n];
 		var threads   = new Thread[n];
 		var parent    = ConsoleMux.Capture();
 		var utf8      = ShellEncoding.Utf8;
+		var job       = _currentJob;   // `a | b &`, `nohup f` (f runs a pipeline): every stage's children outlive the shell
+		var detach    = t_detach;
 
 		for (int i = 0; i < n; i++)
 			{
@@ -510,11 +904,15 @@ public sealed class Evaluator
 			threads[idx] = new Thread(() =>
 				{
 				ConsoleMux.Apply(parent);
-				System.IO.StreamReader? reader = null;
+				ShellEnvironment.Active = shells[idx]._env;   // the stage's own cwd for every relative path it resolves
+				_currentJob = job;
+				t_detach = detach;
+				TextReader? reader = null;
 				System.IO.StreamWriter? writer = null;
 				if (idx > 0)
 					{
-					reader = new System.IO.StreamReader(pipes[idx - 1].ReadEnd, utf8, false, 4096);
+					// LF-only lines by block scan, one buffer for every command of this stage
+					reader = new LfReader(pipes[idx - 1].ReadEnd);
 					ConsoleMux.SetIn(reader);
 					ConsoleMux.PipeIn = pipes[idx - 1].ReadEnd;
 					ConsoleMux.RawIn = pipes[idx - 1].ReadEnd;   // byte builtins read the pipe directly
@@ -531,7 +929,7 @@ public sealed class Evaluator
 					}
 				else ConsoleMux.PipeOut = null;
 
-				try { exitCodes[idx] = Execute(stageNode); }
+				try { exitCodes[idx] = shells[idx].Execute(stageNode); }
 				catch (ExitException ex)      { exitCodes[idx] = ex.Code; }
 				catch (BrokenPipeException)   { exitCodes[idx] = 141; }
 				catch (InterruptException)    { exitCodes[idx] = 130; }
@@ -575,15 +973,17 @@ public sealed class Evaluator
 
 	private int ExecArrayCompoundAssign(ArrayCompoundAssign ac)
 		{
-		// [key]=value elements target an associative (or explicit-index) array
-		if (ac.Values.Count > 0 && ac.Values.All(w => w.Parts.Count > 0 && w.Parts[0] is LiteralPart lp && lp.Value.StartsWith('[') && lp.Value.Contains("]=")))
+		// [key]=value elements target an associative (or explicit-index) array. The key may span
+		// word parts -- ["$k"]=v, [$i]=v -- so each element is split structurally, then the key
+		// and the value are expanded separately (a key containing "]=" stays intact).
+		if (ac.Values.Count > 0 && ac.Values.All(w => w.Parts.Count > 0 && w.Parts[0] is LiteralPart lp && lp.Value.StartsWith('[')
+		                                              && w.TrySplitIndexedAssignment(1, out _, out _)))
 			{
 			if (!ac.Append && !_env.IsAssoc(ac.ArrayName)) _env.SetArrayFromList(ac.ArrayName, []);
 			foreach (var w in ac.Values)
 				{
-				var text = _expander.ExpandToString(w);
-				int close = text.IndexOf("]=", StringComparison.Ordinal);
-				var key = text[1..close]; var val = text[(close + 2)..];
+				w.TrySplitIndexedAssignment(1, out var keyWord, out var valWord);
+				var key = _expander.ExpandToString(keyWord); var val = _expander.ExpandToString(valWord);
 				if (_env.IsAssoc(ac.ArrayName)) _env.SetAssocElement(ac.ArrayName, key, val);
 				else _env.SetArrayElement(ac.ArrayName, (int)_expander.EvalArithmetic(key), val);
 				}
@@ -603,6 +1003,27 @@ public sealed class Evaluator
 		}
 
 	// ── simple command ────────────────────────────────────────────────────────
+
+	/// <summary>A command word that is not a plain literal, expanded like any word: its first field is
+	/// the command, the rest lead <paramref name="args"/>. Out of line, so the hot path stays small.</summary>
+	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+	private string ExpandCommandWord(Word name, List<string> args, out bool vanished)
+		{
+		var fields = _expander.ExpandToFields(name);
+		vanished = fields.Count == 0;
+		if (vanished) return "";
+		for (int i = 1; i < fields.Count; i++) args.Add(fields[i]);
+		return fields[0];
+		}
+
+	/// <summary>The command word and every argument expanded to nothing: no command runs, but its
+	/// redirects are still made, as for a command with no name.</summary>
+	[System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+	private int NoCommandLeft(SimpleCommand cmd)
+		{
+		if (cmd.Redirects.Count > 0) { using var _ = ApplyRedirects(cmd.Redirects); }
+		return _expander.LastSubstStatus ?? 0;
+		}
 
 	private int ExecSimpleCommand(SimpleCommand cmd)
 		{
@@ -641,8 +1062,15 @@ public sealed class Evaluator
 			return _expander.LastSubstStatus ?? 0;
 			}
 
-		var namStr = _expander.ExpandToString(cmd.Name);
+		// The command word is expanded like any other word -- field splitting, "$@", globs, braces --
+		// and its first field is the command: `f() { "$@"; }`, `c="ls -l"; $c`. It was expanded as ONE
+		// string, so those ran "echo a b" as a command name (every build back to rev 80). A plain
+		// literal name, nearly every command, keeps the cheap path.
 		var args = new List<string>();
+		bool nameVanished = false;   // `$empty` / `"$@"` with no arguments: the first argument is the command
+		string namStr = cmd.Name.IsPlainLiteral   // cached on the node: loops reuse it
+			? _expander.ExpandToString(cmd.Name)
+			: ExpandCommandWord(cmd.Name, args, out nameVanished);
 
 		// Alias expansion (only with `shopt -s expand_aliases`): the alias text replaces
 		// the command word; its first word is the new command, the rest lead the args.
@@ -674,6 +1102,12 @@ public sealed class Evaluator
 			if (fields.Count == 1) args.Add(fields[0]);
 			else                   args.AddRange(fields);
 			}
+		if (nameVanished)
+			{
+			if (args.Count == 0) return NoCommandLeft(cmd);
+			namStr = args[0];
+			args.RemoveAt(0);
+			}
 
 		// -x: xtrace
 		if (Options.XTrace)
@@ -704,13 +1138,16 @@ public sealed class Evaluator
 		// functions run in-process, so they take ApplyRedirects' Console swap. External
 		// processes write to OS handles that a Console swap can't reach (and opening the
 		// same file twice throws a sharing violation), so ExecExternal owns their fd-map.
-		if (Builtins.Has(namStr) || _functions.ContainsKey(namStr))
+		// Bash's lookup order: function, then builtin, then PATH. A function named after a builtin
+		// utility (`rev(){ ...; }`) must shadow it, as `type` (Classify) already reports; until
+		// 2026-10-04 the builtin was tried first and the function never ran.
+		_functions.TryGetValue(namStr, out var fn);
+		if (fn is not null || Builtins.Has(namStr))
 			{
 			using var redirectScope = cmd.Redirects.Count > 0 ? ApplyRedirects(cmd.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
 			using var tempScope = ApplyTempAssignments(tempAssign);
-			if (_builtins.TryExecute(namStr, args, out int builtinCode))
-				return builtinCode;
-			return ExecFunction(_functions[namStr], args);
+			if (fn is not null) return ExecFunction(fn, args);
+			return _builtins.TryExecute(namStr, args, out int builtinCode) ? builtinCode : 127;
 			}
 
 		return ExecExternal(namStr, args, tempAssign, cmd.Redirects);
@@ -898,8 +1335,11 @@ public sealed class Evaluator
 		foreach (var (k, v) in _env.GetExportedVars()) { child._env.Set(k, v); child._env.Export(k); }
 		child._env.SetArg0(arg0);
 		child._env.SetPositionals(args);
+		child._env.AdoptCwd(_env);   // starts where we are; its `cd` must not move us (it did, 2026-10-03)
+		child._env.Set("PWD", child._env.Cwd);
 		try   { return child.RunString(ShellEncoding.ReadAllText(path)); }
 		catch (ExitException ex) { return ex.Code; }
+		finally { _env.ReassertProcessCwd(); }   // the child may have moved the process cwd we own
 		}
 
 	private int ExecExternal(string name, List<string> args,
@@ -913,7 +1353,13 @@ public sealed class Evaluator
 			var (interp, interpArgs) = ResolveInterpreter(shebang);
 			var ib = Path.GetFileNameWithoutExtension(interp).ToLowerInvariant();
 			if (ib is "bash" or "sh" or "")
+				{
+				// in-process, so it takes its redirects and `VAR=x` the way a builtin does. Both were
+				// dropped: `./s.sh > out` printed to the terminal, `FOO=1 ./s.sh` saw no FOO (2026-10-04)
+				using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
+				using var temp  = ApplyTempAssignments(tempAssign);
 				return RunScriptInProcess(name, scriptPath, args);
+				}
 			// External interpreter: <interp> [shebang args] <script> <args...>,
 			// using the basename so PATH resolves it (Unix interpreter paths won't exist).
 			var spawn = new List<string>(interpArgs) { scriptPath };
@@ -928,7 +1374,7 @@ public sealed class Evaluator
 			{
 			FileName         = fileName,
 			UseShellExecute  = false,
-			WorkingDirectory = Directory.GetCurrentDirectory(),
+			WorkingDirectory = _env.Cwd,   // this shell's own cwd (a pipeline stage's may differ from the process's)
 			};
 
 		foreach (var arg in args)
@@ -941,385 +1387,301 @@ public sealed class Evaluator
 		foreach (var (k, v) in tempAssign)
 			psi.Environment[k] = v;
 
-		// Resolve redirects into a simple fd-map:
-		//   fd 0 → null (inherit) | string path (file) | text (heredoc/here-string) | "pipe"
-		//   fd 1 → same
-		//   fd 2 → same | "1" (dup to stdout)
-		// We process left-to-right as bash does.
+		// ── the child's std handles (DECISIONS 2026-10-04: the real file handle) ─────────────
+		// Each of fd 0-2 starts where this shell's own stream points NOW -- the newest installation
+		// wins: a `$( )` or `{ } > f` inside a pipeline stage used to lose to the stage's pipe, so
+		// `echo "$(ext)" | cat` captured nothing (found 2026-10-04). The writers are taken HERE: the
+		// console slots are per thread, and on a pump thread `Console.Error` is the real stderr.
+		// The redirects then apply
+		// LEFT TO RIGHT as bash's dup2 applies them: `2>&1 >f` leaves stderr on the OLD stdout. A file
+		// or /dev/null is a handle the child holds itself, so it outlives the shell and another
+		// command can read it meanwhile. Only an in-process end -- a pipeline stage, a `$( )` capture,
+		// an in-process `{ } > f`, a here-doc, an `exec 3>` stream -- needs a pipe and a pump here.
+		var opened    = new List<SafeFileHandle>();   // files and NUL opened here; closed once the child holds its own
+		var handedOff = new List<FileStream>();       // the shell's own redirect files the child writes too
+		SafeFileHandle? nul = null;
+		SafeFileHandle Nul() => nul ??= Keep(ChildLauncher.Open("NUL", ChildLauncher.Access.Null));
+		SafeFileHandle Keep(SafeFileHandle h) { opened.Add(h); return h; }
 
-		string? stdin_path  = null;  bool stdin_devnull  = false;  string? stdin_text = null;
-		string? stdout_path = null;  bool stdout_append  = false, stdout_devnull = false;
-		string? stderr_path = null;  bool stderr_append  = false, stderr_devnull = false;
-		bool    stderr_to_stdout = false; // 2>&1
-		bool    stdout_to_stderr = false; // 1>&2
-		System.IO.Stream? stdin_borrowed = null, stdout_borrowed = null, stderr_borrowed = null;   // <&3 / >&3 / 2>&3
-
-		foreach (var r in redirects)
+		// The shell's own file redirect (`nohup cmd > log`: the redirect belongs to the builtin;
+		// `{ ext; } > f`; `exec 3>f`) is handed to the child as its OWN append handle to that file, not
+		// pumped: `nohup server > log 2>&1 &` must outlive the shell. The shell flushes first and moves
+		// to the end after the child, so `{ echo a; ext; echo b; } > f` keeps a, ext, b in order.
+		ChildFd? HandOff(FileStream fs, TextWriter? text)
 			{
-			if (r.Kind is RedirectKind.Heredoc or RedirectKind.HeredocStrip)
-				{ stdin_text = _expander.ExpandToString(r.Target); stdin_path = null; stdin_devnull = false; continue; }
-			if (r.Kind == RedirectKind.HereString)
-				{ stdin_text = _expander.ExpandToString(r.Target) + "\n"; stdin_path = null; stdin_devnull = false; continue; }
-
-			var raw    = _expander.ExpandToString(r.Target);
-			var target = ShellEnvironment.TranslatePath(raw);
-			int fd = r.Fd ?? (r.Kind is RedirectKind.Input or RedirectKind.InputDup ? 0 : 1);
-			switch (r.Kind)
-				{
-				case RedirectKind.Input:
-					stdin_text = null;
-					if (raw == "/dev/null") { stdin_devnull = true; stdin_path = null; }
-					else                    { stdin_path = target; stdin_devnull = false; }
-					break;
-
-				case RedirectKind.OutputBoth:
-				case RedirectKind.AppendBoth:
-					{
-					bool append = r.Kind == RedirectKind.AppendBoth;
-					stdout_to_stderr = false; stdout_path = null; stdout_devnull = false;
-					stderr_path = null; stderr_devnull = false;
-					if (raw == "/dev/null") { stdout_devnull = true; stderr_devnull = true; }
-					else { stdout_path = target; stdout_append = append; stderr_to_stdout = true; }
-					break;
-					}
-
-				case RedirectKind.Output:
-				case RedirectKind.Clobber:
-				case RedirectKind.Append:
-					{
-					bool append = r.Kind == RedirectKind.Append;
-					if (fd == 2)
-						{
-						stderr_to_stdout = false; stderr_path = null; stderr_devnull = false;
-						if      (raw == "/dev/null")   stderr_devnull   = true;
-						else if (raw == "/dev/stdout") stderr_to_stdout = true;
-						else if (raw == "/dev/stderr") { /* stderr → stderr: inherit */ }
-						else { stderr_path = target; stderr_append = append; }
-						}
-					else if (fd <= 1)
-						{
-						stdout_to_stderr = false; stdout_path = null; stdout_devnull = false;
-						if      (raw == "/dev/null")   stdout_devnull   = true;
-						else if (raw == "/dev/stderr") stdout_to_stderr = true;
-						else if (raw == "/dev/stdout") { /* stdout → stdout: inherit */ }
-						else { stdout_path = target; stdout_append = append; }
-						}
-					break;
-					}
-
-				case RedirectKind.OutputDup:
-					if (fd == 2 && raw == "1") { stderr_to_stdout = true; stderr_path = null; stderr_devnull = false; }
-					if (fd == 1 && raw == "2") { stdout_to_stderr = true; stdout_path = null; stdout_devnull = false; }
-					if (fd == 2 && raw == "-") { stderr_devnull = true; }
-					if (fd == 1 && raw == "-") { stdout_devnull = true; }
-					if (int.TryParse(raw, out var dupSrc) && dupSrc > 2 && _fds.TryGetValue(dupSrc, out var dupStream))
-						{
-						if (fd == 1) { stdout_borrowed = dupStream; stdout_path = null; stdout_devnull = false; stdout_to_stderr = false; }
-						if (fd == 2) { stderr_borrowed = dupStream; stderr_path = null; stderr_devnull = false; stderr_to_stdout = false; }
-						}
-					break;
-				case RedirectKind.InputDup:
-					if (fd == 0 && int.TryParse(raw, out var inSrc) && inSrc > 2 && _fds.TryGetValue(inSrc, out var inStream))
-						{ stdin_borrowed = inStream; stdin_path = null; stdin_devnull = false; stdin_text = null; }
-					if (fd == 0 && raw == "-") { stdin_devnull = true; }
-					break;
-				}
-			}
-
-		// Configure psi based on resolved fd-map
-		System.IO.FileStream? stdinFs  = null;
-		System.IO.Stream?     stdoutFs = null;   // file or Stream.Null
-		System.IO.Stream?     stderrFs = null;   // file or Stream.Null
-
-		// Pipeline overrides take precedence over file redirects for stdin/stdout
-		bool hasPipeStdin  = ConsoleMux.PipeIn  is not null && stdin_path is null && !stdin_devnull && stdin_text is null && stdin_borrowed is null;
-		bool hasPipeStdout = ConsoleMux.PipeOut is not null && stdout_path is null && !stdout_devnull && !stdout_to_stderr && stdout_borrowed is null;
-		bool stdoutOwned = true, stderrOwned = true;   // borrowed fd streams must not be disposed here
-
-		// An in-process redirect in effect around this command (command substitution,
-		// `{ … } >file`, `while …; done <<EOF`): route the child's stdio through the swapped
-		// Console streams so the output lands where bash would put it.
-		bool outSwapped = !hasPipeStdout && stdout_path is null && !stdout_devnull && !stdout_to_stderr && stdout_borrowed is null
-		                  && ConsoleMux.OutSwapped;
-		bool errSwapped = !stderr_devnull && stderr_path is null && stderr_borrowed is null && !stderr_to_stdout
-		                  && ConsoleMux.ErrSwapped;
-		bool inSwapped  = !hasPipeStdin && stdin_path is null && !stdin_devnull && stdin_text is null && stdin_borrowed is null
-		                  && ConsoleMux.InSwapped;
-		TextWriter? swappedOut = outSwapped ? ConsoleMux.Out : null;
-		TextWriter? swappedErr = errSwapped ? ConsoleMux.Err : null;
-		System.IO.Stream? swappedRaw = outSwapped && !ConsoleMux.Capturing ? ConsoleMux.Raw : null;
-
-		if (hasPipeStdin)
-			psi.RedirectStandardInput = true;
-		else if (stdin_devnull || stdin_text is not null || stdin_borrowed is not null || inSwapped)
-			psi.RedirectStandardInput = true;     // close immediately → EOF / feed text / copy fd
-		else if (stdin_path is not null)
-			{
-			psi.RedirectStandardInput = true;
-			try { stdinFs = File.OpenRead(stdin_path); }
-			catch (Exception ex) { Console.Error.WriteLine($"bash: {name}: {ex.Message}"); return 1; }
-			}
-
-		if (hasPipeStdout)
-			psi.RedirectStandardOutput = true;
-		else if (stdout_devnull)
-			{ psi.RedirectStandardOutput = true; stdoutFs = System.IO.Stream.Null; }
-		else if (stdout_borrowed is not null)
-			{ psi.RedirectStandardOutput = true; stdoutFs = stdout_borrowed; stdoutOwned = false; }
-		else if (stdout_path is not null)
-			{
-			psi.RedirectStandardOutput = true;
 			try
 				{
-				stdoutFs = stdout_append
-					? File.Open(stdout_path, FileMode.Append, FileAccess.Write)
-					: File.Create(stdout_path);
+				text?.Flush(); fs.Flush();
+				var h = Keep(ChildLauncher.Open(fs.Name, ChildLauncher.Access.Append));
+				handedOff.Add(fs);
+				return new HandleFd(h);
 				}
-			catch (Exception ex) { Console.Error.WriteLine($"bash: {stdout_path}: {ex.Message}"); stdinFs?.Dispose(); return 1; }
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
+				{ return null; }   // keep the pump
 			}
-		else if (stdout_to_stderr || outSwapped)
-			psi.RedirectStandardOutput = true;
-
-		// stderr destination (independent of stdout)
-		if (errSwapped)
-			psi.RedirectStandardError = true;
-		else if (stderr_devnull)
-			{ psi.RedirectStandardError = true; stderrFs = System.IO.Stream.Null; }
-		else if (stderr_borrowed is not null)
-			{ psi.RedirectStandardError = true; stderrFs = stderr_borrowed; stderrOwned = false; }
-		else if (stderr_path is not null)
+		// Where an in-process writer leads, for a child. Judged by the WRITER, not ConsoleMux.Raw: `1>&2`
+		// and `>/dev/stderr` swap the writer and leave Raw on an outer file.
+		ChildFd Destination(TextWriter text, Stream? raw)
 			{
-			psi.RedirectStandardError = true;
-			try
-				{
-				stderrFs = stderr_append
-					? File.Open(stderr_path, FileMode.Append, FileAccess.Write)
-					: File.Create(stderr_path);
-				}
-			catch (Exception ex) { Console.Error.WriteLine($"bash: {stderr_path}: {ex.Message}"); stdinFs?.Dispose(); if (stdoutOwned) (stdoutFs as IDisposable)?.Dispose(); return 1; }
+			if (ReferenceEquals(text, TextWriter.Null)) return new HandleFd(Nul());   // in-process > /dev/null
+			var sw = text as StreamWriter;
+			if (sw?.BaseStream is FileStream fs && HandOff(fs, sw) is { } f) return f;
+			if (sw is not null && raw is not null && !ConsoleMux.Capturing && ReferenceEquals(sw.BaseStream, raw))
+				return new OutPumpFd(raw, null, ReferenceEquals(raw, ConsoleMux.PipeOut));   // bytes: a pipeline stage
+			return new OutPumpFd(null, text, false);                                       // text: a `$( )` capture
 			}
-		else if (stderr_to_stdout && (stdout_path is not null || stdout_devnull || hasPipeStdout || stdout_borrowed is not null || outSwapped))
-			psi.RedirectStandardError = true;   // follows stdout's final destination
-		// else (stderr_to_stdout with inherited stdout): both inherit the console — nothing to redirect
 
-		Process proc;
-		bool brokenPipe = false;
-		bool hideConsole = HiddenConsole.NeedsHiding;   // console-less shell: no window per child
-		if (hideConsole) psi.CreateNoWindow = true;
+		var fds = new ChildFd[3];
+		fds[0] = CurrentStdin();
+		fds[1] = ConsoleMux.OutSwapped ? Destination(ConsoleMux.Out, ConsoleMux.Raw) : new InheritFd(1);
+		fds[2] = !ConsoleMux.ErrSwapped ? new InheritFd(2)
+		       : ReferenceEquals(ConsoleMux.Err, ConsoleMux.Out) ? fds[1]   // in-process 2>&1, or `|&`: one destination, one pipe
+		       : Destination(ConsoleMux.Err, null);
+
+		ChildFd OpenTarget(string raw, string target, ChildLauncher.Access how)
+			{
+			try { return new HandleFd(Keep(ChildLauncher.Open(target, how))); }
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+				{ throw new RedirectException($"{raw}: {RedirectMessage(target, ex)}"); }
+			}
+		ChildFd OutputTarget(string raw, string target, bool append, bool clobber)
+			{
+			if (raw == "/dev/null")   return new HandleFd(Nul());
+			if (raw == "/dev/stdout") return fds[1];
+			if (raw == "/dev/stderr") return fds[2];
+			if (Options.NoClobber && !append && !clobber && File.Exists(target))
+				throw new RedirectException($"{raw}: cannot overwrite existing file");
+			return OpenTarget(raw, target, append ? ChildLauncher.Access.Append : ChildLauncher.Access.Truncate);
+			}
+
 		try
 			{
-			proc = Process.Start(psi)
-				?? throw new EvalException($"{name}: failed to start");
+			foreach (var r in redirects)
+				{
+				if (r.Kind is RedirectKind.Heredoc or RedirectKind.HeredocStrip)
+					{ fds[0] = new InPumpFd(null, null, _expander.ExpandToString(r.Target)); continue; }
+				if (r.Kind == RedirectKind.HereString)
+					{ fds[0] = new InPumpFd(null, null, _expander.ExpandToString(r.Target) + "\n"); continue; }
+
+				var raw    = _expander.ExpandToString(r.Target);
+				var target = ShellEnvironment.TranslatePath(raw);
+				int fd     = r.Fd ?? (r.Kind is RedirectKind.Input or RedirectKind.InputDup or RedirectKind.ReadWrite ? 0 : 1);
+				switch (r.Kind)
+					{
+					case RedirectKind.Input:
+					case RedirectKind.ReadWrite:
+						{
+						var t = raw == "/dev/null" ? new HandleFd(Nul())
+						      : OpenTarget(raw, target, r.Kind == RedirectKind.ReadWrite ? ChildLauncher.Access.ReadWrite : ChildLauncher.Access.Read);
+						if (fd <= 2) fds[fd] = t;   // a Windows child has fds 0-2 only
+						break;
+						}
+					case RedirectKind.OutputBoth:
+					case RedirectKind.AppendBoth:
+						fds[1] = OutputTarget(raw, target, r.Kind == RedirectKind.AppendBoth, clobber: false);
+						fds[2] = fds[1];
+						break;
+					case RedirectKind.Output:
+					case RedirectKind.Clobber:
+					case RedirectKind.Append:
+						{
+						var t = OutputTarget(raw, target, r.Kind == RedirectKind.Append, r.Kind == RedirectKind.Clobber);
+						if (fd <= 2) fds[fd] = t;   // `3>f` still creates f, as in bash
+						break;
+						}
+					case RedirectKind.OutputDup:
+					case RedirectKind.InputDup:
+						{
+						if (fd > 2) break;
+						// the target of a dup is an fd number or "-": test the RAW word (see ApplyRedirects)
+						if (raw == "-") { fds[fd] = new HandleFd(Nul()); break; }   // n>&- closes n; NUL is the nearest a Windows child has
+						if (!int.TryParse(raw, out int src)) throw new RedirectException($"{raw}: ambiguous redirect");
+						if (src <= 2) { fds[fd] = fds[src]; break; }
+						if (!_fds.TryGetValue(src, out var s) || s is null) throw new RedirectException($"{src}: Bad file descriptor");
+						fds[fd] = fd == 0 ? new InPumpFd(s, null, null)
+						        : (s is FileStream sfs ? HandOff(sfs, null) : null) ?? new OutPumpFd(s, null, false);
+						break;
+						}
+					}
+				}
 			}
-		catch (Exception ex) when (ex is not EvalException)
+		catch (RedirectException ex)
+			{
+			// reported where this command's stderr points by then, as bash does in the child after
+			// fork (so `cmd 2>/dev/null >/no/dir/f` is silent), and the command does not run
+			ReportTo(fds[2], $"bash: {ex.Message}");
+			foreach (var h in opened) h.Dispose();
+			return 1;
+			}
+
+		// one pipe per distinct in-process end: `2>&1` into a capture is ONE pipe, so the order holds
+		var pipes = new Dictionary<ChildFd, (SafeFileHandle Shell, SafeFileHandle Child)>();
+		IntPtr HandleFor(ChildFd f) => f switch
+			{
+			InheritFd i => ChildLauncher.StdHandle(i.Fd),
+			HandleFd h  => h.Handle.DangerousGetHandle(),
+			_           => (pipes.TryGetValue(f, out var p) ? p : pipes[f] = ChildLauncher.Pipe(childReads: f is InPumpFd)).Child.DangerousGetHandle(),
+			};
+
+		Process proc;
+		bool hideConsole = HiddenConsole.NeedsHiding;   // console-less shell: no window per child
+		// A child that outlives the shell leaves any C#Bash job above us (a nested shell), and gets a
+		// hidden console of its OWN unless ours is a real terminal: a hidden console's host dies with
+		// the job of the shell that made it (DECISIONS 2026-10-05).
+		bool detached   = ChildOutlivesShell;
+		bool ownConsole = detached && HiddenConsole.ConsoleMayDieWithAShell;
+		try
+			{
+			proc = ChildLauncher.Start(psi, HandleFor(fds[0]), HandleFor(fds[1]), HandleFor(fds[2]),
+			                           noWindow: hideConsole || ownConsole, breakaway: detached);
+			}
+		catch (System.ComponentModel.Win32Exception ex)
 			{
 			// bash-style diagnostics, routed to wherever this command's stderr was sent
-			// (so `cmd 2>/dev/null` really is silent).
-			string msg = ex is System.ComponentModel.Win32Exception w && w.NativeErrorCode is 2 or 3
-				? $"bash: {name}: command not found"
-				: ex is System.ComponentModel.Win32Exception w2 && w2.NativeErrorCode is 5 or 193
-					? $"bash: {name}: Permission denied"
-					: $"bash: {name}: {ex.Message}";
-			if (!stderr_devnull)
-				{
-				if (stderr_path is not null)
-					{ try { File.AppendAllText(stderr_path, msg + "\n"); } catch { } }
-				else if (stderr_to_stdout && stdoutFs is not null)
-					{ var b = ShellEncoding.Utf8.GetBytes(msg + "\n"); stdoutFs.Write(b, 0, b.Length); }
-				else if (stderr_to_stdout && (hasPipeStdout || ConsoleMux.Capturing))
-					Console.Out.WriteLine(msg);
-				else
-					Console.Error.WriteLine(msg);
-				}
-			stdinFs?.Dispose(); (stdoutFs as IDisposable)?.Dispose(); (stderrFs as IDisposable)?.Dispose();
-			return ex is System.ComponentModel.Win32Exception w3 && w3.NativeErrorCode is 5 or 193 ? 126 : 127;
+			// (so `cmd 2>/dev/null` really is silent)
+			bool denied = ex.NativeErrorCode is 5 or 193;
+			ReportTo(fds[2], ex.NativeErrorCode is 2 or 3 ? $"bash: {name}: command not found"
+			                 : denied ? $"bash: {name}: Permission denied" : $"bash: {name}: {ex.Message}");
+			foreach (var p in pipes.Values) { p.Shell.Dispose(); p.Child.Dispose(); }
+			foreach (var h in opened) h.Dispose();
+			return denied ? 126 : 127;
+			}
+		finally
+			{
+			foreach (var p in pipes.Values) p.Child.Dispose();   // the child holds its own pipe ends: EOF reaches us when it exits
 			}
 
 		if (_currentJob is not null) _currentJob.ChildPid = proc.Id;
-		ChildJobs.Attach(proc);   // dies with us (host timeout kills) - best effort
-		if (hideConsole) HiddenConsole.Adopt(proc);
+		if (!detached) ChildJobs.Attach(proc);   // dies with us (host timeout kills) - best effort
+		if (hideConsole && !detached) HiddenConsole.Adopt(proc);   // never share a detached child's console
 
+		bool brokenPipe = false;
+		var pumps = new List<Thread>(2);
 		try
 			{
-			// Feed stdin
-			if (hasPipeStdin)
+			foreach (var (end, pipe) in pipes)
 				{
-				var src = ConsoleMux.PipeIn!;
-				var t = new Thread(() => { try { src.CopyTo(proc.StandardInput.BaseStream); } catch { } try { proc.StandardInput.Close(); } catch { } });
+				var shellEnd = new FileStream(pipe.Shell, end is InPumpFd ? FileAccess.Write : FileAccess.Read, 4096, false);
+				Thread t = end switch
+					{
+					InPumpFd i  => new Thread(() => FeedChild(i, shellEnd)),
+					OutPumpFd o => new Thread(() => { if (DrainChild(o, shellEnd)) { brokenPipe = true; try { proc.Kill(true); } catch { } } }),
+					_           => throw new InvalidOperationException(),
+					};
 				t.IsBackground = true;
 				t.Start();
-				}
-			else if (stdin_text is not null)
-				{
-				var t = new Thread(() =>
-					{
-					try
-						{
-						var bytes = ShellEncoding.Utf8.GetBytes(stdin_text);
-						proc.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
-						proc.StandardInput.BaseStream.Flush();
-						}
-					catch { }
-					try { proc.StandardInput.Close(); } catch { }
-					});
-				t.IsBackground = true;
-				t.Start();
-				}
-			else if (stdin_devnull)
-				proc.StandardInput.Close();
-			else if (inSwapped)
-				{
-				var src = ConsoleMux.In;
-				var t = new Thread(() =>
-					{
-					try
-						{
-						var buf = new char[4096];
-						int n;
-						while ((n = src.Read(buf, 0, buf.Length)) > 0)
-							{ proc.StandardInput.Write(buf, 0, n); proc.StandardInput.Flush(); }
-						}
-					catch { }
-					try { proc.StandardInput.Close(); } catch { }
-					});
-				t.IsBackground = true;
-				t.Start();
-				}
-			else if (stdin_borrowed is not null)
-				{
-				var src = stdin_borrowed;
-				var t = new Thread(() => { try { src.CopyTo(proc.StandardInput.BaseStream); } catch { } try { proc.StandardInput.Close(); } catch { } });
-				t.IsBackground = true;
-				t.Start();
-				}
-			else if (stdinFs is not null)
-				{
-				var t = new Thread(() => { try { stdinFs.CopyTo(proc.StandardInput.BaseStream); } catch { } try { proc.StandardInput.Close(); } catch { } });
-				t.IsBackground = true;
-				t.Start();
-				}
-
-			Thread? stdoutThread = null;
-			Thread? stderrThread = null;
-
-			// Drain stdout: pipe → next stage, file/devnull → stream, 1>&2 → console stderr.
-			if (hasPipeStdout)
-				{
-				var dest = ConsoleMux.PipeOut!;
-				stdoutThread = new Thread(() =>
-					{
-					try
-						{
-						var buf = new byte[8192];
-						int n;
-						while ((n = proc.StandardOutput.BaseStream.Read(buf, 0, buf.Length)) > 0)
-							dest.Write(buf, 0, n);
-						dest.Flush();
-						}
-					catch (BrokenPipeException)
-						{
-						// the consumer went away: SIGPIPE the producer
-						try { proc.Kill(true); } catch { }
-						brokenPipe = true;
-						}
-					catch { }
-					// EOF for the next stage is signalled by the stage thread's CloseWrite
-					});
-				stdoutThread.IsBackground = true;
-				stdoutThread.Start();
-				}
-			else if (stdoutFs is not null)
-				{
-				var dest = stdoutFs;
-				stdoutThread = new Thread(() => proc.StandardOutput.BaseStream.CopyTo(dest));
-				stdoutThread.IsBackground = true;
-				stdoutThread.Start();
-				}
-			else if (outSwapped)
-				{
-				// in-process redirect: bytes to the raw sink when there is one (a file), else
-				// text into the swapped Console.Out (a $( ) capture or a pipe stage writer)
-				var rawDest = swappedRaw;
-				var textDest = swappedOut!;
-				stdoutThread = new Thread(() =>
-					{
-					try
-						{
-						if (rawDest is not null) { proc.StandardOutput.BaseStream.CopyTo(rawDest); rawDest.Flush(); }
-						else
-							{
-							var buf = new char[4096];
-							int n;
-							while ((n = proc.StandardOutput.Read(buf, 0, buf.Length)) > 0)
-								lock (textDest) { textDest.Write(buf, 0, n); }
-							textDest.Flush();
-							}
-						}
-					catch { }
-					});
-				stdoutThread.IsBackground = true;
-				stdoutThread.Start();
-				}
-			else if (stdout_to_stderr && psi.RedirectStandardOutput)
-				{
-				stdoutThread = new Thread(() =>
-					{
-					string? line;
-					while ((line = proc.StandardOutput.ReadLine()) is not null)
-						Console.Error.WriteLine(line);
-					});
-				stdoutThread.IsBackground = true;
-				stdoutThread.Start();
-				}
-
-			// Drain stderr: file/devnull → stream, 2>&1 → stdout's destination, swapped
-			// Console.Error → that writer.
-			if (psi.RedirectStandardError)
-				{
-				System.IO.Stream? errDest =
-					stderrFs is not null ? stderrFs
-					: stderr_to_stdout   ? (stdoutFs ?? (hasPipeStdout ? ConsoleMux.PipeOut : swappedRaw))
-					: null;
-				TextWriter? errText = errSwapped ? swappedErr : (stderr_to_stdout && outSwapped && swappedRaw is null ? swappedOut : null);
-				if (errDest is not null)
-					{
-					var dest = errDest;
-					stderrThread = new Thread(() => { try { proc.StandardError.BaseStream.CopyTo(dest); dest.Flush(); } catch { } });
-					stderrThread.IsBackground = true;
-					stderrThread.Start();
-					}
-				else if (errText is not null)
-					{
-					var dest = errText;
-					stderrThread = new Thread(() =>
-						{
-						try
-							{
-							var buf = new char[4096];
-							int n;
-							while ((n = proc.StandardError.Read(buf, 0, buf.Length)) > 0)
-								lock (dest) { dest.Write(buf, 0, n); }
-							dest.Flush();
-							}
-						catch { }
-						});
-					stderrThread.IsBackground = true;
-					stderrThread.Start();
-					}
+				if (end is OutPumpFd) pumps.Add(t);   // a feeder may block on a child that stopped reading: not joined
 				}
 
 			proc.WaitForExit();
-			stdoutThread?.Join();
-			stderrThread?.Join();
+			foreach (var t in pumps) t.Join();
+			foreach (var fs in handedOff) { try { fs.Seek(0, SeekOrigin.End); } catch { } }   // after what the child wrote
+			AddChildCpu(proc);   // for `time`'s user/sys
 			return brokenPipe ? 141 : proc.ExitCode;
 			}
 		finally
 			{
 			if (_currentJob is not null) _currentJob.ChildPid = 0;
-			stdinFs?.Dispose();
-			if (stdoutOwned) (stdoutFs as IDisposable)?.Dispose(); else { try { stdoutFs?.Flush(); } catch { } }
-			if (stderrOwned) (stderrFs as IDisposable)?.Dispose(); else { try { stderrFs?.Flush(); } catch { } }
+			// The files are closed only now, after the child: the last close of a file it rewrote,
+			// done by the child's exit, cost +0.65 ms a launch (measured, AOT, best of 21).
+			foreach (var h in opened) h.Dispose();
 			}
+		}
+
+	// ── a child's std handle: where it points ───────────────────────────────────────────
+	private abstract record ChildFd;
+	/// <summary>This shell's own std handle (0, 1 or 2), passed straight to the child.</summary>
+	private sealed record InheritFd(int Fd) : ChildFd;
+	/// <summary>A file or NUL opened for this command.</summary>
+	private sealed record HandleFd(SafeFileHandle Handle) : ChildFd;
+	/// <summary>An in-process destination: bytes into <c>Raw</c> (a pipeline stage when
+	/// <c>PipeStage</c>: a closed reader is SIGPIPE), else text into <c>Text</c>.</summary>
+	private sealed record OutPumpFd(Stream? Raw, TextWriter? Text, bool PipeStage) : ChildFd;
+	/// <summary>An in-process source: bytes from <c>Raw</c>, text from <c>Text</c>, or a literal (a here-doc).</summary>
+	private sealed record InPumpFd(Stream? Raw, TextReader? Text, string? Literal) : ChildFd;
+
+	/// <summary>The child's stdin by default: a pipeline stage's pipe, an in-process `&lt; file` or
+	/// here-doc, or this process's own stdin -- with whatever a `read` before us buffered and did
+	/// not consume first. That used to be lost: `printf 'a\nb\n' | { read x; ext; }` gave ext nothing.</summary>
+	private static ChildFd CurrentStdin()
+		{
+		var lf = ConsoleMux.In as LfReader;
+		var pending = lf?.TakeBuffered();
+		Stream Prefixed(Stream raw) => pending is { Length: > 0 } ? new PrefixedStream(ShellEncoding.Utf8.GetBytes(pending), raw) : raw;
+		if (ConsoleMux.RawIn is { } raw) return new InPumpFd(Prefixed(raw), null, null);
+		if (ConsoleMux.InSwapped)        return new InPumpFd(null, ConsoleMux.In, null);   // a text source
+		if (pending is { Length: > 0 })  return new InPumpFd(Prefixed(Console.OpenStandardInput()), null, null);
+		return new InheritFd(0);
+		}
+
+
+	/// <summary>Write a diagnostic line to where a child's fd points (the child never ran).</summary>
+	private static void ReportTo(ChildFd f, string line)
+		{
+		try
+			{
+			switch (f)
+				{
+				case InheritFd { Fd: 1 }: Console.Out.WriteLine(line); break;
+				case InheritFd:           Console.Error.WriteLine(line); break;
+				case HandleFd h:          ChildLauncher.Write(h.Handle, ShellEncoding.Utf8.GetBytes(line + "\n")); break;
+				case OutPumpFd { Raw: { } raw }: { var b = ShellEncoding.Utf8.GetBytes(line + "\n"); raw.Write(b, 0, b.Length); raw.Flush(); break; }
+				case OutPumpFd { Text: { } text }: lock (text) { text.WriteLine(line); text.Flush(); } break;
+				}
+			}
+		catch { }
+		}
+
+	/// <summary>Copy an in-process source into the child's stdin, then close it (EOF).</summary>
+	private static void FeedChild(InPumpFd src, FileStream toChild)
+		{
+		try
+			{
+			if (src.Literal is not null)
+				{
+				var bytes = ShellEncoding.Utf8.GetBytes(src.Literal);
+				toChild.Write(bytes, 0, bytes.Length);
+				}
+			else if (src.Raw is not null) src.Raw.CopyTo(toChild);
+			else if (src.Text is not null)
+				{
+				using var w = new StreamWriter(toChild, ShellEncoding.Utf8, 4096, leaveOpen: true);
+				var buf = new char[4096];
+				int n;
+				while ((n = src.Text.Read(buf, 0, buf.Length)) > 0) { w.Write(buf, 0, n); w.Flush(); }
+				}
+			}
+		catch { }   // the child stopped reading
+		try { toChild.Dispose(); } catch { }
+		}
+
+	/// <summary>Copy the child's output into an in-process destination until EOF. Returns true when
+	/// the destination is a pipeline stage whose reader has gone (SIGPIPE).</summary>
+	private static bool DrainChild(OutPumpFd dest, FileStream fromChild)
+		{
+		try
+			{
+			if (dest.Raw is not null)
+				{
+				var buf = new byte[8192];
+				int n;
+				while ((n = fromChild.Read(buf, 0, buf.Length)) > 0) dest.Raw.Write(buf, 0, n);
+				dest.Raw.Flush();
+				}
+			else if (dest.Text is not null)
+				{
+				// byte-transparent text: the shell's own encoding (DECISIONS 2026-10-03)
+				using var r = new StreamReader(fromChild, ShellEncoding.Utf8, false, 4096, leaveOpen: true);
+				var buf = new char[4096];
+				int n;
+				while ((n = r.Read(buf, 0, buf.Length)) > 0)
+					lock (dest.Text) { dest.Text.Write(buf, 0, n); dest.Text.Flush(); }
+				}
+			}
+		catch (BrokenPipeException) when (dest.PipeStage) { return true; }
+		catch { }
+		finally { try { fromChild.Dispose(); } catch { } }
+		return false;
 		}
 
 	// ── redirects ─────────────────────────────────────────────────────────────
@@ -1330,6 +1692,17 @@ public sealed class Evaluator
 		{
 		try { if (Directory.Exists(target)) return "Is a directory"; } catch { }
 		return Builtins.IoError(ex);
+		}
+
+	/// <summary>A redirect of this command failed: report it NOW, on the stderr in effect with this
+	/// command's earlier redirects still applied (so `cmd 2>/dev/null >/bad` is silent, as in bash),
+	/// then undo them. Execute fails just this command with status 1 and the script carries on;
+	/// an unhandled throw used to abandon the whole statement, e.g. the rest of a `{ }` group.</summary>
+	private static RedirectException RedirectFailed(RedirectScope scope, string message)
+		{
+		try { Console.Error.WriteLine($"bash: {message}"); } catch { }
+		scope.Dispose();
+		return new RedirectException(message, reported: true);
 		}
 
 	private RedirectScope ApplyRedirects(List<Redirect> redirects)
@@ -1364,8 +1737,8 @@ public sealed class Evaluator
 						break;
 						}
 					System.IO.FileStream fs;
-					try { fs = append ? File.Open(target, FileMode.Append, FileAccess.Write) : File.Create(target); }
-					catch (Exception ex) { scope.Dispose(); throw new RedirectException($"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					try { fs = append ? ShellFile.Append(target) : ShellFile.Create(target); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
 					// ShellEncoding, not the default: StreamWriter's default UTF-8 THROWS on a lone
 					// surrogate, so `printf '\xff' > file` died with an encoder error (2026-09-12).
 					var w = new System.IO.StreamWriter(fs, ShellEncoding.Utf8) { AutoFlush = true, NewLine = "\n" };
@@ -1392,17 +1765,17 @@ public sealed class Evaluator
 						{
 						// 3>file: open a numbered descriptor for later `>&3` / `read -u 3`
 						System.IO.FileStream nfs;
-						try { nfs = append ? File.Open(target, FileMode.Append, FileAccess.Write) : File.Create(target); }
-						catch (Exception ex) { scope.Dispose(); throw new RedirectException($"{rawTarget}: {RedirectMessage(target, ex)}"); }
+						try { nfs = append ? ShellFile.Append(target) : ShellFile.Create(target); }
+						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
 						scope.TrackFd(_fds, fd, nfs);
 						break;
 						}
 
 					if (Options.NoClobber && r.Kind == RedirectKind.Output && File.Exists(target))
-						{ scope.Dispose(); throw new EvalException($"{rawTarget}: cannot overwrite existing file"); }
+						{ throw RedirectFailed(scope, $"{rawTarget}: cannot overwrite existing file"); }
 					System.IO.FileStream fs;
-					try { fs = append ? File.Open(target, FileMode.Append, FileAccess.Write) : File.Create(target); }
-					catch (Exception ex) { scope.Dispose(); throw new RedirectException($"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					try { fs = append ? ShellFile.Append(target) : ShellFile.Create(target); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
 					// ShellEncoding, not the default: StreamWriter's default UTF-8 THROWS on a lone
 					// surrogate, so `printf '\xff' > file` died with an encoder error (2026-09-12).
 					var w = new System.IO.StreamWriter(fs, ShellEncoding.Utf8) { AutoFlush = true, NewLine = "\n" };
@@ -1418,17 +1791,17 @@ public sealed class Evaluator
 						{
 						// 3<file: open a numbered descriptor for `<&3` / `read -u 3`
 						System.IO.FileStream ifs;
-						try { ifs = File.OpenRead(target); }
-						catch (Exception ex) { scope.Dispose(); throw new RedirectException($"{rawTarget}: {RedirectMessage(target, ex)}"); }
+						try { ifs = ShellFile.OpenRead(target); }
+						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
 						scope.TrackFd(_fds, ifd, ifs);
 						break;
 						}
 					scope.SaveIn(); scope.SaveRawIn();
 					if (rawTarget == "/dev/null") { ConsoleMux.SetIn(new System.IO.StringReader("")); ConsoleMux.RawIn = System.IO.Stream.Null; break; }
 					System.IO.FileStream inFs;
-					try { inFs = File.OpenRead(target); }
-					catch (Exception ex) { scope.Dispose(); throw new RedirectException($"{rawTarget}: {RedirectMessage(target, ex)}"); }
-					var reader = new System.IO.StreamReader(inFs, ShellEncoding.Utf8);   // buffers nothing until first read
+					try { inFs = ShellFile.OpenRead(target); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					var reader = new LfReader(inFs);   // buffers nothing until first read; no BOM sniffing; LF-only lines
 					scope.TrackInstalled(reader);
 					ConsoleMux.SetIn(reader);
 					ConsoleMux.RawIn = inFs;   // byte builtins read the file directly
@@ -1437,7 +1810,10 @@ public sealed class Evaluator
 				case RedirectKind.OutputDup:
 					{
 					int ofd = r.Fd ?? 1;
-					if (target == "-")
+					// the target of a dup is an fd number or "-", never a path: test the RAW word (a
+					// pipeline stage that changed directory resolves paths, which turned "1" into
+					// "<cwd>/1" -- "ambiguous redirect", caught by the suite 2026-10-03)
+					if (rawTarget == "-")
 						{
 						// n>&- closes n
 						if (ofd == 1) { scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(System.IO.TextWriter.Null); ConsoleMux.Raw = System.IO.Stream.Null; }
@@ -1445,12 +1821,12 @@ public sealed class Evaluator
 						else scope.TrackFd(_fds, ofd, null);
 						break;
 						}
-					if (!int.TryParse(target, out int src)) { scope.Dispose(); throw new EvalException($"{rawTarget}: ambiguous redirect"); }
+					if (!int.TryParse(rawTarget, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
 					if (ofd == 1 && src == 2) { scope.SaveOut(); ConsoleMux.SetOut(ConsoleMux.Err); break; }          // 1>&2
 					if (ofd == 2 && src == 1) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); break; }          // 2>&1
 					if (src > 2)
 						{
-						if (!_fds.TryGetValue(src, out var s)) { scope.Dispose(); throw new EvalException($"{src}: Bad file descriptor"); }
+						if (!_fds.TryGetValue(src, out var s)) { throw RedirectFailed(scope, $"{src}: Bad file descriptor"); }
 						if (ofd == 1)
 							{
 							var w = new System.IO.StreamWriter(s, ShellEncoding.Utf8, 1024, leaveOpen: true) { AutoFlush = true, NewLine = "\n" };
@@ -1470,18 +1846,18 @@ public sealed class Evaluator
 				case RedirectKind.InputDup:
 					{
 					int ifd = r.Fd ?? 0;
-					if (target == "-")
+					if (rawTarget == "-")   // an fd number or "-", never a path (see OutputDup)
 						{
 						if (ifd == 0) { scope.SaveIn(); scope.SaveRawIn(); ConsoleMux.SetIn(new System.IO.StringReader("")); ConsoleMux.RawIn = System.IO.Stream.Null; }
 						else scope.TrackFd(_fds, ifd, null);
 						break;
 						}
-					if (!int.TryParse(target, out int src)) { scope.Dispose(); throw new EvalException($"{rawTarget}: ambiguous redirect"); }
+					if (!int.TryParse(rawTarget, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
 					if (ifd == 2 && src == 1) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); break; }          // 2<&1 (defensive)
 					if (ifd == 0 && src > 2)
 						{
-						if (!_fds.TryGetValue(src, out var s)) { scope.Dispose(); throw new EvalException($"{src}: Bad file descriptor"); }
-						var rd = new System.IO.StreamReader(s, ShellEncoding.Utf8, false, 1024, leaveOpen: true);
+						if (!_fds.TryGetValue(src, out var s)) { throw RedirectFailed(scope, $"{src}: Bad file descriptor"); }
+						var rd = new LfReader(s, leaveOpen: true);
 						scope.TrackInstalled(rd);
 						scope.SaveIn(); scope.SaveRawIn(); ConsoleMux.SetIn(rd); ConsoleMux.RawIn = s;
 						}
@@ -1502,20 +1878,27 @@ public sealed class Evaluator
 
 	private int ExecSubshell(Subshell ss)
 		{
-		// In-process subshell (no fork on Windows): variables, cwd, positionals and
-		// attributes are snapshotted and restored, and `exit` ends only the subshell.
-		// Not isolated: shell options, traps, functions, aliases (documented).
+		// In-process subshell (no fork on Windows): variables, cwd, positionals, attributes,
+		// functions, options, traps and aliases are restored, and `exit` ends only the subshell.
+		// An EXIT trap it set fires as it ends, inside its own redirects.
 		var snap = _env.TakeSnapshot();
-		try   { return ExecWithRedirects(ss.Body, ss.Redirects); }
+		var mark = EnterSubshell();
+		try
+			{
+			using var scope = ss.Redirects.Count > 0 ? ApplyRedirects(ss.Redirects) : null;
+			try   { return Execute(ss.Body); }
+			finally { SubshellExitTrap(mark); }
+			}
 		catch (ExitException ex) { return ex.Code; }
 		catch (FatalShellException ex) { Console.Error.WriteLine($"bash: {ex.Message}"); return ex.Code; }   // fatal to the subshell only
-		finally { _env.RestoreSnapshot(snap); }
+		finally { _env.RestoreSnapshot(snap); LeaveSubshell(mark); }
 		}
 
 	private int ExecFunctionDef(FunctionDef fd)
 		{
 		if (_env.IsReadonly(fd.Name) && _functions.ContainsKey(fd.Name))
 			throw new EvalException($"{fd.Name}: readonly function");
+		SaveFunctionsForSubshell();
 		_functions[fd.Name] = fd;
 		return 0;
 		}

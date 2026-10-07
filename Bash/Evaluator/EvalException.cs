@@ -44,4 +44,8 @@ public sealed class InterruptException() : Exception("Interrupted");
 /// these and gives the command status 1, reserving 2 for syntax-level failures — so this carries
 /// its own status rather than inheriting EvalException's 2 (2026-09-12).
 /// </summary>
-public sealed class RedirectException(string message) : EvalException(message);
+public sealed class RedirectException(string message, bool reported = false) : EvalException(message)
+	{
+	/// <summary>Already written to the stderr in effect where it failed (ApplyRedirects does that).</summary>
+	public bool Reported { get; } = reported;
+	}

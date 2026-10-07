@@ -38,26 +38,26 @@ emulation); `>( )` is refused with a clear message. See [`ARCHITECTURE.md`](ARCH
 
 ## Performance
 
-Measured on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, best of three, wall clock in seconds including process startup. Reproduce with `tests/bench/compare3.sh`.
+Measured on 2026-10-06 on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched directly with `CreateProcess`, the way Claude Code launches one, and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`.
 
 | benchmark | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.169** | 1.499 | 0.433 | 8.9× | 2.6× |
-| `arith` — 200 k `$(( ))` evaluations | **0.259** | 2.093 | 0.632 | 8.1× | 2.4× |
-| `func` — 100 k function calls | **0.229** | 2.319 | 0.589 | 10.1× | 2.6× |
-| `loop_big` — 2 M iterations | **1.389** | 15.082 | 3.481 | 10.9× | 2.5× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.078** | 20.303 | 0.777 | **260×** | 10.0× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.260 | 0.353 | **0.136** | 1.4× | 0.5× |
-| `find` — walk 400 files | **0.055** | 0.226 | 0.218 | 4.1× | 4.0× |
-| startup — `bash -c 'exit 0'` | 0.030 | **0.027** | 0.096 | 0.9× | 3.2× |
+| `loop` — 200 k `while` iterations | **0.163** | 1.562 | 0.436 | 9.6× | 2.7× |
+| `arith` — 200 k `$(( ))` evaluations | **0.244** | 2.051 | 0.606 | 8.4× | 2.5× |
+| `func` — 100 k function calls | **0.201** | 2.278 | 0.572 | 11.3× | 2.8× |
+| `loop_big` — 2 M iterations | **1.339** | 14.888 | 3.478 | 11.1× | 2.6× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.055** | 13.742 | 0.845 | **250×** | 15.4× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.265 | 0.310 | **0.123** | 1.2× | 0.5× |
+| `find` — walk 400 files | **0.020** | 0.123 | 0.239 | 6.1× | 11.9× |
+| startup — `bash -c 'exit 0'` | **0.015** | 0.016 | 0.104 | 1.1× | 6.8× |
 
 **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
 
-**Where it wins, and why.** Interpreter throughput is 8–11× Git Bash and 2.4–2.6× native Linux bash. Startup is level with Git Bash and three times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
+**Where it wins, and why.** Interpreter throughput is 8–11× Git Bash and 2.5–2.8× native Linux bash. Startup is level with Git Bash (15 ms against 16 ms) and seven times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
 
 **Where it loses, and why.** One row: a long streaming text pipeline against WSL, where native C `grep`/`sed`/`sort` beat managed implementations per line. It does beat Git Bash there. C#Bash is fastest where a script does *many small things*; a pipe pushing 50 k lines through five real tools is not that shape.
 
-**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
+**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. Git Bash's own times move between runs (`loop_big` took 18.9 s on 2026-10-03 and 14.9 s here), and the "vs Git" ratios move with them. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
 
 ## Architecture
 
@@ -89,7 +89,7 @@ Claude Code on Windows needs *a* `bash.exe`; it finds Git for Windows by default
    ```cmd
    tools\publish-aot.cmd            REM -> dist\Bash.exe, ~5.7 MB
    ```
-   One static executable. No .NET runtime on the target, and **~29 ms startup — the same as Git Bash** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
+   One static executable. No .NET runtime on the target, and **~15 ms startup — level with Git Bash** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
 
    The managed alternatives, if you cannot or would rather not build AOT:
    ```sh

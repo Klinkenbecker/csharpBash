@@ -48,7 +48,8 @@ public static class ConsoleMux
 		if (_installed) return;
 		_realOut = Console.Out;
 		_realErr = Console.Error;
-		_realIn  = Console.In;
+		// a redirected stdin (a pipe, a file) gets LF-only lines by block scan; a console stays as is
+		_realIn  = Console.IsInputRedirected ? new LfReader(Console.OpenStandardInput()) : Console.In;
 		var mo = new MuxWriter(false);
 		var me = new MuxWriter(true);
 		var mi = new MuxReader();
@@ -270,7 +271,7 @@ public static class ChildJobs
 	private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
 
 	private const int JobObjectExtendedLimitInformationClass = 9;
-	private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
+	private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000, JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x800;
 
 	private static void EnsureJob()
 		{
@@ -282,7 +283,10 @@ public static class ChildJobs
 			var job = CreateJobObjectW(IntPtr.Zero, null);
 			if (job == IntPtr.Zero) return;
 			var info = new JobObjectExtendedLimitInformation();
-			info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+			// BREAKAWAY_OK: a detached child of a NESTED C#Bash (`bash -c 'server &'`) starts with
+			// CREATE_BREAKAWAY_FROM_JOB, or it would inherit this job and die with this shell
+			// (DECISIONS 2026-10-05). A child joins the job unless it asks to leave it.
+			info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
 			if (!SetInformationJobObject(job, JobObjectExtendedLimitInformationClass, ref info, Marshal.SizeOf<JobObjectExtendedLimitInformation>()))
 				return;
 			_job = job;
@@ -325,6 +329,17 @@ public static class HiddenConsole
 	/// and handed to <see cref="Adopt"/>. <c>GetConsoleCP()</c> is 0 only without a console;
 	/// <c>GetConsoleWindow()</c> is NOT a test -- it is also null for a windowless console.</summary>
 	public static bool NeedsHiding => OperatingSystem.IsWindows() && GetConsoleCP() == 0;
+
+	/// <summary>True when this shell has no console, or a windowless one: a hidden console created
+	/// for some C#Bash up the chain, whose host process sits in THAT shell's kill-on-close job. A
+	/// child that outlives the shell must not depend on it: when the job closed, the host died and a
+	/// detached child's console programs failed at once (`ping` returned instantly, measured
+	/// 2026-10-05). Such a child gets a hidden console of its own instead. A real terminal (it has
+	/// a window) is shared as before.</summary>
+	public static bool ConsoleMayDieWithAShell =>
+		OperatingSystem.IsWindows() && (GetConsoleCP() == 0 || GetConsoleWindow() == IntPtr.Zero);
+
+	[DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
 
 	/// <summary>Attach this shell to the hidden console of a child started with CreateNoWindow.</summary>
 	public static void Adopt(System.Diagnostics.Process child)

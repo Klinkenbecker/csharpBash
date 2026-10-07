@@ -1,0 +1,10 @@
+echo: é — ✓ 日本 😀
+printf: é — ✓ 日本 😀
+sed: é — ✓ 日本 😀
+é — ✓ 日本 😀
+日本
+awk: ✓
+length: 10
+substrings: [😀] [😀] [日本] [— ✓] [ 😀]
+element length: 2
+error to stdout: 

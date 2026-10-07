@@ -42,6 +42,63 @@ public sealed record Word(List<WordPart> Parts)
 	{
 	/// <summary>Convenience: single literal word.</summary>
 	public static Word Literal(string s) => new([new LiteralPart(s)]);
+
+	// Worked out once per word: the AST is reused on every iteration of a loop, and testing the text
+	// for every command cost ~30 ns, +4-6 % on the loop benchmarks (measured, AOT, 2026-10-04).
+	private byte _plain;   // 0 not yet known, 1 plain, 2 not
+	/// <summary>One literal that can neither glob nor brace-expand, so its text is its only field
+	/// (a command name like `echo` or `[`).</summary>
+	public bool IsPlainLiteral
+		{
+		get
+			{
+			if (_plain == 0) _plain = Parts is [LiteralPart { Value: var s }] && !CouldBePattern(s) ? (byte)1 : (byte)2;
+			return _plain == 1;
+			}
+		}
+
+	/// <summary>`*`, `?`, a `[` closed later, or a `{` closed later. A lone `[` or `[[` cannot: the
+	/// first version tested only for the characters and sent every `while [ ... ]` down the full
+	/// expansion path, 20x slower (caught by the benchmark before deploy).</summary>
+	private static bool CouldBePattern(string s)
+		{
+		if (s.AsSpan().IndexOfAny('*', '?') >= 0) return true;
+		int b = s.IndexOf('[');
+		if (b >= 0 && s.IndexOf(']', b + 1) > b) return true;
+		int c = s.IndexOf('{');
+		return c >= 0 && s.IndexOf('}', c + 1) > c;
+		}
+
+	/// <summary>
+	/// Split an indexed assignment `…]=value` whose first part starts with <paramref name="skip"/>
+	/// chars of prefix (`name[` or `[`): the index ends at the first ']' that is followed by '='
+	/// in a LITERAL part (an expansion cannot close the bracket). The index may span parts --
+	/// `a[0]=`, `a[$k]=`, `a["$k"]=`, `a[$i+1]=`. Until 2026-10-03 only an index inside the
+	/// first literal was recognised: `map[$key]=v` ran as a command ("command not found") and
+	/// `m+=(["$k"]=v)` silently set nothing.
+	/// </summary>
+	public bool TrySplitIndexedAssignment(int skip, out Word index, out Word value)
+		{
+		index = value = null!;
+		if (Parts.Count == 0 || Parts[0] is not LiteralPart) return false;
+		var idx = new List<WordPart>();
+		for (int p = 0; p < Parts.Count; p++)
+			{
+			string? text = p == 0 ? ((LiteralPart)Parts[0]).Value[skip..] : (Parts[p] as LiteralPart)?.Value;
+			if (text is null) { idx.Add(Parts[p]); continue; }           // an expansion or quote: part of the index
+			int close = text.IndexOf(']');
+			if (close < 0) { if (text.Length > 0) idx.Add(new LiteralPart(text)); continue; }
+			if (close + 1 >= text.Length || text[close + 1] != '=') return false;
+			if (close > 0) idx.Add(new LiteralPart(text[..close]));
+			var val = new List<WordPart>();
+			if (text.Length > close + 2) val.Add(new LiteralPart(text[(close + 2)..]));
+			val.AddRange(Parts.Skip(p + 1));
+			index = new Word(idx);
+			value = new Word(val);
+			return true;
+			}
+		return false;
+		}
 	}
 
 // ── Redirects ─────────────────────────────────────────────────────────────────
@@ -115,7 +172,13 @@ public sealed record ArithmeticCommand(string Expression, List<Redirect> Redirec
 /// </summary>
 public sealed record Pipeline(
 	List<(Node Command, bool StderrToo)> Commands,   // StderrToo: stage followed by |& (its stderr joins the pipe)
-	bool Negated) : Node;
+	bool Negated) : Node
+	{
+	/// <summary>`time [-p] pipeline`: report its real/user/sys time on the shell's stderr.</summary>
+	public bool Timed { get; init; }
+	/// <summary>`time -p`: the POSIX format, `real N.NN` / `user N.NN` / `sys N.NN`.</summary>
+	public bool TimePosix { get; init; }
+	}
 
 // ── Lists (&&, ||, ;, &, newline) ─────────────────────────────────────────────
 

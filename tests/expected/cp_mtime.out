@@ -1,0 +1,10 @@
+cp:                  now
+cp -p:               old (2020)
+cp -a:               old (2020)
+cp --preserve:       old (2020)
+cp over an old file: now
+cp into a directory: now
+cp -r (a file in it): now
+cp -rp (a file in it): old (2020)
+cp of a read-only source: now
+contents identical

@@ -124,12 +124,12 @@ public sealed partial class Builtins
 				: $"bash: cd: {target}: No such file or directory");
 			return 1;
 			}
-		var old = Directory.GetCurrentDirectory();
-		try { Directory.SetCurrentDirectory(dest); }
+		var old = _env.Cwd;
+		try { _env.ChangeCwd(dest); }   // this shell's own cwd; the process cwd only if this shell owns it
 		catch (Exception ex) { Console.Error.WriteLine($"bash: cd: {target}: {ex.Message}"); return 1; }
-		_env.Set("OLDPWD", ShellEnvironment.ToShellPath(old)); _env.Export("OLDPWD");
-		_env.Set("PWD", ShellEnvironment.ShellCwd()); _env.Export("PWD");
-		if (printDir) Console.WriteLine(ShellEnvironment.ShellCwd());
+		_env.Set("OLDPWD", old); _env.Export("OLDPWD");
+		_env.Set("PWD", _env.Cwd); _env.Export("PWD");
+		if (printDir) Console.WriteLine(_env.Cwd);
 		return 0;
 		}
 
@@ -433,7 +433,7 @@ public sealed partial class Builtins
 		foreach (var a in items)
 			{
 			int eq = a.IndexOf('=');
-			if (eq > 0) { aliases[a[..eq]] = a[(eq + 1)..]; continue; }
+			if (eq > 0) { _eval.SaveAliasesForSubshell(); aliases[a[..eq]] = a[(eq + 1)..]; continue; }
 			if (aliases.TryGetValue(a, out var v)) Console.WriteLine($"alias {a}='{v.Replace("'", "'\\''")}'");
 			else { Console.Error.WriteLine($"bash: alias: {a}: not found"); rc = 1; }
 			}
@@ -443,6 +443,7 @@ public sealed partial class Builtins
 	private int Unalias(List<string> args)
 		{
 		var aliases = _eval.Aliases;
+		_eval.SaveAliasesForSubshell();
 		int rc = 0;
 		foreach (var a in args)
 			{
@@ -595,8 +596,7 @@ public sealed partial class Builtins
 				sb.Append(c);
 				}
 			}
-		var line = sb.ToString();
-		if (delim == "\n" && line.EndsWith('\r')) line = line[..^1];
+		var line = sb.ToString();   // a CR before the LF is data, as in bash (DECISIONS 2026-10-03)
 
 		var ifs = _env.IsSet("IFS") ? _env.Get("IFS") : " \t\n";
 		if (arrayName is not null)
@@ -654,7 +654,6 @@ public sealed partial class Builtins
 			}
 		var selected = lines.Skip(skip).ToList();
 		if (count > 0) selected = selected.Take(count).ToList();
-		if (trim && delim == "\n") selected = selected.Select(l => l.EndsWith('\r') ? l[..^1] : l).ToList();
 		if (origin == 0) _env.SetArrayFromList(name, selected);
 		else
 			{
@@ -1256,6 +1255,10 @@ public sealed partial class Builtins
 
 	private readonly List<string> _dirStack = [];
 
+	/// <summary>A pipeline stage's builtins start from its parent's state: the `pushd` stack (as a
+	/// subshell inherits it). getopts position and fd readers start fresh.</summary>
+	internal void InheritFrom(Builtins parent) => _dirStack.AddRange(parent._dirStack);
+
 	private string DisplayDir(string d)
 		{
 		var home = _env.Get("HOME");
@@ -1276,7 +1279,7 @@ public sealed partial class Builtins
 		{
 		bool quiet = false; string? target = null;
 		foreach (var a in args) { if (a == "-n") quiet = true; else target ??= a; }
-		var cur = Directory.GetCurrentDirectory();
+		var cur = _env.Cwd;
 		if (target is null)
 			{
 			if (_dirStack.Count == 0) { Console.Error.WriteLine("bash: pushd: no other directory"); return 1; }
@@ -1427,15 +1430,24 @@ public sealed partial class Builtins
 				{ Console.Error.WriteLine($"sleep: invalid time interval '{a}'"); return 1; }
 			total += secs * mult;
 			}
-		// Sleep in small slices so Ctrl+C (SIGINT) can interrupt a long sleep.
-		double remainingMs = total * 1000;
-		while (remainingMs > 0)
+		// One timed wait that an interrupt (Ctrl+C, `timeout`) ends at once. It was 50 ms slices of
+		// Thread.Sleep polling the flag (the architect: never sleep-poll for synchronization).
+		bool forever = total >= int.MaxValue / 1000.0;
+		long deadline = forever ? long.MaxValue : Environment.TickCount64 + (long)(total * 1000);
+		var interrupts = _eval.InterruptHandles();
+		var job = Evaluator.CurrentJob;
+		if (job is not null) job.Parked = true;   // shell exit need not wait for this job
+		try
 			{
-			_eval.CheckInterrupt();
-			int slice = (int)Math.Min(50, remainingMs);
-			Thread.Sleep(slice);
-			remainingMs -= slice;
+			while (true)
+				{
+				_eval.CheckInterrupt();   // throws, or ran the INT trap: sleep on, as before
+				long left = deadline - Environment.TickCount64;
+				if (left <= 0) break;
+				WaitHandle.WaitAny(interrupts, forever ? System.Threading.Timeout.Infinite : (int)Math.Min(left, int.MaxValue));
+				}
 			}
+		finally { if (job is not null) job.Parked = false; }
 		return 0;
 		}
 

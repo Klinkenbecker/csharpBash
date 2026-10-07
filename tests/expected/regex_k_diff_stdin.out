@@ -1,0 +1,36 @@
+REV=42
+M x
+M
+aM
+Mb
+Mb
+aM
+aM
+Mb
+M
+1
+1
+0
+1
+1
+a^b
+Alpha
+Beta
+void
+void
+int
+top-level | with \K: 0
+Alpha
+Beta
+Gamma
+Alpha
+Beta
+1
+2c2
+< b
+---
+> B
+diff f1 -: 1
+identical: 0
+Files - and f1 differ
+diff -q: 1

@@ -113,6 +113,34 @@ public static class Glob
 		return ToRegex(pattern, ignoreCase).IsMatch(input);
 		}
 
+	/// <summary>True when <paramref name="pattern"/> has no live pattern character, only literal
+	/// text and backslash escapes; <paramref name="literal"/> is that text with the escapes removed.
+	/// Lets a quoted pattern (`${p#"$prefix"}`, escaped by the expander) take the plain-string path.</summary>
+	public static bool TryLiteral(string pattern, out string literal)
+		{
+		literal = pattern;
+		if (pattern.IndexOfAny(['*', '?', '[', '\\']) < 0) return true;
+		var sb = new StringBuilder(pattern.Length);
+		for (int i = 0; i < pattern.Length; i++)
+			{
+			char c = pattern[i];
+			if (c == '\\') { if (i + 1 < pattern.Length) sb.Append(pattern[++i]); else sb.Append(c); continue; }
+			if (c is '*' or '?' or '[') return false;
+			sb.Append(c);
+			}
+		literal = sb.ToString();
+		return true;
+		}
+
+	/// <summary>Make text match itself literally: escape every pattern character.</summary>
+	public static string Escape(string s)
+		{
+		if (s.IndexOfAny(['*', '?', '[', ']', '\\']) < 0) return s;
+		var sb = new StringBuilder(s.Length + 8);
+		foreach (char c in s) { if (c is '*' or '?' or '[' or ']' or '\\') sb.Append('\\'); sb.Append(c); }
+		return sb.ToString();
+		}
+
 	public static bool HasMeta(string s)
 		{
 		foreach (char c in s) if (c is '*' or '?' or '[' or '\\') return true;
@@ -159,7 +187,7 @@ public static class Glob
 		if (segs.Length == 0) return [];
 
 		var results = new List<string>();
-		string startDir = root.Length == 0 ? "." : ShellEnvironment.TranslatePath(root);
+		string startDir = ShellEnvironment.TranslatePath(root.Length == 0 ? "." : root);   // "." is the running shell's cwd
 		Walk(startDir, root, segs, 0, results, sep, dotglob, nocase, globstar);
 		if (dirsOnly)
 			results = results.Where(r => Directory.Exists(ShellEnvironment.TranslatePath(r))).Select(r => r + sep).ToList();

@@ -403,7 +403,23 @@ public sealed partial class Builtins
 			NewFile = o.Has('N'), Text = o.Has('a'), StripCr = o.HasLong("strip-trailing-cr"), Excludes = o.All('x').ToList(),
 			IgnoreTrailingSpace = o.Has('Z'),
 			};
-		return DiffPaths(o.Operands[0], o.Operands[1], opt, o.Operands[0], o.Operands[1]);
+		// `-` is standard input (GNU). It was taken as a path ("diff: -: No such file or directory");
+		// now it is read once into a temp file that is diffed in its place, still labelled `-`.
+		string a = o.Operands[0], b = o.Operands[1];
+		if (a == "-" && b == "-") return 0;
+		string? stdinCopy = null;
+		try
+			{
+			if (a == "-" || b == "-")
+				{
+				stdinCopy = Path.Combine(Path.GetTempPath(), "csbash-diff-" + Guid.NewGuid().ToString("N")[..12]);
+				using var fs = ShellFile.Create(stdinCopy);
+				if (Evaluator.CurrentRawStdin() is { } raw) raw.CopyTo(fs);   // bytes, with any read-ahead first
+				else { var bytes = ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd()); fs.Write(bytes, 0, bytes.Length); }
+				}
+			return DiffPaths(a, b, opt, a, b, stdinCopy);
+			}
+		finally { if (stdinCopy is not null) { try { File.Delete(stdinCopy); } catch { } } }
 		}
 
 	private sealed class DiffOptions
@@ -413,9 +429,10 @@ public sealed partial class Builtins
 		public List<string> Excludes = [];
 		}
 
-	private static int DiffPaths(string a, string b, DiffOptions opt, string labelA, string labelB)
+	private static int DiffPaths(string a, string b, DiffOptions opt, string labelA, string labelB, string? stdinCopy = null)
 		{
-		var pa = ShellEnvironment.TranslatePath(a); var pb = ShellEnvironment.TranslatePath(b);
+		var pa = a == "-" && stdinCopy is not null ? stdinCopy : ShellEnvironment.TranslatePath(a);
+		var pb = b == "-" && stdinCopy is not null ? stdinCopy : ShellEnvironment.TranslatePath(b);
 		bool da = Directory.Exists(pa), db = Directory.Exists(pb);
 		bool fa = File.Exists(pa), fb = File.Exists(pb);
 		if (!da && !fa && !(opt.NewFile && (fb || db))) { Console.Error.WriteLine($"diff: {a}: No such file or directory"); return 2; }
@@ -479,7 +496,7 @@ public sealed partial class Builtins
 		{
 		binary = false;
 		if (!File.Exists(p)) return [];
-		var bytes = File.ReadAllBytes(p);
+		var bytes = ShellFile.ReadAllBytes(p);
 		if (!opt.Text && bytes.Take(8192).Contains((byte)0)) { binary = true; return []; }
 		var text = ShellEncoding.Utf8.GetString(bytes);
 		var lines = text.Split('\n').ToList();
@@ -495,7 +512,7 @@ public sealed partial class Builtins
 		catch (Exception ex) { Console.Error.WriteLine($"diff: {IoError(ex)}"); return 2; }
 		if (binA || binB)
 			{
-			bool same = File.Exists(pa) && File.Exists(pb) && File.ReadAllBytes(pa).AsSpan().SequenceEqual(File.ReadAllBytes(pb));
+			bool same = File.Exists(pa) && File.Exists(pb) && ShellFile.ReadAllBytes(pa).AsSpan().SequenceEqual(ShellFile.ReadAllBytes(pb));
 			if (!same) { Console.WriteLine($"Binary files {a} and {b} differ"); return 1; }
 			if (opt.ReportIdentical) Console.WriteLine($"Files {a} and {b} are identical");
 			return 0;
@@ -658,7 +675,7 @@ public sealed partial class Builtins
 		else if (replace is not null)
 			{
 			// -I: each input line is one item (leading blanks stripped, quotes not special)
-			items = input.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).Select(l => l.TrimStart(' ', '\t')).ToList();
+			items = input.Split('\n').Where(l => l.Length > 0).Select(l => l.TrimStart(' ', '\t')).ToList();   // a CR is data (GNU)
 			}
 		else
 			{
@@ -680,7 +697,7 @@ public sealed partial class Builtins
 					if (!continued && lineItems.Count > 0) { lines.Add(lineItems); lineItems = []; }
 					continue;
 					}
-				if (ch is ' ' or '\t' or '\r') { if (inItem) { lineItems.Add(cur.ToString()); cur.Clear(); inItem = false; } continue; }
+				if (ch is ' ' or '\t') { if (inItem) { lineItems.Add(cur.ToString()); cur.Clear(); inItem = false; } continue; }   // CR is not a blank to GNU xargs
 				cur.Append(ch); inItem = true;
 				}
 			if (quote != '\0') { Console.Error.WriteLine("xargs: unmatched quote; by default quotes are special to xargs unless you use the -0 option"); return 1; }

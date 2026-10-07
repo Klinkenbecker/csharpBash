@@ -90,7 +90,7 @@ public static class FileTests
 			}
 		try
 			{
-			using var fs = File.OpenRead(path);
+			using var fs = ShellFile.OpenRead(path);
 			return fs.Length >= 2 && fs.ReadByte() == '#' && fs.ReadByte() == '!';
 			}
 		catch { return false; }

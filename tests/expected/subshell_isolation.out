@@ -1,0 +1,24 @@
+after ( set -e ): []
+after $( set -u ): []
+pipefail isolated
+after <( set -f ): []
+nullglob isolated
+dotglob isolated
+inside: pipefail inherited
+parent: pipefail kept
+in subshell
+subshell EXIT trap
+after: []
+captured: [body|captured-trap]
+trap then exit 3
+status from trap: 3
+fires once
+status: 5
+inner-trap
+outer continues
+subshell does not run the parent's trap
+parent trap kept: [trap -- 'echo "PARENT EXIT trap"' EXIT]
+alias isolated
+alias survives unalias in ( )
+end of script
+PARENT EXIT trap

@@ -175,12 +175,63 @@ public sealed class ShellOptions
 	/// implement — `shopt -s` of these fails loudly rather than pretending.</summary>
 	public static readonly HashSet<string> UnsupportedShopts = ["extglob", "extdebug", "restricted_shell"];
 
-	private readonly HashSet<string> _shopt =
+	private HashSet<string> _shopt =
 		[
 		"checkwinsize", "cmdhist", "complete_fullquote", "extquote", "force_fignore",
 		"globasciiranges", "hostcomplete", "interactive_comments", "progcomp", "promptvars",
 		"sourcepath", "patsub_replacement",
 		];
+
+	/// <summary>An independent copy, for a pipeline stage's subshell: every flag (memberwise, so
+	/// an option added later is copied too) and its own shopt set (DECISIONS 2026-10-03).</summary>
+	public ShellOptions Clone()
+		{
+		var c = (ShellOptions)MemberwiseClone();
+		c._shopt = new HashSet<string>(_shopt);
+		c._shoptShared = false;
+		return c;
+		}
+
+	// ── save / restore for an in-process subshell ─────────────────────────────────
+	// `( set -e )` and `$( shopt -s nullglob )` must not change the parent (DECISIONS 2026-10-04).
+	// The flags are packed by value; the shopt set is shared with the saved state and copied only
+	// if the subshell changes it, so a `$( )` costs a few field reads and no allocation.
+
+	/// <summary>The settable options at one moment (not the invocation facts).</summary>
+	public readonly struct State
+		{
+		internal readonly int Flags;
+		internal readonly HashSet<string> Shopt;
+		internal State(int flags, HashSet<string> shopt) { Flags = flags; Shopt = shopt; }
+		}
+
+	private bool _shoptShared;
+
+	public State Save()
+		{
+		_shoptShared = true;
+		return new State(PackFlags(), _shopt);
+		}
+
+	public void Restore(State s)
+		{
+		UnpackFlags(s.Flags);
+		_shopt = s.Shopt;
+		_shoptShared = true;
+		}
+
+	// EVERY `set`-settable flag above belongs in both lists, or a subshell leaks it.
+	private int PackFlags() =>
+		(ExitOnError ? 1 : 0)      | (UnsetError ? 1 << 1 : 0) | (XTrace ? 1 << 2 : 0)    | (NoExec ? 1 << 3 : 0)
+		| (NoGlob ? 1 << 4 : 0)    | (Verbose ? 1 << 5 : 0)    | (NoClobber ? 1 << 6 : 0) | (AllExport ? 1 << 7 : 0)
+		| (PipeFail ? 1 << 8 : 0)  | (ErrTrace ? 1 << 9 : 0)   | (HashAll ? 1 << 10 : 0)  | (BraceExpand ? 1 << 11 : 0);
+
+	private void UnpackFlags(int f)
+		{
+		ExitOnError = (f & 1) != 0;       UnsetError = (f & 1 << 1) != 0; XTrace    = (f & 1 << 2) != 0; NoExec    = (f & 1 << 3) != 0;
+		NoGlob      = (f & 1 << 4) != 0;  Verbose    = (f & 1 << 5) != 0; NoClobber = (f & 1 << 6) != 0; AllExport = (f & 1 << 7) != 0;
+		PipeFail    = (f & 1 << 8) != 0;  ErrTrace   = (f & 1 << 9) != 0; HashAll   = (f & 1 << 10) != 0; BraceExpand = (f & 1 << 11) != 0;
+		}
 
 	public bool Shopt(string name) => _shopt.Contains(name);
 	public bool IsKnownShopt(string name) => Array.IndexOf(KnownShopts, name) >= 0;
@@ -190,6 +241,7 @@ public sealed class ShellOptions
 		{
 		if (!IsKnownShopt(name)) return $"{name}: invalid shell option name";
 		if (enable && UnsupportedShopts.Contains(name)) return $"{name}: not supported by this interpreter";
+		if (_shoptShared) { _shopt = new HashSet<string>(_shopt); _shoptShared = false; }   // a saved state holds the old set
 		if (enable) _shopt.Add(name); else _shopt.Remove(name);
 		return null;
 		}

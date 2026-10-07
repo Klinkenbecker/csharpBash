@@ -1,0 +1,12 @@
+1 y/z.tar.gz | y/z.tar.gz | y/z.tar.gz
+2 /x/y/z.tar | /x/y/z.tar | /x/y/z | /x/y
+3 /x/Q/z.tar.gz | _x_y_z.tar.gz | ROOT/y/z.tar.gz | /x/y/z.tar.bz2
+4 quoted var is literal: a*b | unquoted var is a pattern: a*b
+5 escaped glob in pattern: b | quoted glob: b | live glob: *b
+6 backslashes: a/b/c | a-b-c
+7 replacement escapes: aa\ | $$b | $x$xb
+8 command subst in pattern: /y/z.tar.gz | arith: /y/z.tar.gz
+9 tilde: notes.txt
+10 arrays: a b /y/c
+11 spaces: hello | hello!
+12 slash inside quotes: [X]/y/z.tar.gz | empty rep: /y/z.tar.gz

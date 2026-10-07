@@ -349,8 +349,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				}
 			int lb0 = body.IndexOf('[');
 			if (lb0 > 0 && body.EndsWith(']'))
-				return ElementValue(body[..lb0], body[(lb0 + 1)..^1]).Length.ToString();
-			if (IsSimpleParam(body)) return _env.Get(body).Length.ToString();
+				return CharCount(ElementValue(body[..lb0], body[(lb0 + 1)..^1])).ToString();
+			if (IsSimpleParam(body)) return CharCount(_env.Get(body)).ToString();
 			// ${#x:-y} etc. is not valid bash; fall through to treat as a name
 			}
 
@@ -469,10 +469,12 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				return string.Join(" ", list.Skip(start).Take(Math.Max(0, count)));
 				}
 			var s = ValueOf();
-			int st = off < 0 ? Math.Max(0, s.Length + (int)off) : (int)Math.Min(off, s.Length);
-			if (len is null) return s[st..];
-			if (len < 0) { int end = s.Length + (int)len; return end <= st ? "" : s[st..end]; }
-			return s.Substring(st, (int)Math.Min(len.Value, s.Length - st));
+			int n = CharCount(s);   // offsets count characters, not UTF-16 units (an emoji is one)
+			int st = off < 0 ? Math.Max(0, n + (int)off) : (int)Math.Min(off, n);
+			int stop = len is null ? n : len < 0 ? n + (int)len : (int)Math.Min(st + len.Value, n);
+			if (stop <= st) return "";
+			int a = Utf16Offset(s, st), b = Utf16Offset(s, stop);
+			return s[a..b];
 			}
 
 		// ${x^^pat} ${x,,pat} ${x^pat} ${x,pat} case modification
@@ -517,7 +519,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		if (op[0] is '#' or '%')
 			{
 			bool greedy = op.Length > 1 && op[1] == op[0];
-			var pat = op[(greedy ? 2 : 1)..];
+			var pat = ExpandOperand(op[(greedy ? 2 : 1)..], pattern: true);
 			string Apply(string s) => op[0] == '#'
 				? StripPrefix(s, pat, greedy)
 				: StripSuffix(s, pat, greedy);
@@ -531,9 +533,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			var rest = op[(all ? 2 : 1)..];
 			char anchor = '\0';
 			if (rest.Length > 0 && rest[0] is '#' or '%') { anchor = rest[0]; rest = rest[1..]; }
-			int sep = FindUnescapedSlash(rest);
-			var pat = sep < 0 ? rest : rest[..sep];
-			var rep = sep < 0 ? ""   : rest[(sep + 1)..];
+			int sep = FindPatternSlash(rest);
+			var pat = ExpandOperand(sep < 0 ? rest : rest[..sep], pattern: true);
+			var rep = sep < 0 ? "" : ExpandOperand(rest[(sep + 1)..], pattern: false);
 			string Apply(string s) => PatternReplace(s, pat, rep, all, anchor);
 			return elems is not null ? string.Join(" ", elems.Select(Apply)) : Apply(ValueOf());
 			}
@@ -616,15 +618,150 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		return -1;
 		}
 
-	private static int FindUnescapedSlash(string s)
+	/// <summary>The '/' ending the pattern of `${x/pat/rep}`: not escaped, not inside quotes or an
+	/// expansion (`${p//"/x"/y}`, `${p//$(echo /)/y}`).</summary>
+	private static int FindPatternSlash(string s)
 		{
-		for (int i = 0; i < s.Length; i++)
+		for (int i = 0; i < s.Length; )
 			{
-			if (s[i] == '\\') { i++; continue; }
-			if (s[i] == '/') return i;
+			char c = s[i];
+			if (c == '\\') { i += 2; continue; }
+			if (c is '\'' or '"' or '`' || (c == '$' && i + 1 < s.Length && (s[i + 1] is '{' or '(' or '\''))) { i = SkipConstruct(s, i); continue; }
+			if (c == '/') return i;
+			i++;
 			}
 		return -1;
 		}
+
+	// ── the operands of ${x#pat} ${x%pat} ${x/pat/rep} ───────────────────────
+	// Until 2026-10-03 they were used RAW: `${p#"$prefix"}`, `${p//$o/$n}` and even `${p%%"/z"}`
+	// silently returned the input, because neither the expansions nor the quotes in them were
+	// processed. In bash the pattern undergoes tilde, parameter, command and arithmetic expansion;
+	// a QUOTED part matches literally while an unquoted expansion's result stays a pattern. The
+	// replacement undergoes the same expansions and quote removal. Scanned here from the raw text,
+	// not through the word parser, because the lexer drops an unquoted backslash's quoting (`\*`
+	// would become a live `*`).
+
+	/// <summary>Expand a pattern (<paramref name="pattern"/>: glob text with literal parts escaped)
+	/// or a replacement (plain text) from its raw source.</summary>
+	private string ExpandOperand(string raw, bool pattern)
+		{
+		if (raw.IndexOfAny(['$', '"', '\'', '`', '~', '\\']) < 0) return raw;
+		var sb = new System.Text.StringBuilder(raw.Length);
+		int i = 0;
+		while (i < raw.Length)
+			{
+			char c = raw[i];
+			if (c == '\\' && i + 1 < raw.Length)
+				{
+				if (pattern) sb.Append(c).Append(raw[i + 1]);   // the glob engine honours the escape
+				else sb.Append(raw[i + 1]);                       // quote removal
+				i += 2;
+				continue;
+				}
+			bool quoted = c is '\'' or '"' || (c == '$' && i + 1 < raw.Length && raw[i + 1] == '\'');
+			bool expansion = c == '`' || (c == '$' && i + 1 < raw.Length && IsExpansionStart(raw[i + 1]));
+			if (quoted || expansion)
+				{
+				int end = SkipConstruct(raw, i);
+				var text = ExpandSegment(raw[i..end]);
+				sb.Append(pattern && quoted ? Glob.Escape(text) : text);   // unquoted expansion: stays a pattern
+				i = end;
+				continue;
+				}
+			if (c == '~' && i == 0)
+				{
+				int end = raw.IndexOf('/');
+				if (end < 0) end = raw.Length;
+				var home = ExpandSegment(raw[..end]);
+				sb.Append(pattern ? Glob.Escape(home) : home);
+				i = end;
+				continue;
+				}
+			sb.Append(c);
+			i++;
+			}
+		return sb.ToString();
+		}
+
+	private static bool IsExpansionStart(char n) =>
+		char.IsLetter(n) || n == '_' || char.IsAsciiDigit(n) || n is '{' or '(' or '@' or '*' or '#' or '?' or '$' or '!' or '-';
+
+	/// <summary>Expand one quoted or `$` construct (or `~prefix`) to its text. The parse is cached
+	/// by source text (words are immutable): re-lexing it on every use made a pattern operation in
+	/// a loop ~4 µs (measured 2026-10-03), barely ahead of Git Bash.</summary>
+	private string ExpandSegment(string seg)
+		{
+		if (!s_segmentWords.TryGetValue(seg, out var words))
+			{
+			try { words = Parser.Parser.ParseWords(seg); }
+			catch (Exception ex) when (ex is Lexer.LexException or Parser.ParseException) { return seg; }
+			if (s_segmentWords.Count > 1024) s_segmentWords.Clear();
+			s_segmentWords[seg] = words;
+			}
+		return words.Count == 1 ? ExpandToString(words[0]) : string.Join(" ", words.Select(ExpandToString));
+		}
+
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<Word>> s_segmentWords = new(StringComparer.Ordinal);
+
+	/// <summary>Index just past the quoted or `$`/backtick construct starting at <paramref name="i"/>,
+	/// nesting through quotes and expansions inside it.</summary>
+	private static int SkipConstruct(string s, int i)
+		{
+		char c = s[i];
+		if (c == '\'') { int e = s.IndexOf('\'', i + 1); return e < 0 ? s.Length : e + 1; }
+		if (c == '`')
+			{
+			int j = i + 1;
+			while (j < s.Length && s[j] != '`') j += s[j] == '\\' ? 2 : 1;
+			return Math.Min(j + 1, s.Length);
+			}
+		if (c == '"')
+			{
+			int j = i + 1;
+			while (j < s.Length && s[j] != '"')
+				{
+				if (s[j] == '\\') { j += 2; continue; }
+				if (s[j] == '`' || (s[j] == '$' && j + 1 < s.Length && s[j + 1] is '{' or '(')) { j = SkipConstruct(s, j); continue; }
+				j++;
+				}
+			return Math.Min(j + 1, s.Length);
+			}
+		// '$'
+		if (i + 1 >= s.Length) return s.Length;
+		char n = s[i + 1];
+		if (n == '\'')
+			{
+			int j = i + 2;
+			while (j < s.Length && s[j] != '\'') j += s[j] == '\\' ? 2 : 1;
+			return Math.Min(j + 1, s.Length);
+			}
+		if (n is '{' or '(')
+			{
+			char open = n, close = n == '{' ? '}' : ')';
+			int depth = 0, j = i + 1;
+			while (j < s.Length)
+				{
+				char ch = s[j];
+				if (ch == '\\') { j += 2; continue; }
+				if (ch is '\'' or '"' or '`' || (ch == '$' && j + 1 < s.Length && s[j + 1] is '{' or '(' or '\''))
+					{ if (j > i + 1) { j = SkipConstruct(s, j); continue; } }
+				if (ch == open) depth++;
+				else if (ch == close && --depth == 0) return j + 1;
+				j++;
+				}
+			return s.Length;
+			}
+		if (char.IsLetter(n) || n == '_')
+			{
+			int j = i + 1;
+			while (j < s.Length && (char.IsLetterOrDigit(s[j]) || s[j] == '_')) j++;
+			return j;
+			}
+		return i + 2;   // $1 $@ $* $# $? $$ $! $- $0
+		}
+
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, bool), System.Text.RegularExpressions.Regex> s_replaceRegex = new();
 
 	/// <summary>Pattern substitution: longest match of a glob pattern, first or all
 	/// occurrences, optionally anchored at the start ('#') or end ('%').</summary>
@@ -632,10 +769,26 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		{
 		if (pat.Length == 0) return s;
 		bool nocase = _eval.Options.NoCaseMatch;
+		if (Glob.TryLiteral(pat, out var lit) && lit.Length > 0)
+			{
+			// no live pattern character: plain string operations (no regex built per call)
+			var cmp = nocase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+			if (anchor == '#') return s.StartsWith(lit, cmp) ? rep + s[lit.Length..] : s;
+			if (anchor == '%') return s.EndsWith(lit, cmp) ? s[..^lit.Length] + rep : s;
+			if (all) return s.Replace(lit, rep, cmp);
+			int at = s.IndexOf(lit, cmp);
+			return at < 0 ? s : s[..at] + rep + s[(at + lit.Length)..];
+			}
 		var body = Glob.ToRegexBody(pat);
 		string rx = anchor switch { '#' => "^" + body, '%' => body + "$", _ => body };
-		var re = new System.Text.RegularExpressions.Regex(rx,
-			(nocase ? System.Text.RegularExpressions.RegexOptions.IgnoreCase : 0) | System.Text.RegularExpressions.RegexOptions.Singleline);
+		var key = (rx, nocase);
+		if (!s_replaceRegex.TryGetValue(key, out var re))
+			{
+			re = new System.Text.RegularExpressions.Regex(rx,
+				(nocase ? System.Text.RegularExpressions.RegexOptions.IgnoreCase : 0) | System.Text.RegularExpressions.RegexOptions.Singleline);
+			if (s_replaceRegex.Count > 512) s_replaceRegex.Clear();
+			s_replaceRegex[key] = re;
+			}
 		var repl = rep.Replace("$", "$$");
 		if (anchor != '\0' || !all)
 			{
@@ -788,7 +941,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		bool oldCap = ConsoleMux.Capturing;
 		using var sw = new System.IO.StringWriter(captured) { NewLine = "\n" };
 		var snap = _env.TakeSnapshot();
-		int status;
+		var mark = _eval.EnterSubshell();   // functions, options, traps, aliases it sets vanish with it
+		int status = 0;   // read by the finally if Execute throws past the catches
 		ConsoleMux.SetOut(sw);
 		ConsoleMux.Raw = null;
 		ConsoleMux.Capturing = true;   // byte-builtins must write text into the capture
@@ -797,12 +951,44 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		catch (BrokenPipeException) { status = 141; }
 		finally
 			{
+			status = SubshellExitTrap(mark, status);   // still captured: its output is part of the result
 			ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 			_env.RestoreSnapshot(snap);
+			_eval.LeaveSubshell(mark);
 			}
 		LastSubstStatus = status;
 		_env.LastExitCode = status;
 		return captured.ToString().TrimEnd('\n');
+		}
+
+	/// <summary>A substitution's own EXIT trap, run before its output is released; an `exit` in the
+	/// trap sets the substitution's status rather than ending the parent.</summary>
+	private int SubshellExitTrap(Evaluator.SubshellMark mark, int status)
+		{
+		try { _eval.SubshellExitTrap(mark); }
+		catch (ExitException ex) { return ex.Code; }
+		catch (BrokenPipeException) { return 141; }
+		return status;
+		}
+
+	/// <summary>Characters as bash counts them in a UTF-8 locale: a surrogate pair (one code point
+	/// beyond the BMP, e.g. an emoji) is ONE, and so is a lone surrogate (an undecodable byte kept
+	/// by ShellEncoding). `${#s}` counted UTF-16 units, so "😀" was 2 (found 2026-10-05).</summary>
+	internal static int CharCount(string s)
+		{
+		int n = s.Length;
+		for (int i = 0; i + 1 < s.Length; i++)
+			if (char.IsHighSurrogate(s[i]) && char.IsLowSurrogate(s[i + 1])) { n--; i++; }
+		return n;
+		}
+
+	/// <summary>The UTF-16 offset of character <paramref name="index"/> (see <see cref="CharCount"/>).</summary>
+	internal static int Utf16Offset(string s, int index)
+		{
+		int i = 0;
+		for (int c = 0; c < index && i < s.Length; c++)
+			i += char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]) ? 2 : 1;
+		return i;
 		}
 
 	// ── process substitution (DECISIONS 2026-09-04 #6: temp-file emulation) ──────
@@ -833,8 +1019,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		var oldRaw = ConsoleMux.Raw;
 		bool oldCap = ConsoleMux.Capturing;
 		var snap = _env.TakeSnapshot();
-		int status;
-		using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read))
+		var mark = _eval.EnterSubshell();
+		int status = 0;
+		using (var fs = ShellFile.Create(path))   // shared: an external inside writes to it through its own handle
 		using (var sw = new StreamWriter(fs, ShellEncoding.Utf8) { NewLine = "\n", AutoFlush = true })
 			{
 			ConsoleMux.SetOut(sw);
@@ -845,9 +1032,11 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			catch (BrokenPipeException) { status = 141; }
 			finally
 				{
+				status = SubshellExitTrap(mark, status);
 				try { sw.Flush(); } catch { }
 				ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 				_env.RestoreSnapshot(snap);
+				_eval.LeaveSubshell(mark);
 				}
 			}
 		(_procSubFiles ??= []).Add(path);
@@ -1022,8 +1211,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	private string StripPrefix(string val, string pat, bool greedy)
 		{
 		bool nocase = _eval.Options.NoCaseMatch;
-		if (!Glob.HasMeta(pat))
-			return val.StartsWith(pat, nocase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? val[pat.Length..] : val;
+		if (Glob.TryLiteral(pat, out var lit))   // no live pattern char (a quoted pattern arrives escaped)
+			return val.StartsWith(lit, nocase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? val[lit.Length..] : val;
 		var re = Glob.ToRegex(pat, nocase);
 		if (greedy)
 			{
@@ -1041,8 +1230,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	private string StripSuffix(string val, string pat, bool greedy)
 		{
 		bool nocase = _eval.Options.NoCaseMatch;
-		if (!Glob.HasMeta(pat))
-			return val.EndsWith(pat, nocase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? val[..^pat.Length] : val;
+		if (Glob.TryLiteral(pat, out var lit))   // no live pattern char (a quoted pattern arrives escaped)
+			return val.EndsWith(lit, nocase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? val[..^lit.Length] : val;
 		var re = Glob.ToRegex(pat, nocase);
 		if (greedy)
 			{

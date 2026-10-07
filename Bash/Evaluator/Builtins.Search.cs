@@ -17,28 +17,116 @@ public sealed partial class Builtins
 	/// `[[:alpha:]]` classes are expanded. Used by grep/sed in their default mode.</summary>
 	private static string BreToNet(string pat)
 		{
+		// POSIX/GNU: `^` anchors only at the start of the RE or right after `\(` / `\|`, and `$` only
+		// at the end or right before `\)` / `\|`; elsewhere both are literals. A `*` at a start (also
+		// after an anchoring `^`) is a literal. .NET treats `^`/`$` as anchors anywhere and rejects a
+		// leading `*`, so `s/^REV=$(hg id -n)$/.../` silently matched nothing (2026-10-05).
 		var sb = new StringBuilder(pat.Length + 8);
+		bool start = true;   // at the start of the RE, of a `\(` group, or of a `\|` branch
 		for (int i = 0; i < pat.Length; i++)
 			{
 			char c = pat[i];
 			if (c == '\\' && i + 1 < pat.Length)
 				{
 				char n = pat[++i];
-				if (n is '(' or ')' or '{' or '}' or '+' or '?' or '|') sb.Append(n);
+				if (n is '(' or '|') { sb.Append(n); start = true; continue; }
+				if (n is ')' or '{' or '}' or '+' or '?') sb.Append(n);
 				else if (n is '<' or '>') sb.Append("\\b");
-				else { sb.Append('\\').Append(n); }
+				else sb.Append('\\').Append(n);
+				start = false;
+				continue;
 				}
-			else if (c == '[') { i = AppendBracket(pat, i, sb); }
-			else if (c is '(' or ')' or '{' or '}' or '+' or '?' or '|') { sb.Append('\\').Append(c); }
+			if (c == '^') { sb.Append(start ? "^" : "\\^"); continue; }   // `^*`: the `*` is still at a start
+			if (c == '$')
+				{
+				bool anchor = i == pat.Length - 1
+				              || (i + 2 < pat.Length && pat[i + 1] == '\\' && pat[i + 2] is ')' or '|');
+				sb.Append(anchor ? "$" : "\\$");
+				start = false;
+				continue;
+				}
+			if (c == '*' && start) { sb.Append("\\*"); start = false; continue; }
+			if (c == '[') i = AppendBracket(pat, i, sb);
+			else if (c is '(' or ')' or '{' or '}' or '+' or '?' or '|') sb.Append('\\').Append(c);
 			else sb.Append(c);
+			start = false;
 			}
 		return sb.ToString();
 		}
 
-	/// <summary>ERE → .NET: mostly identity, plus POSIX classes and `\&lt;` `\&gt;`.</summary>
+	/// <summary>The named group carrying a `\K` branch's reported part (see <see cref="PcreToNet"/>).</summary>
+	internal const string KeepGroup = "csbashKeep";
+
+	/// <summary>PCRE → .NET: identity, except `\K` ("keep": the reported match starts here), which .NET
+	/// lacks ("Unrecognized escape sequence \K", reported 2026-10-05). In each top-level branch,
+	/// `X\KY` becomes `X(?&lt;csbashKeep&gt;Y)`: the whole of XY is matched and consumed, as PCRE does,
+	/// and `-o` reports the group (<see cref="KeptSpan"/>). A lookbehind `(?&lt;=X)Y` was tried first and
+	/// rejected: it does not consume X, so `\w+ \K\w+` over "public void Alpha()" also matched
+	/// "Alpha", which PCRE does not. The last `\K` of a branch wins, as in PCRE. A `\K` inside a group
+	/// is refused loudly.</summary>
+	private static string PcreToNet(string pat)
+		{
+		if (!pat.Contains("\\K")) return pat;
+		var branches = new List<(int Start, int End, List<int> Keeps)>();
+		int depth = 0, branchStart = 0;
+		var keeps = new List<int>();
+		for (int i = 0; i < pat.Length; i++)
+			{
+			char c = pat[i];
+			if (c == '\\' && i + 1 < pat.Length)
+				{
+				if (pat[i + 1] == 'K')
+					{
+					if (depth != 0) throw new ArgumentException("\\K inside a group is not supported");
+					keeps.Add(i);
+					}
+				i++;
+				continue;
+				}
+			if (c == '[')
+				{
+				int j = i + 1;
+				if (j < pat.Length && pat[j] == '^') j++;
+				if (j < pat.Length && pat[j] == ']') j++;
+				while (j < pat.Length && pat[j] != ']') { if (pat[j] == '\\') j++; j++; }
+				i = j;
+				continue;
+				}
+			if (c == '(') depth++;
+			else if (c == ')') depth--;
+			else if (c == '|' && depth == 0) { branches.Add((branchStart, i, keeps)); keeps = []; branchStart = i + 1; }
+			}
+		branches.Add((branchStart, pat.Length, keeps));
+
+		var sb = new StringBuilder(pat.Length + 16 * branches.Count);
+		foreach (var (bs, be, ks) in branches)
+			{
+			if (sb.Length > 0 || bs > 0) sb.Append('|');
+			if (ks.Count == 0) { sb.Append(pat, bs, be - bs); continue; }
+			int last = ks[^1];
+			for (int i = bs; i < last; i++)
+				{
+				if (ks.Contains(i)) { i++; continue; }   // an earlier \K of this branch: dropped
+				sb.Append(pat[i]);
+				}
+			sb.Append("(?<").Append(KeepGroup).Append('>').Append(pat, last + 2, be - (last + 2)).Append(')');
+			}
+		return sb.ToString();
+		}
+
+	/// <summary>The part of a match grep reports: the `\K` group when the matching branch had one.</summary>
+	private static (int Index, string Value) KeptSpan(Match m)
+		{
+		var g = m.Groups[KeepGroup];
+		return g.Success ? (g.Index, g.Value) : (m.Index, m.Value);
+		}
+
+	/// <summary>ERE → .NET: mostly identity, plus POSIX classes and `\&lt;` `\&gt;`. A `*` at the start
+	/// of the RE, a group or a branch is a literal, as in GNU (.NET rejected it).</summary>
 	private static string EreToNet(string pat)
 		{
 		var sb = new StringBuilder(pat.Length + 8);
+		bool start = true;
 		for (int i = 0; i < pat.Length; i++)
 			{
 			char c = pat[i];
@@ -47,9 +135,13 @@ public sealed partial class Builtins
 				char n = pat[++i];
 				if (n is '<' or '>') sb.Append("\\b");
 				else sb.Append('\\').Append(n);
+				start = false;
+				continue;
 				}
-			else if (c == '[') { i = AppendBracket(pat, i, sb); }
-			else sb.Append(c);
+			if (c == '*' && start) { sb.Append("\\*"); start = false; continue; }
+			if (c == '[') { i = AppendBracket(pat, i, sb); start = false; continue; }
+			sb.Append(c);
+			start = c is '(' or '|' or '^';
 			}
 		return sb.ToString();
 		}
@@ -112,7 +204,7 @@ public sealed partial class Builtins
 
 	private static Regex MakeRegex(string pattern, bool ere, bool pcre, bool fixedStr, bool icase, bool wholeWord, bool wholeLine)
 		{
-		string pat = fixedStr ? Regex.Escape(pattern) : pcre ? pattern : ere ? EreToNet(pattern) : BreToNet(pattern);
+		string pat = fixedStr ? Regex.Escape(pattern) : pcre ? PcreToNet(pattern) : ere ? EreToNet(pattern) : BreToNet(pattern);
 		if (wholeWord) pat = $@"(?<![\w])(?:{pat})(?![\w])";
 		if (wholeLine) pat = $"^(?:{pat})$";
 		var opts = RegexOptions.CultureInvariant | (icase ? RegexOptions.IgnoreCase : RegexOptions.None);
@@ -166,7 +258,7 @@ public sealed partial class Builtins
 		Regex re;
 		try
 			{
-			var alternatives = patterns.Select(p => fixedStr ? Regex.Escape(p) : pcre ? p : ere ? EreToNet(p) : BreToNet(p));
+			var alternatives = patterns.Select(p => fixedStr ? Regex.Escape(p) : pcre ? PcreToNet(p) : ere ? EreToNet(p) : BreToNet(p));
 			string pat = patterns.Count == 1 ? alternatives.First() : "(?:" + string.Join(")|(?:", alternatives) + ")";
 			if (wordMatch) pat = $@"(?<![\w])(?:{pat})(?![\w])";
 			if (lineMatch) pat = $"^(?:{pat})$";
@@ -203,20 +295,22 @@ public sealed partial class Builtins
 					if (Directory.Exists(fs)) { if (!noMessages && !recursive) Console.Error.WriteLine($"grep: {name}: Is a directory"); if (!recursive) errored = true; continue; }
 					if (!text)
 						{
-						using var probe = File.OpenRead(fs);
+						using var probe = ShellFile.OpenRead(fs);
 						var buf = new byte[Math.Min(8192, probe.Length)];
 						int n = probe.Read(buf, 0, buf.Length);
 						binary = Array.IndexOf(buf, (byte)0, 0, n) >= 0;
 						}
 					if (binary && skipBinary) continue;
-					reader = new StreamReader(fs, ShellEncoding.Utf8);
+					reader = new LfReader(ShellFile.OpenRead(fs));   // LF-only lines, no BOM sniffing: bytes are data
 					}
 				int lineNo = 0, matched = 0; long offset = 0;
 				bool fileHadMatch = false;
 				var beforeBuf = new Queue<(int no, long off, string text)>();
 				int afterLeft = 0; int lastPrinted = 0; bool printedAny = false;
 				string? line;
-				while ((line = nullData ? ReadUntil(reader, '\0') : reader.ReadLine()) is not null)
+				var rdr = reader;
+				Func<string?> next = nullData ? () => ReadUntil(rdr, '\0') : ShellEncoding.LineReaderFor(reader);
+				while ((line = next()) is not null)
 					{
 					lineNo++;
 					long lineOff = offset;
@@ -256,7 +350,10 @@ public sealed partial class Builtins
 					if (onlyMatching)
 						{
 						foreach (Match mm in re.Matches(line))
-							if (mm.Length > 0) PrintLine(name, lineNo, lineOff + ShellEncoding.Utf8.GetByteCount(line[..mm.Index]), mm.Value, ':', showName, lineNum, byteOffset, nameSep, term);
+							{
+							var (ki, kv) = KeptSpan(mm);   // `\K` (-P): only the kept part is printed
+							if (kv.Length > 0) PrintLine(name, lineNo, lineOff + ShellEncoding.Utf8.GetByteCount(line[..ki]), kv, ':', showName, lineNum, byteOffset, nameSep, term);
+							}
 						}
 					else PrintLine(name, lineNo, lineOff, line, ':', showName, lineNum, byteOffset, nameSep, term);
 					printedAny = true; lastPrinted = lineNo; afterLeft = after;

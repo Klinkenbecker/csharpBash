@@ -1,0 +1,13 @@
+nohup ran
+nohup status 0
+nohup passes the status: 7
+nohup, no operand: 125
+no nohup.out (stdout is not a terminal)
+setsid ran
+setsid status 0
+setsid passes the status: 3
+disown, no job: 1
+jobs before: 2
+after disown %1: 1
+after disown -a: 0
+disown, no such job: 1

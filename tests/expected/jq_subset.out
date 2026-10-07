@@ -1,0 +1,84 @@
+######## verdict: partial
+two gaps
+[high] tests
+    -> regressions
+[low] docs
+    -> confusion
+######## verdict: pass
+clean
+[{"agent":"a1","n":2},{"agent":"a2","n":0}]
+"a1"
+2
+=== alice 2026-01-02T03:04:05Z
+First
+line two
+=== bob 2026-01-03T00:00:00Z
+Second
+matcher=Bash command=x.sh
+valid
+{
+  "a": [
+    1,
+    {
+      "b": null
+    }
+  ],
+  "c": {},
+  "d": [],
+  "e": "x"
+}
+numbers: [1,3.14,-0,100000,1e+17,1e+300,0.0001,1e-05,1.5e-07,123456789012,0.1] 
+escapes: ["tab\tnl\ncr\rq\"bs\\","\u0001\u001f\u007f","é✓","/"] 
+paths: 2 3 [2,3] [1] "el" [1,2,3] 
+optional: "ok" 
+arith: 7 2.5 1 -2 "ab" [1,2] {"a":1,"b":2} 1 [1,3] "ababab" {"a":{"b":1,"c":2}} 
+compare: true true true true false true false 
+sort mixed: [null,false,true,3,"s",[1],[2],{"a":0},{"a":1}] 
+alt: jq: error (at <stdin>:1): x "dflt" "x" 
+if: "lo" "mid" "hi" 
+as: {"a":1,"b":2} 10 20 
+as object: [1,"n"] 
+reduce: 10 
+reduce pat: {"a":1,"b":2} 
+construct: {"name":"x","first":"p","x":"X","k v":2} 
+interp: x-2-{"b":[1,2,3]}-null 
+cartesian: {"a":1,"b":3} {"a":1,"b":4} {"a":2,"b":3} {"a":2,"b":4} "1-3" "2-3" "1-4" "2-4" 11 12 21 22 
+assign: {"a":{"b":[9,2,3]},"name":"x","tags":["p","q",null,null,null,"z"],"n":null,"new":"v"} 
+update: {"a":{"b":[2,4,6]},"name":"x","tags":["P","Q"],"n":"was null","count":1} 
+del: {"name":"x","tags":["q"],"n":null} {"a":{"b":[1,2,3]},"name":"x","tags":["p","q"]} 
+map etc: [2,3] [2,3,4] [10,20,30] 
+keys: ["a","b","name"] ["b","a","name"] true 3 5 true false 
+entries: jq: error (at <stdin>:1): Cannot use null (null) as object key [{"key":"a","value":1},{"key":"b","value":2}] {"a":2,"b":3} 
+add/any: 6 true true true true true null 
+sort/group: [{"k":1,"j":0},{"k":2,"j":1},{"k":2,"j":0}] [[{"k":1,"j":0}],[{"k":2,"j":1},{"k":2,"j":0}]] [{"k":1,"j":0},{"k":2,"j":1}] [1,2] [{"k":1,"j":0},{"k":2,"j":0},{"k":2,"j":1}] 
+min/max: 1 3 {"a":1} {"a":3} null 
+first etc: 1 3 [3,2,1] [1,2,3] [1,2,[3]] 2 3 
+range: [0,1,2] [1,3,5] [5,3,1] [0,1,2,0,1,2,3,1,2,1,2,3] 
+convert: "1" 12 "[1]" ["number","string","null","boolean","array","object"] "1.5" 
+json: "{\"a\":[1,\"x\"]}" {"a":[1,"x"]} 
+split/join: ["a","b","c"] "a-b-c" "1,,a,true" 
+regex: true true "aXcabc" "_b__b_" "<a>bcabc" "ab[c]ab[c]" 
+strings: true true "c" "a" "ABC" "abc" "abc" 
+contains: true true true false 
+formats: 1,"a""b","c	d",,true,1.5 1	a"b	c\td		true	1.5 [1,"a\"b","c\td",null,true,1.5] YSJi [1,"a\"b","c\td",null,true,1.5] 
+env: bar bar 
+recurse: [1,2,3] [2,2] 
+try: "boom" 1 "caught" 3 1 
+options: 2 [1,2] 
+[1,2,3]
+null
+e=1
+e=4
+ab1
+[1]
+"str"
+index num: jq: error (at <stdin>:1): Cannot index number with string "b" 
+iterate: jq: error (at <stdin>:1): Cannot iterate over number (5) 
+add types: jq: error (at <stdin>:1): number (1) and string ("a") cannot be added 
+div zero: jq: error: Division by zero? at <top-level>, line 1: 1 / 0 jq: 1 compile error 
+not str: jq: error (at <stdin>:1) (not a string): {"a":1} 
+bad json: parse error: Unfinished JSON term at EOF at line 2, column 0 
+syntax: jq: error: syntax error, unexpected $end (Unix shell quoting issues?) at <top-level>, line 1: .a |    jq: 1 compile error 
+status rc=5
+types: [1] ["a"] [true] [null] [[2]] [{"b":3}] [[2],{"b":3}] [1,"a",true,null] [1,"a",true,[2],{"b":3}] 
+types path: {"b":[1,"x"],"c":{"d":2}} [1,2] {"a":null,"b":[1,null,"X"],"c":{"d":2}} 

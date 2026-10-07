@@ -43,6 +43,8 @@ public sealed class ShellEnvironment
 
 	public ShellEnvironment()
 		{
+		OwnsProcessCwd = true;
+		Cwd = ToShellPath(Directory.GetCurrentDirectory());
 		_positionals.Push([]);
 		foreach (System.Collections.DictionaryEntry e in System.Environment.GetEnvironmentVariables())
 			{
@@ -85,12 +87,41 @@ public sealed class ShellEnvironment
 		Set("UID", uid.ToString()); Set("EUID", uid.ToString());
 		_readonly.Add("UID"); _readonly.Add("EUID");
 		Set("PPID", ParentPid().ToString()); _readonly.Add("PPID");
-		Set("PWD", ShellCwd()); Export("PWD");
+		Set("PWD", Cwd); Export("PWD");
 		SetArrayFromList("BASH_VERSINFO", ["5", "1", "0", "0", "release", "x86_64-pc-msys"]);
 		_readonly.Add("BASH_VERSINFO");
 		}
 
 	private void SetIfUnset(string name, string value) { if (Get(name).Length == 0) Set(name, value); }
+
+	/// <summary>Bypasses the public constructor's process-environment import and PATH probing,
+	/// which cost ~1.4 ms (measured 2026-10-03): <see cref="CloneForSubshell"/> fills it.</summary>
+	private ShellEnvironment(ShellEnvironment src)
+		{
+		foreach (var f in src._frames) _frames.Add(new Dictionary<string, string>(f, StringComparer.Ordinal));
+		_frames.RemoveAt(0);   // the initializer's empty global frame
+		_arrays   = src._arrays.ToDictionary(kv => kv.Key, kv => new SortedDictionary<int, string>(kv.Value), StringComparer.Ordinal);
+		_assocs   = src._assocs.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value, StringComparer.Ordinal), StringComparer.Ordinal);
+		_exports  = new HashSet<string>(src._exports, StringComparer.Ordinal);
+		_readonly = new HashSet<string>(src._readonly, StringComparer.Ordinal);
+		_integers = new HashSet<string>(src._integers, StringComparer.Ordinal);
+		foreach (var p in src._positionals.Reverse()) _positionals.Push(p);   // enumerates top first
+		_arg0 = src._arg0;
+		_start = src._start;
+		LastExitCode = src.LastExitCode;
+		LastBackgroundPid = src.LastBackgroundPid;
+		CurrentLine = src.CurrentLine;
+		AutoExport = src.AutoExport;
+		Cwd = src.Cwd;              // a stage starts where the pipeline does ...
+		OwnsProcessCwd = false;     // ... and never moves the process cwd
+		_baseCwd = src.OwnsProcessCwd ? src.Cwd : src._baseCwd;
+		}
+
+	/// <summary>An independent copy of all variable state, for a pipeline stage: bash runs every
+	/// stage in a subshell, so what a stage sets never reaches the parent or a sibling stage.
+	/// ~2 µs for Claude Code's full snapshot (measured 2026-10-03). The hooks (`$-`, arithmetic)
+	/// are the new owner's to set.</summary>
+	public ShellEnvironment CloneForSubshell() => new(this);
 
 	// ── path translation ──────────────────────────────────────────────────────
 
@@ -104,7 +135,23 @@ public sealed class ShellEnvironment
 	/// backslash form. `/dev/...` is left alone (the redirect layer interprets it). The general
 	/// Unix root mapping (`/usr`, `/etc`) is deferred — see DECISIONS.md.
 	/// </summary>
-	public static string TranslatePath(string path)
+	public static string TranslatePath(string path) => AgainstActiveCwd(TranslateForm(path));
+
+	/// <summary>A relative path, resolved against the running shell's OWN cwd when that is not the
+	/// process cwd -- i.e. in a pipeline stage that has changed directory (DECISIONS 2026-10-03).
+	/// Everywhere else it stays relative, so the process cwd resolves it exactly as before and no
+	/// output that echoes a translated path changes.</summary>
+	private static string AgainstActiveCwd(string p)
+		{
+		if (p.Length == 0 || t_active is not { OwnsProcessCwd: false } a || a.Cwd == a._baseCwd || Path.IsPathRooted(p)) return p;
+		return ToShellPath(Path.Join(a.Cwd, p));
+		}
+
+	/// <summary>For a shell that does not own the process cwd: the process cwd it started from.
+	/// Until it moves away from it, the process cwd resolves its relative paths exactly as before.</summary>
+	private string _baseCwd = "";
+
+	private static string TranslateForm(string path)
 		{
 		if (path.Length == 0) return path;
 
@@ -156,8 +203,56 @@ public sealed class ShellEnvironment
 	/// given, so every absolute path the shell computes is normalised here (2026-09-12).</summary>
 	public static string FullPath(string path) => ToShellPath(Path.GetFullPath(path));
 
-	/// <summary>The working directory in shell form — what `pwd` prints and `$PWD` holds.</summary>
-	public static string ShellCwd() => ToShellPath(Directory.GetCurrentDirectory());
+	/// <summary>The working directory in shell form — what `pwd` prints and `$PWD` holds: the
+	/// running shell's own cwd.</summary>
+	public static string ShellCwd() => t_active?.Cwd ?? ToShellPath(Directory.GetCurrentDirectory());
+
+	// ── working directory ─────────────────────────────────────────────────────
+
+	/// <summary>
+	/// This shell's own working directory, in shell form. The shell itself (<see cref="OwnsProcessCwd"/>)
+	/// keeps the PROCESS cwd equal to it, so everything outside pipelines behaves exactly as before.
+	/// A pipeline stage's copy never touches the process cwd: a stage's `cd` used to move every
+	/// stage and the parent -- `(cd sub &amp;&amp; …) | tee out.log` put out.log in sub/ in 148 of 200
+	/// runs, and `cd sub | true` moved the shell (DECISIONS 2026-10-03).
+	/// </summary>
+	public string Cwd { get; private set; } = "";
+
+	/// <summary>True for a shell whose cwd IS the process cwd; false for a pipeline stage's copy.</summary>
+	public bool OwnsProcessCwd { get; private set; }
+
+	[ThreadStatic] private static ShellEnvironment? t_active;
+
+	/// <summary>The environment whose commands this thread is running. Set at every entry where a
+	/// thread starts running shell code (RunString, pipeline stages, background jobs, `timeout`).</summary>
+	public static ShellEnvironment? Active { get => t_active; set => t_active = value; }
+
+	/// <summary>`cd`: <paramref name="dest"/> is a translated path (absolute when this shell is
+	/// detached from the process cwd).</summary>
+	public void ChangeCwd(string dest)
+		{
+		var full = Path.GetFullPath(dest);
+		if (OwnsProcessCwd) Directory.SetCurrentDirectory(full);
+		Cwd = ToShellPath(full);
+		}
+
+	/// <summary>An in-process script's child shell starts where its caller is, owning the process
+	/// cwd only if the caller did.</summary>
+	public void AdoptCwd(ShellEnvironment caller)
+		{
+		Cwd = caller.Cwd;
+		OwnsProcessCwd = caller.OwnsProcessCwd;
+		_baseCwd = caller.OwnsProcessCwd ? caller.Cwd : caller._baseCwd;
+		}
+
+	/// <summary>Put the process cwd back to this (owning) shell's cwd, after a child that also owned
+	/// it may have moved it: a script's `cd` does not move its caller.</summary>
+	public void ReassertProcessCwd()
+		{
+		if (!OwnsProcessCwd) return;
+		try { if (ToShellPath(Directory.GetCurrentDirectory()) != Cwd && Directory.Exists(Cwd)) Directory.SetCurrentDirectory(Cwd); }
+		catch { }
+		}
 
 	// ── scalar variables ──────────────────────────────────────────────────────
 
@@ -505,7 +600,7 @@ public sealed class ShellEnvironment
 			Integers  = new HashSet<string>(_integers, StringComparer.Ordinal),
 			Positionals = _positionals.ToArray(),
 			Arg0      = _arg0,
-			Cwd       = Directory.GetCurrentDirectory(),
+			Cwd       = this.Cwd,
 			};
 		return s;
 		}
@@ -521,7 +616,8 @@ public sealed class ShellEnvironment
 		_positionals.Clear();
 		foreach (var p in s.Positionals.Reverse()) _positionals.Push(p);
 		_arg0 = s.Arg0;
-		try { if (Directory.GetCurrentDirectory() != s.Cwd && Directory.Exists(s.Cwd)) Directory.SetCurrentDirectory(s.Cwd); } catch { }
+		Cwd = s.Cwd;            // `( cd x )` / `$( cd x )` end where they started
+		ReassertProcessCwd();   // the process cwd too, for the shell that owns it
 		}
 
 	// ── exports ───────────────────────────────────────────────────────────────

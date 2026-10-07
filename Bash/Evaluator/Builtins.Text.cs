@@ -14,13 +14,9 @@ public sealed partial class Builtins
 
 	/// <summary>A reader over a file operand or stdin ("-"). Callers dispose file readers.</summary>
 	private static TextReader OpenText(string src) =>
-		src is "-" or "/dev/stdin" ? Console.In : new StreamReader(ShellEnvironment.TranslatePath(src), ShellEncoding.Utf8);
+		src is "-" or "/dev/stdin" ? Console.In : new LfReader(ShellFile.OpenRead(ShellEnvironment.TranslatePath(src)));   // LF-only lines, no BOM sniffing: bytes are data
 
-	private static IEnumerable<string> ReadLines(TextReader r)
-		{
-		string? l;
-		while ((l = r.ReadLine()) is not null) yield return l;
-		}
+	private static IEnumerable<string> ReadLines(TextReader r) => ShellEncoding.Lines(r);   // LF only: a CR is data
 
 	private static byte[] ReadBytes(string src)
 		{
@@ -31,12 +27,31 @@ public sealed partial class Builtins
 			if (rin is not null) { using var ms = new MemoryStream(); rin.CopyTo(ms); return ms.ToArray(); }
 			return ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd());
 			}
-		return File.ReadAllBytes(ShellEnvironment.TranslatePath(src));
+		return ShellFile.ReadAllBytes(ShellEnvironment.TranslatePath(src));
 		}
 
 	private static List<string> FilesOrStdin(Opts o) => o.Operands.Count == 0 ? ["-"] : o.Operands;
 
 	private static byte[] ReadAll(Stream s) { using var ms = new MemoryStream(); s.CopyTo(ms); return ms.ToArray(); }
+
+	/// <summary>Signal <paramref name="changed"/> when <paramref name="path"/> is written or resized;
+	/// null when the directory cannot be watched (a share, say), and then the caller's interval is
+	/// the only wake-up.</summary>
+	private static FileSystemWatcher? WatchFile(string path, AutoResetEvent changed)
+		{
+		try
+			{
+			var full = Path.GetFullPath(path);
+			var w = new FileSystemWatcher(Path.GetDirectoryName(full)!, Path.GetFileName(full))
+				{ NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName };
+			FileSystemEventHandler wake = (_, _) => changed.Set();
+			w.Changed += wake; w.Created += wake;
+			w.Renamed += (_, _) => changed.Set();
+			w.EnableRaisingEvents = true;
+			return w;
+			}
+		catch { return null; }
+		}
 
 	internal static string IoError(Exception ex) => ex switch
 		{
@@ -95,7 +110,7 @@ public sealed partial class Builtins
 						}
 					var p = ShellEnvironment.TranslatePath(f);
 					if (Directory.Exists(p)) { Console.Error.WriteLine($"cat: {f}: Is a directory"); rc = 1; continue; }
-					if (raw is not null) { using var fs = File.OpenRead(p); fs.CopyTo(raw); }
+					if (raw is not null) { using var fs = ShellFile.OpenRead(p); fs.CopyTo(raw); }
 					else Console.Out.Write(ShellEncoding.ReadAllText(p));
 					}
 				catch (BrokenPipeException) { throw; }
@@ -164,6 +179,33 @@ public sealed partial class Builtins
 				{
 				if (header) { if (!first) Console.WriteLine(); Console.WriteLine($"==> {(f == "-" ? "standard input" : f)} <=="); }
 				first = false;
+				// Exactly N bytes, then stop. Reading all of the input first hung `yes | head -c 5` and,
+				// on a shared stdin, consumed what the next command should read (2026-10-03). Taken
+				// ONCE: CurrentRawStdin hands over a text reader's read-ahead.
+				var src = bytes && !fromEnd
+					? (f == "-" ? Evaluator.CurrentRawStdin() : ShellFile.OpenRead(ShellEnvironment.TranslatePath(f)))
+					: null;
+				if (src is not null)
+					{
+					try
+						{
+						var raw = Evaluator.CurrentRawStdout();
+						if (raw is not null) Console.Out.Flush();
+						var text = raw is null ? new MemoryStream() : null;
+						var buf = new byte[(int)Math.Min(count, 65536)];
+						for (long left = count; left > 0; )
+							{
+							int n = src.Read(buf, 0, (int)Math.Min(left, buf.Length));
+							if (n <= 0) break;
+							if (raw is not null) raw.Write(buf, 0, n); else text!.Write(buf, 0, n);
+							left -= n;
+							}
+						if (raw is not null) raw.Flush();
+						else Console.Out.Write(ShellEncoding.Utf8.GetString(text!.ToArray()));
+						}
+					finally { if (f != "-") src.Dispose(); }
+					continue;
+					}
 				if (bytes)
 					{
 					var data = ReadBytes(f);
@@ -193,9 +235,10 @@ public sealed partial class Builtins
 				TextReader reader = OpenText(f);
 				try
 					{
+					var next = ShellEncoding.LineReaderFor(reader);
 					for (long i = 0; i < count; i++)
 						{
-						var line = reader.ReadLine();
+						var line = next();
 						if (line is null) break;
 						Console.WriteLine(line);
 						}
@@ -249,7 +292,7 @@ public sealed partial class Builtins
 					{
 					var p = ShellEnvironment.TranslatePath(f);
 					using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-					using var r = new StreamReader(fs, ShellEncoding.Utf8);
+					using var r = new LfReader(fs);   // LF-only lines, no BOM sniffing: bytes are data
 					lines = ReadLines(r).ToList();
 					lengthSeen = fs.Length;
 					}
@@ -257,11 +300,17 @@ public sealed partial class Builtins
 				else for (int i = (int)Math.Max(0, lines.Count - count); i < lines.Count; i++) Console.WriteLine(lines[i]);
 				if (follow && f != "-")
 					{
-					// poll for growth until interrupted (Ctrl+C) or the reader goes away
+					// Follow until interrupted (Ctrl+C) or the reader goes away. A file-change watcher wakes
+					// us as soon as Windows reports one; the interval (GNU's -s poll period) is the backstop,
+					// since NTFS reports a growing file's size lazily. An interrupt ends the wait at once.
+					// It was Thread.Sleep(interval) (the architect: never sleep-poll for synchronization).
 					var p = ShellEnvironment.TranslatePath(f);
+					using var changed = new AutoResetEvent(false);
+					using var watcher = WatchFile(p, changed);
+					var wakers = new List<WaitHandle>(_eval.InterruptHandles()) { changed }.ToArray();
 					while (true)
 						{
-						Thread.Sleep((int)(interval * 1000));
+						WaitHandle.WaitAny(wakers, (int)(interval * 1000));
 						_eval.CheckInterrupt();
 						long len;
 						try { len = new FileInfo(p).Length; } catch { continue; }
@@ -269,7 +318,7 @@ public sealed partial class Builtins
 						if (len == lengthSeen) continue;
 						using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 						fs.Seek(lengthSeen, SeekOrigin.Begin);
-						using var r = new StreamReader(fs, ShellEncoding.Utf8);
+						using var r = new LfReader(fs);   // LF-only lines, no BOM sniffing: bytes are data
 						Console.Out.Write(r.ReadToEnd());
 						Console.Out.Flush();
 						lengthSeen = len;
@@ -277,6 +326,7 @@ public sealed partial class Builtins
 					}
 				}
 			catch (BrokenPipeException) { throw; }
+			catch (InterruptException) { throw; }   // `tail -f` ended by Ctrl+C / `timeout`: not a read error
 			catch (Exception ex) { Console.Error.WriteLine($"tail: cannot open '{f}' for reading: {IoError(ex)}"); rc = 1; }
 			}
 		return rc;
@@ -799,7 +849,7 @@ public sealed partial class Builtins
 			try
 				{
 				var p = ShellEnvironment.TranslatePath(f);
-				files.Add(append ? File.Open(p, FileMode.Append, FileAccess.Write) : File.Create(p));
+				files.Add(append ? ShellFile.Append(p) : ShellFile.Create(p));
 				}
 			catch (Exception ex) { Console.Error.WriteLine($"tee: {f}: {IoError(ex)}"); rc = 1; }
 			}
@@ -1051,7 +1101,7 @@ public sealed partial class Builtins
 			}
 		void Write(int idx, int off, int len)
 			{
-			using var fs = File.Create(ShellEnvironment.TranslatePath(prefix + Suffix(idx)));
+			using var fs = ShellFile.Create(ShellEnvironment.TranslatePath(prefix + Suffix(idx)));
 			fs.Write(data, off, len);
 			}
 		int piece = 0;
@@ -1254,7 +1304,7 @@ public sealed partial class Builtins
 						if (!m.Success) continue;
 						var target = m.Groups[2].Value;
 						string actual;
-						try { actual = HexOf(File.ReadAllBytes(ShellEnvironment.TranslatePath(target))); }
+						try { actual = HexOf(ShellFile.ReadAllBytes(ShellEnvironment.TranslatePath(target))); }
 						catch { Console.WriteLine($"{target}: FAILED open or read"); failed++; continue; }
 						bool ok = string.Equals(actual, m.Groups[1].Value, StringComparison.OrdinalIgnoreCase);
 						if (!ok) failed++;

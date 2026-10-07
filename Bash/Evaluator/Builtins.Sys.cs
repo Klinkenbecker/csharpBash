@@ -258,9 +258,11 @@ public sealed partial class Builtins
 		int rc = 0; bool done = false;
 		var stdio = ConsoleMux.Capture();
 		var job = new BackgroundJob { Id = 0, Command = cmd };
+		var active = ShellEnvironment.Active;
 		var worker = new Thread(() =>
 			{
 			ConsoleMux.Apply(stdio);
+			ShellEnvironment.Active = active;   // the command runs in this shell's cwd
 			try { rc = _eval.RunAsJob(job, cmd, rest); }
 			catch (ExitException ex) { rc = ex.Code; }
 			catch (InterruptException) { rc = 143; }   // 128+TERM, what --preserve-status reports

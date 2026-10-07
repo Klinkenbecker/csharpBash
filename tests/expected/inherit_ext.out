@@ -1,0 +1,5 @@
+first external, stdout inherited
+second external
+status 7
+external stderr, merged by 2-to-1
+done

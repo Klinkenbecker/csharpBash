@@ -1,0 +1,17 @@
+after 'cd sub | true': .
+in a subshell: sub
+after the subshell: .
+tee's file misplaced: 0 of 10
+inner
+inner
+stage cwd: sub
+parent cwd: .
+redirect in a cd'd stage: lands in sub
+glob: g1
+glob: g2
+test -f in a cd'd stage: found
+external child cwd: sub
+./f
+dup redirects in a cd'd stage
+after an in-process script that cds: sub
+after a script in a stage: sub

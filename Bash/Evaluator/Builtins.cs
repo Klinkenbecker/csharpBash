@@ -18,7 +18,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"echo", "printf", "cd", "pwd", "export", "unset", "set", "shift", "read",
 		"true", "false", ":", "exit", "return", "break", "continue", "source", ".",
 		"local", "declare", "typeset", "eval", "type", "command", "test", "[",
-		"sleep", "env", "history", "trap", "jobs", "wait", "fg", "bg",
+		"sleep", "env", "history", "trap", "jobs", "wait", "fg", "bg", "disown", "nohup", "setsid",
 		"shopt", "alias", "unalias", "builtin", "readonly", "exec", "let",
 		"pushd", "popd", "dirs", "mapfile", "readarray", "getopts", "yes",
 		"basename", "dirname", "seq", "mkdir", "cat", "head", "tail", "wc", "rev", "tac",
@@ -29,7 +29,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
 		"timeout", "id", "whoami", "nproc", "printenv", "tty", "arch", "awk",
-		"pgrep", "pkill", "ps",
+		"pgrep", "pkill", "ps", "jq",
 		];
 
 	/// <summary>The in-process coreutils (as opposed to shell builtins): these follow the
@@ -43,7 +43,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
 		"timeout", "id", "whoami", "nproc", "printenv", "tty", "arch", "awk",
-		"pgrep", "pkill", "ps",
+		"pgrep", "pkill", "ps", "jq",
 		];
 
 	private static readonly HashSet<string> _nameSet = [.. Names];
@@ -156,6 +156,9 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"wait"    => _eval.WaitJobs(args),
 			"fg"      => Fg(args),
 			"bg"      => Bg(args),
+			"disown"  => _eval.Disown(args),
+			"nohup"   => _eval.Nohup(args),    // not coreutils-deferrable: a PATH nohup.exe would land
+			"setsid"  => _eval.Setsid(args),   // in the kill-on-close job, defeating the point
 			"basename"=> Basename(args),
 			"dirname" => Dirname(args),
 			"seq"     => Seq(args),
@@ -219,6 +222,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"tty"     => Tty(args),
 			"arch"    => Arch(args),
 			"awk"     => Awk(args),
+			"jq"      => Jq(args),   // in-process subset; the rest defers to a PATH jq (DECISIONS 2026-10-05)
 			"pgrep"   => Pgrep(args),
 			"pkill"   => Pkill(args),
 			"ps"      => Ps(args),
@@ -239,7 +243,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		var nums = new List<long>();
 		var ops = args.Where(a => !a.StartsWith('-')).ToList();
 		if (ops.Count > 0) foreach (var a in ops) { if (long.TryParse(a, out var v)) nums.Add(v); }
-		else { string? line; while ((line = Console.In.ReadLine()) is not null)
+		else { string? line; while ((line = ShellEncoding.ReadLine(Console.In)) is not null)
 			foreach (var t in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)) if (long.TryParse(t, out var v)) nums.Add(v); }
 		foreach (var orig in nums)
 			{

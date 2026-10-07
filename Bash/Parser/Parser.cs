@@ -163,6 +163,15 @@ public sealed class Parser
 	private Node? ParsePipeline()
 		{
 		SkipNewlines();
+		// `time [-p] [!] pipeline`: a reserved word timing the whole pipeline (it was parsed as a
+		// command name: "time: command not found", 2026-10-04)
+		bool timed = false, timePosix = false;
+		if (PeekWord("time"))
+			{
+			Advance();
+			timed = true;
+			if (PeekWord("-p")) { Advance(); timePosix = true; }
+			}
 		bool negated = false;
 		if (PeekWord("!"))
 			{
@@ -172,10 +181,11 @@ public sealed class Parser
 
 		var first = ParseCommand();
 		if (first is null)
-			return null;
+			return timed ? new Pipeline([(new Script([]), false)], negated) { Timed = true, TimePosix = timePosix } : null;
 
 		if (!IsPipeToken())
-			return negated ? new Pipeline([(first, false)], true) : first;
+			return timed ? new Pipeline([(first, false)], negated) { Timed = true, TimePosix = timePosix }
+			     : negated ? new Pipeline([(first, false)], true) : first;
 
 		var commands = new List<(Node, bool)> { (first, false) };
 		while (IsPipeToken())
@@ -189,7 +199,7 @@ public sealed class Parser
 			commands.Add((next, false));
 			}
 
-		return new Pipeline(commands, negated);
+		return new Pipeline(commands, negated) { Timed = timed, TimePosix = timePosix };
 		}
 
 	private bool IsPipeToken() =>
@@ -461,25 +471,11 @@ public sealed class Parser
 		var lhs = lit.Value[..bracket];
 		if (!IsValidIdentifier(lhs)) return false;
 
-		// The literal should contain ] and = after the bracket
-		// e.g. "arr[0]=" or the index may span multiple word parts
-		var rest = lit.Value[(bracket + 1)..];
-		int close = rest.IndexOf(']');
-		if (close < 0) return false;
-
-		var indexStr = rest[..close];
-		var afterBracket = rest[(close + 1)..];
-		if (!afterBracket.StartsWith('=')) return false;
-		var valStr = afterBracket[1..];
-
+		// the index may span word parts: arr[0]=, arr[$k]=, arr["$k"]=, arr[$i+1]=
+		if (!word.TrySplitIndexedAssignment(bracket + 1, out var idx, out var val)) return false;
 		arrayName = lhs;
-		index = new Word([new LiteralPart(indexStr)]);
-
-		// Build value word from remaining literal + rest of word parts
-		var valParts = new List<WordPart>();
-		if (valStr.Length > 0) valParts.Add(new LiteralPart(valStr));
-		valParts.AddRange(word.Parts.Skip(1));
-		value = new Word(valParts);
+		index = idx;
+		value = val;
 		return true;
 		}
 
@@ -934,6 +930,22 @@ public sealed class Parser
 			case TokenType.Word:
 			case TokenType.Digit:
 				Advance();
+				// a backslash-escaped `* ? [ { } , ~` (marked by the lexer) is a QUOTED character
+				if (t.Value.IndexOf(Lexer.Lexer.EscapeMark) >= 0)
+					{
+					var lit = new System.Text.StringBuilder();
+					for (int i = 0; i < t.Value.Length; i++)
+						{
+						if (t.Value[i] == Lexer.Lexer.EscapeMark && i + 1 < t.Value.Length)
+							{
+							if (lit.Length > 0) { yield return new LiteralPart(lit.ToString()); lit.Clear(); }
+							yield return new SingleQuotedPart(t.Value[++i].ToString());
+							}
+						else lit.Append(t.Value[i]);
+						}
+					if (lit.Length > 0) yield return new LiteralPart(lit.ToString());
+					break;
+					}
 				// Tilde expansion: leading ~ or ~/
 				if (t.Value == "~" || t.Value.StartsWith("~/") || t.Value.StartsWith("~\\"))
 					{

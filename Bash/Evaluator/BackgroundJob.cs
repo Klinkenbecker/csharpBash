@@ -14,16 +14,49 @@ public sealed class BackgroundJob
 
 	public int Id { get; init; }
 	public string Command { get; init; } = "";
+
+	/// <summary>A `cmd &` job: its external children outlive the shell, as in bash. False for the
+	/// job object `timeout` runs its command under, whose child must still die with the shell.</summary>
+	public bool Background { get; init; }
 	public Thread Thread { get; set; } = null!;
-	public volatile bool Done;
 	public int ExitCode;
+
+	/// <summary>The job's own copy of the shell (bash forks one for `cmd &amp;`). `kill %n` interrupts
+	/// it, so an in-process loop ends too, not just the program it is running.</summary>
+	public Evaluator? Shell { get; set; }
 
 	/// <summary>The value of `$!` for this job.</summary>
 	public int Pid => PidBase + Id;
 
+	// Done, ChildPid and Parked are written under _gate and pulse it, so a waiter (WaitSettled)
+	// blocks on a signal instead of polling.
+	private readonly object _gate = new();
+	private volatile bool _done, _parked;
+	private volatile int _childPid;
+
+	public bool Done { get => _done; set { lock (_gate) { _done = value; Monitor.PulseAll(_gate); } } }
+
 	/// <summary>Real pid of the external child this job is currently running, if any
 	/// (set by ExecExternal on the job's thread) — the target of `kill $!`.</summary>
-	public volatile int ChildPid;
+	public int ChildPid { get => _childPid; set { lock (_gate) { _childPid = value; Monitor.PulseAll(_gate); } } }
+
+	/// <summary>True while the job sits in the `sleep` builtin: it is not about to start a program,
+	/// so shell exit need not wait for one.</summary>
+	public bool Parked { get => _parked; set { lock (_gate) { _parked = value; Monitor.PulseAll(_gate); } } }
+
+	/// <summary>Block until the job has started an external child, parked in `sleep`, or ended;
+	/// false if <paramref name="timeoutMs"/> ran out first.</summary>
+	public bool WaitSettled(int timeoutMs)
+		{
+		long deadline = Environment.TickCount64 + timeoutMs;
+		lock (_gate)
+			while (!_done && _childPid == 0 && !_parked)
+				{
+				long left = deadline - Environment.TickCount64;
+				if (left <= 0 || !Monitor.Wait(_gate, (int)left)) return false;
+				}
+		return true;
+		}
 
 	public static bool IsSyntheticPid(int pid) => pid >= PidBase;
 	public static int JobIdFromPid(int pid) => pid - PidBase;

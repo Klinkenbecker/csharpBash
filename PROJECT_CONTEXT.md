@@ -1,6 +1,187 @@
 # Project Context: Bash
 
 > ## RESUME ANCHOR (2026-09-04) — read this before anything else
+> **2026-10-06: the newest state. Read this block first, then the 2026-10-03 block below it.**
+> - **DEPLOYED 2026-10-06: `dist/Bash.exe` is rev 136** (stamp `+ 136+`; rollback `.rev127`). Suite
+>   71/71 on the AOT build, with a console and `-Detached`; live-verified in a Claude Code Bash call
+>   (non-ASCII output, `${#s}`, jq). Five peer sessions notified (and corrected: `paths`/`getpath`/
+>   `path()` are NOT in the jq subset).
+>   - rev 132: UTF-8 output with no console; `${#s}`/substrings count characters.
+>   - revs 130-133: the `jq` subset (phase 3), byte-identical to jq 1.6 on what it covers.
+> - **THE BENCHMARK IS FROZEN (rev 136, DECISIONS 2026-10-06 "The benchmark is one fixed command").**
+>   `tests/bench/compare3.sh [--cs <exe>]`, run unmodified, from Git Bash (exact launcher in its
+>   header); every run appends to `tests/bench/results.md`. Do NOT improvise harnesses, rounds or
+>   locations. First runs 2026-10-06: rev 136 and rev 127 back to back are level on every row
+>   (coreutils read +10 ms once; an interleaved probe, NOT the benchmark, showed -2 ms: noise).
+>   - **DONE (rev 139, "yes, make it so!"): every launch is made and timed by `tools/benchtimer`**
+>     (CreateProcessW, high-resolution clock), not by Git Bash's `time`, which had added ~30 ms to
+>     every native launch. Git Bash's path is configured, fatal if missing (rev 138). Startup now
+>     C#Bash 0.0152 / Git Bash 0.0162 / WSL 0.1036. Rows before rev 139 are not comparable.
+>   - README table updated to the rev 139 run; GitHub push at rev 140 (the architect: "We should
+>     push at this release. With latest benchmark numbers.").
+> - **AWAITING THE ARCHITECT (do not derive): UTF-8 for EXTERNAL programs** (koliada-net-dd,
+>   2026-10-06). After rev 136 builtins are UTF-8, but piped `hg` and `python` still write cp1252
+>   (python crashes on `✓`). `HGENCODING=utf-8` / `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8` fix it
+>   [peer-measured]. Idea: C#Bash sets them for children by default. Claude's position: only the
+>   stdio-scoped ones, only when unset; NOT `PYTHONUTF8` (it also changes `open()`'s file encoding
+>   in user programs).
+> - **GOAL-2 BACKLOG RATIFIED:** "Yes, then 2, 3 and 5 (commit between, stop for ambiguities/forks).
+>   then we will discuss 4". Items: 1 `time`, 2 detached launch, 3 `jq` subset, 5 `df`; 4 (serial
+>   I/O) is for discussion.
+> - **DEPLOYED 2026-10-04: `dist/Bash.exe` is rev 114** (stamp `+ 114+`; rollbacks `.rev111`,
+>   `.rev109`, `.rev107`, `.rev102`). Suite 65/65 on the AOT build, with a console and `-Detached`.
+>   - rev 113: phase 2 (`nohup`/`setsid`/`disown`; background children leave the kill job).
+>   - rev 114: the redirect rewrite (DECISIONS 2026-10-04): one launcher, the real file handle,
+>     left-to-right redirects, six redirect defects fixed. AOT speed level or better.
+>   - **LIVE-VERIFIED across Bash tool calls:** `nohup x > log 2>&1 &` and `x > log 2>&1 &` keep
+>     writing after the call that started them ended. Stopping a call (TaskStop) kills its
+>     foreground child while detached ones run on. NOTE: Claude Code no longer kills a timed-out
+>     call; it moves it to the background.
+>   - rev 105: the `time` reserved word.
+>   - rev 106: a function named after a builtin utility shadows it (reported by nupkg-28).
+>   - rev 109: functions defined in `( )`/`$( )`/`<( )` no longer leak to the parent (nupkg-28;
+>     rev 106 had made that leak produce wrong output).
+>   - rev 111 ("Yes, go"): options, shopts, traps and aliases no longer leak either; a subshell's
+>     own EXIT trap fires as it ends. `$( )` cost unchanged (measured).
+> - **DEPLOYED 2026-10-05: `dist/Bash.exe` is rev 127** (rollbacks `.rev124`, `.rev123`, `.rev121`, ...).
+>   - revs 116-118 (Q1 "yes", despite func +3 % / arith +2 %): "$@" / `$cmd` in command position
+>     split; `sleep` and `tail -f` wait on events.
+>   - rev 121 (Q2 "Yes"): a `&` job runs on its own copy of the shell taken at `&`; `kill %n` ends
+>     its loop; job numbers restart after `wait`.
+>   - revs 123-124 (Q3 "Yes adopt"): nested shells' detached children survive (see below).
+> - **DONE: the redirect rewrite and phase 2.** Open from it:
+>   - **DONE (Q3 "Yes adopt", revs 123-124, live-verified):** a nested shell's detached child
+>     leaves the outer kill job (BREAKAWAY_OK + CREATE_BREAKAWAY_FROM_JOB) and gets a hidden
+>     console of its own. A shared hidden console died with the outer job: found by the live
+>     test, fixed in rev 124. Manual checks are in `tests/detach/`.
+>   - **FIXED + DEPLOYED (rev 127, "fix first, then jq"):** basic-regex mid-pattern `$`/`^` and a
+>     leading `*` are literals (sed, grep); `grep -P` `\K` (kept-group translation, NOT a lookbehind,
+>     see DECISIONS); `diff -` reads stdin.
+>   - **DEPLOYED 2026-10-06 in rev 136 (revs 130-133): phase 3, the `jq` subset.** Byte-identical to jq 1.6
+>     (the WSL oracle, installed): `jq_subset` 84 lines, `jq_messages` 68 lines; type filters
+>     added ("2/ yes").
+>   - **rev 132, DEPLOYED 2026-10-06: a long-standing defect.** Builtins wrote non-ASCII in cp1252 with
+>     no console (`echo 'é — ✓'` reached Claude Code as "� � ?"), and `${#s}` counted UTF-16
+>     units. Fixed; suite 71/71 in both modes.
+>   - **The "+1 ms startup" was a measuring artefact** (DECISIONS 2026-10-06 correction): 2000
+>     launches per build show no difference (-0.10 ms, se 0.14). The deploy followed ("yes").
+> - **PERFORMANCE RE-CHECKED 2026-10-05 (rev 124), superseded by the frozen benchmark above:** Method: the README's own (Git Bash `time`, C#Bash best of 9), rev 124 against the
+>   README's build (`dist/Bash.exe.rev91`, stamp 92) in the same run.
+>   - loop .170/.172, arith .254/.257, func .225/.227, loop_big 1.339/1.362, coreutils .081/.081,
+>     pipeline .276/.266, find .043/.043.
+>   - startup .035/.035 (best of 21, twice).
+>   - A plain `compare3.sh 3` reads 5-28 % higher on short rows: best of 3, not 9, on a busier
+>     machine (Git Bash's pipeline row was +19 % as well).
+>   - FIXED (rev 116+118, not deployed): `"$@"` and an unquoted `$cmd` in COMMAND position were not
+>     word-split (`f() { "$@"; }; f echo a` gave "echo a: command not found").
+>   - DONE (rev 117, not deployed): `sleep` and `tail -f` wait on events, no Thread.Sleep.
+> - **DONE + DEPLOYED (rev 113-114):** phase 2, option (b), and the ratified redirect rewrite
+>   (DECISIONS 2026-10-04). Background external children skip the kill-on-close job. A redirected
+>   external child holds the real file handle. Exit waits on a monitor (never `Thread.Sleep`, the
+>   architect's rule) for a background job to start its program.
+> - **Open defect found 2026-10-04:** `diff -` does not read stdin.
+> - **GOAL ORDER (DECISIONS 2026-10-03, settled, do NOT re-litigate):**
+>   1. C#Bash for itself, on Windows.
+>   2. No PowerShell for anything not Windows-dependent. In scope if the COMMAND needs
+>      PowerShell today; out of scope if the OUTPUT is Windows-specific.
+>   3. A seamlessly faster Claude: achieved, so maintain it.
+>
+>   Goal 3 against goals 1 and 2 "depends on circumstance": surface each collision with numbers;
+>   never trade silently. Git Bash is NOT a target.
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03): the empty-output fix.** A console-less shell
+>   starts an all-inherited child through `HiddenConsole.StartInherited`. Under Claude Code, the
+>   first external of any command containing `<` used to lose its output silently.
+>   - Gates passed: launcher matrix 50/50 per cell (control rev 81 0/50); no windows (control
+>     rev 80 visible 20/20); suite 51/51 with a console and `-Detached` (control rev 81 fails
+>     `inherit_ext`).
+>   - **DEPLOYED** (now rev 102 in `dist/Bash.exe`; rollbacks `.rev98`, `.rev95`, `.rev91`, `.rev88`, `.rev86`, `.rev84`, `.rev82`, `.rev81`, `.rev80`) and verified live in a Claude
+>     Code Bash tool. In a `<` command, an external that reads stdin still blocks: Claude Code
+>     leaves stdin an open pipe. Not ours; give it `< /dev/null`.
+>   - **DO NOT undo** the `-Interpreter` name in `run-tests.ps1`: `-Exe` collides with `$exe`.
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03): `ext 2>&1` with an inherited stdout** now puts the
+>   child's stderr on the shell's stdout, with a console too. Same `StartInherited`; the control
+>   (rev 82) fails the new `inherit_ext` line.
+> - **SETTLED (do NOT re-ask):**
+>   - hg/git sync happens ONLY on a push to GitHub. Until then git's README, `.gitignore` and png
+>     changes stay uncommitted in hg, and every build stamp shows `+`.
+>   - Steroids: NOT ACTIVE, NO RULING. The architect did not recognise the question; stop asking.
+> - **RULE (DECISIONS 2026-10-03, ratified):** where behaviour is open, match what Claude assumes,
+>   i.e. GNU bash + coreutils on Linux; NOT Git for Windows' quirks. Live reference: WSL Ubuntu
+>   (`wsl.exe -e bash …`).
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03): CR is data in every line tool.** `LfReader` is the
+>   shell's text reader: LF-only lines, ONE stream read per fill, every installed stdin one shared
+>   `LfReader`. Also: no BOM sniffing; children's redirected streams use `ShellEncoding`;
+>   `ext 1>&2` goes to the caller's stderr.
+>   - `tests/cases/crlf.sh`: expected output generated by GNU via WSL.
+>   - Speed floor held: lines -0.3 %, pipeline +1.3 %, startup equal.
+>   - **DO NOT** wrap a pipe in a `StreamReader` under `LfReader`: +48.8 % (pipeline stall).
+>   - **DO NOT** call `TextReader.ReadLine` in a tool: it ends lines at CR.
+> - **AWAITING THE ARCHITECT (do NOT derive):**
+>   - **Pipeline-stage race** (DECISIONS 2026-10-03, CR entry, item 1). Stages share one
+>     environment, so a `$( )` in one stage can take another's `$1` and its output. Silent.
+>     Architectural; needs a design discussion.
+>   - The goal-2 transcript scan: proposed.
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03): commands sharing one stdin.** `{ read; cat; } < f`
+>   now gets the rest. `head -c N` streams N bytes (`yes | head -c 5` HUNG before).
+>   `CurrentRawStdin` takes the read-ahead: call it ONCE.
+> - **RATIFIED + BUILT + DEPLOYED (DECISIONS 2026-10-03): every pipeline stage gets its own
+>   interpreter.** Option (a), "go"; then "Yes, deploy".
+>   - `dist/Bash.exe` is rev 91's code (stamp `+ 92+`); rollback `dist/Bash.exe.rev88`.
+>   - GNU-identical; race gone (control rev 88 lost output in 14/20 runs).
+>   - Cost: ~5-15 µs a stage, so a loop of 4000 pipelines is +11.8 %. The README table rows do not
+>     move beyond noise (`coreutils` +2 ms).
+>   - **README table UPDATED to the re-measured figures. README.md is uncommitted in hg until the
+>     next GitHub push (sync-on-push rule).** The article stays as published (architect: "Leave
+>     the article").
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03): `arr[$k]=v` and `m+=(["$k"]=v)`** (they ran as
+>   a command / set nothing).
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03): each shell has its own cwd**
+>   (`ShellEnvironment.Cwd`).
+>   - The tee race went from 148-165/200 misplaced to 0/200.
+>   - **DO NOT** make `TranslatePath` resolve relative paths unconditionally: it is limited to
+>     stages that moved, so no output changes.
+>   - **DO NOT** test a dup-redirect's translated target: `2>&1` broke that way.
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03): pattern operators expand their operands**
+>   (`${p#"$s"}`, `${p//$o/$n}`, `${p%%"lit"}`; replacement quote removal). Done by
+>   `ExpandOperand` from the RAW text: do NOT switch it to the word parser, which loses `\*`.
+> - **GOAL-2 SCAN DONE (DECISIONS 2026-10-04).** 1,271 PowerShell calls: 74 % needed no
+>   PowerShell, 20 % generic capability, 5 % Windows-specific.
+>   - **RATIFIED 2026-10-04 (see the 2026-10-04 block above). The order:**
+>     1. `time` keyword (missing!);
+>     2. a detached launch that survives the call;
+>     3. a `jq` subset;
+>     4. serial I/O;
+>     5. `df`.
+>   - Also found: `env -u` does not unset for children (defect). Claude Code sets
+>     `NoDefaultCurrentDirectoryInExePath=1` (environment).
+> - **RATIFIED + BUILT (DECISIONS 2026-10-03, "go"):**
+>   - Plain `cp` gives the copy the current mtime (`StampNow`).
+>   - An escaped `\* \? \[ \{ \} \, \~` stays quoted (`Lexer.EscapeMark` becomes a
+>     `SingleQuotedPart`).
+> - **KNOWN LIMITATION (pre-existing; a separate decision, not raised for action):** glob and brace
+>   quoting is tracked per FIELD, not per character, so `{x\,y,z}`, `"*"*` and `\**` treat the
+>   quoted metacharacter as live. A fix needs its own escape marker in the brace and glob engines:
+>   NOT backslash, because backslashes from unquoted expansions must survive into the output.
+> - **Machine facts (do NOT "fix"):**
+>   - Git's `bash.exe` is renamed `_bash.exe`, and `System32\bash.exe` (WSL) was moved away by the
+>     architect, both so nothing pre-empts C#Bash.
+>   - Reach WSL with `wsl.exe -e bash`.
+>   - Run Git Bash scripts as `"$BASH" script` from `_bash.exe -l`: a `#!/usr/bin/env bash`
+>     shebang resolves to C#Bash.
+> - **FOUND:** Git's `__git_ps1_show_upstream` fails to parse ("Expected 'fi'") and is silently
+>   dropped when the git snapshot is sourced. Repro is in the 2026-10-03 findings folder.
+> - **Minor, found 2026-10-03:**
+>   - fold treats `\r` as a column.
+>   - `tee /dev/null` fails.
+>   - Split UTF-8 at read boundaries [inferred].
+>   - CRLF script text tolerated (on purpose).
+> - **Also open, verified 2026-10-03:**
+>   - `${v//$o/$n}` is a silent no-op.
+>   - A bare `fi` runs as a command (rc 127, not a syntax error), and `-n` returns 0 for it.
+>   - `date +%3N` prints 9 digits.
+>   - `$HOME` and `command -v` return backslash paths.
+> - **Running Claude's own commands:** a Bash tool shell on a build before rev 82 loses the first
+>   external's output in any command containing `<`. Check `$CSHARPBASH_BUILD`.
 > **RATIFIED + BUILT 2026-09-14, UNCOMMITTED (hg 80+): no console window flashes under Claude Code.**
 > Claude Code starts the Bash TOOL shell with no console, so every external C#Bash spawned got its
 > own VISIBLE console. Fix: `HiddenConsole` (`ConsoleMux.cs`) — while `GetConsoleCP()==0`, a child
@@ -225,7 +406,14 @@
 > **GREENLIT:** nothing yet.
 
 ## Purpose
-A standalone Windows bash interpreter written in C#. Targets a bash subset: full POSIX core plus the most-used bashisms (`[[ ]]`, arrays, `local`, arithmetic expansion, brace expansion). Intended as a drop-in replacement for msys2 bash on Windows without requiring msys2.
+A standalone Windows bash interpreter written in C#. Targets a bash subset: full POSIX core plus the most-used bashisms (`[[ ]]`, arrays, `local`, arithmetic expansion, brace expansion).
+
+The goal order (DECISIONS 2026-10-03):
+1. A good shell for its own sake, on Windows.
+2. Replace PowerShell for everything that is not Windows-dependent.
+3. Keep Claude Code seamlessly faster. That is achieved; maintain it.
+
+Git Bash is a reference, not a target.
 
 ## Documentation set
 Four canonical docs at the repository root, each with a distinct job (see each file's header
@@ -511,7 +699,12 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   `CLAUDE_CODE_GIT_BASH_PATH=…\Bash.exe`; `cd sub` in one call was still in effect in the next.
 
 ## Test Assets
-- **`tests/run-tests.ps1`** — self-checking runner. Builds Release, runs each
+- **`tests/run-tests.ps1 [-NoBuild] [-Detached] [-Interpreter <exe>]`** (51 cases on
+  2026-10-03). `-Detached` starts every case as Claude Code starts its shell: DETACHED_PROCESS, no
+  console, stdin NUL, stdout to a file. That is the only way to exercise the console-less spawn
+  path; a run from a console cannot reach it. `-Interpreter` tests a given exe, such as the AOT
+  publish or `dist/`. The runner prints the interpreter and build it tested.
+  Self-checking runner. Builds Release, runs each
   script-mode test, compares STDOUT (stderr discarded) line-by-line against
   `tests/expected/<name>.out`, prints PASS/FAIL, exits non-zero on any failure.
   `-NoBuild` skips the build. Expected files are authored from bash semantics

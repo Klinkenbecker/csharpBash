@@ -1,0 +1,7 @@
+[a]=7 [b]=7 [new]=6 [old]=5 [oldx]=braced [quoted]= [key]= [sp]= [ace]= 
+ix: lit x y z (count 4)
+<2>=three <old>=v 1 <two>=2 
+c: idx=2 5 vals=a b
+odd key: x
+count[$w] (indexed, w not numeric -> 0): 1
+status of a normal array assignment: 0

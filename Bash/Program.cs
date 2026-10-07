@@ -3,11 +3,19 @@ using Bash.Parser;
 using Bash.Evaluator;
 using Bash.IO;
 
-// UTF-8 output. Setting the encoding needs a console handle; a host that spawns us with
-// pipes and no console (Claude Code's Bash tool, CI runners) has none — then stdout is
-// already a byte pipe and the default UTF-8 writer is what we want anyway.
-try { Console.OutputEncoding = ShellEncoding.Utf8; } catch (Exception) { }   // byte-transparent (2026-09-12)
+// UTF-8 output. Setting the encoding needs a console handle, and a host that spawns us with no
+// console (Claude Code's Bash tool, CI runners) has none. .NET then writes stdout in the ANSI code
+// page, NOT UTF-8 as this comment used to assume: `echo 'é — ✓'` reached Claude Code as "� � ?"
+// (measured 2026-10-05; DECISIONS). So without a console, stdout and stderr get UTF-8 writers of
+// our own, before ConsoleMux captures them as the real streams.
+bool consoleUtf8 = true;
+try { Console.OutputEncoding = ShellEncoding.Utf8; } catch (Exception) { consoleUtf8 = false; }   // byte-transparent (2026-09-12)
 try { Console.InputEncoding  = ShellEncoding.Utf8; } catch (Exception) { }
+if (!consoleUtf8)
+	{
+	Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), ShellEncoding.Utf8) { AutoFlush = true });
+	Console.SetError(new StreamWriter(Console.OpenStandardError(), ShellEncoding.Utf8) { AutoFlush = true });
+	}
 Console.Out.NewLine = "\n";    // bash emits LF, not Windows CRLF (installed writers set it too)
 Console.Error.NewLine = "\n";
 ConsoleMux.Install();          // per-thread console streams (pipeline stages, captures, jobs)

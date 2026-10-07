@@ -1,0 +1,22 @@
+*
+?
+*.txt
+a*
+[ab]
+./a.txt
+./b.txt
+./sub/c.txt
+./sub/c.txt
+{a,b}
+a b
+~
+a,b
+assignment keeps it literal: *
+case: an escaped * is literal
+case: a live * still matches
+[[ ]]: escaped * matches literally
+[[ ]]: escaped * does not glob
+for: *.txt
+a.txt b.txt
+?
+x*y

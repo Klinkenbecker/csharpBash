@@ -14,6 +14,10 @@ namespace Bash.Lexer;
 /// </summary>
 public sealed class Lexer
 	{
+	/// <summary>Precedes a backslash-escaped `* ? [ { } , ~` inside a word token, so the parser can
+	/// emit it as a QUOTED part. U+FDD0 is a Unicode noncharacter: it never occurs in text.</summary>
+	public const char EscapeMark = '﷐';
+
 	private readonly string _src;
 	private int _pos;
 	private int _line;
@@ -524,7 +528,12 @@ public sealed class Lexer
 				// line continuation (LF or CRLF): the backslash-newline pair vanishes entirely
 				if (Peek() == '\n') { Advance(); continued = true; continue; }
 				if (Peek() == '\r' && _pos + 1 < _src.Length && _src[_pos + 1] == '\n') { Advance(); Advance(); continued = true; continue; }
-				sb.Append(Advance());
+				char escaped = Advance();
+				// an escaped glob, brace or tilde character must stay QUOTED for the expansions that
+				// come after lexing: the parser turns a marked character into a quoted part. Without
+				// it `echo \*` and `find -name \*.txt` globbed (2026-10-03).
+				if (escaped is '*' or '?' or '[' or '{' or '}' or ',' or '~') sb.Append(EscapeMark);
+				sb.Append(escaped);
 				}
 			else
 				sb.Append(Advance());
