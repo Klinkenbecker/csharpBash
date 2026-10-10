@@ -1,0 +1,10 @@
+A: 1 2 3 4 5 
+B: 1 2 3 4 5 
+C: 1 2 3 4 5 
+D: loop:1 child:2 loop:3 child:4 loop:5 child:6 
+E: loop:1 2 loop:3 4 loop:5 6 
+F: c:2 p:1,3 
+G: in:1 kid:2 in:3 kid:4 in:5 kid:6 
+H: 1 2 3 
+I: 1 2 3 4 5 
+J: 2 3 4 5 

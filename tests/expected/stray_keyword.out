@@ -1,0 +1,16 @@
+E(fi) rc=2
+E(done) rc=2
+E(esac) rc=2
+E(then) rc=2
+E(do) rc=2
+E(else) rc=2
+E(elif) rc=2
+E(fi) rc=2
+E(done) rc=2
+E(fi) rc=2
+E(fi) rc=2
+after E(fi) rc=0
+fi: command not found rc=127
+in ok rc=0
+1 rc=0
+x rc=0

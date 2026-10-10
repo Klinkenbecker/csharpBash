@@ -1,0 +1,13 @@
+to-stdout
+captured=[to-stderr]
+piped: err
+shown
+back
+to fd 4
+ext-out
+ext captured=[ext-err]
+read3=line
+via 4
+t.sh: line 12: 3: Bad file descriptor
+rc=1
+x=[inner via 3]

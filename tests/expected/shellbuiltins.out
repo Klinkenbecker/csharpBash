@@ -44,4 +44,4 @@ pattern-ok
 re=abc-123
 to-fd3
 notfound rc=127
-bash: nosuch_cmd_zz: command not found
+cases\shellbuiltins.sh: line 37: nosuch_cmd_zz: command not found

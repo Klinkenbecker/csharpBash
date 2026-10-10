@@ -9,4 +9,10 @@ public sealed class LexException(string message, int line, int col)
 	/// <summary>True when lexing failed on unterminated input (e.g. an unclosed
 	/// quote) — more input may complete it. Drives REPL multi-line continuation.</summary>
 	public bool Incomplete { get; init; }
+
+	/// <summary>The message without its position.</summary>
+	public string Reason { get; } = message;
+
+	/// <summary>An unclosed construct: the character bash says it was looking for (`"', `'', `}').</summary>
+	public char? Missing { get; init; }
 	}

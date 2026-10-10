@@ -1,0 +1,13 @@
+top: S=[main.sh] F=[] L=[0] set=
+src: S=[./lib.sh main.sh] F=[] L=[2 0] set=
+after: S=[main.sh] L=[0]
+lf: S=[./lib.sh main.sh] F=[lf main] L=[4 0]
+lf: S=[./lib.sh main.sh main.sh] F=[lf g main] L=[6 8 0]
+src: S=[./lib.sh main.sh main.sh] F=[source h main] L=[9 10 0] set=y
+k: S=[main.sh main.sh] F=[k main] L=[12 0]
+k: S=[main.sh main.sh] F=[k main] L=[13 0]
+end: S=[main.sh] set=
+child: S=[./child.sh] L=[0] set=
+c top: #S=0 set=
+c: S=[environment] F=[f] L=[1]
+stdin: S=[main] F=[f]

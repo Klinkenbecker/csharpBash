@@ -1,0 +1,17 @@
+HOME: forward
+tilde: forward
+tilde/x: forward
+x=~/y: forward
+BASH: forward
+nested shell runs
+command -v: forward
+command -v: a file
+command -V: forward
+type -p: forward
+type: forward
+type -P: forward
+which: forward
+hash: forward
+cd goes HOME
+tilde, HOME set with backslashes: forward
+[C:\Users\Someone Else] kept as set

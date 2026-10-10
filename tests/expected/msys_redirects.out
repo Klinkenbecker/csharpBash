@@ -1,0 +1,7 @@
+1 rc=0 [msys]
+2 rc=0 [first|appended|]
+3 [a|b|c|]
+4 [1|2|3|]
+5 rc=0 [to-stderr]
+6 [first|native|]
+7 rc=0 [got a]

@@ -34,7 +34,7 @@ public static class GnuDate
 		int? hour = null, minute = null, second = null;
 		TimeSpan? zone = null;
 		int? weekday = null; int ordinal = 0;
-		long? epoch = null;
+		long? epochTicks = null;   // @seconds[.fraction], in 100 ns ticks from the Unix epoch
 		var rel = new List<(char unit, int n)>();
 
 		var toks = Regex.Split(text, @"[\s,]+").Where(t => t.Length > 0).ToList();
@@ -42,7 +42,15 @@ public static class GnuDate
 			{
 			var t = toks[i];
 			Match m;
-			if (t[0] == '@' && long.TryParse(t[1..], out var ep)) { epoch = ep; continue; }
+			// @epoch, with a fraction as GNU takes it (`@1700000000.5`; `@-1.5` is 1.5 s before the epoch).
+			// Only whole seconds until 2026-10-08. .NET keeps 100 ns: digits past the 7th are dropped.
+			if (t[0] == '@' && (m = Regex.Match(t, @"^@(-?)(\d+)(?:\.(\d+))?$")).Success && long.TryParse(m.Groups[2].Value, out var ep))
+				{
+				var frac = m.Groups[3].Success ? m.Groups[3].Value : "";
+				long ticks = ep * TimeSpan.TicksPerSecond + (frac.Length == 0 ? 0 : long.Parse(frac.Length >= 7 ? frac[..7] : frac.PadRight(7, '0')));
+				epochTicks = m.Groups[1].Value == "-" ? -ticks : ticks;
+				continue;
+				}
 			if (t is "now" or "today" or "this") continue;
 			if (t == "yesterday") { rel.Add(('d', -1)); continue; }
 			if (t == "tomorrow") { rel.Add(('d', 1)); continue; }
@@ -122,9 +130,9 @@ public static class GnuDate
 			}
 
 		DateTime dt;
-		if (epoch is long e)
+		if (epochTicks is long e)
 			{
-			var dto = DateTimeOffset.FromUnixTimeSeconds(e);
+			var dto = new DateTimeOffset(DateTime.UnixEpoch.AddTicks(e), TimeSpan.Zero);
 			dt = utc ? dto.UtcDateTime : dto.LocalDateTime;
 			}
 		else

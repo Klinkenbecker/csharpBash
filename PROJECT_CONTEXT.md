@@ -1,409 +1,282 @@
 # Project Context: Bash
 
-> ## RESUME ANCHOR (2026-09-04) — read this before anything else
-> **2026-10-06: the newest state. Read this block first, then the 2026-10-03 block below it.**
-> - **DEPLOYED 2026-10-06: `dist/Bash.exe` is rev 136** (stamp `+ 136+`; rollback `.rev127`). Suite
->   71/71 on the AOT build, with a console and `-Detached`; live-verified in a Claude Code Bash call
->   (non-ASCII output, `${#s}`, jq). Five peer sessions notified (and corrected: `paths`/`getpath`/
->   `path()` are NOT in the jq subset).
->   - rev 132: UTF-8 output with no console; `${#s}`/substrings count characters.
->   - revs 130-133: the `jq` subset (phase 3), byte-identical to jq 1.6 on what it covers.
-> - **THE BENCHMARK IS FROZEN (rev 136, DECISIONS 2026-10-06 "The benchmark is one fixed command").**
->   `tests/bench/compare3.sh [--cs <exe>]`, run unmodified, from Git Bash (exact launcher in its
->   header); every run appends to `tests/bench/results.md`. Do NOT improvise harnesses, rounds or
->   locations. First runs 2026-10-06: rev 136 and rev 127 back to back are level on every row
->   (coreutils read +10 ms once; an interleaved probe, NOT the benchmark, showed -2 ms: noise).
->   - **DONE (rev 139, "yes, make it so!"): every launch is made and timed by `tools/benchtimer`**
->     (CreateProcessW, high-resolution clock), not by Git Bash's `time`, which had added ~30 ms to
->     every native launch. Git Bash's path is configured, fatal if missing (rev 138). Startup now
->     C#Bash 0.0152 / Git Bash 0.0162 / WSL 0.1036. Rows before rev 139 are not comparable.
->   - README table updated to the rev 139 run; GitHub push at rev 140 (the architect: "We should
->     push at this release. With latest benchmark numbers.").
-> - **AWAITING THE ARCHITECT (do not derive): UTF-8 for EXTERNAL programs** (koliada-net-dd,
->   2026-10-06). After rev 136 builtins are UTF-8, but piped `hg` and `python` still write cp1252
->   (python crashes on `✓`). `HGENCODING=utf-8` / `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8` fix it
->   [peer-measured]. Idea: C#Bash sets them for children by default. Claude's position: only the
->   stdio-scoped ones, only when unset; NOT `PYTHONUTF8` (it also changes `open()`'s file encoding
->   in user programs).
-> - **GOAL-2 BACKLOG RATIFIED:** "Yes, then 2, 3 and 5 (commit between, stop for ambiguities/forks).
->   then we will discuss 4". Items: 1 `time`, 2 detached launch, 3 `jq` subset, 5 `df`; 4 (serial
->   I/O) is for discussion.
-> - **DEPLOYED 2026-10-04: `dist/Bash.exe` is rev 114** (stamp `+ 114+`; rollbacks `.rev111`,
->   `.rev109`, `.rev107`, `.rev102`). Suite 65/65 on the AOT build, with a console and `-Detached`.
->   - rev 113: phase 2 (`nohup`/`setsid`/`disown`; background children leave the kill job).
->   - rev 114: the redirect rewrite (DECISIONS 2026-10-04): one launcher, the real file handle,
->     left-to-right redirects, six redirect defects fixed. AOT speed level or better.
->   - **LIVE-VERIFIED across Bash tool calls:** `nohup x > log 2>&1 &` and `x > log 2>&1 &` keep
->     writing after the call that started them ended. Stopping a call (TaskStop) kills its
->     foreground child while detached ones run on. NOTE: Claude Code no longer kills a timed-out
->     call; it moves it to the background.
->   - rev 105: the `time` reserved word.
->   - rev 106: a function named after a builtin utility shadows it (reported by nupkg-28).
->   - rev 109: functions defined in `( )`/`$( )`/`<( )` no longer leak to the parent (nupkg-28;
->     rev 106 had made that leak produce wrong output).
->   - rev 111 ("Yes, go"): options, shopts, traps and aliases no longer leak either; a subshell's
->     own EXIT trap fires as it ends. `$( )` cost unchanged (measured).
-> - **DEPLOYED 2026-10-05: `dist/Bash.exe` is rev 127** (rollbacks `.rev124`, `.rev123`, `.rev121`, ...).
->   - revs 116-118 (Q1 "yes", despite func +3 % / arith +2 %): "$@" / `$cmd` in command position
->     split; `sleep` and `tail -f` wait on events.
->   - rev 121 (Q2 "Yes"): a `&` job runs on its own copy of the shell taken at `&`; `kill %n` ends
->     its loop; job numbers restart after `wait`.
->   - revs 123-124 (Q3 "Yes adopt"): nested shells' detached children survive (see below).
-> - **DONE: the redirect rewrite and phase 2.** Open from it:
->   - **DONE (Q3 "Yes adopt", revs 123-124, live-verified):** a nested shell's detached child
->     leaves the outer kill job (BREAKAWAY_OK + CREATE_BREAKAWAY_FROM_JOB) and gets a hidden
->     console of its own. A shared hidden console died with the outer job: found by the live
->     test, fixed in rev 124. Manual checks are in `tests/detach/`.
->   - **FIXED + DEPLOYED (rev 127, "fix first, then jq"):** basic-regex mid-pattern `$`/`^` and a
->     leading `*` are literals (sed, grep); `grep -P` `\K` (kept-group translation, NOT a lookbehind,
->     see DECISIONS); `diff -` reads stdin.
->   - **DEPLOYED 2026-10-06 in rev 136 (revs 130-133): phase 3, the `jq` subset.** Byte-identical to jq 1.6
->     (the WSL oracle, installed): `jq_subset` 84 lines, `jq_messages` 68 lines; type filters
->     added ("2/ yes").
->   - **rev 132, DEPLOYED 2026-10-06: a long-standing defect.** Builtins wrote non-ASCII in cp1252 with
->     no console (`echo 'é — ✓'` reached Claude Code as "� � ?"), and `${#s}` counted UTF-16
->     units. Fixed; suite 71/71 in both modes.
->   - **The "+1 ms startup" was a measuring artefact** (DECISIONS 2026-10-06 correction): 2000
->     launches per build show no difference (-0.10 ms, se 0.14). The deploy followed ("yes").
-> - **PERFORMANCE RE-CHECKED 2026-10-05 (rev 124), superseded by the frozen benchmark above:** Method: the README's own (Git Bash `time`, C#Bash best of 9), rev 124 against the
->   README's build (`dist/Bash.exe.rev91`, stamp 92) in the same run.
->   - loop .170/.172, arith .254/.257, func .225/.227, loop_big 1.339/1.362, coreutils .081/.081,
->     pipeline .276/.266, find .043/.043.
->   - startup .035/.035 (best of 21, twice).
->   - A plain `compare3.sh 3` reads 5-28 % higher on short rows: best of 3, not 9, on a busier
->     machine (Git Bash's pipeline row was +19 % as well).
->   - FIXED (rev 116+118, not deployed): `"$@"` and an unquoted `$cmd` in COMMAND position were not
->     word-split (`f() { "$@"; }; f echo a` gave "echo a: command not found").
->   - DONE (rev 117, not deployed): `sleep` and `tail -f` wait on events, no Thread.Sleep.
-> - **DONE + DEPLOYED (rev 113-114):** phase 2, option (b), and the ratified redirect rewrite
->   (DECISIONS 2026-10-04). Background external children skip the kill-on-close job. A redirected
->   external child holds the real file handle. Exit waits on a monitor (never `Thread.Sleep`, the
->   architect's rule) for a background job to start its program.
-> - **Open defect found 2026-10-04:** `diff -` does not read stdin.
-> - **GOAL ORDER (DECISIONS 2026-10-03, settled, do NOT re-litigate):**
->   1. C#Bash for itself, on Windows.
->   2. No PowerShell for anything not Windows-dependent. In scope if the COMMAND needs
->      PowerShell today; out of scope if the OUTPUT is Windows-specific.
->   3. A seamlessly faster Claude: achieved, so maintain it.
+> ## RESUME ANCHOR (rewritten 2026-10-08) — read this before anything else
+> Replaces the anchor kept from 2026-09-04 to 2026-10-07, whose dated blocks had piled up: resolved
+> items were still listed as open, and the 2026-10-07 handoff missed one open item it carried. The
+> old text is in hg rev 140's `PROJECT_CONTEXT.md`; every resolved item in it has a DECISIONS entry.
+> Checked against the session transcripts of 2026-09-03 to 2026-10-07 on 2026-10-08.
 >
->   Goal 3 against goals 1 and 2 "depends on circumstance": surface each collision with numbers;
->   never trade silently. Git Bash is NOT a target.
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03): the empty-output fix.** A console-less shell
->   starts an all-inherited child through `HiddenConsole.StartInherited`. Under Claude Code, the
->   first external of any command containing `<` used to lose its output silently.
->   - Gates passed: launcher matrix 50/50 per cell (control rev 81 0/50); no windows (control
->     rev 80 visible 20/20); suite 51/51 with a console and `-Detached` (control rev 81 fails
->     `inherit_ext`).
->   - **DEPLOYED** (now rev 102 in `dist/Bash.exe`; rollbacks `.rev98`, `.rev95`, `.rev91`, `.rev88`, `.rev86`, `.rev84`, `.rev82`, `.rev81`, `.rev80`) and verified live in a Claude
->     Code Bash tool. In a `<` command, an external that reads stdin still blocks: Claude Code
->     leaves stdin an open pipe. Not ours; give it `< /dev/null`.
->   - **DO NOT undo** the `-Interpreter` name in `run-tests.ps1`: `-Exe` collides with `$exe`.
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03): `ext 2>&1` with an inherited stdout** now puts the
->   child's stderr on the shell's stdout, with a console too. Same `StartInherited`; the control
->   (rev 82) fails the new `inherit_ext` line.
-> - **SETTLED (do NOT re-ask):**
->   - hg/git sync happens ONLY on a push to GitHub. Until then git's README, `.gitignore` and png
->     changes stay uncommitted in hg, and every build stamp shows `+`.
->   - Steroids: NOT ACTIVE, NO RULING. The architect did not recognise the question; stop asking.
-> - **RULE (DECISIONS 2026-10-03, ratified):** where behaviour is open, match what Claude assumes,
->   i.e. GNU bash + coreutils on Linux; NOT Git for Windows' quirks. Live reference: WSL Ubuntu
->   (`wsl.exe -e bash …`).
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03): CR is data in every line tool.** `LfReader` is the
->   shell's text reader: LF-only lines, ONE stream read per fill, every installed stdin one shared
->   `LfReader`. Also: no BOM sniffing; children's redirected streams use `ShellEncoding`;
->   `ext 1>&2` goes to the caller's stderr.
->   - `tests/cases/crlf.sh`: expected output generated by GNU via WSL.
->   - Speed floor held: lines -0.3 %, pipeline +1.3 %, startup equal.
->   - **DO NOT** wrap a pipe in a `StreamReader` under `LfReader`: +48.8 % (pipeline stall).
->   - **DO NOT** call `TextReader.ReadLine` in a tool: it ends lines at CR.
-> - **AWAITING THE ARCHITECT (do NOT derive):**
->   - **Pipeline-stage race** (DECISIONS 2026-10-03, CR entry, item 1). Stages share one
->     environment, so a `$( )` in one stage can take another's `$1` and its output. Silent.
->     Architectural; needs a design discussion.
->   - The goal-2 transcript scan: proposed.
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03): commands sharing one stdin.** `{ read; cat; } < f`
->   now gets the rest. `head -c N` streams N bytes (`yes | head -c 5` HUNG before).
->   `CurrentRawStdin` takes the read-ahead: call it ONCE.
-> - **RATIFIED + BUILT + DEPLOYED (DECISIONS 2026-10-03): every pipeline stage gets its own
->   interpreter.** Option (a), "go"; then "Yes, deploy".
->   - `dist/Bash.exe` is rev 91's code (stamp `+ 92+`); rollback `dist/Bash.exe.rev88`.
->   - GNU-identical; race gone (control rev 88 lost output in 14/20 runs).
->   - Cost: ~5-15 µs a stage, so a loop of 4000 pipelines is +11.8 %. The README table rows do not
->     move beyond noise (`coreutils` +2 ms).
->   - **README table UPDATED to the re-measured figures. README.md is uncommitted in hg until the
->     next GitHub push (sync-on-push rule).** The article stays as published (architect: "Leave
->     the article").
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03): `arr[$k]=v` and `m+=(["$k"]=v)`** (they ran as
->   a command / set nothing).
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03): each shell has its own cwd**
->   (`ShellEnvironment.Cwd`).
->   - The tee race went from 148-165/200 misplaced to 0/200.
->   - **DO NOT** make `TranslatePath` resolve relative paths unconditionally: it is limited to
->     stages that moved, so no output changes.
->   - **DO NOT** test a dup-redirect's translated target: `2>&1` broke that way.
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03): pattern operators expand their operands**
->   (`${p#"$s"}`, `${p//$o/$n}`, `${p%%"lit"}`; replacement quote removal). Done by
->   `ExpandOperand` from the RAW text: do NOT switch it to the word parser, which loses `\*`.
-> - **GOAL-2 SCAN DONE (DECISIONS 2026-10-04).** 1,271 PowerShell calls: 74 % needed no
->   PowerShell, 20 % generic capability, 5 % Windows-specific.
->   - **RATIFIED 2026-10-04 (see the 2026-10-04 block above). The order:**
->     1. `time` keyword (missing!);
->     2. a detached launch that survives the call;
->     3. a `jq` subset;
->     4. serial I/O;
->     5. `df`.
->   - Also found: `env -u` does not unset for children (defect). Claude Code sets
->     `NoDefaultCurrentDirectoryInExePath=1` (environment).
-> - **RATIFIED + BUILT (DECISIONS 2026-10-03, "go"):**
->   - Plain `cp` gives the copy the current mtime (`StampNow`).
->   - An escaped `\* \? \[ \{ \} \, \~` stays quoted (`Lexer.EscapeMark` becomes a
->     `SingleQuotedPart`).
-> - **KNOWN LIMITATION (pre-existing; a separate decision, not raised for action):** glob and brace
->   quoting is tracked per FIELD, not per character, so `{x\,y,z}`, `"*"*` and `\**` treat the
->   quoted metacharacter as live. A fix needs its own escape marker in the brace and glob engines:
->   NOT backslash, because backslashes from unquoted expansions must survive into the output.
-> - **Machine facts (do NOT "fix"):**
->   - Git's `bash.exe` is renamed `_bash.exe`, and `System32\bash.exe` (WSL) was moved away by the
->     architect, both so nothing pre-empts C#Bash.
->   - Reach WSL with `wsl.exe -e bash`.
->   - Run Git Bash scripts as `"$BASH" script` from `_bash.exe -l`: a `#!/usr/bin/env bash`
->     shebang resolves to C#Bash.
-> - **FOUND:** Git's `__git_ps1_show_upstream` fails to parse ("Expected 'fi'") and is silently
->   dropped when the git snapshot is sourced. Repro is in the 2026-10-03 findings folder.
-> - **Minor, found 2026-10-03:**
->   - fold treats `\r` as a column.
->   - `tee /dev/null` fails.
->   - Split UTF-8 at read boundaries [inferred].
->   - CRLF script text tolerated (on purpose).
-> - **Also open, verified 2026-10-03:**
->   - `${v//$o/$n}` is a silent no-op.
->   - A bare `fi` runs as a command (rc 127, not a syntax error), and `-n` returns 0 for it.
->   - `date +%3N` prints 9 digits.
->   - `$HOME` and `command -v` return backslash paths.
-> - **Running Claude's own commands:** a Bash tool shell on a build before rev 82 loses the first
->   external's output in any command containing `<`. Check `$CSHARPBASH_BUILD`.
-> **RATIFIED + BUILT 2026-09-14, UNCOMMITTED (hg 80+): no console window flashes under Claude Code.**
-> Claude Code starts the Bash TOOL shell with no console, so every external C#Bash spawned got its
-> own VISIBLE console. Fix: `HiddenConsole` (`ConsoleMux.cs`) — while `GetConsoleCP()==0`, a child
-> starts `CreateNoWindow` and the shell attaches to its hidden console ("piggyback"); later children
-> inherit it at native cost. Suite 50/50 with a console AND detached (Release + AOT) with a
-> desktop-wide window hook recording nothing; battery old-vs-new 237/237; live in a Claude Code
-> session, no window. **`dist/Bash.exe` IS the new build**; rollback copy `dist/Bash.exe.rev80`.
-> Accepted by the architect: a CONIN$-reading child now waits invisibly. **DO NOT undo** the
-> `GetConsoleCP` test (`GetConsoleWindow()==0` is WRONG — measured). Spike source:
-> `E:/Claude/csharpbash-findings-2026-09-14-hidden-console/`. Full record: DECISIONS 2026-09-14.
-> **Confirmed by the architect** from a second Claude Code session (`whereis bash.exe`): good.
-> **Open, not started:** `$?` after an external that exits -1 (0xFFFFFFFF) reads `-1` — bash masks
-> to 0-255 (`255`); seen with `F:\KoliadaES\ESDK\bin\whereis.EXE`. `date +%3N` ignores the width (prints 9 digits); the compat battery has no
-> valid Git reference while PortableGit's `bash.exe` is renamed `_bash.exe` (the architect's rename
-> so Claude Code discovers C#Bash) — pass `-Reference` to a working Git bash or restore the name
-> for battery runs; GUI-child 100 ms attach spin unmeasured.
-> **TRUE STATE (2026-09-04, after P3+P4, hg rev 42):** suite 45/45 green; the 228-probe **Claude Code
-> compatibility battery** (`tests/compat/`, Git Bash vs C#Bash) is at 217/228 with 0 hangs, baseline 217
-> (the 11 remaining DIFFs are environment/by-design: tools absent from Git Bash, `BASH_VERSINFO` 5 vs 4,
-> `which`/`type` on builtins, `$'\u…'`, `/dev/stderr` inside `$( )`). Every coreutil parses options
-> strictly and follows decision 2 (`BASH_COREUTILS=auto|builtin|external`); in-process `awk` subset,
-> `<( )`, `trap ERR`/`-E`, `|&`, GNU `date -d`, `timeout`, `id`/`whoami`/`nproc`/`printenv`/`tty`/`arch`
-> are in. Public git snapshot `a65b44f` is BEHIND hg — the architect cuts snapshots.
-> Claude Code's exact Windows shell contract is recorded in memory `claude-code-bash-contract`: spawn is
-> `bash.exe -c [-l] "<wrapper>"`; wrapper = `source <MSYS-path snapshot> 2>/dev/null || true && export
-> TEMP=… TMP=… && shopt -u extglob 2>/dev/null || true && { \builtin unalias -- …; \builtin unset -f -- …; }
-> >/dev/null 2>&1 || true && eval '<cmd>' < /dev/null && pwd -P >| <MSYS-path cwd file>`. Claude Code does
-> NOT require Git for Windows — any `bash.exe`/`sh.exe` via `CLAUDE_CODE_GIT_BASH_PATH`; with none, its Bash
-> tool is simply unavailable.
-> **KNOWN GAPS after P4 (all loud, none silent):** `>( )` is rejected at parse time (decision 6);
-> awk constructs outside the ratified subset (`getline`, user functions, `print >`/`|` redirections,
-> `printf %e/%g`, `ENVIRON`, `RS`) fail loudly or fall through to a PATH awk (decision 2); `set -o
-> functrace`, `nextfile`, `-ok`/`-perm` in `find`, `xargs -p` are loud unsupported. Externals resolve
-> through the *process* PATH, which now tracks `$PATH` assignments (P4 fix). `ps` knows only
-> pid/ppid/comm/args (no user/etime/tty — loud). No known hangs.
-> **FIXED IN P3+P4 (rev 42):** strict option parsing + fall-through for every coreutil (`Opts`);
-> `sed -i`/`N,Mp`/hold space/`{ }`; `grep -A/-B/-C/-o/-r/-l/-c/-w/-x/-z/-P`; `find` expression engine
-> incl. `-exec +`/`-printf`/`-newermt`; `diff -u/-r/-q` (GNU hunk order); `xargs -0/-n/-I/-P`; `ls -l`
-> family; `sort -k/-V/-h`; `date -d/-r/-u/-I/-R` + full `strftime`; `uname -a` MSYS-style;
-> `timeout`; `|&` (was attached to the consumer); `<( )`; `trap ERR` incl. `-E`/errtrace semantics
-> (verified line-by-line against Git Bash); `awk` subset (132 one-liners byte-identical to gawk);
-> Git's `usr/bin`+`mingw64/bin` prepended to PATH when Git is discoverable (as Git Bash does) and
-> the shell's own directory appended (so nested `bash -c` resolves on a Git-less PATH).
-> **FIXED IN P1 (rev 39; the earlier "done" claims are now true):** heredocs/here-strings, nested
-> `$( )`, `"…"` backslash rules, `&>`/`&>>`, `2>&1 >f` ordering, subshell/`$( )` isolation (vars, cwd,
-> `exit`), `x=$(false)` status, `command`/`type`/`builtin`, `(( ))` and `for ((;;))`, arithmetic
-> assignment/`++`, `${x:n:m}` `${x^^}` `${!x}` `${arr[@]:n}` `${x/#pat/}` and friends, `function name {`,
-> `/c/…` + `/tmp` paths, `-c -l` / `-lc` / `--version` / `-o` / `-e` flags, `shopt`/`alias`/`declare -f
-> -F -p -i -r`/`readonly`/`exec`/`let`/`pushd`/`mapfile`/`getopts`/`read -a -d -n -u`/`printf` (full
-> formats, `-v`, arg recycling), fd 3+ (`exec 3>f`, `>&3`, `read -u 3`), special vars (`OSTYPE`
-> `PPID` `RANDOM` `UID` `PIPESTATUS` `BASH_REMATCH` `LINENO` `$-` `$!` `FUNCNAME` `BASH_SOURCE`
-> `BASH_VERSINFO` `SHLVL`), `command not found` text honouring `2>/dev/null`, syntax errors inside
-> `source`/`eval` contained, externals inside `$( )` / `{ … } >file` / heredoc loops routed correctly,
-> MSYS-form `PATH` normalised on assignment. Compat battery 86 → 150 / 228; suite 36 → 41 cases.
-> **FIXED 2026-09-05 (rev 51, from session web-d6's defect report in `E:\CLAUDE\bash-defects-2026-09-05.md`):**
-> `$(( $(cmd args) ))` lost the spaces inside the nested substitution (a plausible wrong value
-> with status 0 — the serious one); a backslash-newline that was a whole word became an empty
-> argument (`cat f \` + newline + `| sed`). Two more items in that report were already fixed by
-> P1. `bash --version` now prints a third line `C#Bash build 1.0.0+hg.<hash> <rev>` (stamped from
-> `hg id` at build time, `+` = uncommitted tree) so a reporter's binary can be identified — until
-> now every build carried the git snapshot's hash. Suite 47/47; battery 219/230, baseline 219.
-> **FIXED 2026-09-05 (rev 55, web-d6's second report over Remote Control):** `$(( t + $(cmd) ))`
-> closed one `)` early when the substitution was not first (parse error aborting the script);
-> `echo x (y) z` now is the syntax error bash gives instead of three commands. Two further items
-> in that report were the reporter's harness stripping double quotes (byte-identical here).
-> Battery 222/232, baseline 221.
-> **FIXED 2026-09-08 (rev 58, web-d6's third report):** globs on UNC paths (`//host/share/*.md`,
-> `for f in //host/share/*`) matched nothing — `Glob.Expand` rooted the walk at `/`; now the
-> share is the root, verified identical to Git Bash incl. globstar. `head`/`tail -z` fixed rev 57.
-> Battery 223/233, baseline 222. **Rev 59:** sed `0,/re/` re-opened its range on every line
-> (first-occurrence patch became a global rewrite, silently) — fixed, probe 234, baseline 223.
-> **Rev 60:** `CSHARPBASH_BUILD`/`CSHARPBASH_REV` shell variables (build identity as values);
-> a lone `$` glued itself to the next word — `[[ $x =~ ^[0-9]+$ ]]` and `[[ a$ == a$ ]]` failed
-> to parse — fixed, probe 235, baseline 224. **Rev 60 is installed on GUY-WINDOWS11
-> (`C:\tools\bin\Bash.exe`) and verified there by web-d6 with negative controls on all three.**
-> **Rev 62 (installer-79's report):** `#` inside a word was a comment — `$((10#0010))` truncated
-> the line (10 printed by coincidence, `x=$((10#0010)); echo $x` printed nothing, a subshell never
-> closed) — fixed per bash's start-of-word rule, probe 236, baseline 225.
-> **Rev 63 (installer-79):** binary data through `< file` and pipes was UTF-8-decoded and
-> re-encoded (0xFF → EF BF BD) — byte builtins now read the raw stream behind stdin
-> (`ConsoleMux.RawIn`, the mirror of P2's raw stdout); suite case `binary`, probe 237, baseline
-> 226. **AWAITING THE ARCHITECT:** `printf '\377'`/`echo -e '\xff'`/`$'\xff'` emit the UTF-8
-> encoding, not the byte — recommendation is the surrogateescape design (DECISIONS 2026-09-11),
-> half a day, not started. installer-79 (local session; runs `dist\Bash.exe` via
-> `CLAUDE_CODE_GIT_BASH_PATH`, so this machine's Claude sessions are on C#Bash) confirmed rev 63
-> on its real binaries and offered its end-to-end binary suite as a regression check for that
-> work — ask it (`SendMessage` to `installer-79`) when the surrogateescape change is built.
-> **Scope requests from that report, AWAITING THE ARCHITECT:**
-> awk `print > file`/`close()`, 3-arg `match()`, user functions; `df`; `awk --version` (estimates
-> in the 2026-09-08 report to the architect).
-> **CLOSED 2026-09-11 (rev 66): the `dotnet publish` slowness is NOT a C#Bash cost.** Measured on
-> identical files, one variable moved: drive-letter cwd 2.7 s, UNC cwd 235.7 s — and Git Bash
-> (233.7 s) and PowerShell (233.7 s) are within 1 % of C#Bash on the same UNC path, so no shell is
-> implicated. A UNC path to a LOCAL drive routes every file operation through the SMB redirector
-> over loopback; MSBuild does thousands of them. **Known limit:** a UNC path to a local drive is
-> silently correct and catastrophically slow for tools doing many small file operations —
-> invisible to a functional test, visible only as duration. (The report's "~1 s from PowerShell"
-> premise was wrong: PowerShell on a UNC path is equally slow.)
-> **AWAITING THE ARCHITECT — HIGHEST PRIORITY OPEN ITEM (rev 67):** C#Bash passes MSYS-form paths
-> to native programs verbatim, so **`/tmp` means TWO different places inside one session**:
-> `echo x > /tmp/f` (builtin) writes `%TEMP%\f`, while `tool /tmp/f` (native) resolves against the
-> CURRENT DRIVE — measured, and already on disk here (`E:\c\Users\guy\` exists; `C:\tmp` 18 entries
-> vs `E:\tmp` 3). Internally inconsistent, no failing observable, same class as the sed range and
-> the stdin bytes. Recommendation in the DECISIONS entry of 2026-09-11: apply `TranslatePath`'s own
-> mapping to arguments of native children for `//host/share/…`, `/<letter>/…`, `/tmp…`, `~…` only,
-> with a **bare `/c` excluded** (else every `cmd.exe /c` breaks) and an env escape hatch. ~half a
-> day, not started.
-> **RATIFIED + BUILT 2026-09-11 (rev 68) — SUPERSEDES DECISION 3:** `pwd`, `$PWD`, `$OLDPWD`,
-> `dirs`, `mktemp` and `realpath` now return the FORWARD-SLASH Windows form (`E:/Claude/x`,
-> `//host/share/x`). The architect: "If Bash is handed a windows form path (using backslash), it
-> must convert it to a forward slash path before using." Decision 3 was ratified on Claude Code's
-> cwd read-back alone; backslash is the shell's ESCAPE character, so `PWD=E:\x` was a value the
-> shell's own `${p#pat}`/globs/`[[ ]]`/`case` misread. Falsifier re-tested: a nested `claude -p`
-> session still tracks `cd` across calls. **OUTBOUND ONLY** — arguments are untouched, so
-> `grep '\.txt'`, `printf 'a\tb'` and `find -name '\*'` keep working; guarded by `tests/cases/paths.sh`.
-> **Also rev 68:** an unhandled file-open exception no longer kills the shell (reproduced:
-> `split -l 1 f nodir/sub/pre` died with `DirectoryNotFoundException`); guards in
-> `Builtins.TryExecute` and `RunString` EXCLUDE `BrokenPipeException`, which derives from
-> `IOException` and carries SIGPIPE (141) — nearly a regression.
-> **RATIFIED + BUILT 2026-09-12 (rev 71), completing the above:** the path form is forward slash
-> in BOTH directions — `TranslatePath` now maps `/c/x` → `C:/x` and `/tmp/x` → `<temp>/x` and
-> normalises backslashes, so a path that goes out through `pwd` and comes back in is the same
-> string. IO failures are loud, never fatal, at EVERY entry point (three holes closed: the script
-> read in `Program.cs`, `SourceFile`, the interactive loop). A failed redirect now reports bash's
-> wording and status 1, not a .NET message and 2. **Known message gaps, not fixed:** bash prefixes
-> script errors `<script>: line N:` where we say `bash:`, and we print a redirect error after the
-> enclosing scope is released so `( cmd > bad ) 2>/dev/null` does not suppress it.
-> **RATIFIED + BUILT 2026-09-12 (rev 72–73): ONE BYTE-TRANSPARENT ENCODING.** `ShellEncoding` is
-> UTF-8 with surrogateescape (an undecodable byte ↔ U+DC00+byte), used by every file, pipe,
-> capture and escape — so `printf '\377'` emits ONE byte and non-UTF-8 data survives variables,
-> `$( )`, pipes and files. One class, ~58 mechanical sites. Three silent bugs were found wiring it
-> (the escape range overlaps real surrogate pairs; `File.ReadAllText` ignores its encoding argument
-> when the file starts with a BOM; `StreamWriter`'s default encoding THROWS on a lone surrogate).
-> We preserve NUL where bash drops it. Guard: `tests/cases/bytes.sh`, identical to Git Bash.
-> **SHIP BUILD is now ReadyToRun** (`-p:PublishReadyToRun=true`): startup 86 → 74 ms, ~60 ms of
-> which is the .NET single-file runtime floor. **Native AOT is blocked on the missing MSVC linker**,
-> not rejected — it is the only lever on that floor; test the `ConsoleMux` reflection first.
-> `tests/bench/compare3.sh` compares C#Bash / Git Bash / WSL bash and checks their outputs agree.
-> **FOUND, NOT FIXED (repros in `scratchpad/sub*.sh`):** `${v/pat/repl}` does no quote removal or
-> escape processing on the replacement (`${V//b/\\}` → `a\\`), and **does not expand `$` in the
-> pattern or replacement at all** — `${path//$old/$new}` silently returns the input unchanged.
-> ~half a day; no failing observable.
-> **AWAITING THE ARCHITECT (2026-09-13, rev 78): ship Native AOT?** It BUILDS here — the
-> 2026-09-12 "blocked on a missing MSVC linker" was a misdiagnosis; the linker is installed and the
-> real cause was `vswhere.exe` not being on PATH, whose absence gets its own error text spliced into
-> the linker command line. **Startup 0.029 s (matches Git Bash's 0.028, was 0.073), size 5.7 MB
-> (was 79 MB), every short benchmark 1.65–2.6× faster, suite 50/50 and battery 226/237 unchanged,
-> and the `ConsoleMux` reflection survives.** The real cost: **~10 % slower in steady state**
-> (`loop_big` work-only 1.366 s vs 1.228 s), so the crossover is ~0.4 s of work — AOT wins short
-> invocations, R2R wins long batch loops. Claude Code spawns a fresh shell per tool call, which is
-> the winning side. Recommendation: ship it. It is the architect's call because it adds a
-> BUILD-machine prerequisite (MSVC C++ tools + `vswhere` on PATH); recipe in `scratchpad/aot.cmd`.
-> Also measured: the Zig apphost (E:/Claude/AppHost) is worth ~3 ms and 82 KB, but only on the
-> framework-dependent path — self-contained uses the ~10 MB `singlefilehost` instead, which the Zig
-> host structurally cannot replace (verified; AppHost's own `limits:` note is right).
-> **SHIP-READY at rev 76 (2026-09-12) — the snapshot is the architect's to cut.** Suite 50/50;
-> battery 226/237 (baseline 226, the 11 diffs environment/by-design); `dist/Bash.exe` published
-> ReadyToRun at rev 76 and copied to the share. `MERCURIAL_HISTORY.md` (77 changesets) and
-> `mercurial-history.hg` regenerated — both are hg-IGNORED snapshot artefacts, so **regenerate
-> them again after any further commit** or the published history is short by that commit.
-> README carries the three-way performance table (losses included) and the Claude Code recipe.
-> **DO NOT undo:** nothing in flight in the tree — working tree clean.
-> **DOCUMENTED / settled — do NOT re-litigate:** four-doc set; coreutils scope = AT&T SysV filtered
-> (DECISIONS 2026-06-14); BRE default; redirects-in-exactly-one-place; expectations authored, not captured.
-> **RATIFIED 2026-09-04 (DECISIONS entry of that date):** (1) `OSTYPE=msys`; (2) unsupported coreutil
-> option → loud error, fall through to a PATH external if present, env override; (3) `pwd` native Windows
-> form, VERIFY by spike against Claude Code's cwd read-back in P1; (4) map drive-letter `/c/…` + `/tmp`
-> now, general root mapping stays DEFERRED; (5) supersede the subshell-leak and `ls`-without-`-l`
-> decisions; (6) `<( )` by temp-file emulation, `>( )` rejected loudly, end of P4; (7) in-process `awk`
-> covering Claude's habitual subset (scope list in the DECISIONS entry), unsupported constructs → per
-> decision 2 (PATH awk if present, else loud `awk: unsupported:` exit 2), joins P4.
-> **AWAITING THE ARCHITECT (do NOT derive):** nothing. (Both P5 items were ratified 2026-09-04 —
-> "1/ yes, 2/ build both in-process" — and are built: awk `print > "/dev/stderr"`/`"/dev/stdout"`,
-> in-process `pgrep`/`pkill`/`ps`. See the DECISIONS entry of that date.)
-> **GREENLIT (2026-09-04, "all phases, commit each phase or combo, stop for ambiguities/forks"):** P0–P5
-> as listed below, in order. Commits go to **hg** (development VCS per README); the git snapshot is the
-> architect's to cut. Progress: (update this line per phase) P0 DONE (rev 38: compat battery, baseline 86/228); P1 DONE
-> (rev 39 + tail rev 40: invocation contract + language core, baseline 151/228, suite 41/41).
-> **Decision-3 SPIKE DONE (rev 40): a nested Claude Code session driven by C#Bash tracked `cd`
-> across calls from the native-form `pwd -P` — native output is accepted.** The spike also found
-> and fixed a startup crash when spawned without a console (`Console.OutputEncoding`).
-> **P2 DONE (rev 41): per-thread console streams (`ConsoleMux`), managed pipes with
-> consumer-close (SIGPIPE emulation, `yes | head` works), every pipeline stage on its own thread,
-> externals killed when their reader goes away, kill-on-close job object for children (verified:
-> killing the shell killed its `ping`), streaming `head`, GNU-style `wc` widths, `${x:-word}` word
-> expansion. Battery 151 → 170 / 228 with 0 hangs; suite 42/42. Re-spiked inside Claude Code:
-> the snapshot generator now succeeds (5 KB snapshot), the `rg` shim runs the embedded ripgrep,
-> heredocs work, and `cd` is tracked across calls (instrumented with `BASH_ENV`).**
-> **P3+P4 DONE (rev 42): `Opts` strict parser + decision-2 dispatcher; every tool family rewritten
-> (`Builtins.Text/Files/Find/Search/Sys/Awk.cs`, `GnuDate.cs`); `<( )`, `trap ERR`, `|&`, `timeout`
-> and friends. Battery 170 → 217 / 228, 0 hangs; suite 42 → 45 (awk, procsub, sysutils2 — expected
-> outputs generated from Git Bash/gawk and verified, loud-boundary lines authored).**
-> **P5 DONE (2026-09-04, spike, rev 43 docs): a nested `claude -p` session with
-> `CLAUDE_CODE_GIT_BASH_PATH=…\Bash.exe` on a PATH holding ONLY `System32`, `WINDOWS`, PowerShell
-> and `~/.local/bin` (no Git anywhere) created its snapshot (3181 bytes), ran 15 Bash-tool calls
-> and reported them all: `OSTYPE=msys`, MSYS `uname`, native `pwd`, `cd` persisting across calls,
-> builtin `awk`, the `rg` shim (embedded ripgrep 14.1.1), `ls -la`, `date -d`, `grep -rn`,
-> `timeout` → 124, `command -v bash` → this exe (own-dir PATH append), `diff <( ) <( )`, heredoc
-> into `/tmp`, `find | sort | head`, `sed -n`. The one failure: `pkill -f …` → 127. Claude Code's
-> `pkill` shim (pulled from `claude.exe`) guards Claude's own PID with `command pgrep` and then runs
-> `command pkill "$@"` — it needs a real procps `pkill`/`pgrep`, which no Git-less Windows PATH has.
-> That is a PATH-content gap, not a shell gap (Git Bash supplies procps from `usr/bin`).**
-> **P5 follow-up DONE (rev 44, ratified "1/ yes, 2/ build both in-process"):** awk admits
-> `print`/`printf … > "/dev/stderr"` and `"/dev/stdout"` (files/pipes stay loud); in-process
-> `pgrep`/`pkill`/`ps` (`Builtins.Proc.cs`) — self never matches, `pkill` skips this shell's
-> ancestors aloud (with `-f` their command lines contain the pattern), suite case `procs`.
-> **Readiness check (rev 46): a nested Claude Code session on the NORMAL PATH (Git present) ran
-> git/hg, `pkill -f` (skipped the relaying shells aloud), `ps`, `command -v`, awk, `date -d`; the
-> only miss was my harness's cwd. `pkill` gained a ppid-free self-protection rule (DECISIONS of
-> that date) because MSYS `exec` breaks Windows ppid chains. A deployable copy lives in `dist/`
-> (hg-ignored); the placement recipe is in README "Using it as Claude Code's shell".**
-> All greenlit phases are complete; nothing is in flight.
-> **PLAN (proposed, not greenlit):** P0 compat battery + Claude-wrapper case into `tests/` · P1 invocation
-> contract (bash-style option parser, MSYS drive paths, `function`, source-error containment,
-> "command not found" text honouring `2>/dev/null`, `shopt`/`alias`/`builtin`/`command`/`type`/`declare`/
-> `exec`/`readonly`, special vars) · P2 never-hang (heredoc, nested `$( )`, ext→builtin pipes incl.
-> early-consumer-exit, subshell isolation, child-kill on timeout) · P3 loud-not-silent (strict option
-> parsing in every coreutil + fall-through policy; `&>` `|&` redirect order; quoting; `$?` from `$( )`;
-> `echo`/`printf`; glob prefix) · P4 Claude's vocabulary (sed/grep/find/ls/head/tail/cat/xargs/sort/diff
-> flags; mktemp/realpath/stat/timeout/md5sum; `<<<`, `for((;;))`, `[[ =~ ]]`, `[[ && ]]`, `+=`, mapfile,
-> getopts, param-expansion ops) · P5 live integration (`CLAUDE_CODE_GIT_BASH_PATH` → C#Bash, Git-less PATH).
-> **GREENLIT:** nothing yet.
+> **TRUE STATE (verified 2026-10-10):**
+> - hg: rev 179 (deployed), branch `default`. GitHub `main` = git `738ec92` = hg rev 140; a push is
+>   in progress (the architect, 2026-10-10: "Let's also push at this time ... Push means another
+>   benchmark and a doc review first").
+> - **DEPLOYED 2026-10-10: `dist/Bash.exe` is rev 179** (`--version`: `1.0.0+hg.e6a9a866b65a+ 179+`):
+>   everything below, revs 158-179 (22 fixes). Suite 101/101 on that exact AOT binary, with a console
+>   and `-Detached`; live-verified in a Claude Code Bash call: the notice's 19 examples matched GNU
+>   bash (the shell's own path aside). Rev 179 was found BY that check: a syntax error at the end of a
+>   text with no final newline was a line early; rev 178 was installed for minutes, never announced.
+>   Rollbacks: `dist/Bash.exe.rev156` (the previous deploy), `.rev178`, `.rev150`, `.rev143`, back to `.rev80`.
+> - Running sessions told: 2026-10-08 `df`; 2026-10-09 revs 146-150; 2026-10-10 revs 152-156 (to
+>   daq-d1, adc-framework-d8, msp430-a2, nupkg-28, koliada-net-f7); 2026-10-10 revs 158-179 to daq-d1,
+>   adc-framework-d8, msp430-a2, nupkg-28, errorlogs-42 and koliada-net-6a, leading with three
+>   behaviour changes (`while read` loops, the error prefix, the stricter parser). nupkg-28 confirmed
+>   its awk report fixed on rev 179; adc-framework-d8 re-tested clean (loops, stderr capture); neither
+>   had a workaround to drop. The architect, 2026-10-10: "koliada-net
+>   is a new session" (koliada-net-6a; whether it needs koliada-net-f7's items is asked, not assumed).
+> - Benchmark: `tests/bench/compare3.sh`, method frozen, every launch made and timed by
+>   `tools/benchtimer` (DECISIONS 2026-10-06, both entries). 2026-10-10, quiet machine, rev 179: startup
+>   C#Bash 0.0160 s / Git Bash 0.0157 / WSL 0.1098. A "+1.2 ms vs rev 156" from two single runs was
+>   NOISE: an interleaved diagnostic put rev 179 0.44 ms faster (DECISIONS "the +1.2 ms startup …
+>   was the benchmark's own noise"). The startup row is one sample, +-1.5 ms between runs. Before:
+>   rev 140, C#Bash 0.0152 s /
+>   Git Bash 0.0162 / WSL 0.1036. The README table is that run.
+> - Other installs, not checked since: GUY-WINDOWS11 `C:/tools/bin/Bash.exe` was rev 60 (2026-09-08);
+>   a copy went to the share at rev 76 (2026-09-12).
+> - Untracked `The Windows Shell Tax.url` (a claude.ai artifact link, there since 2026-09-14): in
+>   neither VCS, not ours, leave it.
+> - Nothing in flight. Revs 158-179 are deployed; the push (benchmark, doc review) follows.
+>
+> **GREENLIT (2026-10-04: "Yes, then 2, 3 and 5 (commit between stop for ambiguities/forks). then
+> we will discuss 4?"):**
+> - Goal-2 backlog: 1 `time` DONE (rev 105) · 2 detached launch DONE (revs 113-114, 121, 123-124) ·
+>   3 `jq` subset DONE (revs 130-133) · **5 `df` DONE (rev 142) and DEPLOYED (2026-10-08).**
+>   - In-process, GNU 8.32's format: `C:` / `//host/share` sources, `C:/` mount points (the
+>     path-form rule). DECISIONS 2026-10-08. `tests/df/compare-wsl.sh`: 76/76 identical to GNU;
+>     suite 72/72 both modes on the Release and the AOT build.
+> - The architect, 2026-10-08: "let's get df done and finish the escape-space probe and then we
+>   will start chomping through the bugs." Order: `df` (done) → the probe (done: a real defect,
+>   fixed in rev 146, deployed in rev 150) → the OPEN DEFECTS below, one at a time on the architect's go.
+> - Serial I/O (item 4: COMn as a device file plus `stty`; 55 calls, all MSP430): to discuss.
+>
+> **AWAITING THE ARCHITECT (do NOT derive; Claude's positions are proposals, not rulings):**
+> 1. **MSYS paths in arguments to native programs** (raised 2026-09-11 in rev 67, called the highest
+>    priority since). `/tmp` means two places in one session: builtins and redirects map `/tmp` to
+>    `%TEMP%`, while a native program gets `/tmp/x` or `/c/x` verbatim and resolves it against the
+>    current drive. Re-verified on rev 136: `cmd.exe /c echo /tmp/x /c/Users/guy ~/y` prints
+>    `/tmp/x /c/Users/guy C:\Users\guy/y`. Already on disk: `E:\c\Users\guy\`, `/tmp` content on C: and E:.
+>    - **Question first:** on 2026-09-12, replying to a list that included this item, the architect
+>      wrote "...backslash to forwardslash should be symetric across read/write operations. This
+>      should include MSYS form mapping assuming /<d>/... as D:/...". Claude read that as the shell's
+>      own paths only and built rev 71; native arguments stayed verbatim and went back on the open
+>      list (2026-09-14, 2026-09-15, no reply). Did it cover native arguments too? If yes, this item
+>      is ratified and half built.
+>    - Claude's position (DECISIONS 2026-09-11, "Sharpened"): convert by shape, at the start of an
+>      argument only, `//host/share/…`, `/<letter>/…`, `/tmp…`, `~…`; never a bare `/c` (`cmd.exe /c`);
+>      an environment switch to turn it off. About half a day [estimate, not measured].
+> 2. **UTF-8 for external programs** (koliada-net-dd, 2026-10-06). Piped `hg` and `python` write
+>    cp1252; python crashes on `✓`.
+>    - Claude's position: export `PYTHONIOENCODING=utf-8` and `HGENCODING=utf-8` at startup when
+>      unset; not `PYTHONUTF8`, which also changes `open()`'s default for user scripts.
+>    - koliada-net-dd withdrew its `PYTHONUTF8` suggestion and agrees with that position (peer
+>      message 2026-10-06, which asked for its agreement to be recorded here).
+>    - Doubt raised 2026-10-08 [recalled, not verified]: the 2026-10-06 position called both
+>      variables stdio-only. `HGENCODING` probably also decodes commit messages, usernames and branch
+>      names, including `hg commit -l` files. Test before building: a non-ASCII message via `-l` and a
+>      non-ASCII filename, under both settings, in a scratch repo.
+> 3. **awk scope requests** (installer-79, 2026-09-08): `print > file` and `close()`, 3-argument
+>    `match()`, user functions, `awk --version`. (`df`, from the same list, is greenlit above.)
+> 4. **Missing builtins `umask`, `times`, `fc`** (found 2026-10-10, measured): each is "command not
+>    found" (status 127), and `fc` reaches Windows' `C:/Windows/System32/fc.exe` instead ("FC:
+>    Insufficient number of file specifications"). `umask 077` before creating files is a common
+>    script line, so a script that uses it stops working.
+>    - Claude's position [proposal]: `umask` as a builtin that stores and prints the mask (`umask`,
+>      `umask -S`, `umask -p`, octal and symbolic modes) with NO effect on file creation, since
+>      Windows has no permission bits for it to clear, and that limit stated in the README. `times`
+>      prints the shell's and its children's user and system times (the process times are available).
+>      `fc` reports "not supported" instead of running fc.exe. Falsifier: if the architect wants
+>      `umask` to deny writes through ACLs, it is a bigger, separate design.
+> 5. **`strings`** (koliada-net-f7, 2026-10-10, one hit, not blocking): a scope request. Also
+>    **`jq -R`** (msp430-a2, 2026-10-10: `jq -Rs '{text: .}' file` wraps a text file as a JSON string;
+>    it used a C# path instead, not blocked): raw input is outside the jq subset.
+> 6. **Parse-and-run one command at a time, as bash does?** (measured 2026-10-10, DECISIONS "syntax
+>    errors in C#Bash's own words", Not done). bash reads, parses and runs each top-level command
+>    in turn. So the lines before a syntax error RUN, and a syntax error inside `$( )` is reported at
+>    run time (`name: command substitution: line N+1:`), fails only that command (1), and the script
+>    goes on. C#Bash parses the whole text first and runs nothing when any of it is wrong.
+>    - Claude's position [proposal, provisional]: match bash, since scripts with a late error
+>      behave differently today. It is an architectural change to the script runner (parse a
+>      command, run it, continue), and it also decides when an `alias` defined in a script takes
+>      effect. Falsifier: if the architect values "a script with a syntax error runs nothing" as a
+>      safety property, keep the current model and document it.
+>    - Do NOT derive: this is the architect's call.
+>
+> **FIXED AND DEPLOYED (2026-10-09, in rev 150; suite 76/76 both modes on the Release and the AOT
+> build, battery 227/237 with no regression):**
+> - rev 146: literal text was field-split. `a\ b/x*` gave `a` and `b/x*` (any glob character,
+>   matched or not); an IFS character in literal text split the word; `~` split when the home
+>   directory has a space. DECISIONS "literal text was field-split"; case `literal_no_split`.
+> - rev 147: `local a=$1` (and `declare typeset export readonly`, `name+=`, `name[i]=`) split the
+>   value. DECISIONS "a declaration builtin's `name=$v` argument was field-split"; case
+>   `declaration_assign`.
+> - rev 148: the word of `${x:-word}` / `${x:+word}` lost its quoting context: `"${v:+$v }"` lost
+>   its space, `${v:+-o "$w"}` split `"$w"`, `${1+"$@"}` broke spaced arguments (ten of 22 GNU
+>   cases wrong). DECISIONS "the word of `${x:-word}` / `${x:+word}` lost its quoting context";
+>   case `operator_word`.
+> - rev 150: assignment values never expanded a tilde (`x=~/y`, `PATH=$PATH:~/bin`, `local y=~/z`,
+>   `a[0]=~/a`). DECISIONS "assignment values never expanded a tilde"; case `assignment_tilde`.
+>
+> **FIXED AND DEPLOYED (2026-10-10, in rev 156; suite 80/80 both modes on the Release and the AOT build, battery 227/237, no regression):**
+> - rev 152: a declaration with no value left the variable set: `local j` was `""`; `export m` on an
+>   unset m gave children `m=""`; an array without element 0 read as set. DECISIONS "a declaration
+>   with no value left the variable set"; case `declared_unset`.
+> - rev 153: `set -u` is enforced (was accepted, never applied), with bash's exits (`-c` 127, or 1
+>   where set -e is in force; script 1; `( )`, `$( )`, a pipeline stage, a heredoc fail only
+>   themselves); and the word of `${x:-word}` is expanded only when selected (`${x:-$(cmd)}` ran
+>   cmd with x set). DECISIONS "`set -u` (nounset) is enforced"; case `nounset`.
+> - rev 154: `$HOME`, `~`, `$BASH` and `command -v`/`type`/`which`/`hash` output were backslash paths;
+>   now the shell's forward-slash form. DECISIONS "`$HOME`, `~`, `$BASH` and `command -v` … gave
+>   backslash paths"; case `shell_paths`.
+> - rev 156: `env`'s options did not reach the command (koliada-net-f7's report): a non-identifier
+>   NAME=VALUE (`STDOUT.OutputLevel=trace`) was run as the command; `-u` and `-i` missed builtins
+>   (and `-u` programs too); `-uNAME`, `--unset=`, `-`, `-0` refused or ignored. DECISIONS "`env`'s
+>   options did not reach the command"; case `env_options`. koliada-net-f7 told 2026-10-10.
+>
+> **FIXED AND DEPLOYED (2026-10-10, in rev 179; suite 101/101 both modes on the Release and the AOT build, battery 227/237 against baseline 226 (199 left it, rev 167; 187 joined, rev 168), no regression):**
+> - rev 158: an unquoted `\\` in a `case` / `[[ == ]]` / `[[ =~ ]]` pattern did not stand for a
+>   backslash (`*\\*` matched `a*`). DECISIONS "an unquoted `\\` in a pattern did not stand for a
+>   backslash"; case `backslash_pattern`.
+> - rev 159: an MSYS program (Git's usr/bin tools) under `>>` or the shell's own redirect wrote
+>   nothing ("Bad file descriptor"): it now gets a write handle at the end, Windows programs keep the
+>   atomic append handle. DECISIONS "an MSYS program wrote nothing under `>>`"; case `msys_redirects`.
+>   nupkg-28 reported it independently (2026-10-10, awk `getline < file` with `> out`); its repro
+>   passes on rev 163. Tell nupkg-28 at the deploy.
+> - rev 160: PATH lookups printed PATHEXT's spelling (`git.EXE` for `git.exe`); `hash` had no hits
+>   table and ignored `-t`/`-l`/`-d`. DECISIONS "PATH lookups printed PATHEXT's spelling"; case
+>   `command_lookup`.
+> - rev 161: a stray `fi`/`done`/`esac`/`then`/`do`/`else`/`elif` ran as a command (127); now a syntax
+>   error, status 2, and `bash -n` reports it. DECISIONS "a stray `fi` … ran as a command"; case
+>   `stray_keyword`. (Still different, separate: bash runs the lines BEFORE a syntax error.)
+> - rev 162: `date +%3N` printed 9 digits (%N width is a precision; `-`/`_` flags); `date -d @S.F`
+>   was refused. DECISIONS "`date +%3N` printed 9 digits"; case `date_nanos`.
+> - rev 163: `fold` counted `\r`/`\b`/tab as one column (now a port of GNU fold.c, bytes, `-s`);
+>   `tee /dev/null` failed. DECISIONS "`fold` counted `\r` … ; `tee /dev/null` failed"; case `fold_tee`.
+> - rev 164: a Windows exit code reached `$?` raw (-1, 256); now 0-255 as on Linux (low byte; NTSTATUS
+>   crash = 128 + signal). DECISIONS "a Windows program's exit code reached `$?` unreduced"; case
+>   `exit_status_range`.
+> - rev 165: an unquoted `${…${…}…}` (`${1:-${HOME}}`, `${a#${b}}`) swallowed the REST OF THE SCRIPT
+>   silently (the nested `${` was counted twice); this was Git's `__git_ps1_show_upstream` "failing
+>   to parse". DECISIONS "an unquoted `${…${…}…}` swallowed the rest of the script"; case `nested_brace`.
+> - rev 166: `${…}`, `$( )`, `$(( ))`, backquotes and quotes are matched by ONE function,
+>   `Lexer.ConstructEnd` (bash's parse_matched_pair rule), replacing seven scanners; 13 of 42 audit
+>   cases were wrong on rev 165 (`${u:-\}}`, `${a//\}/x}`, `${a:-{x}}`, `${u:-$(echo })}`, …). `{` / `}`
+>   are ordinary words after the command name (`echo }` was a syntax error). DECISIONS "One construct
+>   matcher"; case `brace_constructs`.
+> - rev 167: FUNCNAME / BASH_SOURCE / BASH_LINENO are one frame stack as in bash: after `source` the
+>   script was gone from BASH_SOURCE, inside a function it was empty, BASH_LINENO did not exist,
+>   FUNCNAME was `(main)` at top level (Git Bash 4.4's quirk; probe 199 left the battery baseline).
+>   Written lazily (no per-call cost). DECISIONS "FUNCNAME / BASH_SOURCE / BASH_LINENO were two
+>   drifting lists"; case `call_stack`. Step 1 of the `<script>: line N:` prefix item.
+> - rev 168: errors carry bash's prefix, `script: line N:` (BASH_SOURCE[0], else $0; `eval:` / `-c:`
+>   input names on syntax errors), where every one said `bash:`; `eval` and `$( )` text (quoted, in a
+>   heredoc, in `${ }`, in arithmetic) continues the caller's line numbers instead of restarting at 1.
+>   DECISIONS "every error said `bash:`"; case `error_prefix`. The item's other half, "a redirect
+>   error prints after its scope", does NOT reproduce on rev 167: 11 forms (subshell, group,
+>   function, `$( )`, pipeline, loop; builtins and externals) match GNU. Closed.
+>   **A behaviour change to lead the next deploy notice with:** every error message's first word
+>   changes (`bash: x: command not found` becomes `script.sh: line 3: …`, or `$0: line 1: …` under
+>   `-c`), so a session matching `bash:` in stderr must adjust.
+> - rev 169: `ls dir missing` printed no `dir:` heading (a failed operand did not count), and
+>   directory operands were not sorted (`ls plain 'a b'`). The escaped space of the 2026-10-08 item
+>   was irrelevant. DECISIONS "`ls dir missing` printed no `dir:` heading"; case `ls_operands`.
+> - rev 170: `trap` accepted any word as a signal (`trap x BADSIG`, `65`), stopped at the first bad
+>   one, refused `RTMIN+3`; `trap -p` printed `INT` not `SIGINT`, in hash order, ignoring operands.
+>   DECISIONS "`trap` accepted any word as a signal"; case `trap_signals`.
+> - rev 171: builtins check options as bash does (message + bash's usage line, 2; options end at the
+>   first operand): `printf -Z`, `cd -Z`, `export -Z`, `source -Z`, `pushd +3` and more took them
+>   as operands; `kill -Z 1` signalled; `trap -- 'cmd' SIG` (the form `trap -p` prints) failed;
+>   `source -- f` read `--` as the file. DECISIONS "builtins took bad options as operands";
+>   case `builtin_options`.
+> - rev 172: syntax errors in bash's words at bash's lines (``near unexpected token `fi'`` + the
+>   line; `unexpected end of file`; ``looking for matching `)'``; the `[[ ]]` forms); grammar bash
+>   rejects is rejected (`then fi`, `{ }`, `a &&` at the end, `f() echo x`, `[[ -f ]]`, an unclosed
+>   backquote); heredoc-at-EOF warning. 912 bash-completion scripts under `-n`: no new false
+>   rejections. DECISIONS "syntax errors in C#Bash's own words"; case `syntax_errors`.
+> - rev 173: `while read -r f; do prog; done < list` ended after ONE line whenever any program ran in
+>   the loop (even `prog < /dev/null`); in every build back to rev 156. A program now shares the
+>   file offset, and a C#Bash child gives back its read-ahead. DECISIONS "`while read -r f; do prog;
+>   done < list` ended after one line"; case `stdin_sharing`. **Lead the next deploy notice with
+>   this one**: sessions may have worked around it.
+> - rev 174: a UTF-8 character cut by a read's 4096-byte block or split pipe writes became two raw
+>   bytes (`read`, pipes, `mapfile`, `while read`: a line one char too long). The 2026-10-03 inferred
+>   item, now measured and fixed. DECISIONS "a UTF-8 character cut by a read's 4096-byte block";
+>   case `utf8_boundary`.
+> - rev 175: Linux's device files exist (/dev/null zero random urandom stdin stdout stderr fd/N tty)
+>   as operands, redirects and under `test`: `cat /dev/null`, `head -c 5 /dev/zero`, `diff -u /dev/null
+>   new`, `cp /dev/null f`, `[ -e /dev/null ]` all failed. `tr` streams; `od` prints the offset of an
+>   empty input. DECISIONS "Linux's device files did not exist"; case `device_files`.
+> - rev 176: `exec 3>&1` / `4>&2` / `3<&0` did nothing (`>&3` was "Bad file descriptor": the
+>   stderr-capture idiom `exec 3>&1; out=$(cmd 2>&1 >&3)` failed); and `exec 1>&3 3>&-` disposed fd
+>   1's stream (the shell then crashed on `4>&1`). DECISIONS "`exec 3>&1` … did nothing"; case
+>   `fd_copy`.
+> - rev 177: `wait -n` did not wait (job pools ran unbounded); `wait -p VAR` was ignored. DECISIONS
+>   "`wait -n` did not wait"; case `wait_next`.
+> - rev 178: `jobs` ignored -l -p -r -s and job specs (`jobs -p` printed whole lines), had its own
+>   format, and listed nothing in a pipeline stage. DECISIONS "`jobs` ignored its options"; case
+>   `jobs_list`.
+>
+> **OPEN DEFECTS (the architect, 2026-10-10: "go meant 'still open' gogogo": work through them in turn, commit between, stop for ambiguities/forks):**
+> - Found 2026-10-10 while fixing the error prefix, verified against GNU (DECISIONS "every error
+>   said `bash:`", Not done):
+> - Found 2026-10-10 by the `builtin_options` work (DECISIONS "builtins took bad options …", Not
+>   done): accepted options whose effect is not implemented: `jobs -x` (reported as unsupported), the
+>   directory stack's `+N`/`-N` rotation (reported as not supported), `kill -l`/`trap -l`'s
+>   numbered table (a short list of nine names is printed).
+> - Inferred, not traced (2026-09-15): git's credential prompt runs through C#Bash and fails on `/dev/tty`.
+>
+> **KNOWN LIMITATIONS (documented, not raised for action):**
+> - Glob and brace quoting is tracked per field, not per character: `{x\,y,z}`, `"*"*` and `\**`
+>   treat the quoted metacharacter as live. A fix needs its own escape marker, not backslash.
+> - A PIPE into a loop (`producer | while read; do prog; done`) is pumped into `prog`: what `prog`
+>   does not read (a one-line `read`) is lost to the loop. Pipeline stages are in-process pipes, so
+>   fixing it needs OS pipes between stages (DECISIONS "`while read …` ended after one line").
+> - bash parses `[[ $x == @(a|b) ]]` with extglob off; C#Bash rejects it (69 of Ubuntu's 912
+>   bash-completion scripts), part of extglob being unsupported (DECISIONS 2026-09-04).
+> - bash numbers a simple command from the line where its second word ends, so an error inside a
+>   multi-line `x=$(…)` is reported a few lines later in bash than in C#Bash (not imitated).
+> - Under Claude Code, an external that reads stdin, in a command containing `<`, blocks: Claude Code
+>   leaves stdin an open pipe. Give it `< /dev/null`. Not ours.
+> - With no console, a child reading `CONIN$` waits invisibly (accepted 2026-09-14). The GUI-child
+>   100 ms attach spin is unmeasured.
+> - Loud by design: `>( )` is rejected at parse time; awk outside its subset, unsupported options and
+>   `ps` fields beyond pid/ppid/comm/args fail loudly or fall through to a PATH tool.
+> - A UNC path to a local drive is correct but very slow for tools doing many file operations (2026-09-11).
+> - CRLF in script text is tolerated, on purpose.
+> - The compat battery has no Git reference while Git's `bash.exe` is renamed: pass
+>   `-Reference F:/Tools/PortableGit/usr/bin/_bash.exe`.
+>
+> **SETTLED, do NOT re-litigate:**
+> - Goal order (DECISIONS 2026-10-03): 1 C#Bash for itself, on Windows; 2 no PowerShell for anything
+>   not Windows-dependent (in scope if the COMMAND needs PowerShell today, out of scope if the OUTPUT
+>   is Windows-specific); 3 a seamlessly faster Claude, achieved, so maintain it. Goal 3 against 1-2
+>   "depends on circumstance": surface each collision with numbers. Git Bash is not a target.
+> - Where behaviour is open, match GNU bash + coreutils on Linux (live reference: `wsl.exe -e bash`).
+> - hg is the development VCS. git and GitHub sync ONLY on a push; until then git shows the docs as
+>   modified and build stamps show `+`. Regenerate `MERCURIAL_HISTORY.md` and `mercurial-history.hg`
+>   before each push.
+> - The benchmark is `tests/bench/compare3.sh [--cs <exe>]`, run unmodified from Git Bash. Method
+>   changes are the architect's call.
+> - Path form: forward-slash Windows form in both directions (DECISIONS 2026-09-11/12).
+> - Steroids: not active, no ruling; do not ask.
+>
+> **DO NOT undo:**
+> - The console-less test is `GetConsoleCP()==0` (`GetConsoleWindow()==0` is wrong, measured).
+> - `run-tests.ps1 -Interpreter` (`-Exe` collides with `$exe`).
+> - `LfReader`: never wrap a pipe in a `StreamReader` under it (+48.8 % pipeline stall); never call
+>   `TextReader.ReadLine` in a tool (it ends lines at CR); call `CurrentRawStdin` once.
+> - `TranslatePath` resolves relative paths only for stages that moved; never test a dup-redirect's
+>   translated target (`2>&1` broke that way).
+> - `ExpandOperand` works from the RAW text; the word parser loses `\*`.
+>
+> **Machine facts (do NOT "fix"):** Git's `bash.exe` is renamed `_bash.exe` (Git Bash is
+> `F:/Tools/PortableGit/usr/bin/_bash.exe`; the `bin/` stub is broken by the rename), and
+> `System32\bash.exe` (WSL) was moved away, both so nothing pre-empts C#Bash. Reach WSL with
+> `wsl.exe -e bash`. Run Git Bash scripts as `"$BASH" script` from `_bash.exe -l`. Claude Code sets
+> `NoDefaultCurrentDirectoryInExePath=1`.
+>
+> **For the architect's own files (suggested only):** the global CLAUDE.md's launcher line is
+> obsolete since the rename (2026-10-04 scan), and its "Known limits of C#Bash" says UNC globs do
+> not expand, fixed in rev 58 [recorded, not re-verified]. Its awk 3-argument `match()` line is still
+> true. Its `df` line was corrected on 2026-10-08 at the architect's request ("You should fix it").
 
 ## Purpose
 A standalone Windows bash interpreter written in C#. Targets a bash subset: full POSIX core plus the most-used bashisms (`[[ ]]`, arrays, `local`, arithmetic expansion, brace expansion).
@@ -622,7 +495,9 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   month-name/`@epoch`/times/zones/relative items/weekdays — `-r -u -I -R -f`), `uname` (MSYS
   style: `MINGW64_NT-10.0-19045 … x86_64 Msys`), `hostname`, `arch`, `nproc`, `tty`, `whoami`,
   `id`, `printenv`, `timeout` (kills an external child on expiry; an in-process command is
-  interrupted and reported as 124 / 143 with `--preserve-status`).
+  interrupted and reported as 124 / 143 with `--preserve-status`), `df` (2026-10-08: Windows
+  volumes in GNU's format, `C:` / `//host/share` sources, `C:/` mount points; `-h -H -k -B -P -T
+  -t -x -l --total --output`; inode options loud; checked by `tests/df/compare-wsl.sh`).
 - **awk (`Builtins.Awk.cs`):** the DECISIONS 2026-09-04 #7 subset — 132 representative one-liners
   are byte-identical to gawk (`tests/cases/awk.sh`); outside the subset the tool is loud (or falls
   through to a PATH awk). gawk-verified deviations from POSIX kept on purpose: `substr` truncates

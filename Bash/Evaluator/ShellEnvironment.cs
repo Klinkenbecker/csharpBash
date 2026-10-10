@@ -16,7 +16,28 @@ public sealed class ShellEnvironment
 	// Arrays live at global scope only (bash arrays are not local by default
 	// unless explicitly declared local — we keep it simple for now).
 	// Key = array name, Value = index→value map.
-	private Dictionary<string, SortedDictionary<int, string>>    _arrays = new(StringComparer.Ordinal);
+	private Dictionary<string, SortedDictionary<int, string>>    _arrayStore = new(StringComparer.Ordinal);
+
+	/// <summary>Every array read goes through here, so the evaluator's call stack (FUNCNAME,
+	/// BASH_SOURCE, BASH_LINENO) is written only when an array is next read: a function call or
+	/// return just marks it stale (<see cref="CallStackStale"/>). Rebuilding the three arrays on
+	/// every call and return cost ~0.9 µs a call, +34% on a bare call (measured 2026-10-10).</summary>
+	private Dictionary<string, SortedDictionary<int, string>> _arrays
+		{
+		get { if (CallStackStale) { CallStackStale = false; RefreshCallStack?.Invoke(); } return _arrayStore; }
+		set => _arrayStore = value;
+		}
+
+	/// <summary>Set by the evaluator: writes its call stack into FUNCNAME / BASH_SOURCE / BASH_LINENO.</summary>
+	public Action? RefreshCallStack { get; set; }
+	/// <summary>The call stack changed since it was last written.</summary>
+	public bool CallStackStale { get; set; }
+
+	/// <summary>Set by the evaluator: its descriptor N (an `exec 3< f`), for /dev/fd/N (ShellFile).</summary>
+	public Func<int, Stream?>? FdStream { get; set; }
+
+	/// <summary>Set by the evaluator: its current error prefix (`script: line N: `).</summary>
+	public Func<string>? ErrorPrefixProvider { get; set; }
 	private Dictionary<string, Dictionary<string, string>>        _assocs = new(StringComparer.Ordinal);
 
 	private HashSet<string> _exports   = new(StringComparer.Ordinal);
@@ -68,9 +89,12 @@ public sealed class ShellEnvironment
 			var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 			Set("HOME", home); Export("HOME");
 			}
+		// the shell's paths are forward slash (DECISIONS 2026-09-11/12): HOME arrived as C:\Users\x,
+		// so $HOME, ~ and cd's default were backslash paths until 2026-10-08
+		if (Get("HOME").Contains('\\')) _frames[0]["HOME"] = ToShellPath(Get("HOME"));
 
 		// bash-standard shell variables (not exported unless inherited)
-		var exe = Environment.ProcessPath ?? "bash";
+		var exe = ToShellPath(Environment.ProcessPath ?? "bash");
 		SetIfUnset("OSTYPE",   "msys");                 // DECISIONS 2026-09-04 (1)
 		SetIfUnset("MACHTYPE", "x86_64-pc-msys");
 		SetIfUnset("HOSTTYPE", "x86_64");
@@ -290,12 +314,18 @@ public sealed class ShellEnvironment
 		frames:
 		for (int i = _frames.Count - 1; i >= 0; i--)
 			if (_frames[i].TryGetValue(name, out var val))
-				return val;
+				return ReferenceEquals(val, DeclaredUnset) ? "" : val;
 
 		return "";
 		}
 
-	/// <summary>True if the scalar is set in any frame (for `[[ -v x ]]` / `${x+y}`).</summary>
+	/// <summary>The frame value of a variable declared with no value (`local x`): it hides any outer
+	/// variable of that name but is unset, as in bash. Compared by reference, never by value.
+	/// Until 2026-10-08 `local x` stored "", so x read as set.</summary>
+	private static readonly string DeclaredUnset = new('﷐', 1);
+
+	/// <summary>True if the scalar is set (for `[[ -v x ]]` / `${x+y}`). A name declared with no value
+	/// is unset; an array or associative array is set when its element 0 / "0" is, as in bash.</summary>
 	public bool IsSet(string name)
 		{
 		if (name.Length == 1 && "?$!-#@*0".IndexOf(name[0]) >= 0) return true;
@@ -306,8 +336,41 @@ public sealed class ShellEnvironment
 			return idx > 0 && idx <= pos.Length;
 			}
 		for (int i = _frames.Count - 1; i >= 0; i--)
-			if (_frames[i].ContainsKey(name)) return true;
+			if (_frames[i].TryGetValue(name, out var val)) return !ReferenceEquals(val, DeclaredUnset);
+		if (_arrays.TryGetValue(name, out var arr)) return arr.ContainsKey(0);
+		return _assocs.TryGetValue(name, out var map) && map.ContainsKey("0");
+		}
+
+	/// <summary>Declared in some frame, with or without a value, or an array (`declare -p x`, `unset x`).</summary>
+	public bool IsDeclared(string name)
+		{
+		foreach (var f in _frames)
+			if (f.ContainsKey(name)) return true;
 		return _arrays.ContainsKey(name) || _assocs.ContainsKey(name);
+		}
+
+	/// <summary>`local x` with no value: x is declared in the innermost frame and unset, hiding an
+	/// outer x. An x already declared in that frame keeps its value, as in bash.</summary>
+	public void DeclareLocal(string name)
+		{
+		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
+		_frames[^1].TryAdd(name, DeclaredUnset);
+		}
+
+	/// <summary>The innermost frame that declares name has it with no value (`local x`).</summary>
+	public bool IsDeclaredUnset(string name)
+		{
+		for (int i = _frames.Count - 1; i >= 0; i--)
+			if (_frames[i].TryGetValue(name, out var val)) return ReferenceEquals(val, DeclaredUnset);
+		return false;
+		}
+
+	/// <summary>Make name declared-with-no-value again in the innermost frame that declares it
+	/// (restoring `x=v cmd` on a `local x`, where an unset would also delete an outer x).</summary>
+	public void RestoreDeclaredUnset(string name)
+		{
+		for (int i = _frames.Count - 1; i >= 0; i--)
+			if (_frames[i].ContainsKey(name)) { _frames[i][name] = DeclaredUnset; return; }
 		}
 
 	/// <summary>A PATH written in MSYS form (`/c/x:/usr/bin:…`, colon-separated, entries
@@ -384,6 +447,8 @@ public sealed class ShellEnvironment
 		}
 
 	public void Export(string name) => _exports.Add(name);
+	/// <summary>Every exported name, set or not (`export -p` lists `declare -x x` for an unset x).</summary>
+	public IEnumerable<string> ExportedNames => _exports;
 	public void Unexport(string name) => _exports.Remove(name);
 	public bool IsExported(string name) => _exports.Contains(name);
 
@@ -624,12 +689,16 @@ public sealed class ShellEnvironment
 
 	public Dictionary<string, string> GetExportedVars()
 		{
+		// only exported names with a value: `export x` on an unset x, or `local -x x`, puts nothing in a
+		// child's environment (bash); until 2026-10-08 the child got x set to ""
 		var result = new Dictionary<string, string>(StringComparer.Ordinal);
 		foreach (var name in _exports)
-			{
-			var val = Get(name);
-			result[name] = val;
-			}
+			for (int i = _frames.Count - 1; i >= 0; i--)
+				if (_frames[i].TryGetValue(name, out var val))
+					{
+					if (!ReferenceEquals(val, DeclaredUnset)) result[name] = val;
+					break;
+					}
 		return result;
 		}
 

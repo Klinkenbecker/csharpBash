@@ -166,10 +166,14 @@ if (cFlagCmd is not null)
 		evaluator.Env.SetArg0(positionals[0]);
 		evaluator.Env.SetPositionals(positionals.Skip(1));
 		}
+	evaluator.TopLevelSource = "environment";
 	if (login) SourceLogin(evaluator, noprofile);
 	else SourceBashEnv(evaluator);
 	try { var code = evaluator.RunString(cFlagCmd, origin: "-c"); evaluator.RunExitTrap(); return code; }
-	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }
+	// bash ends a -c shell on an expansion error (set -u, ${x:?}) with 127, or 1 where set -e is in
+	// force (on, and not suspended by && / || / if, as inside Claude Code's `eval '…' && pwd`); a
+	// script file ends with 1 (measured against bash 5.1, 2026-10-08)
+	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.ExpansionError && !ex.ErrexitInForce ? 127 : ex.Code; }
 	}
 
 // ── script file mode: bash script.sh ─────────────────────────────────────────────
@@ -180,8 +184,7 @@ if (scriptPath is not null)
 	// $0 = script path, $1.. = the args following it.
 	evaluator.Env.SetArg0(scriptPath);
 	evaluator.Env.SetPositionals(positionals);
-	evaluator.Env.SetArrayFromList("BASH_SOURCE", [scriptPath]);
-	evaluator.Env.SetArrayFromList("FUNCNAME", ["main"]);
+	evaluator.EnterScriptFile(scriptPath);
 	if (login) SourceLogin(evaluator, noprofile);
 	else SourceBashEnv(evaluator);
 	// The read is inside the try: a locked, blocked (AV) or vanished script must be an error
@@ -199,7 +202,7 @@ if (!interactive)
 	if (login) SourceLogin(evaluator, noprofile);
 	else SourceBashEnv(evaluator);
 	var src = Console.In.ReadToEnd();
-	try { var code = evaluator.RunString(src, origin: "bash"); evaluator.RunExitTrap(); return code; }
+	try { var code = evaluator.RunString(src, origin: evaluator.Env.Get("0")); evaluator.RunExitTrap(); return code; }   // its input name is $0 (bash: `/bin/bash: line 2: ...`)
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }
 	}
 

@@ -26,7 +26,11 @@ public sealed class Opts
 	private readonly Dictionary<char, string> _values = [];
 	private readonly List<(char opt, string val)> _all = [];
 	private readonly Dictionary<string, string?> _longs = new(StringComparer.Ordinal);
+	private readonly List<(char opt, string? val)> _sequence = [];
 	public List<string> Operands { get; } = [];
+	/// <summary>Every short option (and long option aliased to one) in command-line order, with its
+	/// value if it takes one. For tools where the last of several options wins (df's -h/-k/-B).</summary>
+	public IReadOnlyList<(char opt, string? val)> Sequence => _sequence;
 	/// <summary>Set when a bare numeric option (`-5`) was given and allowed.</summary>
 	public string? Numeric { get; private set; }
 
@@ -108,6 +112,7 @@ public sealed class Opts
 					{
 					if (spec.value) { o._values[ac] = val!; o._all.Add((ac, val!)); }
 					o._flags.Add(ac);
+					o._sequence.Add((ac, val));
 					}
 				continue;
 				}
@@ -126,7 +131,9 @@ public sealed class Opts
 				o._flags.Add(c);
 				if (optionalValue.Contains(c))
 					{
-					if (k + 1 < a.Length) { var val = a[(k + 1)..]; o._values[c] = val; o._all.Add((c, val)); }
+					string? ov = k + 1 < a.Length ? a[(k + 1)..] : null;
+					if (ov is not null) { o._values[c] = ov; o._all.Add((c, ov)); }
+					o._sequence.Add((c, ov));
 					break;
 					}
 				if (takesValue.Contains(c))
@@ -137,8 +144,10 @@ public sealed class Opts
 					else throw new UnsupportedOptionException(tool, "-" + c, "option requires an argument");
 					o._values[c] = val;
 					o._all.Add((c, val));
+					o._sequence.Add((c, val));
 					break;
 					}
+				o._sequence.Add((c, null));
 				}
 			}
 		return o;

@@ -1,0 +1,19 @@
+1 [cmd.exe]
+2 [cmd.exe]
+3 [cmd.exe]
+4 [cmd is cmd.exe]
+hash: hash table empty
+hits	command
+   0	cmd.exe
+hits	command
+   2	cmd.exe
+cmd.exe
+-t not hashed: rc=1
+cmd	cmd.exe
+cmd	cmd.exe
+builtin hash -p cmd.exe cmd
+hash: hash table empty
+-d not hashed: rc=1
+/x/y.exe
+builtin: rc=0
+builtin not hashed: rc=1

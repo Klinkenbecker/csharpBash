@@ -10,6 +10,10 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 	private readonly ShellEnvironment _env = env;
 	private readonly Evaluator _eval = eval;
 
+	/// <summary>A shell builtin's error prefix, bash's `script: line N: ` (Evaluator.ErrorPrefix).
+	/// The in-process utilities (ls, sed, ...) stand in for programs and keep their own `ls: `.</summary>
+	private string Err => _eval.ErrorPrefix;
+
 	// ── dispatch ──────────────────────────────────────────────────────────────
 
 	/// <summary>All builtin names, for tab completion. Keep in sync with the dispatch switch.</summary>
@@ -24,7 +28,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"basename", "dirname", "seq", "mkdir", "cat", "head", "tail", "wc", "rev", "tac",
 		"tr", "cut", "uniq", "nl", "fold",
 		"touch", "rmdir", "cmp", "tee", "comm", "paste", "rm", "mv", "cp",
-		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "od", "sort", "split", "find", "ls", "xargs", "diff", "hash",
+		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "df", "od", "sort", "split", "find", "ls", "xargs", "diff", "hash",
 		"grep", "egrep", "fgrep", "which", "sed",
 		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
@@ -38,7 +42,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		[
 		"basename", "dirname", "seq", "mkdir", "cat", "head", "tail", "wc", "rev", "tac",
 		"tr", "cut", "uniq", "nl", "fold", "touch", "rmdir", "cmp", "tee", "comm", "paste", "rm", "mv", "cp",
-		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "od", "sort", "split", "find", "ls", "xargs", "diff",
+		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "df", "od", "sort", "split", "find", "ls", "xargs", "diff",
 		"grep", "egrep", "fgrep", "which", "sed", "yes", "sleep", "env",
 		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
@@ -104,7 +108,92 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		return true;
 		}
 
+	/// <summary>The name the running builtin was called by: `readarray` and `mapfile`, `typeset` and
+	/// `declare` share code, and bash's messages name the one called.</summary>
+	private string _called = "";
+
+	/// <summary>bash's usage lines (`help -s`, bash 5.1), printed after an invalid option as bash's
+	/// builtin_usage does: `read: usage: read [-ers] …`, with no script prefix.</summary>
+	internal static readonly Dictionary<string, string> Usages = new(StringComparer.Ordinal)
+		{
+		["read"] = "read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]",
+		["mapfile"] = "mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]",
+		["readarray"] = "readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]",
+		["declare"] = "declare [-aAfFgiIlnrtux] [-p] [name[=value] ...]",
+		["typeset"] = "typeset [-aAfFgiIlnrtux] [-p] name[=value] ...",
+		["local"] = "local [option] name[=value] ...",
+		["export"] = "export [-fn] [name[=value] ...] or export -p",
+		["readonly"] = "readonly [-aAf] [name[=value] ...] or readonly -p",
+		["unset"] = "unset [-f] [-v] [-n] [name ...]",
+		["type"] = "type [-afptP] name [name ...]",
+		["command"] = "command [-pVv] command [arg ...]",
+		["hash"] = "hash [-lr] [-p pathname] [-dt] [name ...]",
+		["set"] = "set [-abefhkmnptuvxBCHP] [-o option-name] [--] [arg ...]",
+		["shopt"] = "shopt [-pqsu] [-o] [optname ...]",
+		["disown"] = "disown [-h] [-ar] [jobspec ... | pid ...]",
+		["printf"] = "printf [-v var] format [arguments]",
+		["cd"] = "cd [-L|[-P [-e]] [-@]] [dir]",
+		["pwd"] = "pwd [-LP]",
+		["wait"] = "wait [-fn] [-p var] [id ...]",
+		["jobs"] = "jobs [-lnprs] [jobspec ...] or jobs -x command [args]",
+		["trap"] = "trap [-lp] [[arg] signal_spec ...]",
+		["alias"] = "alias [-p] [name[=value] ... ]",
+		["unalias"] = "unalias [-a] name [name ...]",
+		["pushd"] = "pushd [-n] [+N | -N | dir]",
+		["popd"] = "popd [-n] [+N | -N]",
+		["dirs"] = "dirs [-clpv] [+N] [-N]",
+		["history"] = "history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]",
+		["source"] = "source filename [arguments]",
+		["getopts"] = "getopts optstring name [arg ...]",
+		["kill"] = "kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]",
+		["."] = ". filename [arguments]",
+		};
+
+	/// <summary>bash's usage line for a builtin, on stderr.</summary>
+	internal static void PrintUsage(string name)
+		{
+		if (Usages.TryGetValue(name, out var u)) Console.Error.WriteLine($"{name}: usage: {u}");
+		}
+
+	/// <summary>bash's report of an option the called builtin does not have: `name: -Z: invalid option`
+	/// and the usage line; status 2. Until 2026-10-10 most builtins printed no usage line, and many
+	/// took the option as an operand or ignored it (`printf -Z`, `cd -Z`, `export -Z`).</summary>
+	private int BadOption(string opt, string message = "invalid option")
+		{
+		Console.Error.WriteLine($"{Err}{_called}: {opt}: {message}");
+		PrintUsage(_called);
+		return 2;
+		}
+
+	/// <summary>The leading options of a builtin that takes only flag letters (`pwd -LP`, `unset -fv`):
+	/// each letter must be in <paramref name="valid"/>, `--` ends them, `-` alone is an operand.
+	/// Returns the index of the first operand, or -1 after reporting an invalid one.</summary>
+	private int FlagOptions(List<string> args, string valid, HashSet<char> seen)
+		{
+		int i = 0;
+		for (; i < args.Count; i++)
+			{
+			var a = args[i];
+			if (a == "--") return i + 1;
+			if (a.Length < 2 || a[0] != '-') return i;
+			foreach (char c in a.AsSpan(1))
+				{
+				if (valid.IndexOf(c) < 0) { BadOption($"-{c}"); return -1; }
+				seen.Add(c);
+				}
+			}
+		return i;
+		}
+
 	private int Dispatch(string name, List<string> args)
+		{
+		string caller = _called;   // `command`, `builtin`, `eval` run builtins inside builtins
+		_called = name;
+		try { return DispatchCore(name, args); }
+		finally { _called = caller; }
+		}
+
+	private int DispatchCore(string name, List<string> args)
 		{
 		return name switch
 			{
@@ -153,7 +242,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"history" => HistoryCmd(args),
 			"trap"    => Trap(args),
 			"jobs"    => Jobs(args),
-			"wait"    => _eval.WaitJobs(args),
+			"wait"    => Wait(args),
 			"fg"      => Fg(args),
 			"bg"      => Bg(args),
 			"disown"  => _eval.Disown(args),
@@ -191,6 +280,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"kill"    => Kill(args),
 			"expr"    => Expr(args),
 			"du"      => Du(args),
+			"df"      => Df(args),   // Windows volumes in GNU's format (DECISIONS 2026-10-08)
 			"od"      => Od(args),
 			"sort"    => Sort(args),
 			"split"   => Split(args),
@@ -236,7 +326,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 
 	// ── system / number utilities (wave 4a) ─────────────────────────────────────
 
-	// uname / hostname / date / timeout / id / whoami / nproc / printenv / tty / arch: Builtins.Sys.cs
+	// uname / hostname / date / timeout / id / whoami / nproc / printenv / tty / arch / df: Builtins.Sys.cs
 
 	private static int Factor(List<string> args)
 		{
@@ -276,12 +366,12 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			foreach (var d in dirs)
 				{
 				var bare = Path.Combine(d, name);
-				if (File.Exists(bare)) { Console.WriteLine(bare); found = true; if (!all) break; }
+				if (File.Exists(bare)) { Console.WriteLine(Shown(bare)); found = true; if (!all) break; }
 				if (!hasExt)
 					foreach (var ext in pathExt)
 						{
 						var p = Path.Combine(d, name + ext);
-						if (File.Exists(p)) { Console.WriteLine(p); found = true; if (!all) break; }
+						if (File.Exists(p)) { Console.WriteLine(Shown(p)); found = true; if (!all) break; }
 						}
 				if (found && !all) break;
 				}
@@ -290,25 +380,69 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		return rc;
 		}
 
-	// hash: remember/inspect external-command paths. `hash` prints the table; `hash -r`
-	// clears it; `hash -p PATH NAME` sets one; `hash NAME...` resolves & caches (rc 1 if
-	// any not found). Backed by Evaluator's PATH cache (also a fast-path for ExecExternal).
+	// hash: remember/inspect external-command paths, in bash's formats. `hash` prints the `hits
+	// command` table; `-r` clears it; `-p PATH NAME` sets one; `-d NAME` forgets one; `-t NAME`
+	// prints the path (`NAME<tab>path` for several); `-l` prints it as `builtin hash -p` lines;
+	// `hash NAME...` resolves & caches (rc 1 if any not found; a builtin name is skipped). Backed
+	// by Evaluator's PATH cache. Until 2026-10-08: paths only, no hits, `-t`/`-l`/`-d` ignored.
 	private int Hash(List<string> args)
 		{
-		if (args.Count == 0)
+		bool table = false, list = false, delete = false, reset = false;
+		string? setPath = null;
+		var names = new List<string>();
+		for (int i = 0; i < args.Count; i++)
 			{
-			var table = _eval.HashTable;
-			if (table.Count == 0) { Console.WriteLine("hash: hash table empty"); return 0; }
-			foreach (var kv in table) Console.WriteLine(kv.Value);
+			var a = args[i];
+			if (a == "--") { names.AddRange(args.Skip(i + 1)); break; }
+			if (a.Length > 1 && a[0] == '-')
+				{
+				foreach (var c in a[1..])
+					switch (c)
+						{
+						case 'r': reset = true; break;
+						case 't': table = true; break;
+						case 'l': list = true; break;
+						case 'd': delete = true; break;
+						case 'p':
+							if (i + 1 >= args.Count) { Console.Error.WriteLine(Err + "hash: -p: option requires an argument"); return 2; }
+							setPath = args[++i]; break;
+						default: return BadOption($"-{c}");
+						}
+				continue;
+				}
+			names.Add(a);
+			}
+		if (reset) _eval.HashClear();
+		var hashTable = _eval.HashTable;
+		if (names.Count == 0)
+			{
+			if (reset || setPath is not null) return 0;
+			if (hashTable.Count == 0) { Console.WriteLine("hash: hash table empty"); return 0; }
+			if (list) { foreach (var kv in hashTable) Console.WriteLine($"builtin hash -p {Shown(kv.Value)} {kv.Key}"); return 0; }
+			Console.WriteLine("hits\tcommand");
+			foreach (var kv in hashTable) Console.WriteLine($"{_eval.HashHits(kv.Key),4}\t{Shown(kv.Value)}");
 			return 0;
 			}
-		if (args[0] == "-r") { _eval.HashClear(); return 0; }
-		if (args[0] == "-p" && args.Count >= 3) { _eval.HashSetPath(args[2], args[1]); return 0; }
 		int rc = 0;
-		foreach (var name in args)
+		foreach (var name in names)
 			{
-			if (name.StartsWith('-')) continue;
-			if (_eval.ResolveOnPath(name) is null) { Console.Error.WriteLine($"hash: {name}: not found"); rc = 1; }
+			if (setPath is not null) { _eval.HashSetPath(name, setPath); continue; }
+			if (delete)
+				{
+				if (!_eval.HashDelete(name)) { Console.Error.WriteLine($"{Err}hash: {name}: not found"); rc = 1; }
+				continue;
+				}
+			if (table)
+				{
+				if (!hashTable.TryGetValue(name, out var path)) { Console.Error.WriteLine($"{Err}hash: {name}: not found"); rc = 1; continue; }
+				_eval.HashHit(name);   // bash counts a -t lookup as a hit
+				Console.WriteLine(names.Count > 1 ? $"{name}\t{Shown(path)}" : Shown(path));
+				continue;
+				}
+			if (Has(name) || _eval.HasFunction(name)) continue;   // builtins and functions are not hashed
+			bool known = hashTable.ContainsKey(name);
+			if (_eval.ResolveOnPath(name) is null) { Console.Error.WriteLine($"{Err}hash: {name}: not found"); rc = 1; }
+			else if (!known) _eval.HashSetPath(name, hashTable[name]);
 			}
 		return rc;
 		}
@@ -441,21 +575,40 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 
 	// ── job control ─────────────────────────────────────────────────────────────
 
-	private int Jobs(List<string> args) { _eval.ListJobs(); return 0; }
+	// the option letters are checked (bash's -l -n -p -r -s -x); what they select is not implemented
+	private int Jobs(List<string> args)
+		{
+		if (FlagOptions(args, "lnprsx", []) < 0) return 2;
+		if (args.Any(a => a.Length > 1 && a[0] == '-' && a.Contains('x'))) { Console.Error.WriteLine($"{Err}jobs: -x is not supported by this interpreter"); return 2; }
+		return _eval.ListJobs(args);
+		}
+
+	/// <summary>`wait`: bash's -f, -n and -p VAR are checked here (what they do is not implemented: -n
+	/// does not yet wait for just one job); anything else is an invalid option.</summary>
+	private int Wait(List<string> args)
+		{
+		for (int i = 0; i < args.Count && args[i].Length > 1 && args[i][0] == '-' && args[i] != "--"; i++)
+			foreach (char c in args[i].AsSpan(1))
+				{
+				if (c == 'p') { if (i + 1 >= args.Count) return BadOption("-p", "option requires an argument"); i++; break; }
+				if (c is not ('f' or 'n')) return BadOption($"-{c}");
+				}
+		return _eval.WaitJobs(args);
+		}
 
 	// `fg %n` — we cannot truly give a background thread terminal control, so this
 	// waits for the job to finish (and echoes its command), which is the closest
 	// faithful behaviour available without fork/job-control process groups.
 	private int Fg(List<string> args)
 		{
-		if (!_eval.HasJobs) { Console.Error.WriteLine("fg: no current job"); return 1; }
+		if (!_eval.HasJobs) { Console.Error.WriteLine(Err + "fg: no current job"); return 1; }
 		return _eval.WaitJobs(args, report: true);
 		}
 
 	// `bg` — nothing to resume: we never suspend jobs (no SIGTSTP on Windows).
 	private int Bg(List<string> args)
 		{
-		Console.Error.WriteLine("bg: job suspension is not supported on this platform");
+		Console.Error.WriteLine(Err + "bg: job suspension is not supported on this platform");
 		return 1;
 		}
 
@@ -464,67 +617,122 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 	private static readonly string[] SignalNames =
 		["EXIT", "HUP", "INT", "QUIT", "KILL", "TERM", "DEBUG", "ERR", "RETURN"];
 
+	/// <summary>Linux's signal numbers (x86_64, as bash 5.1 there names them): 1-31 by name, 32 and
+	/// 33 unnamed, 34-64 the real-time range RTMIN, RTMIN+1 … RTMIN+15, RTMAX-14 … RTMAX. Windows
+	/// raises none but INT; a script may still set and list traps for any of them.</summary>
+	private static readonly string[] LinuxSignals =
+		["", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1", "SEGV", "USR2", "PIPE",
+		 "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN", "TTOU", "URG", "XCPU", "XFSZ",
+		 "VTALRM", "PROF", "WINCH", "IO", "PWR", "SYS", "32", "33", "RTMIN",
+		 .. Enumerable.Range(1, 15).Select(k => $"RTMIN+{k}"), .. Enumerable.Range(1, 14).Select(k => $"RTMAX-{15 - k}"), "RTMAX"];
+
+	/// <summary>A trap's place in `trap -p` (bash: EXIT, the signals by number, DEBUG, ERR, RETURN).</summary>
+	private static int TrapOrder(string canon) => canon switch
+		{
+		"EXIT" => 0, "DEBUG" => 65, "ERR" => 66, "RETURN" => 67,
+		_ => Array.IndexOf(LinuxSignals, canon) is var i and > 0 ? i : 68,
+		};
+
+	/// <summary>How `trap -p` names it: SIGINT, SIGRTMIN+3; EXIT, DEBUG, ERR, RETURN and 32, 33 bare.</summary>
+	private static string TrapDisplay(string canon) =>
+		canon is "EXIT" or "DEBUG" or "ERR" or "RETURN" or "32" or "33" ? canon : "SIG" + canon;
+
 	private int Trap(List<string> args)
 		{
-		// trap            / trap -p : print current traps
-		if (args.Count == 0 || args[0] == "-p")
+		// leading options as bash's internal_getopt reads them: -l, -p, `--` ends them, any other
+		// letter is an invalid option. Until 2026-10-10 `trap -- 'cmd' SIG` (the form `trap -p`
+		// prints) took `--` as the command and the command as a signal, and `trap -Z` as an action.
+		bool listSigs = false, print = false;
+		int first = 0;
+		for (; first < args.Count; first++)
 			{
-			foreach (var (sig, cmd) in _eval.Traps)
-				Console.WriteLine($"trap -- '{cmd}' {sig}");
-			return 0;
+			var a = args[first];
+			if (a == "--") { first++; break; }
+			if (a.Length < 2 || a[0] != '-') break;
+			foreach (char c in a.AsSpan(1))
+				if (c == 'l') listSigs = true; else if (c == 'p') print = true; else return BadOption($"-{c}");
 			}
+		var ops = args.Skip(first).ToList();
 
-		// trap -l : list signal names
-		if (args[0] == "-l")
+		if (listSigs)
 			{
 			Console.WriteLine(string.Join("  ", SignalNames));
 			return 0;
 			}
 
-		// trap - SIG... : reset the named signals to default
-		if (args[0] == "-")
+		// trap / trap -p [SIG...] : print the traps (the named ones only, when given), in bash's order
+		// and spelling; until 2026-10-10 `-p` ignored its operands and printed INT, not SIGINT
+		if (print || ops.Count == 0)
 			{
-			foreach (var s in args.Skip(1))
-				if (CanonSignal(s) is { } c) _eval.RemoveTrap(c);
-			return 0;
+			string Line(string sig, string cmd) => $"trap -- '{cmd.Replace("'", @"'\''")}' {TrapDisplay(sig)}";
+			if (ops.Count == 0)
+				{
+				foreach (var (sig, cmd) in _eval.Traps.OrderBy(t => TrapOrder(t.Key))) Console.WriteLine(Line(sig, cmd));
+				return 0;
+				}
+			// with operands: each in turn, as given (a repeat prints again; an unset one prints nothing)
+			int prc = 0;
+			var set = _eval.Traps.ToDictionary(t => t.Key, t => t.Value);
+			foreach (var s in ops)
+				{
+				if (CanonSignal(s) is not { } c) { Console.Error.WriteLine($"{Err}trap: {s}: invalid signal specification"); prc = 1; }
+				else if (set.TryGetValue(c, out var cmd)) Console.WriteLine(Line(c, cmd));
+				}
+			return prc;
 			}
 
-		// trap 'cmd' SIG...   (cmd may be '' to ignore the signal)
-		var action = args[0];
-		var sigs   = args.Skip(1).ToList();
-		if (sigs.Count == 0) { Console.Error.WriteLine("trap: usage: trap [-lp] [[arg] signal_spec ...]"); return 2; }
+		// bash's trap.def: a first operand that is a signal NUMBER, or a lone operand that is a signal,
+		// means every operand is a signal to reset (`trap 2 15`, `trap INT`); otherwise it is the
+		// action (`-` resets, '' ignores) and the signals follow, at least one
+		var action = ops[0];
+		bool reset = (action.All(char.IsAsciiDigit) && CanonSignal(action) is not null)
+		          || (ops.Count == 1 && action != "-" && CanonSignal(action) is not null);
+		List<string> sigs;
+		if (reset) sigs = ops;
+		else
+			{
+			sigs = ops.Skip(1).ToList();
+			if (sigs.Count == 0) { PrintUsage("trap"); return 2; }
+			reset = action == "-";
+			}
+		// a bad spec is reported and the others are still set or reset (it used to stop at the first)
+		int rc = 0;
 		foreach (var s in sigs)
 			{
-			if (CanonSignal(s) is { } c) _eval.SetTrap(c, action);
-			else { Console.Error.WriteLine($"trap: {s}: invalid signal specification"); return 1; }
+			if (CanonSignal(s) is not { } c) { Console.Error.WriteLine($"{Err}trap: {s}: invalid signal specification"); rc = 1; }
+			else if (reset) _eval.RemoveTrap(c);
+			else _eval.SetTrap(c, action);
 			}
-		return 0;
+		return rc;
 		}
 
-	/// <summary>Normalise a sigspec (SIGINT/INT/2/exit/0) to a canonical name, or null.</summary>
+	/// <summary>Normalise a sigspec to its canonical name (INT, RTMIN+3, EXIT …), or null when bash would
+	/// say "invalid signal specification": a name of <see cref="LinuxSignals"/> in any case with or
+	/// without SIG, RTMIN+n / RTMAX-n, a number 0-64, EXIT, DEBUG, ERR, RETURN. Until 2026-10-10 any
+	/// alphanumeric word was accepted (`trap x BADSIG`, `trap x 65`).</summary>
 	private static string? CanonSignal(string s)
 		{
 		var u = s.ToUpperInvariant();
 		if (u.StartsWith("SIG")) u = u[3..];
-		return u switch
-			{
-			"EXIT" or "0"  => "EXIT",
-			"HUP"  or "1"  => "HUP",
-			"INT"  or "2"  => "INT",
-			"QUIT" or "3"  => "QUIT",
-			"KILL" or "9"  => "KILL",
-			"TERM" or "15" => "TERM",
-			"DEBUG"        => "DEBUG",
-			"ERR"          => "ERR",
-			"RETURN"       => "RETURN",
-			_              => u.Length > 0 && u.All(c => char.IsLetterOrDigit(c)) ? u : null
-			};
+		if (u is "EXIT" or "0") return "EXIT";
+		if (u is "DEBUG" or "ERR" or "RETURN") return u;
+		if (u.Length > 0 && u.All(char.IsAsciiDigit))
+			return int.TryParse(u, out int n) && n is >= 1 and <= 64 ? LinuxSignals[n] : null;
+		// RTMIN+n (n 0-30) and RTMAX-n (n 0-29, as bash's decode_signal) name a number
+		if (u.StartsWith("RTMIN+") && int.TryParse(u[6..], out int a) && a is >= 0 and <= 30) return LinuxSignals[34 + a];
+		if (u.StartsWith("RTMAX-") && int.TryParse(u[6..], out int b) && b is >= 0 and < 30) return LinuxSignals[64 - b];
+		int i = Array.IndexOf(LinuxSignals, u);
+		return i >= 1 && u is not ("32" or "33") ? u : null;
 		}
 
 	// ── history ─────────────────────────────────────────────────────────────────
 
 	private int HistoryCmd(List<string> args)
 		{
+		// bash's option letters are checked first, in a script too (`history -Z` was status 0)
+		if (args.Count > 0 && args[0].Length > 1 && args[0][0] == '-' && args[0] != "--")
+			foreach (char c in args[0].AsSpan(1))
+				if ("cdanrwps".IndexOf(c) < 0) return BadOption($"-{c}");
 		var hist = _eval.History;
 		if (hist is null) return 0;   // no history in script mode
 

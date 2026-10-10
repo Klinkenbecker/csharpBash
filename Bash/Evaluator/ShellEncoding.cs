@@ -199,6 +199,68 @@ public sealed class ShellEncoding : Encoding
 	public override int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex) =>
 		GetChars(new ReadOnlySpan<byte>(bytes, byteIndex, byteCount), chars.AsSpan(charIndex));
 
+	/// <summary>A decoder for chunked readers (LfReader, StreamReader): the start of a sequence cut by
+	/// the chunk's end is carried into the next chunk instead of becoming raw bytes. Encoding's default
+	/// decoder is stateless, so `é` across byte 4096 of a `read` came out as two raw bytes: a line one
+	/// char too long that no pattern matched (inferred 2026-10-03, measured 2026-10-10).</summary>
+	public override Decoder GetDecoder() => new CarryDecoder();
+
+	public sealed class CarryDecoder : Decoder
+		{
+		private readonly byte[] _carry = new byte[3];
+		private int _carried;
+
+		public override int GetCharCount(byte[] bytes, int index, int count) => GetCharCount(bytes, index, count, false);
+		public override int GetCharCount(byte[] bytes, int index, int count, bool flush) =>
+			Utf8.GetCharCount(_carry.AsSpan(0, _carried).ToArray().Concat(bytes.Skip(index).Take(count)).ToArray());
+
+		public override int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex) =>
+			GetChars(bytes, byteIndex, byteCount, chars, charIndex, false);
+
+		public override int GetChars(byte[] bytes, int byteIndex, int byteCount, char[] chars, int charIndex, bool flush)
+			{
+			var input = new ReadOnlySpan<byte>(bytes, byteIndex, byteCount);
+			byte[]? joined = null;
+			if (_carried > 0)
+				{
+				joined = new byte[_carried + byteCount];
+				_carry.AsSpan(0, _carried).CopyTo(joined);
+				input.CopyTo(joined.AsSpan(_carried));
+				input = joined;
+				_carried = 0;
+				}
+			int keep = flush ? 0 : CutTail(input);
+			input[(input.Length - keep)..].CopyTo(_carry);
+			_carried = keep;
+			return Utf8.GetChars(input[..^keep], chars.AsSpan(charIndex));
+			}
+
+		public override void Reset() => _carried = 0;
+
+		/// <summary>The carried bytes, as the raw-byte characters they are when nothing completes them,
+		/// and dropped from the decoder (LfReader.TakeBuffered hands a reader's whole read-ahead over).</summary>
+		public string TakeCarry()
+			{
+			var s = new string(_carry.AsSpan(0, _carried).ToArray().Select(b => ByteChar(b)).ToArray());
+			_carried = 0;
+			return s;
+			}
+
+		/// <summary>How many bytes at the end begin a sequence the end cut short: a lead byte (2, 3 or 4
+		/// long) followed only by continuation bytes, fewer than it needs.</summary>
+		private static int CutTail(ReadOnlySpan<byte> b)
+			{
+			for (int back = 1; back <= 3 && back <= b.Length; back++)
+				{
+				byte c = b[^back];
+				if ((c & 0xC0) == 0x80) continue;   // a continuation byte: look further back for the lead
+				int need = c >= 0xF0 && c <= 0xF4 ? 4 : c >= 0xE0 && c <= 0xEF ? 3 : c >= 0xC2 && c <= 0xDF ? 2 : 0;
+				return need > back ? back : 0;
+				}
+			return 0;
+			}
+		}
+
 	public override int GetChars(ReadOnlySpan<byte> bytes, Span<char> chars)
 		{
 		int outPos = 0, i = 0;
@@ -355,6 +417,8 @@ public sealed class LfReader : TextReader
 		{
 		var s = new string(_buf, _pos, _len - _pos);
 		_pos = _len;
+		// and the bytes of a character the last block cut short, which the decoder holds
+		if (_decoder is ShellEncoding.CarryDecoder carry) s += carry.TakeCarry();
 		return s;
 		}
 

@@ -434,7 +434,7 @@ public sealed partial class Builtins
 		var pa = a == "-" && stdinCopy is not null ? stdinCopy : ShellEnvironment.TranslatePath(a);
 		var pb = b == "-" && stdinCopy is not null ? stdinCopy : ShellEnvironment.TranslatePath(b);
 		bool da = Directory.Exists(pa), db = Directory.Exists(pb);
-		bool fa = File.Exists(pa), fb = File.Exists(pb);
+		bool fa = ShellFile.Exists(pa), fb = ShellFile.Exists(pb);   // a device is a file here (`diff -u /dev/null new`)
 		if (!da && !fa && !(opt.NewFile && (fb || db))) { Console.Error.WriteLine($"diff: {a}: No such file or directory"); return 2; }
 		if (!db && !fb && !(opt.NewFile && (fa || da))) { Console.Error.WriteLine($"diff: {b}: No such file or directory"); return 2; }
 		if (da && db)

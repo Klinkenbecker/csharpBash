@@ -34,6 +34,11 @@ public sealed record ArithmeticExpansionPart(string Expression) : WordPart;
 /// <summary>~ or ~/path — tilde expansion.</summary>
 public sealed record TildePart(string Suffix) : WordPart;
 
+/// <summary>A `name=value`, `name+=value` or `name[i]=value` argument of a declaration builtin
+/// (`local declare typeset export readonly`): bash expands it like an assignment, one field with
+/// no splitting or globbing. <see cref="Name"/> carries a trailing `+` for an append.</summary>
+public sealed record AssignmentArgPart(string Name, Word? Index, Word Value) : WordPart;
+
 /// <summary>Heredoc body — the raw text between delimiter lines.</summary>
 public sealed record HeredocBodyPart(string Body) : WordPart;
 
@@ -260,6 +265,12 @@ public sealed record FunctionDef(
 	{
 	/// <summary>The definition's source text as written (for `declare -f`); null when unavailable.</summary>
 	public string? Source { get; init; }
+	/// <summary>The file it was defined in (its BASH_SOURCE entry while it runs); set when the
+	/// definition executes.</summary>
+	public string? DefinedIn { get; init; }
+	/// <summary>The line base it was defined under (Evaluator._lineBase): a function defined in an
+	/// `eval` string numbers its lines as that string does.</summary>
+	public int LineBase { get; init; }
 	}
 
 // ── Script root ───────────────────────────────────────────────────────────────

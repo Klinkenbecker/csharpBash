@@ -127,7 +127,24 @@ public static class ChildLauncher
 
 	// ── files and pipes for a child's std handles ──────────────────────────────
 
-	public enum Access { Read, Truncate, Append, ReadWrite, Null }
+	public enum Access { Read, Truncate, Append, AppendAtEnd, ReadWrite, Null, Device }   // Device: CONIN$ / CONOUT$, as they are
+
+	/// <summary>An MSYS2 or Cygwin program (Git's usr/bin tools): it loads msys-2.0.dll / cygwin1.dll
+	/// from its own directory. Such a program takes a handle without FILE_WRITE_DATA as read-only, so
+	/// an Append handle made it fail every write with "Bad file descriptor" (found 2026-10-08).</summary>
+	public static bool IsMsysProgram(string path)
+		{
+		string dir;
+		try { dir = Path.GetDirectoryName(Path.GetFullPath(path)) ?? ""; } catch (Exception) { return false; }
+		if (dir.Length == 0) return false;
+		lock (s_msysDirs)
+			{
+			if (!s_msysDirs.TryGetValue(dir, out bool msys))
+				s_msysDirs[dir] = msys = File.Exists(Path.Combine(dir, "msys-2.0.dll")) || File.Exists(Path.Combine(dir, "cygwin1.dll"));
+			return msys;
+			}
+		}
+	private static readonly Dictionary<string, bool> s_msysDirs = new(StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>This process's own std handle for fd 0, 1 or 2.</summary>
 	public static IntPtr StdHandle(int fd) => GetStdHandle(fd switch { 0 => -10, 1 => -11, _ => -12 });
@@ -139,6 +156,8 @@ public static class ChildLauncher
 	/// deleting (another command may read the log while this one writes it). Truncate opens and
 	/// empties without recreating (attributes kept, a hidden file works); Append writes only at the
 	/// end (FILE_APPEND_DATA: two appenders interleave instead of overwriting, as O_APPEND does);
+	/// AppendAtEnd is an ordinary write handle positioned at the end, for an MSYS child that cannot
+	/// use Append (see IsMsysProgram; concurrent appenders then share no atomicity);
 	/// Null is the NUL device. Throws the .NET exception for the failure (FileNotFound,
 	/// DirectoryNotFound, UnauthorizedAccess, or IOException).</summary>
 	public static SafeFileHandle Open(string path, Access how)
@@ -148,12 +167,19 @@ public static class ChildLauncher
 			Access.Read     => (GENERIC_READ, OPEN_EXISTING),
 			Access.Truncate => (GENERIC_WRITE, OPEN_ALWAYS),
 			Access.Append   => (FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE, OPEN_ALWAYS),
+			Access.AppendAtEnd => (GENERIC_WRITE, OPEN_ALWAYS),
 			Access.ReadWrite => (GENERIC_READ | GENERIC_WRITE, OPEN_ALWAYS),   // `<>`: created if missing, not truncated
 			_               => (GENERIC_READ | GENERIC_WRITE, OPEN_EXISTING),
 			};
 		const uint share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 		var h = CreateFileW(how == Access.Null ? "NUL" : path, access, share, IntPtr.Zero, disposition, FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
 		if (h.IsInvalid) throw IoException(Marshal.GetLastWin32Error(), path);
+		if (how == Access.AppendAtEnd && !SetFilePointerEx(h, 0, IntPtr.Zero, FILE_END))
+			{
+			int err = Marshal.GetLastWin32Error();
+			h.Dispose();
+			throw IoException(err, path);
+			}
 		if (how == Access.Truncate && !SetEndOfFile(h))
 			{
 			int err = Marshal.GetLastWin32Error();
@@ -245,6 +271,21 @@ public static class ChildLauncher
 	private static extern SafeFileHandle CreateFileW(string lpFileName, uint dwDesiredAccess, uint dwShareMode,
 		IntPtr lpSecurityAttributes, uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
 	[DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetEndOfFile(SafeFileHandle hFile);
+	[DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetFilePointerEx(SafeFileHandle hFile, long distance, IntPtr newPointer, uint moveMethod);
+	[DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetFilePointerEx(SafeFileHandle hFile, long distance, out long newPointer, uint moveMethod);
+	[DllImport("kernel32.dll")] private static extern uint GetFileType(IntPtr hFile);
+	private const uint FILE_BEGIN = 0, FILE_CURRENT = 1, FILE_END = 2, FILE_TYPE_DISK = 1;
+
+	/// <summary>Move a handle's OS file pointer, which a child given the handle reads from. Relative
+	/// to the current pointer when <paramref name="fromCurrent"/>.</summary>
+	public static bool SeekHandle(SafeFileHandle h, long offset, bool fromCurrent = false) =>
+		SetFilePointerEx(h, offset, IntPtr.Zero, fromCurrent ? FILE_CURRENT : FILE_BEGIN);
+
+	/// <summary>A handle's OS file pointer (where a child that shared it stopped), or -1.</summary>
+	public static long HandlePosition(SafeFileHandle h) => SetFilePointerEx(h, 0, out long p, FILE_CURRENT) ? p : -1;
+
+	/// <summary>True when the handle is a disk file (seekable, its offset shared with a child).</summary>
+	public static bool IsDiskFile(IntPtr h) => h != IntPtr.Zero && GetFileType(h) == FILE_TYPE_DISK;
 	[DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int nStdHandle);
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern bool WriteFile(SafeFileHandle hFile, byte[] lpBuffer, int nNumberOfBytesToWrite, out int lpNumberOfBytesWritten, IntPtr lpOverlapped);

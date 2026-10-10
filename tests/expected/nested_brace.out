@@ -1,0 +1,9 @@
+1 [bc]
+2 [abc] [bc] [Xbc] [bc]
+3 [a] [zz] [azz]
+4 [/h]
+5 [bc] after the loop
+6 [r] [abc]
+7 [bc] [ab]
+8 still running
+9 unclosed ${: rc=2

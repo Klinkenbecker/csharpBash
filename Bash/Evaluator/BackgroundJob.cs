@@ -34,7 +34,10 @@ public sealed class BackgroundJob
 	private volatile bool _done, _parked;
 	private volatile int _childPid;
 
-	public bool Done { get => _done; set { lock (_gate) { _done = value; Monitor.PulseAll(_gate); } } }
+	public bool Done { get => _done; set { lock (_gate) { _done = value; Monitor.PulseAll(_gate); } if (value) Finished?.Set(); } }
+
+	/// <summary>The starting shell's "a job of mine finished" event, set when this one is (`wait -n`).</summary>
+	public ManualResetEvent? Finished { get; init; }
 
 	/// <summary>Real pid of the external child this job is currently running, if any
 	/// (set by ExecExternal on the job's thread) — the target of `kill $!`.</summary>

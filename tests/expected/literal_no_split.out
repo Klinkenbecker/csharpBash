@@ -1,0 +1,27 @@
+escaped space + glob:
+[a b/*zz*]
+[a b/x1][a b/x2]
+[a b/?zz]
+[a b/[q]zz]
+[a b/x1]
+[no pe*]
+[a b/][a b/*zz*]
+escaped space, no glob, and quoted forms (were right):
+[a b/x1]
+[a b/*zz*]
+[a b/x1][a b/x2]
+escaped space + brace, + a variable, in a for loop:
+[a b][a c]
+[a b/x1][a b/x2]
+[a b/x1]
+[a b/x2]
+an IFS character in literal text:
+[ab:c1]
+[ab:c*]
+a tilde whose home has a space:
+[h o]
+[h o/f1]
+[h o/f1]
+expansion results still split:
+[p][q]
+[a][b/x*]

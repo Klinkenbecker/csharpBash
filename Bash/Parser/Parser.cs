@@ -41,6 +41,11 @@ public sealed class Parser
 		SkipNewlines();
 		while (!IsEof())
 			{
+			// a word that only closes a construct (`fi`, `done`, `esac`, `then`, `do`, `else`, `elif`),
+			// with none open, is a syntax error (bash, status 2), not a command: it ran as one, status
+			// 127, until 2026-10-08, and `bash -n` passed it. Unquoted only: `'fi'` is an ordinary word.
+			if (Peek().Type == TokenType.Word && IsListTerminator())
+				throw Error($"syntax error near unexpected token '{Peek().Value}'");
 			int before = _pos;
 			var node = ParseList();
 			if (node is not null)
@@ -103,6 +108,10 @@ public sealed class Parser
 		{
 		var items = new List<(Node, ListOperator?)>();
 
+		// a closing word where a list starts is no command: `then fi` has an empty body, which the
+		// caller reports at `fi` (bash). It was parsed as a command named `fi` until 2026-10-10, and
+		// the error came at the end of the file.
+		if (Peek().Type == TokenType.Word && IsListTerminator()) return null;   // unquoted: `'fi'` is a command name
 		var first = ParsePipeline();
 		if (first is null)
 			return null;
@@ -110,12 +119,15 @@ public sealed class Parser
 		ListOperator? op = TryConsumeListOp();
 		items.Add((first, op));
 
-		while (op is not null && !IsListTerminator())
+		while (op is not null)
 			{
+			// after && or || a command must follow, newlines allowed (bash: `a &&` at the end is an
+			// unexpected end of file, it ran `a` until 2026-10-10); after ; & or a newline it may
+			bool required = op is ListOperator.And or ListOperator.Or;
 			SkipNewlines();
-			if (IsListTerminator()) break;
+			if (IsListTerminator()) { if (required) throw Error("a command must follow && or ||"); break; }
 			var next = ParsePipeline();
-			if (next is null) break;
+			if (next is null) { if (required) throw Error("a command must follow && or ||"); break; }
 			op = TryConsumeListOp();
 			items.Add((next, op));
 			}
@@ -263,8 +275,7 @@ public sealed class Parser
 			if (Peek().Type == TokenType.LParen && PeekAhead(1).Type == TokenType.RParen)
 				{ Advance(); Advance(); }
 			SkipNewlines();
-			var body = ParseCompoundCommandBody() ?? ParseCommand()
-				?? throw Error($"Expected compound command body for function '{nameToken.Value}'");
+			var body = ParseFunctionBody();
 			var redirects = ParseRedirects();
 			return new FunctionDef(nameToken.Value, body, redirects) { Line = kw.Line, Source = SliceFrom(kw) };
 			}
@@ -277,8 +288,7 @@ public sealed class Parser
 			Advance(); // (
 			Expect(TokenType.RParen);
 			SkipNewlines();
-			var body = ParseCompoundCommandBody() ?? ParseCommand()
-				?? throw Error($"Expected compound command body for function '{nameToken.Value}'");
+			var body = ParseFunctionBody();
 			var redirects = ParseRedirects();
 			return new FunctionDef(nameToken.Value, body, redirects) { Line = nameToken.Line, Source = SliceFrom(nameToken) };
 			}
@@ -309,6 +319,7 @@ public sealed class Parser
 				// arr=(a b c) / arr+=(d) — compound array assignment
 				if (name is null && args.Count == 0 && IsArrayCompoundAssign(word, out var acName, out bool acAppend))
 					{
+					var open = Peek();
 					Expect(TokenType.LParen);
 					var values = new List<Word>();
 					SkipNewlines();
@@ -318,7 +329,13 @@ public sealed class Parser
 						else break;
 						SkipNewlines();
 						}
-					Expect(TokenType.RParen);
+					// bash reports these with status 1: the end of the text as "unexpected EOF while
+					// looking for matching `)'" alone, an operator inside (`x=(a; b)`) as an unexpected token
+					if (Peek().Type == TokenType.Eof)
+						throw new ParseException("unterminated array literal", open.Line, open.Column) { Incomplete = true, Missing = ')', NoEofLine = true, Status = 1 };
+					if (Peek().Type != TokenType.RParen)
+						throw new ParseException("unexpected token in an array literal", Peek().Line, Peek().Column) { At = Peek(), Status = 1 };
+					Advance();
 					while (true) { var tr = TryParseRedirect(); if (tr is null) break; redirects.Add(tr); }
 					return new ArrayCompoundAssign(acName!, values, redirects) { Append = acAppend, Line = line };
 					}
@@ -348,10 +365,31 @@ public sealed class Parser
 					continue;
 					}
 
+				// local a=$1 / declare -x b+="$x" / readonly c[$i]=$v: an assignment-shaped argument
+				// of a declaration builtin (named literally, as bash requires: `$cmd a=$1` splits)
+				// expands like an assignment. Until 2026-10-08 it was split, so `local a=$1` with
+				// "x y" set a=x and declared a second variable y.
+				if (name is not null && name.Parts is [LiteralPart dn] && IsDeclarationBuiltin(dn.Value))
+					{
+					if (IsAssignment(word, out var dName, out var dVal))
+						{ args.Add(new Word([new AssignmentArgPart(dName!, null, dVal!)])); continue; }
+					if (IsArrayElementAssign(word, out var eName, out var eIdx, out var eVal))
+						{ args.Add(new Word([new AssignmentArgPart(eName!, eIdx, eVal!)])); continue; }
+					}
+
 				if (name is null)
 					name = word;
 				else
 					args.Add(word);
+				}
+			// `{` and `}` are reserved only where a command starts (bash): after the command name they
+			// are ordinary words, glued to adjacent text (`echo }`, `echo a } b`, `$(echo })`). Until
+			// 2026-10-10 `echo }` was a syntax error, so `${u:-$(echo })}` could not work.
+			else if (name is not null && Peek().Type is TokenType.RBrace or TokenType.LBrace)
+				{
+				var braceParts = new List<WordPart> { new LiteralPart(Advance().Value) };
+				while (IsWordToken() && !Peek().HasLeadingSpace) braceParts.AddRange(ParseWordParts());
+				args.Add(new Word(braceParts));
 				}
 			else
 				break;
@@ -402,7 +440,8 @@ public sealed class Parser
 				_ => tok.Value,
 				});
 			}
-		if (last is null) throw Error("Expected ')' to close array literal");
+		if (last is null)   // as for `x=(a b` at the end of the text (bash: status 1, one line)
+			throw new ParseException("unterminated array literal", open.Line, open.Column) { Incomplete = true, Missing = ')', NoEofLine = true, Status = 1 };
 		if (_src is not null)
 			{
 			int s = OffsetOf(open), e = OffsetOf(last);
@@ -435,8 +474,41 @@ public sealed class Parser
 		if (rhs.Length > 0)
 			rhsParts.Add(new LiteralPart(rhs));
 		rhsParts.AddRange(word.Parts.Skip(1));
-		value = new Word(rhsParts);
+		value = WithAssignmentTildes(new Word(rhsParts));
 		return true;
+		}
+
+	/// <summary>Tilde expansion in an assignment value, as bash does it: a `~` at the start of the
+	/// value or right after an unquoted `:`, followed by `/`, `:` or the end of the value, is the home
+	/// directory (`x=~/y`, `PATH=$PATH:~/bin`, `x=~`). Quoted or escaped tildes are not literal
+	/// parts, so they stay. `~user` is not supported, as elsewhere. Until 2026-10-08 no assignment
+	/// value expanded a tilde at all.</summary>
+	private static Word WithAssignmentTildes(Word value)
+		{
+		var parts = value.Parts;
+		if (!parts.Any(p => p is LiteralPart l && l.Value.Contains('~'))) return value;
+		var result = new List<WordPart>();
+		for (int pi = 0; pi < parts.Count; pi++)
+			{
+			if (parts[pi] is not LiteralPart lit || !lit.Value.Contains('~')) { result.Add(parts[pi]); continue; }
+			var s = lit.Value;
+			var sb = new System.Text.StringBuilder();
+			for (int i = 0; i < s.Length; i++)
+				{
+				bool atPrefixStart = i > 0 ? s[i - 1] == ':'
+				                   : pi == 0 || parts[pi - 1] is LiteralPart { Value: [.., ':'] };
+				bool endsValue = i + 1 == s.Length && pi == parts.Count - 1;
+				if (s[i] == '~' && atPrefixStart && (endsValue || (i + 1 < s.Length && s[i + 1] is '/' or ':')))
+					{
+					if (sb.Length > 0) { result.Add(new LiteralPart(sb.ToString())); sb.Clear(); }
+					result.Add(new TildePart(""));
+					continue;
+					}
+				sb.Append(s[i]);
+				}
+			if (sb.Length > 0) result.Add(new LiteralPart(sb.ToString()));
+			}
+		return new Word(result);
 		}
 
 	private static bool IsValidIdentifier(string s) =>
@@ -475,11 +547,24 @@ public sealed class Parser
 		if (!word.TrySplitIndexedAssignment(bracket + 1, out var idx, out var val)) return false;
 		arrayName = lhs;
 		index = idx;
-		value = val;
+		value = WithAssignmentTildes(val);
 		return true;
 		}
 
 	// ── compound command bodies ───────────────────────────────────────────────
+
+	/// <summary>A function's body: bash's grammar takes only a compound command ({ }, ( ), if, while,
+	/// until, for, select, case, [[ ]], (( ))), so `f() echo x` is a syntax error near `echo`. Any
+	/// command was accepted until 2026-10-10.</summary>
+	private Node ParseFunctionBody()
+		{
+		if (ParseCompoundCommandBody() is { } braced) return braced;
+		var t = Peek();
+		bool compound = t.Type == TokenType.ArithCommand
+		    || (t.Type == TokenType.Word && t.Value is "if" or "while" or "until" or "for" or "select" or "case" or "[[");
+		if (!compound) throw Error("a function's body must be a compound command");
+		return ParseCommand() ?? throw Error("a function's body must be a compound command");
+		}
 
 	private Node? ParseCompoundCommandBody()
 		{
@@ -493,7 +578,7 @@ public sealed class Parser
 		{
 		Expect(TokenType.LBrace);
 		SkipNewlines();
-		var body = ParseList() ?? new Script([]);
+		var body = ParseList() ?? throw EmptyBody();
 		SkipSeparators();
 		Expect(TokenType.RBrace);
 		var redirects = ParseRedirects();
@@ -504,7 +589,7 @@ public sealed class Parser
 		{
 		Expect(TokenType.LParen);
 		SkipNewlines();
-		var body = ParseList() ?? new Script([]);
+		var body = ParseList() ?? throw EmptyBody();
 		SkipSeparators();
 		Expect(TokenType.RParen);
 		var redirects = ParseRedirects();
@@ -521,7 +606,7 @@ public sealed class Parser
 		SkipSeparators();
 		ExpectWord("then");
 		SkipNewlines();
-		var then = ParseList() ?? new Script([]);
+		var then = ParseList() ?? throw EmptyBody();
 
 		var elifs = new List<(Node, Node)>();
 		Node? elseBody = null;
@@ -537,14 +622,14 @@ public sealed class Parser
 				SkipSeparators();
 				ExpectWord("then");
 				SkipNewlines();
-				var elifBody = ParseList() ?? new Script([]);
+				var elifBody = ParseList() ?? throw EmptyBody();
 				elifs.Add((elifCond, elifBody));
 				}
 			else if (PeekWord("else"))
 				{
 				Advance();
 				SkipNewlines();
-				elseBody = ParseList() ?? new Script([]);
+				elseBody = ParseList() ?? throw EmptyBody();
 				break;
 				}
 			else
@@ -567,7 +652,7 @@ public sealed class Parser
 		SkipSeparators();
 		ExpectWord("do");
 		SkipNewlines();
-		var body = ParseList() ?? new Script([]);
+		var body = ParseList() ?? throw EmptyBody();
 		SkipSeparators();
 		ExpectWord("done");
 		var redirects = ParseRedirects();
@@ -587,7 +672,7 @@ public sealed class Parser
 			SkipSeparators();
 			ExpectWord("do");
 			SkipNewlines();
-			var abody = ParseList() ?? new Script([]);
+			var abody = ParseList() ?? throw EmptyBody();
 			SkipSeparators();
 			ExpectWord("done");
 			var aredirects = ParseRedirects();
@@ -612,7 +697,7 @@ public sealed class Parser
 
 		ExpectWord("do");
 		SkipNewlines();
-		var body = ParseList() ?? new Script([]);
+		var body = ParseList() ?? throw EmptyBody();
 		SkipSeparators();
 		ExpectWord("done");
 		var redirects = ParseRedirects();
@@ -689,11 +774,44 @@ public sealed class Parser
 
 	private ConditionalExpression ParseConditionalExpression()
 		{
+		_condLine = Peek().Line;   // where bash says it was "looking for `]]'" from
 		ExpectWord("[[");
 		var expr = ParseCondExpr();
-		ExpectWord("]]");
+		SkipNewlines();   // bash reads on for the `]]` (at the end of the text: "looking for `]]'")
+		if (!PeekWord("]]")) throw CondError($"syntax error in conditional expression: unexpected token `{SyntaxMessage.Shown(Peek())}'");
+		Advance();
 		return new ConditionalExpression(expr);
 		}
+
+	/// <summary>A `[[ ]]` syntax error, reported as bash's cond_error does (measured against bash 5.1,
+	/// 2026-10-10): <paramref name="lead"/>, then "syntax error near `X'" where X is the token found
+	/// (the operator before it, when that is a newline: `[[ a ==⏎`), then the source line; at the end of
+	/// the text, "unexpected EOF while looking for `]]'". It said "Expected right operand …" before.</summary>
+	private ParseException CondError(string? lead, Token? before = null)
+		{
+		var t = Peek();
+		if (t.Type == TokenType.Eof)
+			return new ParseException("unexpected end of file in [[ ]]", _condLine, 1) { Incomplete = true, LookingFor = "]]", At = t };
+		var near = t.Type == TokenType.Newline && before is not null ? before : t;
+		return new ParseException(lead ?? "syntax error in [[ ]]", near.Line, near.Column) { Cond = true, Lead = lead, At = near };
+		}
+
+	/// <summary>An operand inside `[[ ]]`: a word, never the closing `]]` or an operator.</summary>
+	private Word? CondOperand() => CondOperandAbsent() ? null : ParseWord();
+
+	private bool CondOperandAbsent()
+		{
+		var t = Peek();
+		return t.Type is TokenType.Eof or TokenType.Newline or TokenType.AmpersandAmpersand or TokenType.PipePipe or TokenType.RParen
+		    || (t.Type == TokenType.Word && t.Value == "]]");
+		}
+
+	/// <summary>bash's unary test operators (test.c, test_unop).</summary>
+	private static bool IsUnaryCondOp(string w) => w.Length == 2 && w[0] == '-' && "abcdefghknoprstuvwxzGLNORS".Contains(w[1]);
+
+	private string Found() => SyntaxMessage.Shown(Peek());
+
+	private int _condLine;   // the line of the `[[` being parsed
 
 	private CondExpr ParseCondExpr()
 		{
@@ -738,38 +856,46 @@ public sealed class Parser
 			Advance();
 			var inner = ParseCondExpr();
 			SkipNewlines();
-			if (Peek().Type != TokenType.RParen) throw Error("Expected ')' in [[ ]]");
+			if (Peek().Type != TokenType.RParen) throw CondError($"unexpected token `{Found()}', expected `)'");
 			Advance();
 			return inner;
 			}
 
-		// unary: -f, -d, -z, -n, -v, -o etc.
-		if (Peek().Type == TokenType.Word && Peek().Value.Length == 2 && Peek().Value[0] == '-'
-		    && !(PeekAhead(1).Type == TokenType.Word && PeekAhead(1).Value == "]]"))
+		// unary: one of bash's test operators, whose operand must be a word (`[[ -f ]]` is an error;
+		// it read `-f` as a string until 2026-10-10)
+		if (Peek().Type == TokenType.Word && IsUnaryCondOp(Peek().Value))
 			{
-			var op = Advance().Value;
-			var operand = ParseWord() ?? throw Error($"Expected operand for unary operator '{op}'");
-			return new CondUnary(op, operand);
+			var opTok = Advance();
+			var operand = CondOperand() ?? throw CondError($"unexpected argument `{Found()}' to conditional unary operator", opTok);
+			return new CondUnary(opTok.Value, operand);
 			}
 
-		var left = ParseWord() ?? throw Error("Expected expression in [[ ]]");
+		var left = CondOperand() ?? throw CondError(null);   // `[[ ]]`, `[[ ! ]]`, `[[ a && ]]`
 
 		// binary: =, !=, ==, <, >, -eq, -ne, -lt, -le, -gt, -ge, -nt, -ot, -ef, =~
 		if (IsWordToken() && IsBinaryCondOp(Peek().Value))
 			{
-			var op = Advance().Value;
+			var opTok = Advance();
+			var op = opTok.Value;
 			if (op == "=~")
+				{
+				if (CondOperandAbsent()) throw CondError($"unexpected argument `{Found()}' to conditional binary operator", opTok);
 				return new CondBinary(op, left, ParseRegexOperand());
-			var right = ParseWord() ?? throw Error($"Expected right operand for '{op}'");
+				}
+			var right = CondOperand() ?? throw CondError($"unexpected argument `{Found()}' to conditional binary operator", opTok);
 			return new CondBinary(op, left, right);
 			}
 		// `<` and `>` are lexed as redirect operators: accept them as string comparison here
 		if (Peek().Type is TokenType.Less or TokenType.Greater)
 			{
-			var op = Advance().Type == TokenType.Less ? "<" : ">";
-			var right = ParseWord() ?? throw Error($"Expected right operand for '{op}'");
+			var opTok = Advance();
+			var op = opTok.Type == TokenType.Less ? "<" : ">";
+			var right = CondOperand() ?? throw CondError($"unexpected argument `{Found()}' to conditional binary operator", opTok);
 			return new CondBinary(op, left, right);
 			}
+
+		// a word where an operator belongs: `[[ a b ]]`
+		if (IsWordToken() && !PeekWord("]]")) throw CondError("conditional binary operator expected");
 
 		return new CondWord(left);
 		}
@@ -1005,7 +1131,7 @@ public sealed class Parser
 				}
 
 			case TokenType.GreaterLParen:
-				throw Error("output process substitution >( ) is not supported: write to a temp file and read it after the command (DECISIONS 2026-09-04 #6)");
+				throw new ParseException("output process substitution >( ) is not supported: write to a temp file and read it after the command (DECISIONS 2026-09-04 #6)", Peek().Line, Peek().Column) { Unsupported = true };
 
 			case TokenType.DollarDollarLParen:
 				Advance();
@@ -1028,6 +1154,10 @@ public sealed class Parser
 	/// backslashes intact). Escape rules: \$ \` \\ and \newline are escapes (plus \" in
 	/// double quotes); any other backslash is literal.
 	/// </summary>
+	/// <summary>The parts of text read as the inside of a double-quoted string (`$`, `` ` ``, `\` work;
+	/// `'` and `~` are literal): a `${x:-word}` word inside "…" (WordExpander).</summary>
+	public static List<WordPart> ParseDoubleQuotedText(string raw) => ParseDoubleQuotedInterior(raw);
+
 	private static List<WordPart> ParseDoubleQuotedInterior(string raw, bool heredoc = false)
 		{
 		var parts = new List<WordPart>();
@@ -1051,44 +1181,25 @@ public sealed class Parser
 			if (raw[i] == '$' && i + 1 < raw.Length)
 				{
 				FlushLiteral();
+				int dollar = i;
 				i++; // skip $
-				if (raw[i] == '(')
+				if (raw[i] is '(' or '{')
 					{
-					i++; // skip (
-					bool arith = i < raw.Length && raw[i] == '(';
-					if (arith) i++;
-					int depth = arith ? 2 : 1;
-					int start = i;
-					while (i < raw.Length && depth > 0)
-						{
-						if (raw[i] == '(') depth++;
-						else if (raw[i] == ')') depth--;
-						if (depth > 0) i++;
-						else i++;
-						}
-					var inner = raw[start..(i - (arith ? 2 : 1))];
-					if (arith)
-						parts.Add(new ArithmeticExpansionPart(inner));
+					// where the construct ends is Lexer.ConstructEnd's rule (quotes, escapes, nesting);
+					// an unclosed one runs to the end of the text, as before
+					int end = Lexer.Lexer.ConstructEnd(raw, dollar);
+					if (end < 0) end = raw.Length + 1;
+					if (raw[i] == '{')
+						parts.Add(new BraceExpansionPart(raw[(i + 1)..Math.Min(end - 1, raw.Length)]));
+					else if (i + 1 < raw.Length && raw[i + 1] == '(')
+						parts.Add(new ArithmeticExpansionPart(raw[(i + 2)..Math.Max(i + 2, Math.Min(end - 2, raw.Length))]));
 					else
 						{
-						var innerLex = new Lexer.Lexer(inner);
-						var innerParser = new Parser(innerLex.Tokenize(), inner);
+						var inner = raw[(i + 1)..Math.Min(end - 1, raw.Length)];
+						var innerParser = new Parser(new Lexer.Lexer(inner).Tokenize(), inner);
 						parts.Add(new CommandSubstitutionPart(innerParser.Parse()));
 						}
-					}
-				else if (raw[i] == '{')
-					{
-					i++; // skip {
-					int start = i;
-					int depth = 1;
-					while (i < raw.Length)
-						{
-						if (raw[i] == '{') depth++;
-						else if (raw[i] == '}') { depth--; if (depth == 0) break; }
-						i++;
-						}
-					parts.Add(new BraceExpansionPart(raw[start..i]));
-					if (i < raw.Length) i++; // skip }
+					i = Math.Min(end, raw.Length);
 					}
 				else if ("@*#?$!-".IndexOf(raw[i]) >= 0)
 					{
@@ -1109,11 +1220,10 @@ public sealed class Parser
 			else if (raw[i] == '`')
 				{
 				FlushLiteral();
-				i++;
-				int start = i;
-				while (i < raw.Length && raw[i] != '`') i++;
-				var inner = raw[start..i];
-				if (i < raw.Length) i++;
+				int end = Lexer.Lexer.ConstructEnd(raw, i);
+				if (end < 0) end = raw.Length + 1;
+				var inner = raw[(i + 1)..Math.Min(end - 1, raw.Length)];
+				i = Math.Min(end, raw.Length);
 				var innerLex = new Lexer.Lexer(inner);
 				var innerParser = new Parser(innerLex.Tokenize(), inner);
 				parts.Add(new CommandSubstitutionPart(innerParser.Parse()));
@@ -1213,10 +1323,34 @@ public sealed class Parser
 		return -1;
 		}
 
+	/// <summary>Parse a substitution's rebased body; a syntax error in it is moved back to the file's
+	/// own line numbers, where bash reports it. The body's end is its closing `)` or backquote, so a
+	/// body cut short there is bash's "unexpected token `)'" (`$(if true)`), not the end of file.</summary>
+	private static Node ParseBody(Parser sub, int rebase, Token? closer)
+		{
+		try { return sub.Parse(); }
+		catch (ParseException e) when (rebase > 0 || e.At is { Type: TokenType.Eof })
+			{
+			var at = e.At is { Type: TokenType.Eof } && closer is not null ? closer
+			       : e.At is { Line: > 0 } t ? t with { Line = t.Line + rebase } : e.At;
+			int line = at is { Line: > 0 } ? at.Line : e.Line > 0 ? e.Line + rebase : e.Line;
+			throw new ParseException(e.Reason, line, e.Col)
+				{
+				Incomplete = e.Incomplete && at is { Type: TokenType.Eof }, Missing = e.Missing,
+				Unsupported = e.Unsupported, At = at,
+				};
+			}
+		}
+
+	/// <summary>A token of a substitution's body, its line counted from the substitution's first line.</summary>
+	private static Token Rebased(Token t, int by) => by > 0 && t.Line > by ? t with { Line = t.Line - by } : t;
+
 	private CommandSubstitutionPart ParseCommandSubstitution()
 		{
 		// Collect tokens until the matching ). Every opener that the lexer emits as a
 		// distinct token counts: "(", "$(", and "$((" (two levels).
+		int rebase = _tokens[_pos - 1].Line - 1;   // the body counts its lines from the $( (Evaluator._lineBase)
+		Token? closer = null;
 		var inner = new List<Token>();
 		int depth = 1;
 		while (!IsEof() && depth > 0)
@@ -1224,13 +1358,14 @@ public sealed class Parser
 			var t = Peek();
 			if (t.Type is TokenType.LParen or TokenType.DollarLParen or TokenType.LessLParen or TokenType.GreaterLParen) depth++;
 			else if (t.Type == TokenType.DollarDollarLParen) depth += 2;
-			else if (t.Type == TokenType.RParen) { depth--; if (depth == 0) { Advance(); break; } }
-			inner.Add(Advance());
+			else if (t.Type == TokenType.RParen) { depth--; if (depth == 0) { closer = Advance(); break; } }
+			inner.Add(Rebased(Advance(), rebase));
 			}
-		if (depth > 0) throw Error("Unterminated command substitution");
+		// unclosed: bash reports the line of the `$(` ("looking for matching `)'"), then the end of file
+		if (depth > 0) throw new ParseException("Unterminated command substitution", rebase + 1, 1) { Incomplete = true, Missing = ')' };
 		inner.Add(Token.Eof(0, 0));
 		var subParser = new Parser(inner, _src);
-		return new CommandSubstitutionPart(subParser.Parse());
+		return new CommandSubstitutionPart(ParseBody(subParser, rebase, closer));
 		}
 
 	private ArithmeticExpansionPart ParseArithmeticExpansion()
@@ -1278,13 +1413,16 @@ public sealed class Parser
 	private CommandSubstitutionPart ParseBacktickSubstitution()
 		{
 		// Collect tokens until next backtick
+		int rebase = _tokens[_pos - 1].Line - 1;   // as for $( )
+		Token? closer = null;
 		var inner = new List<Token>();
 		while (!IsEof() && Peek().Type != TokenType.Backtick)
-			inner.Add(Advance());
-		if (Peek().Type == TokenType.Backtick) Advance();
+			inner.Add(Rebased(Advance(), rebase));
+		if (Peek().Type == TokenType.Backtick) closer = Advance();
+		else throw new ParseException("Unterminated backquote", rebase + 1, 1) { Incomplete = true, Missing = '`' };   // was accepted silently
 		inner.Add(Token.Eof(0, 0));
 		var subParser = new Parser(inner, _src);
-		return new CommandSubstitutionPart(subParser.Parse());
+		return new CommandSubstitutionPart(ParseBody(subParser, rebase, closer));
 		}
 
 	// ── helpers ───────────────────────────────────────────────────────────────
@@ -1338,9 +1476,13 @@ public sealed class Parser
 		return Advance();
 		}
 
+	/// <summary>A body with no command (`then fi`, `do done`, `{ }`, `( )`): bash's grammar needs one,
+	/// so the closing word is an unexpected token. They were accepted as empty until 2026-10-10.</summary>
+	private ParseException EmptyBody() => Error("a compound command's body needs a command");
+
 	private ParseException Error(string message)
 		{
 		var t = Peek();
-		return new ParseException(message, t.Line, t.Column) { Incomplete = t.Type == TokenType.Eof };
+		return new ParseException(message, t.Line, t.Column) { Incomplete = t.Type == TokenType.Eof, At = t };
 		}
 	}

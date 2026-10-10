@@ -1,0 +1,52 @@
+1  00 00 00 00 00
+2  00 00 00 00 00
+3 16
+4 16
+5 x
+6 x
+7 x
+8 0
+9 data
+10 to-fd2
+11 to-stderr
+12 /dev/null e=y c=y r=y w=y f=n
+12 /dev/zero e=y c=y r=y w=y f=n
+12 /dev/urandom e=y c=y r=y w=y f=n
+12 /dev/random e=y c=y r=y w=y f=n
+12 /dev/stdin e=y c=y r=y w=y f=n
+12 /dev/stdout e=y c=n r=y w=y f=n
+12 /dev/fd/0 e=y c=y r=y w=y f=n
+13 zzz
+14 0
+15 ok
+wc -c /dev/null => 0 /dev/null rc=0
+awk 'END{print NR}' /dev/null => 0 rc=0
+sed -n p /dev/null => rc=0
+sort /dev/null => rc=0
+md5sum /dev/null => d41d8cd98f00b204e9800998ecf8427e  /dev/null rc=0
+cut -c1 /dev/null => rc=0
+uniq /dev/null => rc=0
+tac /dev/null => rc=0
+nl /dev/null => rc=0
+od -c /dev/null => 0000000 rc=0
+base64 /dev/null => rc=0
+cmp /dev/null /dev/null => rc=0
+diff /dev/null /dev/null => rc=0
+tail -n1 /dev/null => rc=0
+head -n1 /dev/null => rc=0
+paste /dev/null => rc=0
+grep -c x /dev/null => 0 rc=1
+cp /dev/null e1; wc -c < e1 => 0 rc=0
+cat /dev/null > e2; wc -c < e2 => 0 rc=0
+ls /dev/null => /dev/null rc=0
+stat -c '%F %s %a %f' /dev/null => character special file 0 666 21b6 rc=0
+jq . /dev/null => rc=0
+sha256sum /dev/null => e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /dev/null rc=0
+printf '' | od -c => 0000000 rc=0
+16 3
+x1  00 00 00
+x2 to-err
+x3 to-out
+x5 piped
+x6 in
+x7 TR-STREAM

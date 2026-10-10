@@ -15,6 +15,17 @@ public static class FileTests
 			case "-n": return val.Length > 0;
 			}
 		var p = ShellEnvironment.TranslatePath(val);
+		// Linux's device files exist, are character devices and are readable and writable (they used
+		// to test as missing: `[ -e /dev/null ]` was false until 2026-10-10). A /dev/fd/N and
+		// /dev/std* is a character device when its descriptor is one: the console, or /dev/null.
+		if (ShellFile.Device(p) is { } dev)
+			return op switch
+				{
+				"-e" or "-a" or "-r" or "-w" or "-O" or "-G" => true,
+				"-c" => !dev.StartsWith("fd:") || FdIsCharDevice(ShellFile.DeviceFd(p)),
+				"-f" or "-d" or "-s" or "-x" or "-L" or "-h" or "-p" or "-S" or "-b" or "-k" or "-u" or "-g" or "-N" => false,
+				_ => null,
+				};
 		bool isFile = File.Exists(p), isDir = Directory.Exists(p);
 		switch (op)
 			{
@@ -46,6 +57,15 @@ public static class FileTests
 			}
 		return null;
 		}
+
+	/// <summary>Whether descriptor <paramref name="fd"/> is a character device: the console, or /dev/null.</summary>
+	private static bool FdIsCharDevice(int fd) => fd switch
+		{
+		0 => ReferenceEquals(ConsoleMux.RawIn, Stream.Null) || (ConsoleMux.RawIn is null && !ConsoleMux.InSwapped && !Console.IsInputRedirected),
+		1 => ReferenceEquals(ConsoleMux.Out, TextWriter.Null) || (!ConsoleMux.OutSwapped && !Console.IsOutputRedirected),
+		2 => ReferenceEquals(ConsoleMux.Err, TextWriter.Null) || (!ConsoleMux.ErrSwapped && !Console.IsErrorRedirected),
+		_ => false,
+		};
 
 	public static bool? Binary(string op, string a, string b)
 		{

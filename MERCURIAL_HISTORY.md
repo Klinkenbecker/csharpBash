@@ -12,11 +12,53 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 141 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 183 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 182 | 2026-10-10 | GitHub sync at rev 182: README (2026-10-10 table from compare3 on rev 179; feature list, 101 cases, 6.8 MB, layout), DECISIONS (the +1.2 ms startup was noise), anchor |
+| 181 | 2026-10-10 | Doc review for the push: IMPLEMENTATION file map (SyntaxMessage, ShellFile, ChildLauncher, jq files were missing; roles updated), ARCHITECTURE (error prefix, ChildLauncher handles, shared file offset); benchmark results 2026-10-10; anchor: startup +1.2 ms (awaiting), jq -R request |
+| 180 | 2026-10-10 | RESUME anchor: rev 179 deployed (revs 158-179; rollback .rev156); six sessions told; nupkg-28 and adc-framework-d8 confirmed clean |
+| 179 | 2026-10-10 | A syntax error at the end of a text with no final newline is reported at the line after the last (bash -c 'echo a &&' said line 1, bash line 2); found verifying the deploy notice; expected = GNU via WSL; suite 101/101 both modes |
+| 178 | 2026-10-10 | jobs in bash format with -l -p -r -s and job specs (all ignored; jobs -p printed whole lines); a pipeline stage lists the parent jobs (was empty); expected = GNU via WSL; suite 101/101 both modes; not deployed |
+| 177 | 2026-10-10 | wait -n waits for the next job and returns its status (127 with none), wait -n ID, wait -p VAR (were ignored: job pools ran unbounded); event-driven, no polling; expected = GNU via WSL; suite 100/100 both modes; not deployed |
+| 176 | 2026-10-10 | exec 3>&1 / 4>&2 / 3<&0 copy a standard fd (>&3 was Bad file descriptor; out=$(cmd 2>&1 >&3) failed); closing a copy leaves the other open (exec 1>&3 3>&- disposed fd 1 and a later 4>&1 crashed the shell); expected = GNU via WSL; suite 99/99 both modes; not deployed |
+| 175 | 2026-10-10 | Linux device files exist (/dev/null zero random urandom stdin stdout stderr fd/N tty) as operands, redirects and under test: cat /dev/null, head -c 5 /dev/zero, diff -u /dev/null new, cp /dev/null f, [ -e /dev/null ] failed; tr streams; od offset for empty input; expected = GNU via WSL; suite 98/98 both modes; not deployed |
+| 174 | 2026-10-10 | A UTF-8 char cut by a 4096-byte read block or split pipe writes is one char (read, pipe, mapfile, while read gave two raw bytes): ShellEncoding gets a carrying decoder; expected = GNU via WSL; suite 97/97 both modes; not deployed |
+| 173 | 2026-10-10 | A program run while the shell reads a file shares the offset: while read -r f; do prog; done < list ended after one line (rest pumped into prog, or lost to its own < /dev/null); a C#Bash child gives back its read-ahead at exit; expected = GNU via WSL; suite 96/96 both modes; not deployed |
+| 172 | 2026-10-10 | Syntax errors in bash words at bash lines (near unexpected token, unexpected end of file, looking for matching, [[ ]] forms); grammar bash rejects is rejected (then fi, { }, a && at EOF, f() echo x, [[ -f ]], unclosed backquote); heredoc EOF warning; expected = GNU via WSL; suite 95/95 both modes; not deployed |
+| 171 | 2026-10-10 | Builtins check options as bash does: invalid option + bash usage line (2), options end at the first operand; printf/cd/pwd/export/readonly/unset/alias/unalias/source/pushd/popd/dirs/trap/history/jobs/wait took -Z as operand or ignored it; kill -Z signalled; trap -- cmd SIG and source -- f failed; expected = GNU via WSL; suite 94/94 both modes; not deployed |
+| 170 | 2026-10-10 | trap: bash Linux signal specs only (BADSIG and 65 were accepted), every valid one set past a bad one, RTMIN+n/RTMAX-n; trap -p in bash spelling (SIGINT), order and operands; expected = GNU via WSL; suite 93/93 both modes; not deployed |
+| 169 | 2026-10-10 | ls: a heading for each directory whenever there is more than one operand, a failing one included (ls dir missing printed none); directory operands in sort order; expected = GNU via WSL; suite 92/92 both modes; not deployed |
+| 168 | 2026-10-10 | Errors carry bash prefix script: line N: (BASH_SOURCE[0] or $0; eval/-c input names on syntax errors) where all said bash:; eval and $( ) text continues the caller line numbers (was 1); expected = GNU via WSL; suite 91/91 both modes; not deployed |
+| 167 | 2026-10-10 | FUNCNAME / BASH_SOURCE / BASH_LINENO are one frame stack as in bash (source dropped the script; a function had no file; no BASH_LINENO; FUNCNAME was (main) at top level), written lazily; expected = GNU via WSL; probe 199 leaves the battery baseline (Git Bash 4.4 quirk); suite 90/90 both modes; not deployed |
+| 166 | 2026-10-10 | One construct matcher (Lexer.ConstructEnd, bash parse_matched_pair) replaces seven scanners of ${ } $( ) $(( )) backquotes and quotes; 13 of 42 audit cases were wrong; { and } are words after the command name (expected = GNU via WSL); suite 89/89 both modes; not deployed |
+| 165 | 2026-10-10 | Lexer: a nested ${ inside an unquoted ${…} was counted twice, so the token swallowed the rest of the script silently (git-prompt.sh); unclosed ${ is an error (expected = GNU via WSL); suite 88/88 both modes; not deployed |
+| 164 | 2026-10-10 | A Windows exit code becomes a 0-255 status as on Linux (low byte; NTSTATUS crash = 128+signal); $? was the raw code; suite 87/87 both modes; not deployed |
+| 163 | 2026-10-10 | fold is a port of GNU fold.c (\r \b tab columns, bytes, -s, no added newline); tee takes /dev/null /dev/stdout /dev/stderr (expected = GNU via WSL); suite 86/86 both modes; not deployed |
+| 162 | 2026-10-10 | date: %N width is a precision (%3N printed 9 digits), - and _ flags as GNU; -d @epoch.fraction (expected = GNU via WSL); suite 85/85 both modes; not deployed |
+| 161 | 2026-10-10 | A stray fi/done/esac/then/do/else/elif is a syntax error, status 2 (ran as a command, 127; bash -n passed it) (expected = GNU via WSL); suite 84/84 both modes; not deployed |
+| 160 | 2026-10-10 | PATH lookups print the on-disk name (cmd.exe, not cmd.EXE); hash: bash's hits table, -t -l -d -p; suite 83/83 both modes; not deployed |
+| 159 | 2026-10-10 | MSYS programs (Git usr/bin) under >> and the shell's own redirects get a write handle at the end (the append-only handle made every write fail); Windows programs keep atomic append; suite 82/82 both modes; not deployed |
+| 158 | 2026-10-10 | An unquoted \\ in a case / [[ == ]] / =~ pattern is a literal backslash (*\\* matched a*); other \\ uses unchanged (expected = GNU via WSL); suite 81/81 both modes; not deployed |
+| 157 | 2026-10-10 | RESUME anchor: rev 156 deployed (four more fixes; rollback .rev150); five running sessions notified, behaviour changes first |
+| 156 | 2026-10-10 | env: any NAME=VALUE is an assignment (STDOUT.OutputLevel=trace); -u and -i reach builtins and programs; -uNAME, --unset=, -, -0 (koliada-net-f7's report; expected = GNU via WSL); suite 80/80 both modes; not deployed |
+| 155 | 2026-10-10 | RESUME anchor: koliada-net-f7's env report verified (non-identifier NAME=VALUE run as the command; same function as env -u); strings asked for |
+| 154 | 2026-10-10 | $HOME, ~, $BASH and command -v/type/which/hash output are forward-slash paths (were backslash), per the 2026-09-11/12 path-form rule; suite 79/79 both modes; not deployed |
+| 153 | 2026-10-09 | set -u is enforced (was accepted, never applied), with bash's exit statuses; ${x:-word} expands its word only when selected (expected = GNU via WSL); suite 78/78 both modes; not deployed |
+| 152 | 2026-10-09 | A declaration with no value leaves the variable unset: local j was ""; export of an unset name gave children ""; arrays without element 0 read as set (expected = GNU via WSL); suite 77/77 both modes; not deployed |
+| 151 | 2026-10-09 | RESUME anchor: rev 150 deployed (df + four defect fixes; rollback .rev143); five running sessions notified |
+| 150 | 2026-10-09 | Assignment values expand a tilde after = and : (x=~/y, PATH=$PATH:~/bin, local/export/a[0]= values; was never expanded) (expected = GNU via WSL); suite 76/76 both modes; not deployed |
+| 149 | 2026-10-09 | RESUME anchor: hg revision line |
+| 148 | 2026-10-09 | ${x:-word}/${x:+word}: the word is expanded in the ${ }'s own context ("${v:+$v }" lost its space; ${v:+-o "$w"} split "$w"; ${1+"$@"}) (expected = GNU via WSL); suite 75/75 both modes; not deployed |
+| 147 | 2026-10-09 | A declaration builtin's name=$v argument is one field (local a=$1 split "x y"; also declare/typeset/export/readonly, name+=, name[i]=) (expected = GNU via WSL); suite 74/74 both modes; not deployed |
+| 146 | 2026-10-09 | Literal text is never field-split: a\ b/x* was two words; IFS chars in literal text; a tilde home with a space (expected = GNU via WSL); suite 73/73 both modes; not deployed |
+| 145 | 2026-10-08 | RESUME anchor: the global CLAUDE.md df line corrected |
+| 144 | 2026-10-08 | RESUME anchor: df deployed (dist = rev 143 tree, rollback .rev136); five running sessions notified |
+| 143 | 2026-10-08 | RESUME anchor: escaped-space probe done, a real defect (a word with an escaped space and a glob is split at the space); df not deployed |
+| 142 | 2026-10-08 | df: in-process, GNU 8.32's format over Windows volumes (goal-2 item 5); 76/76 identical to GNU via WSL, suite 72/72 both modes (Release and AOT); not deployed |
+| 141 | 2026-10-08 | RESUME anchor rewritten: true state, greenlit df, three items awaiting the architect, open defects re-verified on rev 136; resolved items dropped (they live in DECISIONS) |
 | 140 | 2026-10-06 | GitHub sync at rev 140: README (article link, 2026-10-06 table from the direct-launch benchmark), .gitignore, article image; anchor |
 | 139 | 2026-10-06 | Benchmark launches every shell directly (tools/benchtimer: CreateProcessW, high-resolution clock), not through Git Bash's time; first run logged |
 | 138 | 2026-10-06 | compare3.sh: Git Bash is a configured path (F:/Tools/PortableGit/usr/bin/_bash.exe), fatal if missing; no searching |

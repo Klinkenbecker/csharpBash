@@ -315,6 +315,14 @@ public sealed partial class Builtins
 					if (preserve) { File.SetLastWriteTime(target, File.GetLastWriteTime(sp)); File.SetAttributes(target, File.GetAttributes(sp)); }
 					else StampNow(target);
 					}
+				else if (ShellFile.Device(sp) is not null)
+					{
+					// a device's contents into a file: `cp /dev/null f` empties f (it was "cannot stat")
+					if (Directory.Exists(target)) target = Path.Combine(target, Path.GetFileName(sp));
+					using var src = ShellFile.OpenInput(sp);
+					using var into = ShellFile.Create(target);
+					src.CopyTo(into);
+					}
 				else { Console.Error.WriteLine($"cp: cannot stat '{s}': No such file or directory"); rc = 1; continue; }
 				if (verbose) Console.WriteLine($"'{s}' -> '{target}'");
 				}
@@ -366,6 +374,7 @@ public sealed partial class Builtins
 
 		var files = new List<(string display, FileSystemInfo info)>();
 		var dirs = new List<(string display, DirectoryInfo info)>();
+		var devices = new List<string>();
 		int rc = 0;
 		foreach (var op in operands)
 			{
@@ -373,8 +382,13 @@ public sealed partial class Builtins
 			if (Directory.Exists(fs) && !dirSelf) dirs.Add((op, new DirectoryInfo(fs)));
 			else if (Directory.Exists(fs)) files.Add((op, new DirectoryInfo(fs)));
 			else if (File.Exists(fs)) files.Add((op, new FileInfo(fs)));
+			else if (ShellFile.Device(fs) is not null) devices.Add(op);   // `ls /dev/null` (was "cannot access")
 			else { Console.Error.WriteLine($"ls: cannot access '{op}': No such file or directory"); rc = 2; }
 			}
+		// a device: its name, or a character-special line (Linux's numbers are not ours to know: 1, 3)
+		foreach (var dv in devices)
+			Console.WriteLine(longFmt ? $"crw-rw-rw- 1 root root 1, 3 {DateTime.Now.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture)} {DateTime.Now.Day,2} {DateTime.Now:HH:mm} {dv}" : dv);
+		if (devices.Count > 0 && files.Count == 0 && dirs.Count == 0 && operands.Count == devices.Count) return rc;
 
 		int Compare((string display, FileSystemInfo info) a, (string display, FileSystemInfo info) b)
 			{
@@ -428,7 +442,12 @@ public sealed partial class Builtins
 			}
 
 		if (files.Count > 0) PrintEntries(files, false);
-		bool header = dirs.Count > 1 || files.Count > 0 || recursive;
+		// GNU ls: each directory gets a heading whenever there is more than one operand, one that
+		// failed included (`ls dir missing` prints `dir:`), or under -R; and the directories come in
+		// the listing's sort order, not the command line's. Until 2026-10-10 a failed operand did not
+		// count and `ls b a` listed b first.
+		bool header = operands.Count > 1 || recursive;
+		if (!noSort) dirs.Sort((a, b) => Compare((a.display, a.info), (b.display, b.info)));
 		bool first = files.Count == 0;
 		void ListDir(string display, DirectoryInfo di)
 			{
@@ -584,25 +603,28 @@ public sealed partial class Builtins
 		foreach (var f in o.Operands)
 			{
 			var p = P(f);
-			FileSystemInfo? info = File.Exists(p) ? new FileInfo(p) : Directory.Exists(p) ? new DirectoryInfo(p) : null;
-			if (info is null) { Console.Error.WriteLine($"stat: cannot statx '{f}': No such file or directory"); rc = 1; continue; }
-			if (o.Has('L') && info.LinkTarget is not null)
+			// a device (`stat /dev/null`) is a character special file, mode 0666, size 0 (it was "cannot statx")
+			bool device = ShellFile.Device(p) is not null;
+			FileSystemInfo? info = device ? null : File.Exists(p) ? new FileInfo(p) : Directory.Exists(p) ? new DirectoryInfo(p) : null;
+			if (info is null && !device) { Console.Error.WriteLine($"stat: cannot statx '{f}': No such file or directory"); rc = 1; continue; }
+			if (o.Has('L') && info?.LinkTarget is not null)
 				{
-				var tp = Path.IsPathRooted(info.LinkTarget) ? info.LinkTarget : Path.Combine(Path.GetDirectoryName(p)!, info.LinkTarget);
+				var tp = Path.IsPathRooted(info!.LinkTarget) ? info.LinkTarget : Path.Combine(Path.GetDirectoryName(p)!, info.LinkTarget);
 				info = Directory.Exists(tp) ? new DirectoryInfo(tp) : new FileInfo(tp);
 				}
 			long size = info is FileInfo fi ? fi.Length : 0;
 			bool dir = info is DirectoryInfo;
-			string mode = ModeString(info);
+			string mode = device ? "crw-rw-rw-" : ModeString(info!);
 			string octal = ((dir ? 0 : 0) + (mode[1] == 'r' ? 4 : 0) + (mode[2] == 'w' ? 2 : 0) + (mode[3] == 'x' ? 1 : 0)).ToString();
 			octal = octal + octal + octal;
-			string type = info.LinkTarget is not null ? "symbolic link" : dir ? "directory" : size == 0 ? "regular empty file" : "regular file";
-			var mt = info.LastWriteTime; var at = info.LastAccessTime; var ct = info.CreationTime;
+			string type = device ? "character special file" : info!.LinkTarget is not null ? "symbolic link" : dir ? "directory" : size == 0 ? "regular empty file" : "regular file";
+			var boot = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);   // a device's times: boot, as on Linux
+			var mt = info?.LastWriteTime ?? boot; var at = info?.LastAccessTime ?? boot; var ct = info?.CreationTime ?? boot;
 			string Iso(DateTime d) => d.ToString("yyyy-MM-dd HH:mm:ss.fffffff00 ", System.Globalization.CultureInfo.InvariantCulture) + d.ToString("zzz").Replace(":", "");
 			if (o.Has('t')) fmt ??= "%n %s %b %f %u %g %D %i %h %t %T %X %Y %Z %W %o %C";
 			if (fmt is null)
 				{
-				Console.WriteLine($"  File: {f}{(info.LinkTarget is not null ? " -> " + info.LinkTarget : "")}");
+				Console.WriteLine($"  File: {f}{(info?.LinkTarget is not null ? " -> " + info.LinkTarget : "")}");
 				Console.WriteLine($"  Size: {size,-15} Blocks: {(size + 511) / 512,-10} IO Block: 4096   {type}");
 				Console.WriteLine($"Device: 0h/0d\tInode: 0           Links: 1");
 				Console.WriteLine($"Access: (0{octal}/{mode})  Uid: (    0/{Environment.UserName})   Gid: (    0/None)");
@@ -621,9 +643,9 @@ public sealed partial class Builtins
 				char k = fmt[++i];
 				sb.Append(k switch
 					{
-					'n' => f, 'N' => $"'{f}'" + (info.LinkTarget is not null ? $" -> '{info.LinkTarget}'" : ""),
+					'n' => f, 'N' => $"'{f}'" + (info?.LinkTarget is not null ? $" -> '{info.LinkTarget}'" : ""),
 					's' => size.ToString(), 'b' => ((size + 511) / 512).ToString(), 'B' => "512",
-					'f' => (dir ? 0x4000 : 0x8000 | Convert.ToInt32(octal, 8)).ToString("x"),
+					'f' => (dir ? 0x4000 : (device ? 0x2000 : 0x8000) | Convert.ToInt32(octal, 8)).ToString("x"),
 					'F' => type, 'a' => octal, 'A' => mode, 'h' => "1", 'i' => "0", 'd' => "0", 'D' => "0",
 					'u' => "0", 'U' => Environment.UserName, 'g' => "0", 'G' => "None",
 					'x' => Iso(at), 'X' => ((DateTimeOffset)at).ToUnixTimeSeconds().ToString(),

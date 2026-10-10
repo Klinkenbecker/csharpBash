@@ -65,9 +65,17 @@ public sealed partial class Builtins
 		int i = 0;
 		if (args.Count > 0 && args[0] == "-v" && args.Count > 1) { target = args[1]; i = 2; }
 		else if (args.Count > 0 && args[0].StartsWith("-v") && args[0].Length > 2) { target = args[0][2..]; i = 1; }
+		else if (args.Count == 1 && args[0] == "-v") return BadOption("-v", "option requires an argument");
 		if (i < args.Count && args[i] == "--") i++;
-		if (i >= args.Count) { Console.Error.WriteLine("bash: printf: usage: printf [-v var] format [arguments]"); return 2; }
-		int rc = PrintfFormatter.Format(args[i], args.Skip(i + 1).ToList(), Console.Error, out var text);
+		// a format that starts with `-` is an option, as in bash (`printf '-%s'` is `-%`: invalid option)
+		else if (i < args.Count && args[i].Length > 1 && args[i][0] == '-') return BadOption($"-{args[i][1]}");
+		if (i >= args.Count) { PrintUsage("printf"); return 2; }
+		// the formatter's messages (`printf: zz: invalid number`) get the builtin's prefix; seq -f
+		// shares the formatter and, standing in for a program, has none
+		var errors = new StringWriter();
+		int rc = PrintfFormatter.Format(args[i], args.Skip(i + 1).ToList(), errors, out var text);
+		foreach (var line in errors.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
+			Console.Error.WriteLine(Err + line.TrimEnd('\r'));
 		if (target is not null) AssignVar(target, text);
 		else Console.Write(text);
 		return rc;
@@ -94,13 +102,13 @@ public sealed partial class Builtins
 
 	private int Cd(List<string> args)
 		{
-		string? target = null;
-		foreach (var a in args)
-			{
-			if (a is "-P" or "-L" or "--" or "-e" or "-@") continue;
-			if (a.StartsWith('-') && a.Length > 1) continue;
-			target ??= a;
-			}
+		// options only before the first operand, and only bash's (-L -P -e -@; -P's physical walk is
+		// moot without symlinked cwds); a second operand is an error. Until 2026-10-10 any `-X`
+		// anywhere was skipped and extra operands ignored.
+		int first = FlagOptions(args, "LPe@", []);
+		if (first < 0) return 2;
+		if (args.Count - first > 1) { Console.Error.WriteLine(Err + "cd: too many arguments"); return 1; }
+		string? target = first < args.Count ? args[first] : null;
 		bool printDir = false;
 		string dest;
 		if (target is null || target == "~")
@@ -111,7 +119,7 @@ public sealed partial class Builtins
 		else if (target == "-")
 			{
 			dest = _env.Get("OLDPWD");
-			if (dest.Length == 0) { Console.Error.WriteLine("bash: cd: OLDPWD not set"); return 1; }
+			if (dest.Length == 0) { Console.Error.WriteLine(Err + "cd: OLDPWD not set"); return 1; }
 			printDir = true;
 			}
 		else if (target.Length == 0) return 0;
@@ -120,13 +128,13 @@ public sealed partial class Builtins
 		if (!Directory.Exists(dest))
 			{
 			Console.Error.WriteLine(File.Exists(dest)
-				? $"bash: cd: {target}: Not a directory"
-				: $"bash: cd: {target}: No such file or directory");
+				? $"{Err}cd: {target}: Not a directory"
+				: $"{Err}cd: {target}: No such file or directory");
 			return 1;
 			}
 		var old = _env.Cwd;
 		try { _env.ChangeCwd(dest); }   // this shell's own cwd; the process cwd only if this shell owns it
-		catch (Exception ex) { Console.Error.WriteLine($"bash: cd: {target}: {ex.Message}"); return 1; }
+		catch (Exception ex) { Console.Error.WriteLine($"{Err}cd: {target}: {ex.Message}"); return 1; }
 		_env.Set("OLDPWD", old); _env.Export("OLDPWD");
 		_env.Set("PWD", _env.Cwd); _env.Export("PWD");
 		if (printDir) Console.WriteLine(_env.Cwd);
@@ -135,8 +143,9 @@ public sealed partial class Builtins
 
 	/// <summary>Prints the forward-slash Windows form: a valid Windows path containing no shell
 	/// escape characters (ratified 2026-09-11, refining DECISIONS 2026-09-04 decision 3).</summary>
-	private static int Pwd(List<string> args)
+	private int Pwd(List<string> args)
 		{
+		if (FlagOptions(args, "LP", []) < 0) return 2;   // operands are ignored, as in bash
 		Console.WriteLine(ShellEnvironment.ShellCwd());
 		return 0;
 		}
@@ -156,19 +165,15 @@ public sealed partial class Builtins
 
 	private int Export(List<string> args)
 		{
-		bool print = false, unexport = false, funcs = false;
-		var names = new List<string>();
-		foreach (var a in args)
-			{
-			if      (a == "-p") print = true;
-			else if (a == "-n") unexport = true;
-			else if (a == "-f") funcs = true;
-			else if (a == "--") continue;
-			else names.Add(a);
-			}
+		// options only before the first name, as in bash (`export X=1 -n`: `-n` is a bad identifier)
+		var flags = new HashSet<char>();
+		int first = FlagOptions(args, "fnp", flags);
+		if (first < 0) return 2;
+		bool print = flags.Contains('p'), unexport = flags.Contains('n'), funcs = flags.Contains('f');
+		var names = args.Skip(first).ToList();
 		if (names.Count == 0 || print)
 			{
-			foreach (var n in _env.VariableNames().Where(_env.IsExported).OrderBy(x => x, StringComparer.Ordinal))
+			foreach (var n in _env.ExportedNames.OrderBy(x => x, StringComparer.Ordinal))
 				Console.WriteLine(_env.IsSet(n) ? $"declare -x {n}=\"{EscapeDq(_env.Get(n))}\"" : $"declare -x {n}");
 			return 0;
 			}
@@ -180,7 +185,7 @@ public sealed partial class Builtins
 			var name = eq < 0 ? spec : spec[..eq];
 			bool append = name.EndsWith('+');
 			if (append) name = name[..^1];
-			if (!IsIdentifier(name)) { Console.Error.WriteLine($"bash: export: `{spec}': not a valid identifier"); rc = 1; continue; }
+			if (!IsIdentifier(name)) { Console.Error.WriteLine($"{Err}export: `{spec}': not a valid identifier"); rc = 1; continue; }
 			if (eq >= 0)
 				{
 				var val = spec[(eq + 1)..];
@@ -193,14 +198,14 @@ public sealed partial class Builtins
 
 	private int Unset(List<string> args)
 		{
-		bool func = false, onlyVar = false;
+		var flags = new HashSet<char>();
+		int first = FlagOptions(args, "fvn", flags);
+		if (first < 0) return 2;
+		bool func = flags.Contains('f'), onlyVar = flags.Contains('v');
 		int rc = 0;
-		foreach (var a in args)
+		foreach (var a in args.Skip(first))
 			{
-			if (a == "-f") { func = true; continue; }
-			if (a == "-v") { onlyVar = true; continue; }
-			if (a is "--" or "-n") continue;
-			if (func || (!onlyVar && !_env.IsSet(a) && _eval.HasFunction(a)))
+			if (func || (!onlyVar && !_env.IsDeclared(a) && _eval.HasFunction(a)))
 				{
 				_eval.RemoveFunction(a);
 				continue;
@@ -211,30 +216,24 @@ public sealed partial class Builtins
 				{
 				var name = a[..lb];
 				var key  = a[(lb + 1)..rb];
-				if (_env.IsReadonly(name)) { Console.Error.WriteLine($"bash: unset: {name}: cannot unset: readonly variable"); rc = 1; continue; }
+				if (_env.IsReadonly(name)) { Console.Error.WriteLine($"{Err}unset: {name}: cannot unset: readonly variable"); rc = 1; continue; }
 				if (_env.IsAssoc(name)) _env.UnsetAssocElement(name, key);
 				else if (key is "@" or "*") _env.Unset(name);
 				else _env.UnsetArrayElement(name, (int)_eval.Expander.EvalArithmetic(key));
 				continue;
 				}
-			if (!_env.Unset(a)) { Console.Error.WriteLine($"bash: unset: {a}: cannot unset: readonly variable"); rc = 1; }
+			if (!_env.Unset(a)) { Console.Error.WriteLine($"{Err}unset: {a}: cannot unset: readonly variable"); rc = 1; }
 			}
 		return rc;
 		}
 
 	private int Readonly(List<string> args)
 		{
-		bool print = false, funcs = false, array = false, assoc = false;
-		var names = new List<string>();
-		foreach (var a in args)
-			{
-			if      (a == "-p") print = true;
-			else if (a == "-f") funcs = true;
-			else if (a == "-a") array = true;
-			else if (a == "-A") assoc = true;
-			else if (a == "--") continue;
-			else names.Add(a);
-			}
+		var flags = new HashSet<char>();
+		int first = FlagOptions(args, "aAfp", flags);
+		if (first < 0) return 2;
+		bool print = flags.Contains('p'), funcs = flags.Contains('f'), array = flags.Contains('a'), assoc = flags.Contains('A');
+		var names = args.Skip(first).ToList();
 		if (names.Count == 0 || print)
 			{
 			foreach (var n in _env.ReadonlyNames.OrderBy(x => x, StringComparer.Ordinal))
@@ -246,7 +245,7 @@ public sealed partial class Builtins
 			if (funcs) continue;
 			int eq = spec.IndexOf('=');
 			var name = eq < 0 ? spec : spec[..eq];
-			if (!IsIdentifier(name)) { Console.Error.WriteLine($"bash: readonly: `{spec}': not a valid identifier"); return 1; }
+			if (!IsIdentifier(name)) { Console.Error.WriteLine($"{Err}readonly: `{spec}': not a valid identifier"); return 1; }
 			if (eq >= 0)
 				{
 				var val = spec[(eq + 1)..];
@@ -306,7 +305,7 @@ public sealed partial class Builtins
 						}
 					var optName = args[++i];
 					if (!_eval.Options.ApplyLong(optName, enable))
-						{ Console.Error.WriteLine($"bash: set: {optName}: invalid option name"); return 2; }
+						{ Console.Error.WriteLine($"{Err}set: {optName}: invalid option name"); return 2; }
 					i++;
 					_env.AutoExport = _eval.Options.AllExport;
 					continue;
@@ -328,11 +327,11 @@ public sealed partial class Builtins
 							break;
 							}
 						if (!_eval.Options.ApplyLong(optName, enable))
-							{ Console.Error.WriteLine($"bash: set: {optName}: invalid option name"); return 2; }
+							{ Console.Error.WriteLine($"{Err}set: {optName}: invalid option name"); return 2; }
 						break;
 						}
 					if (!_eval.Options.Apply(f, enable))
-						{ Console.Error.WriteLine($"bash: set: -{f}: invalid option"); return 2; }
+						{ return BadOption($"-{f}"); }
 					}
 				_env.AutoExport = _eval.Options.AllExport;
 				i += consumedNext ? 2 : 1;
@@ -361,7 +360,7 @@ public sealed partial class Builtins
 						case 'p': print = true; break;
 						case 'q': quiet = true; break;
 						case 'o': setO = true; break;
-						default: Console.Error.WriteLine($"bash: shopt: -{c}: invalid option"); return 2;
+						default: return BadOption($"-{c}");
 						}
 					}
 				}
@@ -381,7 +380,7 @@ public sealed partial class Builtins
 			int rc0 = 0;
 			foreach (var n in names)
 				{
-				if (set || unset) { if (!_eval.Options.ApplyLong(n, set)) { Console.Error.WriteLine($"bash: shopt: {n}: invalid option name"); rc0 = 1; } continue; }
+				if (set || unset) { if (!_eval.Options.ApplyLong(n, set)) { Console.Error.WriteLine($"{Err}shopt: {n}: invalid option name"); rc0 = 1; } continue; }
 				bool on = _eval.Options.LongOptions().Any(o => o.Name == n && o.On);
 				if (!quiet) Console.WriteLine(print ? $"set {(on ? "-o" : "+o")} {n}" : $"{n,-15}\t{(on ? "on" : "off")}");
 				if (!on) rc0 = 1;
@@ -406,10 +405,10 @@ public sealed partial class Builtins
 			if (set || unset)
 				{
 				var err = _eval.Options.SetShopt(n, set);
-				if (err is not null) { Console.Error.WriteLine($"bash: shopt: {err}"); rc = 1; }
+				if (err is not null) { Console.Error.WriteLine($"{Err}shopt: {err}"); rc = 1; }
 				continue;
 				}
-			if (!_eval.Options.IsKnownShopt(n)) { Console.Error.WriteLine($"bash: shopt: {n}: invalid shell option name"); rc = 1; continue; }
+			if (!_eval.Options.IsKnownShopt(n)) { Console.Error.WriteLine($"{Err}shopt: {n}: invalid shell option name"); rc = 1; continue; }
 			bool on = _eval.Options.Shopt(n);
 			if (!quiet) Console.WriteLine(print ? $"shopt {(on ? "-s" : "-u")} {n}" : $"{n,-15}\t{(on ? "on" : "off")}");
 			if (!on) rc = 1;
@@ -422,12 +421,16 @@ public sealed partial class Builtins
 	private int Alias(List<string> args)
 		{
 		var aliases = _eval.Aliases;
-		var items = args.Where(a => a != "-p" && a != "--").ToList();
-		if (items.Count == 0)
+		var flags = new HashSet<char>();
+		int first = FlagOptions(args, "p", flags);
+		if (first < 0) return 2;
+		var items = args.Skip(first).ToList();
+		// bash: -p, or no names, prints them all; with -p the names are still processed
+		if (items.Count == 0 || flags.Contains('p'))
 			{
 			foreach (var kv in aliases.OrderBy(k => k.Key, StringComparer.Ordinal))
 				Console.WriteLine($"alias {kv.Key}='{kv.Value.Replace("'", "'\\''")}'");
-			return 0;
+			if (items.Count == 0) return 0;
 			}
 		int rc = 0;
 		foreach (var a in items)
@@ -435,7 +438,7 @@ public sealed partial class Builtins
 			int eq = a.IndexOf('=');
 			if (eq > 0) { _eval.SaveAliasesForSubshell(); aliases[a[..eq]] = a[(eq + 1)..]; continue; }
 			if (aliases.TryGetValue(a, out var v)) Console.WriteLine($"alias {a}='{v.Replace("'", "'\\''")}'");
-			else { Console.Error.WriteLine($"bash: alias: {a}: not found"); rc = 1; }
+			else { Console.Error.WriteLine($"{Err}alias: {a}: not found"); rc = 1; }
 			}
 		return rc;
 		}
@@ -443,14 +446,15 @@ public sealed partial class Builtins
 	private int Unalias(List<string> args)
 		{
 		var aliases = _eval.Aliases;
+		var flags = new HashSet<char>();
+		int first = FlagOptions(args, "a", flags);
+		if (first < 0) return 2;
 		_eval.SaveAliasesForSubshell();
+		if (flags.Contains('a')) { aliases.Clear(); return 0; }   // bash: -a removes all, names or not
+		if (first >= args.Count) { PrintUsage("unalias"); return 2; }
 		int rc = 0;
-		foreach (var a in args)
-			{
-			if (a == "-a") { aliases.Clear(); continue; }
-			if (a == "--") continue;
-			if (!aliases.Remove(a)) { Console.Error.WriteLine($"bash: unalias: {a}: not found"); rc = 1; }
-			}
+		foreach (var a in args.Skip(first))
+			if (!aliases.Remove(a)) { Console.Error.WriteLine($"{Err}unalias: {a}: not found"); rc = 1; }
 		return rc;
 		}
 
@@ -460,11 +464,11 @@ public sealed partial class Builtins
 		{
 		int n = 1;
 		if (args.Count > 0 && !int.TryParse(args[0], out n))
-			{ Console.Error.WriteLine($"bash: shift: {args[0]}: numeric argument required"); return 1; }
+			{ Console.Error.WriteLine($"{Err}shift: {args[0]}: numeric argument required"); return 1; }
 		var pos = _env.GetPositionals();
 		if (n < 0 || n > pos.Count)
 			{
-			if (_eval.Options.Shopt("shift_verbose")) Console.Error.WriteLine("bash: shift: shift count out of range");
+			if (_eval.Options.Shopt("shift_verbose")) Console.Error.WriteLine(Err + "shift: shift count out of range");
 			return 1;
 			}
 		_env.SetPositionals(pos.Skip(n));
@@ -550,7 +554,7 @@ public sealed partial class Builtins
 					case 'p': prompt = OptArg(); break;
 					case 't': OptArg(); break;     // timeouts: accepted, not enforced on redirected input
 					case 'u': { var v = OptArg(); int.TryParse(v, out fd); break; }
-					default: Console.Error.WriteLine($"bash: read: -{o}: invalid option"); return 2;
+					default: return BadOption($"-{o}");
 					}
 				}
 			}
@@ -562,7 +566,7 @@ public sealed partial class Builtins
 		if (fd > 2)
 			{
 			var s = _eval.GetFd(fd);
-			if (s is null) { Console.Error.WriteLine($"bash: read: {fd}: invalid file descriptor: Bad file descriptor"); return 1; }
+			if (s is null) { Console.Error.WriteLine($"{Err}read: {fd}: invalid file descriptor: Bad file descriptor"); return 1; }
 			input = _fdReaders.TryGetValue(s, out var rd) ? rd : (_fdReaders[s] = new StreamReader(s, ShellEncoding.Utf8, false, 1024, leaveOpen: true));
 			}
 
@@ -634,7 +638,7 @@ public sealed partial class Builtins
 				case "-u": case "-C": case "-c": Next(); break;
 				case "--": break;
 				default:
-					if (a.StartsWith('-') && a.Length > 1) { Console.Error.WriteLine($"bash: mapfile: {a}: invalid option"); return 2; }
+					if (a.StartsWith('-') && a.Length > 1) return BadOption($"-{a[1]}");
 					name = a; break;
 				}
 			}
@@ -668,7 +672,8 @@ public sealed partial class Builtins
 
 	private int Getopts(List<string> args)
 		{
-		if (args.Count < 2) { Console.Error.WriteLine("bash: getopts: usage: getopts optstring name [arg ...]"); return 2; }
+		if (args.Count > 0 && args[0].Length > 1 && args[0][0] == '-' && args[0] != "--") return BadOption($"-{args[0][1]}");
+		if (args.Count < 2) { PrintUsage("getopts"); return 2; }
 		var optstring = args[0];
 		var varName = args[1];
 		var argv = args.Count > 2 ? args.Skip(2).ToList() : _env.GetPositionals();
@@ -731,7 +736,12 @@ public sealed partial class Builtins
 
 	private int Source(List<string> args)
 		{
-		if (args.Count == 0) { Console.Error.WriteLine("bash: source: filename argument required"); return 2; }
+		// `--` ends the options; source has none (bash: `source -Z` is an invalid option, `source --`
+		// still needs a file; `--` used to be read as the file name)
+		int first = args.Count > 0 && args[0] == "--" ? 1 : 0;
+		if (first == 0 && args.Count > 0 && args[0].Length > 1 && args[0][0] == '-') return BadOption($"-{args[0][1]}");
+		if (first >= args.Count) { Console.Error.WriteLine($"{Err}{_called}: filename argument required"); PrintUsage(_called); return 2; }
+		args = args.Skip(first).ToList();
 		var file = args[0];
 		var path = ShellEnvironment.TranslatePath(file);
 		if (!File.Exists(path) && !file.Contains('/') && !file.Contains('\\') && _eval.Options.Shopt("sourcepath"))
@@ -740,25 +750,28 @@ public sealed partial class Builtins
 			foreach (var d in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
 				{
 				var cand = Path.Combine(ShellEnvironment.TranslatePath(d), file);
-				if (File.Exists(cand)) { path = cand; break; }
+				if (File.Exists(cand)) { path = cand; file = cand; break; }
 				}
 			}
-		if (!File.Exists(path)) { Console.Error.WriteLine($"bash: {file}: No such file or directory"); return 1; }
-		return _eval.SourceFile(path, silentIfMissing: false, positionals: args.Count > 1 ? args.Skip(1) : null);
+		if (!File.Exists(path)) { Console.Error.WriteLine($"{Err}{file}: No such file or directory"); return 1; }
+		// named as given (BASH_SOURCE, the error prefix), as bash does; SourceFile translates it
+		return _eval.SourceFile(file, silentIfMissing: false, positionals: args.Count > 1 ? args.Skip(1) : null);
 		}
 
 	private int DoEval(List<string> args)
 		{
 		var src = string.Join(" ", args);
 		if (src.Trim().Length == 0) return 0;
-		return _eval.RunString(src, origin: "eval", syntaxErrorCode: 1);
+		// its lines continue the eval command's (bash: $LINENO and the error prefix; they
+		// restarted at 1 until 2026-10-10)
+		return _eval.RunEval(src);
 		}
 
 	// ── declare / local / typeset ─────────────────────────────────────────────
 
 	private int Local(List<string> args)
 		{
-		if (_env.ScopeDepth <= 1) { Console.Error.WriteLine("bash: local: can only be used in a function"); return 1; }
+		if (_env.ScopeDepth <= 1) { Console.Error.WriteLine(Err + "local: can only be used in a function"); return 1; }
 		return Declare(args, local: true);
 		}
 
@@ -852,14 +865,14 @@ public sealed partial class Builtins
 						case 'p': print = true; break;
 						case 'n': nameref = true; break;
 						case 'l': case 'u': case 't': case 'I': case 'c': break;   // accepted, no effect
-						default: Console.Error.WriteLine($"bash: declare: -{c}: invalid option"); return 2;
+						default: return BadOption($"-{c}");
 						}
 					}
 				continue;
 				}
 			specs.Add(arg);
 			}
-		if (nameref) { Console.Error.WriteLine("bash: declare: -n (nameref) is not supported by this interpreter"); return 2; }
+		if (nameref) { Console.Error.WriteLine(Err + "declare: -n (nameref) is not supported by this interpreter"); return 2; }
 
 		// ── function listing ──
 		if (funcs || funcNames)
@@ -883,8 +896,9 @@ public sealed partial class Builtins
 			var names = specs.Count > 0 ? specs : _env.VariableNames().OrderBy(n => n, StringComparer.Ordinal).ToList();
 			foreach (var n in names)
 				{
-				if (!_env.IsSet(n) && !_env.IsArray(n) && !_env.IsAssoc(n))
-					{ if (specs.Count > 0) { Console.Error.WriteLine($"bash: declare: {n}: not found"); prc = 1; } continue; }
+				bool known = specs.Count > 0 ? _env.IsDeclared(n) : _env.IsSet(n) || _env.IsArray(n) || _env.IsAssoc(n);
+				if (!known)
+					{ if (specs.Count > 0) { Console.Error.WriteLine($"{Err}declare: {n}: not found"); prc = 1; } continue; }
 				if (specs.Count == 0 && (array || assoc || integer || export || ro))
 					{
 					if (array && !_env.IsArray(n)) continue;
@@ -910,7 +924,7 @@ public sealed partial class Builtins
 			int lb = name.IndexOf('[');
 			string? sub = null;
 			if (lb > 0 && name.EndsWith(']')) { sub = name[(lb + 1)..^1]; name = name[..lb]; }
-			if (!IsIdentifier(name)) { Console.Error.WriteLine($"bash: declare: `{spec}': not a valid identifier"); rc = 1; continue; }
+			if (!IsIdentifier(name)) { Console.Error.WriteLine($"{Err}declare: `{spec}': not a valid identifier"); rc = 1; continue; }
 
 			if (assoc) _env.DeclareAssoc(name);
 			else if (array) _env.DeclareArray(name);
@@ -928,8 +942,9 @@ public sealed partial class Builtins
 				}
 			else if (local && !global && !_env.IsArray(name) && !_env.IsAssoc(name))
 				{
-				// `local x` declares x in this scope (empty) without touching the outer value
-				_env.SetLocal(name, "");
+				// `local x` declares x in this scope, UNSET, hiding the outer value (bash); it stored
+				// "" until 2026-10-08, so ${x-dflt} and [[ -v x ]] saw it as set
+				_env.DeclareLocal(name);
 				}
 
 			if (export) _env.Export(name);
@@ -959,7 +974,7 @@ public sealed partial class Builtins
 						case 'p': pathIfFile = true; break;
 						case 'a': all = true; break;
 						case 'f': noFuncs = true; break;
-						default: Console.Error.WriteLine($"bash: type: -{c}: invalid option"); return 2;
+						default: return BadOption($"-{c}");
 						}
 					}
 				continue;
@@ -971,17 +986,19 @@ public sealed partial class Builtins
 			{
 			if (pathOnly)
 				{
-				var p = n.Contains('/') || n.Contains('\\') ? (File.Exists(ShellEnvironment.TranslatePath(n)) ? n : null) : _eval.ResolveOnPath(n);
+				// a path found on PATH prints in the shell's forward-slash form; a path given prints as given
+				var p = n.Contains('/') || n.Contains('\\') ? (File.Exists(ShellEnvironment.TranslatePath(n)) ? n : null) : Shown(_eval.ResolveOnPath(n));
 				if (p is null) rc = 1; else Console.WriteLine(p);
 				continue;
 				}
 			var c = _eval.Classify(n, skipFunctions: noFuncs);
 			if (c is null)
 				{
-				if (!typeOnly && !pathIfFile) Console.Error.WriteLine($"bash: type: {n}: not found");
+				if (!typeOnly && !pathIfFile) Console.Error.WriteLine($"{Err}type: {n}: not found");
 				rc = 1; continue;
 				}
 			var (kind, path) = c.Value;
+			path = Shown(path);
 			if (pathIfFile) { if (kind == "file") Console.WriteLine(path); continue; }
 			if (typeOnly) { Console.WriteLine(kind); continue; }
 			switch (kind)
@@ -994,7 +1011,7 @@ public sealed partial class Builtins
 				}
 			if (all && kind != "file")
 				{
-				var p = _eval.ResolveOnPath(n);
+				var p = Shown(_eval.ResolveOnPath(n));
 				if (p is not null) Console.WriteLine($"{n} is {p}");
 				}
 			}
@@ -1016,7 +1033,7 @@ public sealed partial class Builtins
 					if (c == 'v') verbose = true;
 					else if (c == 'V') veryVerbose = true;
 					else if (c == 'p') { }
-					else { Console.Error.WriteLine($"bash: command: -{c}: invalid option"); return 2; }
+					else { return BadOption($"-{c}"); }
 					}
 				continue;
 				}
@@ -1032,6 +1049,7 @@ public sealed partial class Builtins
 				var c = _eval.Classify(n);
 				if (c is null) { rc = 1; continue; }
 				var (kind, path) = c.Value;
+				path = Shown(path);
 				if (veryVerbose)
 					{
 					switch (kind)
@@ -1072,7 +1090,7 @@ public sealed partial class Builtins
 
 	private int TestBracket(List<string> args)
 		{
-		if (args.Count == 0 || args[^1] != "]") { Console.Error.WriteLine("bash: [: missing `]'"); return 2; }
+		if (args.Count == 0 || args[^1] != "]") { Console.Error.WriteLine(Err + "[: missing `]'"); return 2; }
 		return TestExpr(args, args.Count - 1) ? 0 : 1;
 		}
 
@@ -1170,7 +1188,7 @@ public sealed partial class Builtins
 				}
 			return new TestParser(this, args, n).Parse();
 			}
-		catch (EvalException ex) { Console.Error.WriteLine($"bash: {ex.Message}"); return false; }
+		catch (EvalException ex) { Console.Error.WriteLine($"{ex.Prefix ?? Err}{ex.Message}"); return false; }
 		}
 
 	private bool TestUnary(string op, string val)
@@ -1212,7 +1230,7 @@ public sealed partial class Builtins
 		int code = _env.LastExitCode;
 		if (args.Count > 0)
 			{
-			if (!int.TryParse(args[0], out code)) { Console.Error.WriteLine($"bash: exit: {args[0]}: numeric argument required"); code = 2; }
+			if (!int.TryParse(args[0], out code)) { Console.Error.WriteLine($"{Err}exit: {args[0]}: numeric argument required"); code = 2; }
 			code &= 0xFF;
 			}
 		throw new ExitException(code);
@@ -1223,7 +1241,7 @@ public sealed partial class Builtins
 		int code = _env.LastExitCode;
 		if (args.Count > 0)
 			{
-			if (!int.TryParse(args[0], out code)) { Console.Error.WriteLine($"bash: return: {args[0]}: numeric argument required"); code = 2; }
+			if (!int.TryParse(args[0], out code)) { Console.Error.WriteLine($"{Err}return: {args[0]}: numeric argument required"); code = 2; }
 			code &= 0xFF;
 			}
 		throw new ReturnException(code);
@@ -1245,7 +1263,7 @@ public sealed partial class Builtins
 
 	private int Let(List<string> args)
 		{
-		if (args.Count == 0) { Console.Error.WriteLine("bash: let: expression expected"); return 1; }
+		if (args.Count == 0) { Console.Error.WriteLine(Err + "let: expression expected"); return 1; }
 		long last = 0;
 		foreach (var a in args) last = _eval.Expander.EvalArithmetic(a);
 		return last != 0 ? 0 : 1;
@@ -1275,14 +1293,36 @@ public sealed partial class Builtins
 		else Console.WriteLine(string.Join(" ", all.Select(DisplayDir)));
 		}
 
+	/// <summary>pushd / popd / dirs operands of the form +N / -N (bash's stack rotation and index):
+	/// a bad one is bash's "invalid number"; a good one is reported as not supported, since the
+	/// rotation is not implemented. Until 2026-10-10 `pushd +3` ran `cd +3`. Returns -1 when the
+	/// operand is not of that form, else the status to return.</summary>
+	private int StackIndexOperand(string a, string letters)
+		{
+		if (a.Length < 2 || a[0] is not ('+' or '-')) return -1;
+		if (a[0] == '-' && a.Length == 2 && letters.Contains(a[1])) return -1;   // one option letter (bash: `dirs -cv` is an invalid number)
+		if (!a.AsSpan(1).ToString().All(char.IsAsciiDigit)) return BadOption(a, "invalid number");
+		if (_called is "pushd" or "popd" && _dirStack.Count == 0)   // bash says this first
+			{ Console.Error.WriteLine($"{Err}{_called}: directory stack empty"); return 1; }
+		Console.Error.WriteLine($"{Err}{_called}: {a}: the directory stack's +N / -N is not supported by this interpreter");
+		return 2;
+		}
+
 	private int Pushd(List<string> args)
 		{
 		bool quiet = false; string? target = null;
-		foreach (var a in args) { if (a == "-n") quiet = true; else target ??= a; }
+		foreach (var a in args)
+			{
+			if (a == "-n") { quiet = true; continue; }
+			if (a == "--") continue;
+			if (StackIndexOperand(a, "n") is var r and >= 0) return r;
+			if (target is not null) { Console.Error.WriteLine(Err + "pushd: too many arguments"); return 1; }
+			target = a;
+			}
 		var cur = _env.Cwd;
 		if (target is null)
 			{
-			if (_dirStack.Count == 0) { Console.Error.WriteLine("bash: pushd: no other directory"); return 1; }
+			if (_dirStack.Count == 0) { Console.Error.WriteLine(Err + "pushd: no other directory"); return 1; }
 			var top = _dirStack[0];
 			if (Cd([top]) != 0) return 1;
 			_dirStack[0] = cur;
@@ -1298,8 +1338,15 @@ public sealed partial class Builtins
 
 	private int Popd(List<string> args)
 		{
-		bool quiet = args.Contains("-n");
-		if (_dirStack.Count == 0) { Console.Error.WriteLine("bash: popd: directory stack empty"); return 1; }
+		bool quiet = false;
+		foreach (var a in args)
+			{
+			if (a == "-n") { quiet = true; continue; }
+			if (a == "--") continue;
+			if (StackIndexOperand(a, "n") is var r and >= 0) return r;
+			Console.Error.WriteLine($"{Err}popd: {a}: invalid argument"); PrintUsage("popd"); return 2;
+			}
+		if (_dirStack.Count == 0) { Console.Error.WriteLine(Err + "popd: directory stack empty"); return 1; }
 		var top = _dirStack[0];
 		_dirStack.RemoveAt(0);
 		if (Cd([top]) != 0) return 1;
@@ -1309,8 +1356,16 @@ public sealed partial class Builtins
 
 	private int Dirs(List<string> args)
 		{
-		if (args.Contains("-c")) { _dirStack.Clear(); return 0; }
-		PrintDirs(args.Contains("-v"));
+		var flags = new HashSet<char>();
+		foreach (var a in args)
+			{
+			if (a == "--") continue;
+			if (StackIndexOperand(a, "clpv") is var r and >= 0) return r;
+			if (a.Length == 2 && a[0] == '-') { flags.Add(a[1]); continue; }
+			return BadOption(a);   // bash: `dirs foo` is an invalid option
+			}
+		if (flags.Contains('c')) { _dirStack.Clear(); return 0; }
+		PrintDirs(flags.Contains('v'));
 		return 0;
 		}
 
@@ -1318,82 +1373,119 @@ public sealed partial class Builtins
 
 	private int Kill(List<string> args)
 		{
+		// the signal is checked as bash checks it (trap's table): a bad spec is an error and nothing is
+		// signalled; until 2026-10-10 `kill -Z 1` went on to kill. Any good one but 0 is forceful here.
+		int? Signal(string spec) =>
+			CanonSignal(spec) is { } c && c is not ("DEBUG" or "ERR" or "RETURN") ? (c == "EXIT" ? 0 : Array.IndexOf(LinuxSignals, c)) : null;
+		int BadSignal(string spec) { Console.Error.WriteLine($"{Err}kill: {spec}: invalid signal specification"); return 1; }
 		bool sigZero = false, list = false;
 		var targets = new List<string>();
 		for (int i = 0; i < args.Count; i++)
 			{
 			var a = args[i];
 			if (a == "-l" || a == "-L") { list = true; continue; }
-			if (a == "-0") { sigZero = true; continue; }
 			if (a == "--") { targets.AddRange(args.Skip(i + 1)); break; }
-			if ((a == "-s" || a == "-n") && i + 1 < args.Count) { var s = args[++i]; if (s is "0") sigZero = true; continue; }
-			if (a.StartsWith('-') && a.Length > 1 && !int.TryParse(a, out _)) continue;   // -TERM, -KILL, -9: all forceful here
-			if (a.StartsWith('-') && int.TryParse(a[1..], out var num)) { if (num == 0) sigZero = true; continue; }
-			targets.Add(a);
+			if (list || a.Length < 2 || a[0] != '-') { targets.Add(a); continue; }
+			if (a is "-s" or "-n")
+				{
+				if (i + 1 >= args.Count) { Console.Error.WriteLine($"{Err}kill: {a}: option requires an argument"); return 1; }   // bash: no usage line, 1
+				var s = args[++i];
+				if (Signal(s) is not { } n) return BadSignal(s);
+				sigZero = n == 0;
+				continue;
+				}
+			if (Signal(a[1..]) is not { } sig) return BadSignal(a[1..]);   // -TERM, -9, -SIGKILL
+			sigZero = sig == 0;
 			}
 		if (list)
 			{
-			Console.WriteLine(string.Join("  ", SignalNames.Where(s => s != "EXIT" && s != "DEBUG" && s != "ERR" && s != "RETURN")));
-			return 0;
+			if (targets.Count == 0)
+				{
+				Console.WriteLine(string.Join("  ", SignalNames.Where(s => s != "EXIT" && s != "DEBUG" && s != "ERR" && s != "RETURN")));
+				return 0;
+				}
+			// kill -l N names a signal (N may be an exit status, 128+N); kill -l NAME numbers it
+			int lrc = 0;
+			foreach (var t in targets)
+				{
+				if (int.TryParse(t, out int n))
+					{
+					if (n > 128) n -= 128;
+					if (n is >= 1 and <= 64) Console.WriteLine(LinuxSignals[n]); else lrc = BadSignal(t);
+					}
+				else if (Signal(t) is { } num and > 0) Console.WriteLine(num);
+				else lrc = BadSignal(t);
+				}
+			return lrc;
 			}
-		if (targets.Count == 0) { Console.Error.WriteLine("bash: kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]"); return 2; }
+		if (targets.Count == 0) { PrintUsage("kill"); return 2; }
 		int rc = 0;
 		foreach (var t in targets)
 			{
 			if (t.StartsWith('%') || (int.TryParse(t, out var maybe) && BackgroundJob.IsSyntheticPid(maybe)))
 				{
 				if (sigZero) continue;
-				if (_eval.KillJob(t, out var err) != 0) { Console.Error.WriteLine($"bash: kill: {err}"); rc = 1; }
+				if (_eval.KillJob(t, out var err) != 0) { Console.Error.WriteLine($"{Err}kill: {err}"); rc = 1; }
 				continue;
 				}
-			if (!int.TryParse(t, out var pid)) { Console.Error.WriteLine($"bash: kill: {t}: arguments must be process or job IDs"); rc = 1; continue; }
+			if (!int.TryParse(t, out var pid)) { Console.Error.WriteLine($"{Err}kill: {t}: arguments must be process or job IDs"); rc = 1; continue; }
 			try
 				{
 				var proc = System.Diagnostics.Process.GetProcessById(pid);
 				if (!sigZero) proc.Kill(true);
 				}
-			catch (ArgumentException) { Console.Error.WriteLine($"bash: kill: ({pid}) - No such process"); rc = 1; }
-			catch (Exception ex)      { Console.Error.WriteLine($"bash: kill: ({pid}) - {ex.Message}"); rc = 1; }
+			catch (ArgumentException) { Console.Error.WriteLine($"{Err}kill: ({pid}) - No such process"); rc = 1; }
+			catch (Exception ex)      { Console.Error.WriteLine($"{Err}kill: ({pid}) - {ex.Message}"); rc = 1; }
 			}
 		return rc;
 		}
 
 	// ── env ───────────────────────────────────────────────────────────────────
 
+	/// <summary>GNU env. Until 2026-10-08 its options reached only part of what it runs: a
+	/// NAME=VALUE whose name was not a shell identifier (`STDOUT.OutputLevel=trace`, `X-Y=2`) became
+	/// the command; `-u` was applied only when env printed; `-i` did not reach a builtin
+	/// (`env -i printenv` printed everything); `-uNAME`, `--unset=NAME`, `-` and `-0` were refused or
+	/// ignored.</summary>
 	private int Env(List<string> args)
 		{
-		bool clear = false;
+		bool clear = false, nul = false;
 		var unset = new List<string>();
 		var assigns = new List<(string, string)>();
 		int i = 0;
 		for (; i < args.Count; i++)
 			{
 			var a = args[i];
-			if (a is "-i" or "--ignore-environment") clear = true;
-			else if (a == "-u" && i + 1 < args.Count) unset.Add(args[++i]);
-			else if (a == "-0") { }
+			if (a is "-i" or "--ignore-environment" or "-") clear = true;
+			else if (a is "-u" or "--unset" && i + 1 < args.Count) unset.Add(args[++i]);
+			else if (a.StartsWith("--unset=")) unset.Add(a["--unset=".Length..]);
+			else if (a.StartsWith("-u") && a.Length > 2) unset.Add(a[2..]);
+			else if (a is "-0" or "--null") nul = true;
 			else if (a == "--") { i++; break; }
 			else if (a.StartsWith('-') && a.Length > 1) { Console.Error.WriteLine($"env: invalid option -- '{a[1..]}'"); return 125; }
 			else break;
 			}
+		// every leading operand containing '=' is an assignment, whatever its name (GNU); only the
+		// shell's own `NAME=value cmd` prefix is limited to identifiers
 		for (; i < args.Count; i++)
 			{
 			var a = args[i];
 			int eq = a.IndexOf('=');
-			if (eq > 0 && IsIdentifier(a[..eq])) assigns.Add((a[..eq], a[(eq + 1)..]));
-			else break;
+			if (eq < 0) break;
+			if (eq > 0) assigns.Add((a[..eq], a[(eq + 1)..]));   // "=x" is accepted and sets nothing (no empty name on Windows)
 			}
 		if (i >= args.Count)
 			{
 			var env = clear ? new Dictionary<string, string>(StringComparer.Ordinal) : _env.GetExportedVars();
 			foreach (var u in unset) env.Remove(u);
 			foreach (var (k, v) in assigns) env[k] = v;
-			foreach (var (k, v) in env) Console.WriteLine($"{k}={v}");
+			string term = nul ? "\0" : "\n";
+			foreach (var (k, v) in env) Console.Out.Write($"{k}={v}{term}");
 			return 0;
 			}
 		var name = args[i];
 		var rest = args.Skip(i + 1).ToList();
-		return _eval.RunCommand(name, rest, false, assigns, clear);
+		return _eval.RunCommand(name, rest, false, assigns, clear, unset);
 		}
 
 	// ── yes ───────────────────────────────────────────────────────────────────
@@ -1449,6 +1541,29 @@ public sealed partial class Builtins
 			}
 		finally { if (job is not null) job.Parked = false; }
 		return 0;
+		}
+
+	/// <summary>A path the shell found (PATH lookup) as `type`, `command -v`, `which` and `hash` print it:
+	/// the shell's forward-slash form (DECISIONS 2026-09-11/12). The lookup itself keeps the native
+	/// form, which is what launches the program. Backslash paths until 2026-10-08.</summary>
+	[return: System.Diagnostics.CodeAnalysis.NotNullIfNotNull(nameof(path))]
+	internal static string? Shown(string? path)
+		{
+		if (path is null) return null;
+		// the file's name as it is on disk: a PATHEXT match spells it git.EXE, the file is git.exe
+		try
+			{
+			var dir = Path.GetDirectoryName(path);
+			var file = Path.GetFileName(path);
+			if (!string.IsNullOrEmpty(dir) && file.Length > 0 && file.IndexOfAny(['*', '?']) < 0)
+				{
+				var onDisk = new DirectoryInfo(dir).EnumerateFiles(file).FirstOrDefault()?.Name;
+				if (onDisk is not null && onDisk != file && string.Equals(onDisk, file, StringComparison.OrdinalIgnoreCase))
+					path = Path.Combine(dir, onDisk);
+				}
+			}
+		catch (Exception) { }   // display only: an unreadable directory prints the path as found
+		return ShellEnvironment.ToShellPath(path);
 		}
 
 	// ── PATH lookup (used by which-style helpers elsewhere in this class) ──────

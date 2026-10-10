@@ -1,0 +1,185 @@
+== s1
+s1.sh: line 3: syntax error near unexpected token `fi'
+s1.sh: line 3: `fi'
+rc=2
+== s2
+s2.sh: line 2: syntax error near unexpected token `fi'
+s2.sh: line 2: `fi'
+rc=2
+== s3
+s3.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s4
+s4.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s5
+s5.sh: line 1: unexpected EOF while looking for matching `"'
+s5.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s6
+s6.sh: line 1: unexpected EOF while looking for matching `''
+s6.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s7
+s7.sh: line 1: unexpected EOF while looking for matching `)'
+s7.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s8
+s8.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s9
+s9.sh: line 1: syntax error near unexpected token `a'
+s9.sh: line 1: `for in a; do :; done'
+rc=2
+== s10
+s10.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s11
+s11.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s12
+s12.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s13
+s13.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s14
+s14.sh: line 1: syntax error near unexpected token `)'
+s14.sh: line 1: `echo )'
+rc=2
+== s15
+s15.sh: line 1: syntax error near unexpected token `echo'
+s15.sh: line 1: `f() echo x'
+rc=2
+== s16
+s16.sh: line 1: syntax error near unexpected token `;'
+s16.sh: line 1: `echo a; ; echo b'
+rc=2
+== s17
+s17.sh: line 1: syntax error near unexpected token `then'
+s17.sh: line 1: `if then fi'
+rc=2
+== s18
+s18.sh: line 1: unexpected EOF while looking for matching `}'
+s18.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s19
+s19.sh: line 1: unexpected EOF while looking for matching `)'
+rc=1
+== s20
+s20.sh: line 1: unexpected argument `newline' to conditional binary operator
+s20.sh: line 1: syntax error near `=='
+s20.sh: line 1: `[[ a == '
+rc=2
+== s21
+s21.sh: line 2: warning: here-document at line 1 delimited by end-of-file (wanted `EOF')
+no end
+rc=0
+== s22
+s22.sh: line 2: syntax error near unexpected token `done'
+s22.sh: line 2: `  done'
+rc=2
+== s23
+s23.sh: line 2: syntax error near unexpected token `echo'
+s23.sh: line 2: `echo $x'
+rc=2
+== s24
+s24.sh: line 1: unexpected argument `]]' to conditional binary operator
+s24.sh: line 1: syntax error near `]]'
+s24.sh: line 1: `[[ a == ]]'
+rc=2
+== s25
+s25.sh: line 1: unexpected argument `]]' to conditional unary operator
+s25.sh: line 1: syntax error near `]]'
+s25.sh: line 1: `[[ -f ]]'
+rc=2
+== s26
+s26.sh: line 1: conditional binary operator expected
+s26.sh: line 1: syntax error near `b'
+s26.sh: line 1: `[[ a b ]]'
+rc=2
+== s27
+s27.sh: line 1: syntax error near `]]'
+s27.sh: line 1: `[[ ]]'
+rc=2
+== s28
+s28.sh: line 1: unexpected EOF while looking for `]]'
+s28.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s29
+s29.sh: line 1: unexpected token `]]', expected `)'
+s29.sh: line 1: syntax error near `]]'
+s29.sh: line 1: `[[ ( a == b ]]'
+rc=2
+== s30
+s30.sh: line 1: syntax error in conditional expression: unexpected token `)'
+s30.sh: line 1: syntax error near `)'
+s30.sh: line 1: `[[ a == b ) ]]'
+rc=2
+== s31
+s31.sh: line 1: syntax error near `]]'
+s31.sh: line 1: `[[ ! ]]'
+rc=2
+== s32
+s32.sh: line 1: syntax error near `]]'
+s32.sh: line 1: `[[ a && ]]'
+rc=2
+== s33
+s33.sh: line 2: unexpected argument `]]' to conditional binary operator
+s33.sh: line 2: syntax error near `]]'
+s33.sh: line 2: `[[ x =~ ]]'
+rc=2
+== s34
+s34.sh: line 1: unexpected EOF while looking for matching `)'
+rc=1
+== s35
+s35.sh: line 1: syntax error near unexpected token `;'
+s35.sh: line 1: `f() { x=(a; }'
+rc=1
+== s36
+s36.sh: line 1: unexpected EOF while looking for matching ``'
+s36.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s37
+s37.sh: line 1: syntax error near unexpected token `}'
+s37.sh: line 1: `{ }'
+rc=2
+== s38
+s38.sh: line 1: syntax error near unexpected token `)'
+s38.sh: line 1: `( )'
+rc=2
+== s39
+s39.sh: line 1: syntax error near unexpected token `done'
+s39.sh: line 1: `while :; do done'
+rc=2
+== s40
+s40.sh: line 1: syntax error near unexpected token `done'
+s40.sh: line 1: `for x in a; do done'
+rc=2
+== s41
+s41.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s42
+s42.sh: line 1: syntax error near unexpected token `fi'
+s42.sh: line 1: `true && fi'
+rc=2
+== s43
+s43.sh: eval: line 2: syntax error near unexpected token `then'
+s43.sh: eval: line 2: `if then'
+after
+rc=0
+== s44
+s44.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s45
+s45.sh: line 3: syntax error: unexpected end of file
+rc=2
+== s46
+s46.sh: line 1: unexpected EOF while looking for matching `"'
+s46.sh: line 2: syntax error: unexpected end of file
+rc=2
+== s47
+s47.sh: line 2: syntax error: unexpected end of file
+rc=2
+== -c
+BASH: -c: line 2: syntax error: unexpected end of file

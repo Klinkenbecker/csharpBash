@@ -1,0 +1,20 @@
+a b \r c d \n||
+a b c d \n e f \r g h \n||
+a b \b c d \n||
+a \n \t \n b c \n||
+a \t b c \n d e f g h i j \n||
+a b \r \n c d \n||
+a b c \n d e f \n g h||
+t h e q u i c k \n b r o w n|f o x \n j u m p s \n||
+a a a a a a \n a a a a a a \n a a|a b b \n||
+x \n \t \n y z \n||
+h 303 251 \n l l o \n||
+\n \n a \n b \n||
+a b c \n d e f \n||
+x
+tee /dev/null rc=0
+tee twice rc=0
+z
+tee -a rc=0
+w \n w \n||
+v \n||

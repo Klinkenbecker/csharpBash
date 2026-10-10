@@ -293,7 +293,7 @@ public sealed partial class Builtins
 					{
 					var fs = ShellEnvironment.TranslatePath(path);
 					if (Directory.Exists(fs)) { if (!noMessages && !recursive) Console.Error.WriteLine($"grep: {name}: Is a directory"); if (!recursive) errored = true; continue; }
-					if (!text)
+					if (!text && ShellFile.Device(fs) is null)   // a device has no length to probe: read as text
 						{
 						using var probe = ShellFile.OpenRead(fs);
 						var buf = new byte[Math.Min(8192, probe.Length)];
@@ -301,7 +301,7 @@ public sealed partial class Builtins
 						binary = Array.IndexOf(buf, (byte)0, 0, n) >= 0;
 						}
 					if (binary && skipBinary) continue;
-					reader = new LfReader(ShellFile.OpenRead(fs));   // LF-only lines, no BOM sniffing: bytes are data
+					reader = new LfReader(ShellFile.OpenInput(fs));   // LF-only lines, no BOM sniffing: bytes are data; files and devices
 					}
 				int lineNo = 0, matched = 0; long offset = 0;
 				bool fileHadMatch = false;

@@ -1,0 +1,32 @@
+USR1:00 10:00 PIPE:00 WINCH:00 CHLD:00 RTMIN:00 RTMIN+3:00 RTMAX-2:00 RTMAX:00 RTMIN+30:00 RTMAX-30:11 RTMIN+31:11 RTMAX-31:11 RTMIN-1:11 31:00 32:00 33:00 34:00 64:00 65:11 sigusr1:00 SigPipe:00 IOT:11 CLD:11 POLL:11 BADSIG:11 0:00 exit:00 EXIT:00 ERR:00 RETURN:00 -1:11 :11 
+t.sh: line 5: trap: BADSIG: invalid signal specification
+rc=1
+t.sh: line 5: trap: BADSIG: invalid signal specification
+rc=1
+t.sh: line 5: trap: BADSIG: invalid signal specification
+rc=1
+trap -- ': x' EXIT
+trap -- ': x' SIGHUP
+trap -- ':' SIGINT
+trap -- ': x' SIGUSR1
+trap -- 'echo '\''it'\'''\''s'\''' SIGUSR2
+trap -- ': x' SIGPIPE
+trap -- ':' SIGTERM
+trap -- ': x' 32
+trap -- ': x' 33
+trap -- ': x' SIGRTMIN
+trap -- ': x' SIGRTMIN+1
+trap -- ': x' SIGRTMIN+3
+trap -- ': x' SIGRTMIN+15
+trap -- ': x' SIGRTMAX-14
+trap -- ': x' SIGRTMAX-1
+trap -- ': x' SIGRTMAX
+trap -- ': x' ERR
+trap -- ': x' RETURN
+-- some
+trap -- ':' SIGINT
+trap -- ':' SIGTERM
+trap -- ':' SIGINT
+t.sh: line 8: trap: BADSIG: invalid signal specification
+trap -- ': x' SIGUSR1
+rc=1

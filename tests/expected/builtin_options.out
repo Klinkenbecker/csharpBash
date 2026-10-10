@@ -1,0 +1,188 @@
+t.sh: line 6: read: -Z: invalid option
+read: usage: read [-ers] [-a array] [-d delim] [-i text] [-n nchars] [-N nchars] [-p prompt] [-t timeout] [-u fd] [name ...]
+read rc=2
+t.sh: line 6: mapfile: -Z: invalid option
+mapfile: usage: mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
+mapfile rc=2
+t.sh: line 6: readarray: -Z: invalid option
+readarray: usage: readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
+readarray rc=2
+t.sh: line 6: declare: -Z: invalid option
+declare: usage: declare [-aAfFgiIlnrtux] [-p] [name[=value] ...]
+declare rc=2
+t.sh: line 6: typeset: -Z: invalid option
+typeset: usage: typeset [-aAfFgiIlnrtux] [-p] name[=value] ...
+typeset rc=2
+t.sh: line 4: local: -Z: invalid option
+local: usage: local [option] name[=value] ...
+local rc=2
+t.sh: line 6: export: -Z: invalid option
+export: usage: export [-fn] [name[=value] ...] or export -p
+export rc=2
+t.sh: line 6: readonly: -Z: invalid option
+readonly: usage: readonly [-aAf] [name[=value] ...] or readonly -p
+readonly rc=2
+t.sh: line 6: unset: -Z: invalid option
+unset: usage: unset [-f] [-v] [-n] [name ...]
+unset rc=2
+t.sh: line 6: type: -Z: invalid option
+type: usage: type [-afptP] name [name ...]
+type rc=2
+t.sh: line 6: command: -Z: invalid option
+command: usage: command [-pVv] command [arg ...]
+command rc=2
+t.sh: line 6: hash: -Z: invalid option
+hash: usage: hash [-lr] [-p pathname] [-dt] [name ...]
+hash rc=2
+t.sh: line 6: set: -Z: invalid option
+set: usage: set [-abefhkmnptuvxBCHP] [-o option-name] [--] [arg ...]
+set rc=2
+t.sh: line 6: shopt: -Z: invalid option
+shopt: usage: shopt [-pqsu] [-o] [optname ...]
+shopt rc=2
+t.sh: line 6: disown: -Z: invalid option
+disown: usage: disown [-h] [-ar] [jobspec ... | pid ...]
+disown rc=2
+t.sh: line 6: printf: -Z: invalid option
+printf: usage: printf [-v var] format [arguments]
+printf rc=2
+t.sh: line 6: cd: -Z: invalid option
+cd: usage: cd [-L|[-P [-e]] [-@]] [dir]
+cd rc=2
+t.sh: line 6: pwd: -Z: invalid option
+pwd: usage: pwd [-LP]
+pwd rc=2
+t.sh: line 6: kill: Z: invalid signal specification
+kill rc=1
+t.sh: line 6: wait: -Z: invalid option
+wait: usage: wait [-fn] [-p var] [id ...]
+wait rc=2
+t.sh: line 6: jobs: -Z: invalid option
+jobs: usage: jobs [-lnprs] [jobspec ...] or jobs -x command [args]
+jobs rc=2
+t.sh: line 6: trap: -Z: invalid option
+trap: usage: trap [-lp] [[arg] signal_spec ...]
+trap rc=2
+t.sh: line 6: alias: -Z: invalid option
+alias: usage: alias [-p] [name[=value] ... ]
+alias rc=2
+t.sh: line 6: unalias: -Z: invalid option
+unalias: usage: unalias [-a] name [name ...]
+unalias rc=2
+t.sh: line 6: pushd: -Z: invalid number
+pushd: usage: pushd [-n] [+N | -N | dir]
+pushd rc=2
+t.sh: line 6: popd: -Z: invalid number
+popd: usage: popd [-n] [+N | -N]
+popd rc=2
+t.sh: line 6: dirs: -Z: invalid number
+dirs: usage: dirs [-clpv] [+N] [-N]
+dirs rc=2
+t.sh: line 6: history: -Z: invalid option
+history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]
+history rc=2
+t.sh: line 6: getopts: -Z: invalid option
+getopts: usage: getopts optstring name [arg ...]
+getopts rc=2
+let rc=1
+t.sh: line 6: shift: -Z: numeric argument required
+shift rc=1
+t.sh: line 6: source: -Z: invalid option
+source: usage: source filename [arguments]
+source rc=2
+t.sh: line 6: .: -Z: invalid option
+.: usage: . filename [arguments]
+. rc=2
+t.sh: line 6: exit: -Z: numeric argument required
+t.sh: line 5: return: -Z: numeric argument required
+return rc=2
+== edges
+t.sh: line 10: cd: too many arguments
+cd a b rc=1
+cd -P ok
+cd -L -- ok
+cd - ok
+pwd foo rc=0
+t.sh: line 12: pwd: -Z: invalid option
+pwd: usage: pwd [-LP]
+pwd -LZ rc=2
+pwd -P ok
+t.sh: line 13: export: `-n': not a valid identifier
+export X -n rc=1
+export -n rc=0
+unset -v gone
+unset X -v rc=0
+t.sh: line 15: printf: -v: option requires an argument
+printf: usage: printf [-v var] format [arguments]
+printf -v rc=2
+t.sh: line 15: printf: -%: invalid option
+printf: usage: printf [-v var] format [arguments]
+printf -%s rc=2
+-x
+printf -v y
+t.sh: line 16: source: filename argument required
+source: usage: source filename [arguments]
+source rc=2
+t.sh: line 16: source: filename argument required
+source: usage: source filename [arguments]
+source -- rc=2
+sourced: ./lib.sh 2
+sourced: ./lib.sh 0
+alias -p rc=0
+unalias: usage: unalias [-a] name [name ...]
+unalias rc=2
+unalias -a rc=0
+t.sh: line 18: pushd: +Z: invalid number
+pushd: usage: pushd [-n] [+N | -N | dir]
+pushd +Z rc=2
+t.sh: line 18: pushd: directory stack empty
+pushd +3 rc=1
+t.sh: line 18: pushd: too many arguments
+pushd a b rc=1
+t.sh: line 18: popd: +Z: invalid number
+popd: usage: popd [-n] [+N | -N]
+popd +Z rc=2
+t.sh: line 18: popd: foo: invalid argument
+popd: usage: popd [-n] [+N | -N]
+popd foo rc=2
+t.sh: line 19: dirs: +Z: invalid number
+dirs: usage: dirs [-clpv] [+N] [-N]
+dirs +Z rc=2
+t.sh: line 19: dirs: foo: invalid option
+dirs: usage: dirs [-clpv] [+N] [-N]
+dirs foo rc=2
+t.sh: line 19: dirs: -cv: invalid number
+dirs: usage: dirs [-clpv] [+N] [-N]
+dirs -cv rc=2
+dirs -c rc=0
+t.sh: line 20: kill: Z: invalid signal specification
+kill -Z rc=1
+t.sh: line 20: kill: Z: invalid signal specification
+kill -s Z rc=1
+t.sh: line 20: kill: 99: invalid signal specification
+kill -n 99 rc=1
+t.sh: line 20: kill: -s: option requires an argument
+kill -s rc=1
+KILL
+2
+KILL
+t.sh: line 21: kill: 99: invalid signal specification
+kill -l 99 rc=1
+kill -0 ok
+hi
+t.sh: line 22: trap: -Z: invalid option
+trap: usage: trap [-lp] [[arg] signal_spec ...]
+trap -lZ rc=2
+trap INT rc=0
+trap 2 15 rc=0
+trap: usage: trap [-lp] [[arg] signal_spec ...]
+trap one rc=2
+trap: usage: trap [-lp] [[arg] signal_spec ...]
+trap - rc=2
+t.sh: line 24: wait: -p: option requires an argument
+wait: usage: wait [-fn] [-p var] [id ...]
+wait -p rc=2
+jobs -l rc=0
+t.sh: line 24: history: -Z: invalid option
+history: usage: history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]
+history rc=2

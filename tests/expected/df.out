@@ -1,0 +1,49 @@
+Filesystem     Mounted on
+C:             C:/
+Type
+ntfs
+File       Mounted on
+C:/Windows C:/
+Filesystem     Mounted on
+C:             C:/
+C:             C:/
+total          -
+Filesystem 1K-blocks Used Available Use% Mounted on
+Filesystem Size Used Avail Use% Mounted on
+Filesystem Size Used Avail Use% Mounted on
+Filesystem 1024-blocks Used Available Capacity Mounted on
+Filesystem Type 1K-blocks Used Available Use% Mounted on
+Filesystem 1M-blocks Used Available Use% Mounted on
+Filesystem 1B-blocks Used Available Use% Mounted on
+1K-blocks Used Avail Use%
+Size Avail
+used + avail <= size
+human size
+M suffix
+6 pcent
+0
+1
+0
+Filesystem
+C:
+rc=1
+df: /no/such/dir: No such file or directory
+rc=1
+df: '/no such': No such file or directory
+rc=1
+df: option --output: field 'bogus' unknown
+Try 'df --help' for more information.
+rc=1
+df: option --output: field 'size' used more than once
+Try 'df --help' for more information.
+rc=1
+df: options -T and --output are mutually exclusive
+Try 'df --help' for more information.
+rc=1
+df: invalid suffix in -B argument '5x'
+rc=1
+df: file system type 'ntfs' both selected and excluded
+rc=1
+df: invalid option -- 'i'
+df: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+rc=2

@@ -1,0 +1,80 @@
+== ls a\ b/ x
+ls: cannot access 'x': No such file or directory
+a b/:
+f1
+rc=2
+== ls plain x
+ls: cannot access 'x': No such file or directory
+plain:
+f2
+rc=2
+== ls x plain
+ls: cannot access 'x': No such file or directory
+plain:
+f2
+rc=2
+== ls plain
+f2
+rc=0
+== ls a\ b/
+f1
+rc=0
+== ls plain file
+file
+
+plain:
+f2
+rc=0
+== ls file x
+ls: cannot access 'x': No such file or directory
+file
+rc=2
+== ls plain a\ b
+a b:
+f1
+
+plain:
+f2
+rc=0
+== ls x y
+ls: cannot access 'x': No such file or directory
+ls: cannot access 'y': No such file or directory
+rc=2
+== ls zdir plain a\ b
+a b:
+f1
+
+plain:
+f2
+
+zdir:
+f3
+rc=0
+== ls -r zdir plain a\ b
+zdir:
+f3
+
+plain:
+f2
+
+a b:
+f1
+rc=0
+== ls -d zdir plain
+plain
+zdir
+rc=0
+== ls -R plain
+plain:
+f2
+rc=0
+== ls zdir file plain x
+ls: cannot access 'x': No such file or directory
+file
+
+plain:
+f2
+
+zdir:
+f3
+rc=2

@@ -1,0 +1,28 @@
+1  [unset] [0]
+1v unset
+2  [unset]
+2b [global]
+3  [x]
+4  [6]
+declare -- j
+6  []
+7  [unset]
+8  [kept]
+9  [unset]
+9c [unset]
+1
+10 [unset] [0]
+11 [unset]
+12 [u] [2] [u]
+13 [outer]
+14 [1]
+tmp
+15 [unset]
+15b [global]
+16 [unset]
+17 unset
+18 set
+19 unset
+19b [unset]
+20 unset
+function

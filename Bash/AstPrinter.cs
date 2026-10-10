@@ -134,6 +134,7 @@ public static class AstPrinter
 		AnsiCQuotedPart a          => $"$'{a.Value}'",
 		HeredocBodyPart h          => $"<<HEREDOC\n{h.Body}",
 		TildePart t                => $"~{t.Suffix}",
+		AssignmentArgPart aa       => aa.Index is null ? $"{aa.Name}={PrintWord(aa.Value)}" : $"{aa.Name}[{PrintWord(aa.Index)}]={PrintWord(aa.Value)}",
 		DoubleQuotedPart d         => $"\"{string.Concat(d.Parts.Select(PrintPart))}\"",
 		VarExpansionPart v         => $"${v.Name}",
 		BraceExpansionPart b       => "${" + b.Raw + "}",

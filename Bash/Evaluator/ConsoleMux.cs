@@ -50,6 +50,7 @@ public static class ConsoleMux
 		_realErr = Console.Error;
 		// a redirected stdin (a pipe, a file) gets LF-only lines by block scan; a console stays as is
 		_realIn  = Console.IsInputRedirected ? new LfReader(Console.OpenStandardInput()) : Console.In;
+		if (_realIn is LfReader) AppDomain.CurrentDomain.ProcessExit += (_, _) => GiveBackStdin();
 		var mo = new MuxWriter(false);
 		var me = new MuxWriter(true);
 		var mi = new MuxReader();
@@ -57,6 +58,25 @@ public static class ConsoleMux
 		Console.SetError(me); if (!ReferenceEquals(Console.Error, me)) SetField("s_error", me);
 		Console.SetIn(mi);    if (!ReferenceEquals(Console.In, mi))    SetField("s_in", mi);
 		_installed = true;
+		}
+
+	/// <summary>At exit, when this shell's stdin is a FILE: what its reader read ahead and did not use
+	/// goes back (the file offset is moved back over it), so the shell that started us reads on from
+	/// there, as bash's `read` seeks back on a seekable stdin. `while read -r x; do bash -c 'read -r y';
+	/// done < f` lost the rest of f to the child's read-ahead until 2026-10-10.</summary>
+	private static void GiveBackStdin()
+		{
+		try
+			{
+			if (_realIn is not LfReader lf) return;
+			var std = ChildLauncher.StdHandle(0);
+			if (!ChildLauncher.IsDiskFile(std)) return;
+			var pending = lf.TakeBuffered();
+			if (pending.Length == 0) return;
+			using var h = new Microsoft.Win32.SafeHandles.SafeFileHandle(std, ownsHandle: false);
+			ChildLauncher.SeekHandle(h, -ShellEncoding.Utf8.GetByteCount(pending), fromCurrent: true);
+			}
+		catch { }   // at exit: nothing to report to
 		}
 
 	private static void SetField(string name, object value)

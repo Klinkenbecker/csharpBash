@@ -14,7 +14,7 @@ public sealed partial class Builtins
 
 	/// <summary>A reader over a file operand or stdin ("-"). Callers dispose file readers.</summary>
 	private static TextReader OpenText(string src) =>
-		src is "-" or "/dev/stdin" ? Console.In : new LfReader(ShellFile.OpenRead(ShellEnvironment.TranslatePath(src)));   // LF-only lines, no BOM sniffing: bytes are data
+		src is "-" or "/dev/stdin" ? Console.In : new LfReader(ShellFile.OpenInput(ShellEnvironment.TranslatePath(src)));   // files and devices  // LF-only lines, no BOM sniffing: bytes are data
 
 	private static IEnumerable<string> ReadLines(TextReader r) => ShellEncoding.Lines(r);   // LF only: a CR is data
 
@@ -110,7 +110,8 @@ public sealed partial class Builtins
 						}
 					var p = ShellEnvironment.TranslatePath(f);
 					if (Directory.Exists(p)) { Console.Error.WriteLine($"cat: {f}: Is a directory"); rc = 1; continue; }
-					if (raw is not null) { using var fs = ShellFile.OpenRead(p); fs.CopyTo(raw); }
+					if (raw is not null) { using var fs = ShellFile.OpenInput(p); fs.CopyTo(raw); }
+					else if (ShellFile.Device(p) is not null) { using var ds = ShellFile.OpenInput(p); Console.Out.Write(ShellEncoding.Utf8.GetString(ReadAll(ds))); }
 					else Console.Out.Write(ShellEncoding.ReadAllText(p));
 					}
 				catch (BrokenPipeException) { throw; }
@@ -183,7 +184,7 @@ public sealed partial class Builtins
 				// on a shared stdin, consumed what the next command should read (2026-10-03). Taken
 				// ONCE: CurrentRawStdin hands over a text reader's read-ahead.
 				var src = bytes && !fromEnd
-					? (f == "-" ? Evaluator.CurrentRawStdin() : ShellFile.OpenRead(ShellEnvironment.TranslatePath(f)))
+					? (f == "-" ? Evaluator.CurrentRawStdin() : ShellFile.OpenInput(ShellEnvironment.TranslatePath(f)))
 					: null;
 				if (src is not null)
 					{
@@ -291,10 +292,10 @@ public sealed partial class Builtins
 				else
 					{
 					var p = ShellEnvironment.TranslatePath(f);
-					using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+					using var fs = ShellFile.OpenInput(p);   // a file or a device (`tail /dev/null`)
 					using var r = new LfReader(fs);   // LF-only lines, no BOM sniffing: bytes are data
 					lines = ReadLines(r).ToList();
-					lengthSeen = fs.Length;
+					lengthSeen = fs.CanSeek ? fs.Length : 0;
 					}
 				if (fromStart) { for (long i = Math.Max(0, count - 1); i < lines.Count; i++) Console.WriteLine(lines[(int)i]); }
 				else for (int i = (int)Math.Max(0, lines.Count - count); i < lines.Count; i++) Console.WriteLine(lines[i]);
@@ -448,57 +449,60 @@ public sealed partial class Builtins
 		string s1 = ExpandTrSet(o.Operands[0]);
 		string s2 = o.Operands.Count > 1 ? ExpandTrSet(o.Operands[1]) : "";
 		if (!del && o.Operands.Count < 2 && !squeeze) { Console.Error.WriteLine("tr: missing operand after '" + o.Operands[0] + "'"); return 1; }
-		string input = Console.In.ReadToEnd();
-		var sb = new StringBuilder(input.Length);
 		var set1 = new HashSet<char>(s1);
 		bool In1(char c) => complement ? !set1.Contains(c) : set1.Contains(c);
+		var sb = new StringBuilder(8192);
+		char? last = null;
 
+		// One step per input character, the state (`last`, for -s) kept across blocks.
+		Action<char> step;
 		if (del)
 			{
 			var sq = squeeze ? new HashSet<char>(s2) : null;
-			char? last = null;
-			foreach (char c in input)
+			step = c =>
 				{
-				if (In1(c)) continue;
-				if (sq is not null && last == c && sq.Contains(c)) continue;
+				if (In1(c)) return;
+				if (sq is not null && last == c && sq.Contains(c)) return;
 				sb.Append(c); last = c;
-				}
+				};
 			}
 		else if (o.Operands.Count < 2)
+			step = c => { if (In1(c) && last == c) return; sb.Append(c); last = c; };   // -s alone: squeeze SET1
+		else if (complement)
 			{
-			// -s alone: squeeze repeats of SET1 characters
-			char? last = null;
-			foreach (char c in input) { if (In1(c) && last == c) continue; sb.Append(c); last = c; }
+			// every char NOT in set1 maps to the last char of set2
+			char to = s2.Length > 0 ? s2[^1] : ' ';
+			step = c =>
+				{
+				char oc = set1.Contains(c) ? c : to;
+				if (squeeze && !set1.Contains(c) && last == oc) return;
+				sb.Append(oc); last = oc;
+				};
 			}
 		else
 			{
-			char? last = null;
-			if (complement)
+			var map = new Dictionary<char, char>();
+			int limit = truncate ? Math.Min(s1.Length, s2.Length) : s1.Length;
+			for (int i = 0; i < limit; i++)
+				map[s1[i]] = i < s2.Length ? s2[i] : (s2.Length > 0 ? s2[^1] : s1[i]);
+			step = c =>
 				{
-				// every char NOT in set1 maps to the last char of set2
-				char to = s2.Length > 0 ? s2[^1] : ' ';
-				foreach (char c in input)
-					{
-					char oc = set1.Contains(c) ? c : to;
-					if (squeeze && !set1.Contains(c) && last == oc) continue;
-					sb.Append(oc); last = oc;
-					}
-				}
-			else
-				{
-				var map = new Dictionary<char, char>();
-				int limit = truncate ? Math.Min(s1.Length, s2.Length) : s1.Length;
-				for (int i = 0; i < limit; i++)
-					map[s1[i]] = i < s2.Length ? s2[i] : (s2.Length > 0 ? s2[^1] : s1[i]);
-				foreach (char c in input)
-					{
-					char oc = map.TryGetValue(c, out var m) ? m : c;
-					if (squeeze && last == oc && map.ContainsKey(c)) continue;
-					sb.Append(oc); last = oc;
-					}
-				}
+				char oc = map.TryGetValue(c, out var m) ? m : c;
+				if (squeeze && last == oc && map.ContainsKey(c)) return;
+				sb.Append(oc); last = oc;
+				};
 			}
-		Console.Out.Write(sb.ToString());
+
+		// a filter, a block at a time, as GNU tr: it read ALL its input first until 2026-10-10, so
+		// `tr '\0' z < /dev/zero | head -c 3` never ended and a large input had to fit in memory
+		var buf = new char[8192];
+		int n;
+		while ((n = Console.In.Read(buf, 0, buf.Length)) > 0)
+			{
+			for (int i = 0; i < n; i++) step(buf[i]);
+			Console.Out.Write(sb.ToString());
+			sb.Clear();
+			}
 		return 0;
 		}
 
@@ -720,40 +724,86 @@ public sealed partial class Builtins
 
 	// ── fold ────────────────────────────────────────────────────────────────────
 
+	/// <summary>GNU fold, ported from coreutils fold.c: a column per byte, except that `\b` moves one
+	/// back, `\r` returns to 0 and a tab to the next multiple of 8 (`-b`: every byte is one column);
+	/// a byte that would pass the width starts the next line, and `-s` breaks after the last blank
+	/// instead. Input with no final newline gets none. Until 2026-10-08 it cut each line into
+	/// fixed runs of characters, so `\r`, `\b` and tabs counted as one column each.</summary>
 	private static int Fold(List<string> args)
 		{
 		var o = Opts.Parse("fold", args, "w:sb", ["width=:w", "spaces:s", "bytes:b"], allowNumeric: true);
-		int w = o.Numeric is not null ? int.Parse(o.Numeric) : o.GetInt('w', 80);
-		bool atSpaces = o.Has('s');
-		if (w < 1) w = 1;
+		int width = o.Numeric is not null ? int.Parse(o.Numeric) : o.GetInt('w', 80);
+		bool breakSpaces = o.Has('s'), countBytes = o.Has('b');
+		if (width < 1) width = 1;
+		var rout = Evaluator.CurrentRawStdout();
+		if (rout is not null) Console.Out.Flush();
+		void Write(List<byte> bytes, int count)
+			{
+			var chunk = bytes.GetRange(0, count).ToArray();
+			if (rout is not null) rout.Write(chunk, 0, chunk.Length);
+			else Console.Out.Write(ShellEncoding.Utf8.GetString(chunk));
+			}
+		int Adjust(int column, byte c) => countBytes ? column + 1 : c switch
+			{
+			(byte)'\b' => column > 0 ? column - 1 : 0,
+			(byte)'\r' => 0,
+			(byte)'\t' => column + 8 - column % 8,
+			_          => column + 1,
+			};
 		int rc = 0;
 		foreach (var f in FilesOrStdin(o))
 			{
-			TextReader? r = null;
+			Stream? input = null;
+			bool own = f != "-";
 			try
 				{
-				r = OpenText(f);
-				foreach (var line in ReadLines(r))
-					{
-					if (line.Length == 0) { Console.WriteLine(); continue; }
-					int i = 0;
-					while (i < line.Length)
+				input = own ? ShellFile.OpenInput(ShellEnvironment.TranslatePath(f))
+				      : Evaluator.CurrentRawStdin() ?? new MemoryStream(ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd()));
+				var line = new List<byte>();
+				int column = 0;
+				var buf = new byte[8192];
+				int n;
+				while ((n = input.Read(buf, 0, buf.Length)) > 0)
+					for (int k = 0; k < n; k++)
 						{
-						int len = Math.Min(w, line.Length - i);
-						if (atSpaces && i + len < line.Length)
+						byte c = buf[k];
+						if (c == (byte)'\n') { line.Add(c); Write(line, line.Count); line.Clear(); column = 0; continue; }
+					rescan:
+						column = Adjust(column, c);
+						if (column > width)
 							{
-							int sp = line.LastIndexOf(' ', i + len - 1, len);
-							if (sp > i) len = sp - i + 1;
+							if (breakSpaces)
+								{
+								int end = line.Count;
+								bool found = false;
+								while (end > 0) { --end; if (line[end] is (byte)' ' or (byte)'\t') { found = true; break; } }
+								if (found)
+									{
+									end++;
+									Write(line, end);
+									Write([(byte)'\n'], 1);
+									line.RemoveRange(0, end);
+									column = 0;
+									foreach (var b in line) column = Adjust(column, b);
+									goto rescan;
+									}
+								}
+							if (line.Count == 0) { line.Add(c); continue; }
+							line.Add((byte)'\n');
+							Write(line, line.Count);
+							line.Clear();
+							column = 0;
+							goto rescan;
 							}
-						Console.WriteLine(line.Substring(i, len));
-						i += len;
+						line.Add(c);
 						}
-					}
+				if (line.Count > 0) Write(line, line.Count);
 				}
 			catch (BrokenPipeException) { throw; }
 			catch (Exception ex) { Console.Error.WriteLine($"fold: {f}: {IoError(ex)}"); rc = 1; }
-			finally { if (f != "-") r?.Dispose(); }
+			finally { if (own) input?.Dispose(); }
 			}
+		if (rout is not null) rout.Flush(); else Console.Out.Flush();
 		return rc;
 		}
 
@@ -843,9 +893,15 @@ public sealed partial class Builtins
 		var o = Opts.Parse("tee", args, "aip", ["append:a", "ignore-interrupts:i", "output-error="]);
 		bool append = o.Has('a');
 		var files = new List<FileStream>();
+		var copies = new List<TextWriter>();   // /dev/stdout and /dev/stderr operands
 		int rc = 0;
 		foreach (var f in o.Operands)
 			{
+			// the device names, as the redirects take them: /dev/null was translated to <drive>/dev/null
+			// and failed ("No such file or directory", status 1) until 2026-10-08
+			if (f == "/dev/null") continue;
+			if (f == "/dev/stdout") { copies.Add(Console.Out); continue; }
+			if (f == "/dev/stderr") { copies.Add(Console.Error); continue; }
 			try
 				{
 				var p = ShellEnvironment.TranslatePath(f);
@@ -869,6 +925,7 @@ public sealed partial class Builtins
 					if (rout is not null) { rout.Write(buf, 0, n); rout.Flush(); }
 					else { Console.Out.Write(ShellEncoding.Utf8.GetString(buf, 0, n)); Console.Out.Flush(); }
 					foreach (var fs in files) fs.Write(buf, 0, n);
+					foreach (var w in copies) { w.Write(ShellEncoding.Utf8.GetString(buf, 0, n)); w.Flush(); }
 					}
 				}
 			else
@@ -881,6 +938,7 @@ public sealed partial class Builtins
 					Console.Out.Flush();
 					var b = ShellEncoding.Utf8.GetBytes(buf, 0, n);
 					foreach (var fs in files) fs.Write(b, 0, b.Length);
+					foreach (var w in copies) { w.Write(buf, 0, n); w.Flush(); }
 					}
 				}
 			}
@@ -1170,7 +1228,7 @@ public sealed partial class Builtins
 				}
 			Console.WriteLine(sb.ToString());
 			}
-		if (addr != "n" && data.Length > 0) Console.WriteLine(Addr(data.Length));
+		if (addr != "n") Console.WriteLine(Addr(data.Length));   // GNU prints it for empty input too (`0000000`)
 		return 0;
 		}
 

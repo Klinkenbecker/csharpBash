@@ -56,7 +56,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		if (word.Parts is [BraceExpansionPart bp] && bp.Raw is not ("@" or "*")
 		    && IsSimpleParam(bp.Raw) && (ifs == " \t\n"))
 			{
-			var val = _env.Get(bp.Raw);
+			var val = GetChecked(bp.Raw);
 			if (val.Length == 0) return [];
 			if (!HasBraceOrGlob(val) && !HasWhitespace(val)) return [val];
 			}
@@ -69,7 +69,10 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 
 		void Flush() { fields.Add(current.ToString()); fieldGlob.Add(curGlob); current.Clear(); open = false; curGlob = false; }
 
-		void AppendText(string text, bool quoted)
+		// split: false for LITERAL text, which bash never field-splits (only expansion results);
+		// it stays glob/brace-eligible. Until 2026-10-08 literal text was split like an expansion
+		// whenever the word missed the single-literal fast path, so `a\ b/x*` became `a` + `b/x*`.
+		void AppendText(string text, bool quoted, bool split = true)
 			{
 			if (quoted)
 				{ current.Append(text); open = true; }   // quoted: never glob/brace-eligible
@@ -77,7 +80,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				{
 				foreach (char c in text)
 					{
-					if (ifs.Contains(c))
+					if (split && ifs.Contains(c))
 						{ if (open) Flush(); }
 					else
 						{
@@ -132,12 +135,56 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				case BraceExpansionPart b when TryArrayExpansion(b.Raw, out var elems, out bool star):
 					AppendArray(elems, star, quoted);
 					break;
+				case BraceExpansionPart b when TryOperatorWord(b.Raw, out var opWord, out var opValue):
+					if (opWord is not null) ProcessOperatorWord(opWord, quoted);
+					else AppendText(opValue!, quoted);
+					break;
+				case LiteralPart l:
+					AppendText(l.Value, quoted, split: false);
+					break;
+				case TildePart t:
+					// POSIX: the home directory is not split or globbed (a home with a space);
+					// the rest of the word is literal text
+					AppendText(TildeHome(), true);
+					AppendText(t.Suffix, quoted, split: false);
+					break;
 				default:
 					// Single-quoted, ANSI-C, and heredoc parts are inherently quoted
 					// regardless of surrounding context — never word-split them.
-					AppendText(ExpandPart(part),
-						quoted || part is SingleQuotedPart or AnsiCQuotedPart or HeredocBodyPart);
+					bool outerDq = _inDoubleQuotes;
+					_inDoubleQuotes = quoted;   // for a ${x:=word} inside "…"
+					string text;
+					try { text = ExpandPart(part); }
+					finally { _inDoubleQuotes = outerDq; }
+					AppendText(text,
+						quoted || part is SingleQuotedPart or AnsiCQuotedPart or HeredocBodyPart or AssignmentArgPart);
 					break;
+				}
+			}
+
+		// The word of ${x:-word} / ${x:+word} is expanded in the ${ }'s own context, as bash does.
+		// Inside "…" it reads as double-quoted text: its own `"` only toggle quoting, and `'`, `\ `
+		// and `~` are literal. Unquoted, its blanks separate fields (per IFS, like any expansion
+		// result) and its quoted parts stay quoted: ${v:+-o "$w"} is two fields, the second whole.
+		// Until 2026-10-08 the word was expanded alone and joined with single spaces, so
+		// "${v:+$v }" lost its trailing space and ${u:-a "b c"} gave three fields.
+		void ProcessOperatorWord(string text, bool quoted)
+			{
+			if (quoted)
+				{
+				var dqParts = Parser.Parser.ParseDoubleQuotedText(RemoveTopLevelDoubleQuotes(text));
+				AppendText("", true);   // a quoted empty word still anchors its field
+				foreach (var p in dqParts) Process(p, true);
+				return;
+				}
+			foreach (var (segment, blank) in SplitAtBlanks(text))
+				{
+				if (blank) { AppendText(segment, false); continue; }
+				List<Word> segWords;
+				try { segWords = Parser.Parser.ParseWords(segment); }
+				catch (Exception ex) when (ex is Lexer.LexException or Parser.ParseException) { AppendText(segment, false); continue; }
+				foreach (var w in segWords)
+					foreach (var p in w.Parts) Process(p, false);
 				}
 			}
 
@@ -299,15 +346,40 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		SingleQuotedPart s         => s.Value,
 		AnsiCQuotedPart a          => a.Value,   // already decoded by lexer
 		HeredocBodyPart h          => h.Body,
-		DoubleQuotedPart d         => string.Concat(d.Parts.Select(ExpandPart)),
+		DoubleQuotedPart d         => ExpandInDoubleQuotes(d),
 		TildePart t                => ExpandTilde(t.Suffix),
-		VarExpansionPart v         => _env.Get(v.Name),
+		AssignmentArgPart aa       => aa.Index is null
+		                              ? $"{aa.Name}={ExpandToString(aa.Value)}"
+		                              : $"{aa.Name}[{ExpandToString(aa.Index)}]={ExpandToString(aa.Value)}",
+		VarExpansionPart v         => GetChecked(v.Name, dollarForm: true),
 		BraceExpansionPart b       => ExpandBraceParam(b.Raw),
-		CommandSubstitutionPart cs => RunSubstitution(cs.Command),
-		ProcessSubstitutionPart ps => RunProcessSubstitution(ps.Command),
+		CommandSubstitutionPart cs => OutsideDoubleQuotes(() => RunSubstitution(cs.Command)),
+		ProcessSubstitutionPart ps => OutsideDoubleQuotes(() => RunProcessSubstitution(ps.Command)),
 		ArithmeticExpansionPart a  => EvalArithmetic(a.Expression).ToString(),
 		_ => ""
 		};
+
+	/// <summary>True while a part inside "…" is being expanded: a ${x:-word} there reads its word
+	/// as double-quoted text (ExpandOperatorWord).</summary>
+	private bool _inDoubleQuotes;
+
+	private string ExpandInDoubleQuotes(DoubleQuotedPart d)
+		{
+		bool outer = _inDoubleQuotes;
+		_inDoubleQuotes = true;
+		try { return string.Concat(d.Parts.Select(ExpandPart)); }
+		finally { _inDoubleQuotes = outer; }
+		}
+
+	/// <summary>The command inside $( ) or <( ) has its own quoting: the flag of the word around it
+	/// must not reach the words inside it.</summary>
+	private string OutsideDoubleQuotes(Func<string> run)
+		{
+		bool outer = _inDoubleQuotes;
+		_inDoubleQuotes = false;
+		try { return run(); }
+		finally { _inDoubleQuotes = outer; }
+		}
 
 	// ── tilde expansion ───────────────────────────────────────────────────────
 
@@ -315,14 +387,32 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		{
 		// ~  or ~/path  →  $HOME/path
 		// ~user — not supported yet, return as-is
-		var home = _env.Get("HOME");
-		if (home.Length == 0)
-			home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
+		var home = TildeHome();
 		if (suffix.Length == 0) return home;
 
 		// suffix starts with / or \ already
 		return home + suffix;
+		}
+
+	/// <summary>A parameter's value, with `set -u`: expanding an unset parameter is an error that
+	/// ends a non-interactive shell, as in bash. `$@` and `$*` never are. Until 2026-10-08 `set -u`
+	/// was accepted and never enforced.</summary>
+	/// <param name="dollarForm">Written `$1` rather than `${1}`: bash then names a positional `$1` in the message.</param>
+	private string GetChecked(string name, bool dollarForm = false)
+		{
+		if (_eval.Options.UnsetError && name.Length > 0 && !_env.IsSet(name) && name is not ("@" or "*"))
+			throw Unbound(dollarForm && char.IsAsciiDigit(name[0]) ? "$" + name : name);
+		return _env.Get(name);
+		}
+
+	/// <summary>bash's message: `x: unbound variable`, `$1: …` for `$1`, `10: …` for `${10}`, `a[1]: …`.</summary>
+	private static FatalShellException Unbound(string name) =>
+		new($"{name}: unbound variable") { ExpansionError = true };
+
+	private string TildeHome()
+		{
+		var home = _env.Get("HOME");
+		return ShellEnvironment.ToShellPath(home.Length > 0 ? home : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 		}
 
 	// ── ${VAR...} parameter expansion ────────────────────────────────────────
@@ -334,7 +424,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		// Fast path: a bare name ($var, $1) or special parameter ($#, $@, $?, …) with
 		// no operator/subscript. This is the overwhelmingly common case in hot loops,
 		// so skip the operator-detection predicates below and look up directly.
-		if (IsSimpleParam(raw)) return _env.Get(raw);
+		if (IsSimpleParam(raw)) return GetChecked(raw);
 
 		// ── ${#…} lengths ──────────────────────────────────────────────────────────
 		if (raw[0] == '#' && raw.Length > 1)
@@ -349,8 +439,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				}
 			int lb0 = body.IndexOf('[');
 			if (lb0 > 0 && body.EndsWith(']'))
-				return CharCount(ElementValue(body[..lb0], body[(lb0 + 1)..^1])).ToString();
-			if (IsSimpleParam(body)) return CharCount(_env.Get(body)).ToString();
+				return CharCount(ElementValue(body[..lb0], body[(lb0 + 1)..^1])).ToString();   // an unset element is 0 even with set -u (bash)
+			if (IsSimpleParam(body)) return CharCount(GetChecked(body)).ToString();
 			// ${#x:-y} etc. is not valid bash; fall through to treat as a name
 			}
 
@@ -409,7 +499,14 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			return _env.HasArrayElement(name, (int)EvalArithmetic(sub));
 			}
 
-		if (op.Length == 0) return ValueOf();
+		// set -u: an unset parameter is an error for every form but the ${x-…} ${x=…} ${x+…} ${x?…}
+		// family (checked below) and whole arrays (${a[@]})
+		bool unboundCheck = _eval.Options.UnsetError && !isArrayAll;
+		if (op.Length == 0)
+			{
+			if (unboundCheck && !IsSetParam()) throw Unbound(param);
+			return ValueOf();
+			}
 
 		// element-wise application for ${arr[@]<op>}
 		List<string>? elems = null;
@@ -426,22 +523,29 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			{
 			bool colon = op[0] == ':';
 			char kind  = colon ? op[1] : op[0];
-			var word   = ExpandOperatorWord(op[(colon ? 2 : 1)..]);
+			// the word is expanded only when the operator selects it, as in bash: it was expanded
+			// first until 2026-10-08, so ${x:-$(cmd)} ran cmd with x set
+			string OpWord() => ExpandOperatorWord(op[(colon ? 2 : 1)..]);
 			var val    = ValueOf();
 			bool unsetOrNull = colon ? val.Length == 0 : !IsSetParam();
 			switch (kind)
 				{
-				case '-': return unsetOrNull ? word : val;
+				case '-': return unsetOrNull ? OpWord() : val;
 				case '=':
-					if (unsetOrNull) { if (sub is null) _env.Set(name, word); return word; }
+					if (unsetOrNull) { var w = OpWord(); if (sub is null) _env.Set(name, w); return w; }
 					return val;
-				case '+': return unsetOrNull ? "" : word;
+				case '+': return unsetOrNull ? "" : OpWord();
 				case '?':
-					if (unsetOrNull) throw new FatalShellException(
-						$"{param}: {(word.Length > 0 ? word : "parameter null or not set")}");
+					if (unsetOrNull)
+						{
+						var w = OpWord();
+						throw new FatalShellException($"{param}: {(w.Length > 0 ? w : "parameter null or not set")}") { ExpansionError = true };
+						}
 					return val;
 				}
 			}
+
+		if (unboundCheck && !IsSetParam()) throw Unbound(param);
 
 		// ${x:offset[:length]} substring
 		if (op[0] == ':')
@@ -545,23 +649,112 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 
 	private string QuoteForQ(string s) => s.Length == 0 ? "''" : "'" + s.Replace("'", "'\\''") + "'";
 
-	/// <summary>The word of `${x:-word}` / `${x:=word}` / `${x:+word}` / `${x:?word}` undergoes
-	/// tilde, parameter, command and arithmetic expansion and quote removal (`${1+"$@"}`,
-	/// `${dir:-$HOME}`, `${msg:-"a b"}`). Fields are joined with spaces here — the single
-	/// value the caller needs — so an unquoted-vs-quoted `$@` distinction is not preserved.</summary>
+	/// <summary>The word of `${x:-word}` / `${x:=word}` / `${x:+word}` / `${x:?word}` as ONE string
+	/// (an assignment value, `:=`, `?`'s message, any string context): tilde, parameter, command
+	/// and arithmetic expansion and quote removal, the word's own blanks kept, nothing split or
+	/// globbed. Inside "…" it reads as double-quoted text. Until 2026-10-08 the parts were split
+	/// and re-joined with single spaces, so `x=${u:-$w}` collapsed the blanks inside `$w`. In a
+	/// list of fields ExpandToFields expands the word in place instead (ProcessOperatorWord).</summary>
 	private string ExpandOperatorWord(string word)
 		{
 		if (word.Length == 0) return word;
 		if (word.IndexOfAny(['$', '"', '\'', '`', '~', '\\']) < 0) return word;
 		try
 			{
-			var words = Parser.Parser.ParseWords(word);
-			return string.Join(" ", words.SelectMany(ExpandToFields));
+			if (_inDoubleQuotes)
+				return string.Concat(Parser.Parser.ParseDoubleQuotedText(RemoveTopLevelDoubleQuotes(word)).Select(ExpandPart));
+			var sb = new System.Text.StringBuilder();
+			foreach (var (segment, blank) in SplitAtBlanks(word))
+				sb.Append(blank ? segment : string.Concat(Parser.Parser.ParseWords(segment).Select(ExpandToString)));
+			return sb.ToString();
 			}
 		catch (Exception ex) when (ex is Lexer.LexException or Parser.ParseException)
 			{
 			return word;
 			}
+		}
+
+	/// <summary>`${x-w}` `${x:-w}` `${x+w}` `${x:+w}` on a scalar or one element: true, with the
+	/// operator's WORD (unexpanded, for the caller to expand in its own context) when the operator
+	/// selects it, else the parameter's value. False for every other form: lengths, indirection,
+	/// `$@`/`$*`, whole arrays, and the other operators, which keep the string path.</summary>
+	private bool TryOperatorWord(string raw, out string? word, out string? value)
+		{
+		word = value = null;
+		if (raw.Length < 3 || raw[0] is '#' or '!' or '@' or '*') return false;
+		int opStart = FindOperatorStart(raw);
+		if (opStart < 0) return false;
+		string param = raw[..opStart], op = raw[opStart..];
+		int k = op[0] == ':' ? 1 : 0;
+		if (op.Length <= k || op[k] is not ('-' or '+')) return false;
+		if (param.EndsWith("[@]") || param.EndsWith("[*]")) return false;
+		// the value without set -u's check: these operators are how a script tests for unset
+		int lb = param.IndexOf('[');
+		string val = lb > 0 && param.EndsWith(']') ? ElementValue(param[..lb], param[(lb + 1)..^1]) : _env.Get(param);
+		bool unsetOrNull = k == 1 ? val.Length == 0 : !ParamIsSet(param);
+		bool takesWord = op[k] == '-' ? unsetOrNull : !unsetOrNull;
+		if (takesWord) word = op[(k + 1)..];
+		else value = op[k] == '-' ? val : "";
+		return true;
+		}
+
+	private bool ParamIsSet(string param)
+		{
+		int lb = param.IndexOf('[');
+		if (lb > 0 && param.EndsWith(']'))
+			{
+			string name = param[..lb], sub = param[(lb + 1)..^1];
+			if (_env.IsAssoc(name)) return _env.HasAssocElement(name, ExpandSubscript(sub));
+			return _env.HasArrayElement(name, (int)EvalArithmetic(sub));
+			}
+		return _env.IsSet(param);
+		}
+
+	/// <summary>An operator word cut at its top-level blanks (outside quotes, `$( )`, `${ }`,
+	/// backquotes and backslash escapes): the words, and the blank runs between them.</summary>
+	private static List<(string Text, bool Blank)> SplitAtBlanks(string s)
+		{
+		var segments = new List<(string, bool)>();
+		var sb = new System.Text.StringBuilder();
+		bool inBlank = false;
+		for (int i = 0; i < s.Length; )
+			{
+			char c = s[i];
+			bool isBlank = c is ' ' or '\t' or '\n';
+			if (isBlank != inBlank && sb.Length > 0) { segments.Add((sb.ToString(), inBlank)); sb.Clear(); }
+			inBlank = isBlank;
+			// quotes, backquotes, $( ) and ${ } are whole units (Lexer.ConstructEnd); a blank inside one
+			// separates nothing; an escaped character is part of the word
+			int next = c == '\\' && i + 1 < s.Length ? i + 2
+			         : c is '\'' or '"' or '`' || (c == '$' && i + 1 < s.Length && s[i + 1] is '(' or '{' or '\'') ? SkipConstruct(s, i)
+			         : i + 1;
+			sb.Append(s, i, next - i);
+			i = next;
+			}
+		if (sb.Length > 0) segments.Add((sb.ToString(), inBlank));
+		return segments;
+		}
+
+	/// <summary>An operator word inside "…" with its own top-level `"` removed: there they only
+	/// toggle quoting, and the whole word is quoted either way ("${x:-"a b"}" is `a b`). Escaped
+	/// quotes and anything inside `$( )`, `${ }` or backquotes are kept.</summary>
+	private static string RemoveTopLevelDoubleQuotes(string s)
+		{
+		if (s.IndexOf('"') < 0 && !s.Contains("\\}")) return s;
+		var sb = new System.Text.StringBuilder(s.Length);
+		for (int i = 0; i < s.Length; )
+			{
+			char c = s[i];
+			if (c == '"') { i++; continue; }   // a top-level quote only toggles quoting here
+			if (c == '\\' && i + 1 < s.Length && s[i + 1] == '}') { sb.Append('}'); i += 2; continue; }   // \} is a brace (bash)
+			// an escaped character, a backquote or a $( ) / ${ } is copied whole (Lexer.ConstructEnd)
+			int next = c == '\\' && i + 1 < s.Length ? i + 2
+			         : c == '`' || (c == '$' && i + 1 < s.Length && s[i + 1] is '(' or '{') ? SkipConstruct(s, i)
+			         : i + 1;
+			sb.Append(s, i, next - i);
+			i = next;
+			}
+		return sb.ToString();
 		}
 
 	private string Attrs(string name)
@@ -704,61 +897,12 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 
 	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<Word>> s_segmentWords = new(StringComparer.Ordinal);
 
-	/// <summary>Index just past the quoted or `$`/backtick construct starting at <paramref name="i"/>,
-	/// nesting through quotes and expansions inside it.</summary>
+	/// <summary>Index just past the quoted or `$`/backtick construct starting at <paramref name="i"/>
+	/// (Lexer.ConstructEnd, the one matcher); an unclosed one runs to the end of the text.</summary>
 	private static int SkipConstruct(string s, int i)
 		{
-		char c = s[i];
-		if (c == '\'') { int e = s.IndexOf('\'', i + 1); return e < 0 ? s.Length : e + 1; }
-		if (c == '`')
-			{
-			int j = i + 1;
-			while (j < s.Length && s[j] != '`') j += s[j] == '\\' ? 2 : 1;
-			return Math.Min(j + 1, s.Length);
-			}
-		if (c == '"')
-			{
-			int j = i + 1;
-			while (j < s.Length && s[j] != '"')
-				{
-				if (s[j] == '\\') { j += 2; continue; }
-				if (s[j] == '`' || (s[j] == '$' && j + 1 < s.Length && s[j + 1] is '{' or '(')) { j = SkipConstruct(s, j); continue; }
-				j++;
-				}
-			return Math.Min(j + 1, s.Length);
-			}
-		// '$'
-		if (i + 1 >= s.Length) return s.Length;
-		char n = s[i + 1];
-		if (n == '\'')
-			{
-			int j = i + 2;
-			while (j < s.Length && s[j] != '\'') j += s[j] == '\\' ? 2 : 1;
-			return Math.Min(j + 1, s.Length);
-			}
-		if (n is '{' or '(')
-			{
-			char open = n, close = n == '{' ? '}' : ')';
-			int depth = 0, j = i + 1;
-			while (j < s.Length)
-				{
-				char ch = s[j];
-				if (ch == '\\') { j += 2; continue; }
-				if (ch is '\'' or '"' or '`' || (ch == '$' && j + 1 < s.Length && s[j + 1] is '{' or '(' or '\''))
-					{ if (j > i + 1) { j = SkipConstruct(s, j); continue; } }
-				if (ch == open) depth++;
-				else if (ch == close && --depth == 0) return j + 1;
-				j++;
-				}
-			return s.Length;
-			}
-		if (char.IsLetter(n) || n == '_')
-			{
-			int j = i + 1;
-			while (j < s.Length && (char.IsLetterOrDigit(s[j]) || s[j] == '_')) j++;
-			return j;
-			}
-		return i + 2;   // $1 $@ $* $# $? $$ $! $- $0
+		int end = Lexer.Lexer.ConstructEnd(s, i);
+		return end < 0 ? s.Length : Math.Min(end, s.Length);
 		}
 
 	private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, bool), System.Text.RegularExpressions.Regex> s_replaceRegex = new();
@@ -942,6 +1086,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		using var sw = new System.IO.StringWriter(captured) { NewLine = "\n" };
 		var snap = _env.TakeSnapshot();
 		var mark = _eval.EnterSubshell();   // functions, options, traps, aliases it sets vanish with it
+		int callerLine = _env.CurrentLine;
+		int lineBase = _eval.EnterLineBase();   // its lines count from the line of the command it is in
 		int status = 0;   // read by the finally if Execute throws past the catches
 		ConsoleMux.SetOut(sw);
 		ConsoleMux.Raw = null;
@@ -955,6 +1101,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 			_env.RestoreSnapshot(snap);
 			_eval.LeaveSubshell(mark);
+			_eval.LeaveLineBase(lineBase);
+			_env.CurrentLine = callerLine;   // the caller's $LINENO, which the body's commands moved
 			}
 		LastSubstStatus = status;
 		_env.LastExitCode = status;
@@ -1020,6 +1168,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		bool oldCap = ConsoleMux.Capturing;
 		var snap = _env.TakeSnapshot();
 		var mark = _eval.EnterSubshell();
+		int callerLine = _env.CurrentLine;
+		int lineBase = _eval.EnterLineBase();   // as for $( )
 		int status = 0;
 		using (var fs = ShellFile.Create(path))   // shared: an external inside writes to it through its own handle
 		using (var sw = new StreamWriter(fs, ShellEncoding.Utf8) { NewLine = "\n", AutoFlush = true })
@@ -1037,6 +1187,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 				_env.RestoreSnapshot(snap);
 				_eval.LeaveSubshell(mark);
+				_eval.LeaveLineBase(lineBase);
+				_env.CurrentLine = callerLine;
 				}
 			}
 		(_procSubFiles ??= []).Add(path);
@@ -1057,17 +1209,18 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			string val;
 			if (subscript is not null)
 				{
+				if (_o._eval.Options.UnsetError && !_o.ParamIsSet($"{name}[{subscript}]")) throw Unbound($"{name}[{subscript}]");
 				if (env.IsAssoc(name)) val = env.GetAssocElement(name, _o.ExpandSubscript(subscript));
 				else val = env.GetArrayElement(name, (int)_o.EvalArithmetic(subscript));
 				}
-			else val = env.Get(name);
+			else val = _o.GetChecked(name);   // set -u: an unset name in arithmetic is an error too
 			if (val.Length == 0) return 0;
 			if (long.TryParse(val, out var n)) return n;
 			// bash evaluates a non-numeric value as an expression itself (x="y+1")
 			if (_depth > 8) return 0;
 			_depth++;
 			try { return _o.EvalArithmetic(val); }
-			catch (EvalException) { return 0; }
+			catch (EvalException e) when (e is not FatalShellException) { return 0; }
 			finally { _depth--; }
 			}
 
@@ -1106,50 +1259,31 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			{
 			if (expr[i] == '$' && i + 1 < expr.Length)
 				{
+				// where each construct ends: Lexer.ConstructEnd, the one matcher (unclosed: to the end)
+				int end = Lexer.Lexer.ConstructEnd(expr, i);
+				bool closed = end >= 0;
+				if (!closed) end = expr.Length;
+				string Inner(int from, int closers) => expr[Math.Min(from, end)..Math.Max(Math.Min(from, end), closed ? end - closers : end)];
 				if (expr[i + 1] == '{')
 					{
-					i += 2;
-					int depth = 1, start = i;
-					while (i < expr.Length && depth > 0)
-						{
-						if (expr[i] == '{') depth++;
-						else if (expr[i] == '}') { depth--; if (depth == 0) break; }
-						i++;
-						}
-					var v = ExpandBraceParam(expr[start..i]);
-					if (i < expr.Length) i++;
+					var v = ExpandBraceParam(Inner(i + 2, 1));
+					i = end;
 					sb.Append(v.Length == 0 ? "0" : v);
 					continue;
 					}
 				if (expr[i + 1] == '(' && i + 2 < expr.Length && expr[i + 2] == '(')
 					{
 					// nested $(( )) : evaluate and splice the value
-					i += 3;
-					int depth = 2, start = i;
-					while (i < expr.Length && depth > 0)
-						{
-						if (expr[i] == '(') depth++;
-						else if (expr[i] == ')') { depth--; if (depth == 0) break; }
-						i++;
-						}
-					var inner = expr[start..Math.Max(start, i - 1)];
-					if (i < expr.Length) i++;
+					var inner = Inner(i + 3, 2);
+					i = end;
 					sb.Append(EvalArithmetic(inner));
 					continue;
 					}
 				if (expr[i + 1] == '(')
 					{
 					// $( ) inside arithmetic: run it and splice the output
-					i += 2;
-					int depth = 1, start = i;
-					while (i < expr.Length && depth > 0)
-						{
-						if (expr[i] == '(') depth++;
-						else if (expr[i] == ')') { depth--; if (depth == 0) break; }
-						i++;
-						}
-					var body = expr[start..i];
-					if (i < expr.Length) i++;
+					var body = Inner(i + 2, 1);
+					i = end;
 					var tokens = new Lexer.Lexer(body).Tokenize();
 					var ast = new Parser.Parser(tokens, body).Parse();
 					var v = RunSubstitution(ast);
@@ -1160,7 +1294,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				int s0 = i;
 				while (i < expr.Length && (char.IsLetterOrDigit(expr[i]) || expr[i] == '_')) i++;
 				if (i == s0 && i < expr.Length && "#?$!@*".IndexOf(expr[i]) >= 0) i++;
-				var val = _env.Get(expr[s0..i]);
+				var val = GetChecked(expr[s0..i], dollarForm: true);
 				sb.Append(val.Length == 0 ? "0" : val);
 				}
 			else
@@ -1182,23 +1316,18 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			{
 			if (s[i] == '$' && i + 1 < s.Length && s[i + 1] == '{')
 				{
-				i += 2;
-				int depth = 1, start = i;
-				while (i < s.Length && depth > 0)
-					{
-					if      (s[i] == '{') depth++;
-					else if (s[i] == '}') { depth--; if (depth == 0) break; }
-					i++;
-					}
-				sb.Append(ExpandBraceParam(s[start..i]));
-				if (i < s.Length) i++;   // skip closing }
+				int end = Lexer.Lexer.ConstructEnd(s, i);   // the one matcher; unclosed: to the end
+				bool closed = end >= 0;
+				if (!closed) end = s.Length;
+				sb.Append(ExpandBraceParam(s[(i + 2)..Math.Max(i + 2, closed ? end - 1 : end)]));
+				i = end;
 				}
 			else if (s[i] == '$' && i + 1 < s.Length)
 				{
 				i++;
 				int start = i;
 				while (i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] == '_')) i++;
-				sb.Append(_env.Get(s[start..i]));
+				sb.Append(GetChecked(s[start..i], dollarForm: true));
 				}
 			else
 				sb.Append(s[i++]);

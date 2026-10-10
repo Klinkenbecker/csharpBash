@@ -153,10 +153,11 @@ separate compile step.
 Two cross-cutting mechanisms:
 
 - **Per-statement error isolation.** Top-level statements run through `RunStatement`, which
-  catches `EvalException` (and other runtime faults like divide-by-zero), prints
-  `bash: …`, sets `$?` to a failure code, and continues with the next statement — matching how
-  an interactive bash session survives a bad command. *(DECISIONS: 2026-06-14 — `/dev/null` &
-  fd-aware redirects & error-continue.)*
+  catches `EvalException` (and other runtime faults like divide-by-zero), prints it with
+  bash's prefix (`script.sh: line 3: …`, captured where it was raised), sets `$?` to a failure
+  code, and continues with the next statement — matching how bash survives a bad command.
+  *(DECISIONS: 2026-06-14 — `/dev/null` & fd-aware redirects & error-continue; 2026-10-10 —
+  every error said `bash:`.)*
 
 - **Control flow as exceptions.** `exit`, `return`, `break`, `continue` and Ctrl-C unwind via
   dedicated exceptions (`ExitException`, `ReturnException`, `BreakException`,
@@ -249,10 +250,12 @@ the I/O model:
   an in-process table (`Evaluator._fds`) managed by the same scope.
 
 - **External processes** can't be reached by a slot swap — a child writes to OS handles —
-  so `ExecExternal` owns a self-contained fd-map and configures the child's
-  `ProcessStartInfo` directly (file truncate/append, `/dev/null` → `Stream.Null`,
-  `/dev/stdout`·`/dev/stderr`, `2>&1`, `1>&2`, `&>`, heredocs/here-strings as fed stdin, and
-  pipeline ends), for stdin, stdout **and** stderr. When an *in-process* redirect is already in
+  so `ExecExternal` owns a self-contained fd-map and hands the child exactly three std handles
+  through `ChildLauncher` (file truncate/append, NUL for `/dev/null` and the other device files,
+  `/dev/stdout`·`/dev/stderr`·`/dev/fd/N`, `2>&1`, `1>&2`, `&>`, heredocs/here-strings as fed
+  stdin, and pipeline ends), for stdin, stdout **and** stderr. A file the shell is reading (`while
+  read; do prog; done < list`) is given to the child itself at the shell's offset, so it reads only
+  what it reads, as a Unix child shares the offset. When an *in-process* redirect is already in
   effect around the command (a `$( )` capture, `{ … } >file`, a heredoc on a loop) the child's
   stdio is redirected and copied into the thread's current streams, so the output lands where
   bash would put it. Every child is placed in a kill-on-close **job object** (`ChildJobs`) so

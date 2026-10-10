@@ -1,0 +1,42 @@
+start
+main.sh: line 2: nosuch_top: command not found
+./lib.sh: line 4: nosuch_src: command not found
+./lib.sh: line 2: nosuch_lib: command not found
+main.sh: line 5: nosuch_in_f: command not found
+main.sh: line 7: nosuch_eval: command not found
+main.sh: line 9: nosuch_eval2: command not found
+main.sh: line 9: nosuch_cs: command not found
+main.sh: line 10: nosuch_pipe: command not found
+main.sh: line 11: nosuch_sub: command not found
+main.sh: line 13: nosuch_loop: command not found
+main.sh: line 13: nosuch_loop: command not found
+main.sh: line 15: nosuch_cond: command not found
+a b
+main.sh: line 17: nosuch_cont: command not found
+main.sh: line 18: cd: /nonexistent_zz: No such file or directory
+main.sh: line 19: printf: zz: invalid number
+0
+main.sh: line 20: read: -z: invalid option
+main.sh: line 21: /nonexistent_zz: No such file or directory
+main.sh: line 22: /nonexistent_zz/x: No such file or directory
+main.sh: line 24: ./nofile_zz: No such file or directory
+main.sh: line 25: u: custom message
+main.sh: line 27: nosuch_q: command not found
+[]
+main.sh: line 28: nosuch_hd: command not found
+
+main.sh: line 31: nosuch_op: command not found
+main.sh: line 31: nosuch_opq: command not found
+main.sh: line 31: nosuch_ar: command not found
+ 1
+main.sh: line 32: nosuch_fq: command not found
+
+L 34 34
+L 34
+L 35
+main.sh: line 35: u: last
+myname: line 2: nosuch_c: command not found
+environment: line 1: nosuch_cf: command not found
+evsyn.sh: eval: line 1: (syntax error)
+myname: -c: line 1: (syntax error)
+stray.sh: line 2: (syntax error)

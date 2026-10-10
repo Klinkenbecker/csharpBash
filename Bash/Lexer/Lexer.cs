@@ -90,7 +90,7 @@ public sealed class Lexer
 				tokens[delimIdx].Type is TokenType.SingleQuoted;
 			string delim = rawDelim; // already unquoted by lexer
 
-			tokens.Add(ConsumeHeredocBody(delim, stripTabs));
+			tokens.Add(ConsumeHeredocBody(delim, stripTabs, delimIdx < tokens.Count ? tokens[delimIdx].Line : _line));
 			}
 		}
 
@@ -248,10 +248,14 @@ public sealed class Lexer
 
 	// ── heredoc body ──────────────────────────────────────────────────────────
 
-	private Token ConsumeHeredocBody(string delimiter, bool stripTabs)
+	/// <summary>Warnings bash prints while reading the text, before running it: (line, text).</summary>
+	public List<(int Line, string Text)> Warnings { get; } = [];
+
+	private Token ConsumeHeredocBody(string delimiter, bool stripTabs, int opLine)
 		{
 		int startLine = _line, startCol = _col;
 		var sb = new System.Text.StringBuilder();
+		bool delimited = false;
 
 		while (_pos < _src.Length)
 			{
@@ -263,11 +267,17 @@ public sealed class Lexer
 			var line = lineSb.ToString();
 			var check = stripTabs ? line.TrimStart('\t') : line;
 
-			if (check == delimiter) break;
+			if (check == delimiter) { delimited = true; break; }
 
 			sb.Append(check);
 			sb.Append('\n');
 			}
+
+		// the end of the text closed it: bash runs it anyway, with this warning at the last line read
+		// (C#Bash was silent until 2026-10-10)
+		if (!delimited)
+			Warnings.Add((_src.EndsWith('\n') ? _line - 1 : _line,
+			              $"warning: here-document at line {opLine} delimited by end-of-file (wanted `{delimiter}')"));
 
 		return Make(TokenType.HeredocBody, sb.ToString(), startLine, startCol);
 		}
@@ -294,39 +304,17 @@ public sealed class Lexer
 
 		if (next == '{')
 			{
-			Advance(); // consume {
-			// Read the entire ${...} body as a raw string to avoid # being
-			// treated as a comment and other operator mis-tokenisation inside
-			// parameter expansions. The parser's ParseBraceExpansion will
-			// handle the content.
+			// The whole ${...} body as one raw string (so `#` is no comment and operators inside are
+			// not tokens); the parser's ParseBraceExpansion handles the content. Where it ends is
+			// ConstructEnd's rule. An unclosed ${ is an error (bash: unexpected EOF looking for `}'),
+			// never the rest of the file, which a nested ${ counted twice used to swallow silently.
+			int end = ConstructEnd(_src, _pos - 1);
+			if (end < 0)
+				throw new LexException("Unterminated parameter expansion ${", startLine, startCol) { Incomplete = true, Missing = '}' };
+			Advance(); // {
 			var sb = new System.Text.StringBuilder();
-			int depth = 1;
-			while (_pos < _src.Length && depth > 0)
-				{
-				char ch = Peek();
-				if (ch == '{') depth++;
-				if (ch == '}') { depth--; if (depth == 0) { Advance(); break; } }
-				// Handle nested ${ or $( so we don't miscount }
-				if (ch == '$' && _pos + 1 < _src.Length)
-					{
-					sb.Append(Advance()); // $
-					char after = Peek();
-					if (after == '{') depth++;
-					else if (after == '(') { /* don't affect brace depth */ }
-					continue;
-					}
-				// Handle quoted strings inside ${} so } inside quotes isn't counted
-				if (ch == '\'' || ch == '"')
-					{
-					char q = Advance();
-					sb.Append(q);
-					while (_pos < _src.Length && Peek() != q)
-						sb.Append(Advance());
-					if (_pos < _src.Length) sb.Append(Advance()); // closing quote
-					continue;
-					}
-				sb.Append(Advance());
-				}
+			while (_pos < end - 1) sb.Append(Advance());
+			Advance(); // }
 			return Make(TokenType.DollarLBrace, sb.ToString(), startLine, startCol);
 			}
 
@@ -435,7 +423,7 @@ public sealed class Lexer
 		while (_pos < _src.Length && Peek() != '\'')
 			sb.Append(Advance());
 		if (_pos >= _src.Length)
-			throw new LexException("Unterminated single-quoted string", startLine, startCol) { Incomplete = true };
+			throw new LexException("Unterminated single-quoted string", startLine, startCol) { Incomplete = true, Missing = '\'' };
 		Advance(); // closing '
 		return Make(TokenType.SingleQuoted, sb.ToString(), startLine, startCol);
 		}
@@ -452,59 +440,107 @@ public sealed class Lexer
 			{
 			if (Peek() == '\\' && _pos + 1 < _src.Length)
 				{ sb.Append(Advance()); sb.Append(Advance()); continue; }
-			// A nested $( … ), $(( … )), ${ … } or ` … ` may itself contain double quotes:
-			// copy it through as a balanced unit so its quotes don't end this string.
-			if (Peek() == '$' && _pos + 1 < _src.Length && (_src[_pos + 1] == '(' || _src[_pos + 1] == '{'))
+			// A nested $( … ), $(( … )), ${ … } or ` … ` may itself contain double quotes, braces
+			// and parentheses: copy it through as one unit (ConstructEnd's rule) so they don't end
+			// this string. Unclosed, the string is unterminated.
+			if (Peek() == '`' || (Peek() == '$' && _pos + 1 < _src.Length && (_src[_pos + 1] == '(' || _src[_pos + 1] == '{')))
 				{
-				sb.Append(Advance());                       // $
-				char open = Advance(); sb.Append(open);     // ( or {
-				char close = open == '(' ? ')' : '}';
-				int depth = 1;
-				while (_pos < _src.Length && depth > 0)
-					{
-					char ch = Peek();
-					if (ch == '\\' && _pos + 1 < _src.Length) { sb.Append(Advance()); sb.Append(Advance()); continue; }
-					if (ch == '\'' && open == '(')
-						{
-						sb.Append(Advance());
-						while (_pos < _src.Length && Peek() != '\'') sb.Append(Advance());
-						if (_pos < _src.Length) sb.Append(Advance());
-						continue;
-						}
-					if (ch == '"')
-						{
-						sb.Append(Advance());
-						while (_pos < _src.Length && Peek() != '"')
-							{
-							if (Peek() == '\\' && _pos + 1 < _src.Length) { sb.Append(Advance()); sb.Append(Advance()); continue; }
-							sb.Append(Advance());
-							}
-						if (_pos < _src.Length) sb.Append(Advance());
-						continue;
-						}
-					if (ch == open) depth++;
-					else if (ch == close) depth--;
-					sb.Append(Advance());
-					}
-				continue;
-				}
-			if (Peek() == '`')
-				{
-				sb.Append(Advance());
-				while (_pos < _src.Length && Peek() != '`')
-					{
-					if (Peek() == '\\' && _pos + 1 < _src.Length) { sb.Append(Advance()); sb.Append(Advance()); continue; }
-					sb.Append(Advance());
-					}
-				if (_pos < _src.Length) sb.Append(Advance());
+				int end = ConstructEnd(_src, _pos);
+				if (end < 0)
+					throw new LexException("Unterminated double-quoted string", startLine, startCol) { Incomplete = true, Missing = '"' };
+				while (_pos < end) sb.Append(Advance());
 				continue;
 				}
 			sb.Append(Advance());
 			}
 		if (_pos >= _src.Length)
-			throw new LexException("Unterminated double-quoted string", startLine, startCol) { Incomplete = true };
+			throw new LexException("Unterminated double-quoted string", startLine, startCol) { Incomplete = true, Missing = '"' };
 		Advance(); // closing "
 		return Make(TokenType.DoubleQuoted, sb.ToString(), startLine, startCol);
+		}
+
+	// ── the one construct matcher ─────────────────────────────────────────────
+
+	/// <summary>
+	/// The index just past the construct that opens at <paramref name="i"/> in <paramref name="s"/>,
+	/// or -1 if it never closes: `'…'`, `"…"`, `` `…` ``, `$'…'`, `${…}`, `$(…)`, `$((…))`, `$name`,
+	/// `$1`. Bash's single rule for where such a construct ends (parse.y, parse_matched_pair): a
+	/// backslash skips the next character; quotes, backquotes, `$( )` and `${ }` inside are matched
+	/// as units, so a `}` or `)` inside them closes nothing; within `${…}` only a `${` opens a brace
+	/// level (a bare `{` is literal), within `$( )` a bare `(` does. Every scanner of these
+	/// constructs uses this (2026-10-10): there were seven hand-written copies, each with its own
+	/// counting, and `${…}` broke in several (a nested `${` counted twice swallowed the rest of a
+	/// script; `\}`, `"}"`, `$(echo })` and a bare `{` closed or failed to close the wrong brace).
+	/// </summary>
+	public static int ConstructEnd(string s, int i)
+		{
+		if (i >= s.Length) return -1;
+		char c = s[i];
+		if (c == '\'') { int e = s.IndexOf('\'', i + 1); return e < 0 ? -1 : e + 1; }
+		if (c == '`')
+			{
+			for (int j = i + 1; j < s.Length; j++)
+				{
+				if (s[j] == '\\') { j++; continue; }
+				if (s[j] == '`') return j + 1;
+				}
+			return -1;
+			}
+		if (c == '"')
+			{
+			for (int j = i + 1; j < s.Length; )
+				{
+				char ch = s[j];
+				if (ch == '\\') { j += 2; continue; }
+				if (ch == '"') return j + 1;
+				if (ch == '`' || (ch == '$' && j + 1 < s.Length && s[j + 1] is '{' or '('))
+					{
+					j = ConstructEnd(s, j);
+					if (j < 0) return -1;
+					continue;
+					}
+				j++;
+				}
+			return -1;
+			}
+		if (c != '$' || i + 1 >= s.Length) return i + 1;
+		char n = s[i + 1];
+		if (n == '\'')
+			{
+			for (int j = i + 2; j < s.Length; j++)
+				{
+				if (s[j] == '\\') { j++; continue; }
+				if (s[j] == '\'') return j + 1;
+				}
+			return -1;
+			}
+		if (n is '{' or '(')
+			{
+			char close = n == '{' ? '}' : ')';
+			int depth = 1;
+			for (int j = i + 2; j < s.Length; )
+				{
+				char ch = s[j];
+				if (ch == '\\') { j += 2; continue; }
+				if (ch is '\'' or '"' or '`' || (ch == '$' && j + 1 < s.Length && s[j + 1] is '{' or '(' or '\''))
+					{
+					j = ConstructEnd(s, j);
+					if (j < 0) return -1;
+					continue;
+					}
+				if (n == '(' && ch == '(') depth++;
+				else if (ch == close && --depth == 0) return j + 1;
+				j++;
+				}
+			return -1;
+			}
+		if (char.IsLetter(n) || n == '_')
+			{
+			int j = i + 1;
+			while (j < s.Length && (char.IsLetterOrDigit(s[j]) || s[j] == '_')) j++;
+			return j;
+			}
+		return i + 2;   // $1 $@ $* $# $? $$ $! $- $0
 		}
 
 	// ── words ─────────────────────────────────────────────────────────────────
@@ -531,8 +567,10 @@ public sealed class Lexer
 				char escaped = Advance();
 				// an escaped glob, brace or tilde character must stay QUOTED for the expansions that
 				// come after lexing: the parser turns a marked character into a quoted part. Without
-				// it `echo \*` and `find -name \*.txt` globbed (2026-10-03).
-				if (escaped is '*' or '?' or '[' or '{' or '}' or ',' or '~') sb.Append(EscapeMark);
+				// it `echo \*` and `find -name \*.txt` globbed (2026-10-03). An escaped backslash too:
+				// left bare, `\\` reached a pattern as a lone `\` that escaped the next character, so
+				// `case 'a\b' in *\\*)` and `[[ $x =~ \\ ]]` failed and `*\\*` matched `a*` (2026-10-08).
+				if (escaped is '*' or '?' or '[' or '{' or '}' or ',' or '~' or '\\') sb.Append(EscapeMark);
 				sb.Append(escaped);
 				}
 			else

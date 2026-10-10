@@ -1,0 +1,21 @@
+1  A.B=1
+2  2
+3  trace
+4  rc=1
+5  [unset]
+6  rc=1
+7  rc=1
+8  0
+9  [1] [1] []
+11 [1] [1]
+13 A=1 B.C=2 
+14 1
+15 0
+16 1
+17 1
+18 0
+19 [1] after
+20 FOO still exported after env -i
+21 A.B=1
+22 []
+23 A=1|B=2|

@@ -1,0 +1,52 @@
+1   bc after 
+2   bc after 
+3   bc zz after 
+4   bc after 
+5   4 after 
+6   4 after 
+7   q r after 
+8   V after 
+9   match after 
+10  match m2 after 
+11  zz zz after 
+12  bc after 
+13  bc after 
+14  } } } after 
+15  abc a}c after 
+16  abc1 abc2 after 
+17  bc bc after 
+18  a after 
+19  q after 
+20  /h z after 
+21  bc after 
+22  xbcy xbcy after 
+23  bc after 
+24  a a after 
+25  abc} {x} after 
+26  ab}c after 
+27  ab}c after 
+28  [a] after 
+29  1 after 
+30  bc,zz,after 
+31  a"b after 
+32  } after 
+33  } after 
+34  } after 
+35  a}b after 
+36  'a}b' after 
+37  a}b after 
+38  } after 
+39  abc a}c after 
+40  abc} {x} after 
+41  a\b} after 
+42  3 } after 
+}
+a } b
+}}
+{
+x{
+in
+f
+[}]
+}x {y
+end

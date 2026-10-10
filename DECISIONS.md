@@ -3515,3 +3515,1139 @@ resolves `/usr/bin` tools.
 **Not chosen:** CREATE_NO_WINDOW per launch (what Claude Code does today): it allocates a conhost
 per launch, ~10 ms for every shell alike, and is Claude Code's defect (issue filed), not a shell
 cost.
+
+## 2026-10-08 -- BUILT: `df` in-process, GNU's format over Windows volumes (goal-2 backlog item 5)
+**Status:** Active. Greenlit 2026-10-04 ("Yes, then 2, 3 and 5 ..."); the architect, 2026-10-08:
+"ok, let's get df done". Plan as stated then: in-process, GNU-format output, checked against WSL.
+
+**Context:** `df` resolved to Git's `usr/bin/df.EXE`, which lists only PortableGit (as `/`) and
+`A:` here: no C:, E: or F: rows. Without Git on PATH there was no `df` at all. The 2026-10-04 scan
+found PowerShell detours for it.
+
+**Decision:** `df` is a coreutil in `Builtins.Sys.cs`. Choices, each settled by an existing rule:
+- **Which volumes:** with no operand, every drive letter A-Z whose volume is ready
+  (`GetLogicalDrives`, `GetVolumeInformationW`). A drive with no media, or access denied, is
+  skipped silently, as GNU skips a mount it cannot access (ENOENT/EACCES) when listing; any other
+  failure is reported (`df: 'X:/': <message>`, status 1). With operands: the volume holding each
+  one (`GetVolumePathNameW`), so a folder mount point or a UNC share works.
+- **Filesystem column:** `C:` for a drive letter (the MSYS and Cygwin convention); `//host/share`
+  for a mapped network drive (`WNetGetConnectionW`), which is how a Linux cifs mount shows its
+  source; the root itself for a UNC or folder-mount operand.
+- **Mounted on:** the shell's forward-slash path form, `C:/` (DECISIONS 2026-09-11/12).
+- **Type (`-T`, `-t`, `-x`):** the volume's file system name in lower case (`ntfs`, `fat`, `exfat`).
+  For a network drive that is the server's file system, not the transport (Linux would say
+  `cifs`): it is what Windows reports, nothing invented. `-t`/`-x` compare exactly, as GNU does.
+- **Numbers:** `GetDiskFreeSpaceExW`: size = total, used = total - free, available = free to the
+  caller (quota-aware). Use% = used / (used + available), rounded up; `-` when both are 0.
+- **Rounding, headers, widths:** ported from coreutils 8.32 and gnulib, not approximated:
+  `human_readable` (ceiling, one decimal under 10, `1.0` when rounding up reaches the base),
+  `humblock` for `-B` / `--block-size` / `DF_BLOCK_SIZE` / `BLOCK_SIZE` / `BLOCKSIZE` /
+  `POSIXLY_CORRECT`, `get_header` (the base that states the block size exactly: `1K`, `1M`,
+  `1B`, `512B`, `1kB`), per-field minimum widths, no padding after a left-aligned last column.
+- **Options:** `-h -H/--si -k -B -P -T -t -x -l --total --output=LIST -v --sync --no-sync`. The
+  last of `-h`/`-H`/`-k`/`-B` wins (GNU's rule), so `Opts` gained `Sequence`, every short option in
+  command-line order. `-l` skips a remote drive BEFORE any network I/O, as GNU does: `df -l`
+  0.36 s -> 0.019 s here (9 mapped shares).
+- **Loud (decision 2, so a PATH `df` takes over under `auto`):** `-i`, an `--output` list with
+  inode fields, bare `--output` (all fields, inodes included), and `-a`. Windows has no inode
+  counts; `-a` would mean inventing rows for drives that cannot be read.
+- **Messages:** GNU's text with ASCII apostrophes (GNU under `LC_ALL=C`), as C#Bash's other tools
+  print them; operands quoted only when the shell would need it (gnulib `quotef`).
+
+**Verified:**
+- `tests/df/compare-wsl.sh` (new, manual, run from Git Bash): 76 cases, each run by GNU df 8.32 in
+  WSL over `/mnt/<d>` and by C#Bash over `<D>:/`, on four quiet local volumes. Covers every unit
+  option and `-B` form, header modes, `--total`, `--output` orders, filters, env variables and
+  every error path. **76/76 identical** (stdout, stderr, status) on the Release and the AOT build,
+  after normalising only the by-design names (`G:\` / `G:`, `/mnt/g` / `G:/`, `9p` / `ntfs`).
+  Polarity: it reported differences when it was mis-run, and a real one (an unnormalised type name)
+  until fixed.
+- Suite case `df` (shape on C:, machine-independent): 72/72 with a console and `-Detached`, on
+  the Release and the AOT build. Control: the case fails on rev 136 (Git's df).
+
+**Known limits:**
+- Folder mount points without a drive letter are not listed with no operand (an operand inside
+  one works).
+- A full listing does network I/O for every mapped drive: 0.37 s here for 9 shares, local drives
+  under 1 ms each. A dead share can block for the SMB timeout, as a dead NFS mount blocks GNU df;
+  `df -l` avoids it.
+
+**Not chosen:**
+- **Enumerate volumes with `FindFirstVolumeW`** (would list folder mount points): it does not
+  cover mapped network drives, so two enumerations to merge, for a rare case.
+- **`/c`-style mount points** (what Git's df prints): contradicts the ratified path form.
+- **Filesystem as the volume GUID path** (the closest analogue of a Linux device): unreadable,
+  and the drive letter is what Windows users and tools name.
+
+## 2026-10-08 -- DEFECT FIXED: literal text was field-split (`a\ b/x*` became two words)
+**Status:** Active. The architect: "Yes" (start the bug list with this one).
+
+**Defect:** `ExpandToFields` split LITERAL text on IFS characters, the treatment bash gives only to
+the results of expansions. It showed whenever a word missed the single-literal fast path, which a
+glob character does: `a\ b/x*` gave `a` and `b/x*` (GNU: the two files), with `*`, `?` and `[ ]`
+alike, matched or not. Also `IFS=:; echo ab:c$v` split at the colon, and `~` split when the home
+directory contains a space (POSIX: a tilde result is not field-split), which a Windows profile
+such as `C:/Users/John Smith` does even with no glob. Silent wrong arguments in every case. Found
+2026-10-06 as a side observation, probed 2026-10-08.
+
+**Fix:** `AppendText` takes `split`; a `LiteralPart` is appended unsplit but stays glob- and
+brace-eligible; a `TildePart` appends the home directory as quoted text (`TildeHome`) and its
+suffix as literal text. Expansion results split exactly as before.
+
+**Verified:** new case `literal_no_split` (expected = GNU bash via WSL; 16 lines fail on the
+deployed rev 143 build, including all three tilde lines); suite 73/73 with a console and
+`-Detached`; compat battery 227/237 against Git Bash, exit 0 (no baseline probe regressed; the
+10 diffs are the known environment and by-design ones).
+
+**Not changed (seen while testing):** a pattern like `a:b*` globs as a DRIVE-RELATIVE path
+(drive A:'s current directory), which is Windows path syntax; on Linux it is a file name. Not
+raised; noted because a test line hit it on this machine, where A: is a mapped share.
+
+**Known limitation kept:** glob quoting is still per field, so a home directory containing `[ ]`
+or `*` is matched as a pattern when the rest of the word globs.
+
+## 2026-10-08 -- DEFECT FIXED: a declaration builtin's `name=$v` argument was field-split
+**Status:** Active. The architect: "go" (the next bug on the list).
+
+**Defect:** `local a=$1 b=$2` with `"x y"` set `a=x` and declared a second variable `y` (and
+printed "declare: `@D': not a valid identifier" for a value like `-P @D`). The same in `declare`,
+`typeset`, `export` and `readonly`, and for `name+=` and `name[i]=`. Bash expands an
+assignment-shaped argument of a declaration builtin like an assignment: one field, no splitting,
+no globbing. Silent wrong values; found 2026-10-08 when it broke the df comparison harness.
+
+**Fix:** the parser, which already knew the declaration builtins (it folds `local arr=(…)`), turns
+an argument that `IsAssignment` or `IsArrayElementAssign` accepts into an `AssignmentArgPart`
+when the command word is literally one of them. The expander gives it one unsplit, unglobbed
+field (`name=value`, `name+=value`, `name[index]=value`). As in bash, the rule is lexical:
+`cmd=local; $cmd z=$1` still splits, and so does a non-assignment argument (`local $v` with
+`v="p=1 q=2"` declares both). `local arr=($1)` is unchanged (it splits inside the parentheses).
+
+**Verified:** new case `declaration_assign` (expected = GNU bash via WSL; 10 lines fail on the
+deployed rev 143 build); suite 74/74 with a console and `-Detached`; compat battery 227/237 against
+Git Bash, exit 0, no baseline regression.
+
+**Found while testing, NOT fixed (separate defects, added to the list):**
+- A `~` in an assignment value is never expanded: `x=~/y` stays `~/y` (GNU: `$HOME/y`; also after
+  `:`, `x=a:~/b`). Every assignment, not only declaration builtins.
+- `local j` with no value gives `j` an empty value; bash declares it and leaves it unset, so
+  `${j-unset}` prints `unset` there and nothing here. `declare k` at the top level is right.
+
+## 2026-10-08 -- DEFECT FIXED: the word of `${x:-word}` / `${x:+word}` lost its quoting context
+**Status:** Active. The architect: "go" (the next bug on the list, reported as `"${v:+$v }"`
+dropping its trailing space).
+
+**Defect, wider than reported:** `ExpandOperatorWord` parsed the word as separate words, expanded
+each into fields and re-joined them with single spaces, detached from the context of the `${ }`.
+A 22-case comparison with GNU showed ten wrong:
+- inside "...": trailing and leading blanks lost (`"${v:+$v }"`, `"${v:+ --flag $v}"`), a value's
+  blanks collapsed (`"${u:-$w}"` with `w='p  q'`), and `'...'`, `\ ` and `~` processed where bash
+  keeps them literal;
+- unquoted: the word's own quotes stopped protecting: `${u:-a "b c" d}` gave four fields, not three;
+  `${u:-"f*"}` globbed; `${v:+-o "$w"}` split `"$w"`, the common `${var:+--opt "$var"}` idiom, and
+  `${1+"$@"}` broke arguments containing spaces. Silent wrong arguments in every case.
+
+**Fix (bash's rule: the word is expanded in the same context as the `${ }`):**
+- In a list of fields, `ExpandToFields` asks `TryOperatorWord` whether `-`/`+` selects the word
+  and, if so, expands the word IN PLACE (`ProcessOperatorWord`). Inside "...": the word is parsed
+  as double-quoted text (`Parser.ParseDoubleQuotedText`) after its top-level `"` are removed (they
+  only toggle quoting there). Unquoted: the word is cut at its top-level blanks (`SplitAtBlanks`,
+  aware of quotes, `$( )`, `${ }`, backquotes, escapes); blank runs split per IFS like any
+  expansion result, and each word's parts keep their own quoting.
+- In a string context (assignment values, `:=`, `?`), `ExpandOperatorWord` uses the same parsing
+  and joins the pieces with the word's own blanks, nothing split or globbed.
+- The expander knows it is inside "..." through `_inDoubleQuotes`, saved and restored around each
+  quoted part and cleared inside `$( )` / `<( )`, whose command has its own quoting.
+- Unchanged: `$@`/`$*` with operators, whole arrays (`${a[@]:-x}`), lengths, indirection.
+
+**Verified:** new case `operator_word` (36 lines, expected = GNU bash via WSL; 16 fail on the
+deployed rev 143 build); suite 75/75 with a console and `-Detached`; compat battery 227/237 against
+Git Bash, exit 0, no baseline regression.
+
+**Approximation kept:** in an unquoted operator word, an IFS character that is not a blank (with
+`IFS=:`, `${u:-a:b}`) does not split it; bash would. Literal text cannot tell an escaped `\:` from a
+plain `:` after parsing, and splitting it would break the escaped form. Not measured: the speed
+cost of the flag save/restore on each part in the slow expansion path (the benchmark was not run).
+
+## 2026-10-08 -- DEFECT FIXED: assignment values never expanded a tilde (`x=~/y` stayed `~/y`)
+**Status:** Active. The architect: "go" (the next bug; found 2026-10-08 while fixing `local`).
+
+**Defect:** bash expands a `~` at the start of an assignment value, and after each unquoted `:`
+in it, when followed by `/`, `:` or the end of the value (`x=~/y`, `PATH=$PATH:~/bin`, `x=~`).
+C#Bash expanded none of them: prefix assignments, `local`/`export`/`declare` arguments and
+`a[0]=` values all kept the literal `~`. Silent wrong paths, in a shape Claude writes for PATH and
+config variables. Array literals (`arr=(~/a)`) were already right: their elements are words.
+
+**Fix:** tilde expansion is lexical, so the parser does it where it builds an assignment value
+(`IsAssignment`, `IsArrayElementAssign`): `WithAssignmentTildes` turns each qualifying `~` of a
+literal part into a `TildePart`. A quoted or escaped tilde is not a literal part and stays; so do
+`a~b`, `~"/q"` and `~user` (unsupported, as elsewhere).
+
+**Verified:** new case `assignment_tilde` (17 lines, expected = GNU bash via WSL; 10 fail on the
+deployed rev 143 build); suite 76/76 with a console and `-Detached`; compat battery 227/237 against
+Git Bash, exit 0, no baseline regression.
+
+**Still open, next to this:** the home directory itself comes from `$HOME`, which C#Bash keeps in
+the inherited backslash form (`C:\Users\guy`), so `x=~/y` gives `C:\Users\guy/y` here (the open
+`$HOME` defect).
+
+## 2026-10-08 -- DEFECT FIXED: a declaration with no value left the variable set (`local j` was "")
+**Status:** Active. The architect: "go" (the next bug; found 2026-10-08 while fixing `local a=$1`).
+
+**Defect:** `local j` stored `j=""`, so `${j-dflt}`, `${j+x}`, `[[ -v j ]]` and `declare -p j`
+(`j=""`) all saw a set variable; bash declares it in the function's scope, unset, hiding an outer
+`j`. Found in the same family, compared with GNU:
+- `export m` on an unset `m` put `m=""` into every child's environment (bash: nothing), and
+  `export -p` did not list it (bash: `declare -x m`);
+- an array with no element 0 read as set: `local -a arr; ${arr-unset}`, `declare -a a1; [[ -v a1 ]]`,
+  `a3=([1]=x)` (bash: `-v`, `${a-}` and `${a+}` on an array name mean element 0).
+`typeset j` / `declare j` in a function were already right (they create nothing).
+
+**Fix (ShellEnvironment):** a frame entry `DeclaredUnset`, a sentinel string compared by reference,
+marks a name declared with no value: it hides outer frames, `Get` reads "" and `IsSet` false.
+`DeclareLocal` adds it (keeping a value already declared in that frame, as bash does); assignment
+overwrites it in place. `IsDeclared` (declared, set or not) serves `declare -p name` and `unset`'s
+variable-or-function choice. `GetExportedVars` passes only exported names that have a value;
+`ExportedNames` lists every exported name for `export -p`. `IsSet` on an array name checks element
+0 (associative: key "0"). A temporary assignment (`x=v cmd`) on a declared-unset local restores the
+declared-unset state; restoring by `Unset`, which clears every frame, would have deleted an outer x.
+
+**Verified:** new case `declared_unset` (27 lines, expected = GNU bash via WSL; 15 fail on the
+deployed rev 150 build); suite 77/77 with a console and `-Detached`; compat battery 227/237 against
+Git Bash, exit 0, no baseline regression.
+
+**Found, NOT fixed (separate):** `set -u` (nounset) is accepted and never enforced. The option is
+stored (`ShellOptions.UnsetError`) but nothing reads it: `set -u; echo "$nope"` prints an empty
+line and continues where bash stops with `nope: unbound variable`. Scripts relying on
+`set -euo pipefail` to catch a typo run on silently.
+
+## 2026-10-08 -- DEFECT FIXED: `set -u` (nounset) is enforced; and `${x:-word}` expanded its word eagerly
+**Status:** Active. The architect: "sure, go" (Claude proposed it next: a safety check scripts rely
+on, silently missing).
+
+**Defect:** `set -u` / `set -o nounset` set `ShellOptions.UnsetError` and nothing read it, so
+`set -euo pipefail` scripts expanded unset names as "" and ran on. A 35-case comparison with GNU
+fixed the semantics before any code was written.
+
+**Rule, as measured against bash 5.1:**
+- Expanding an unset parameter is an error ending a non-interactive shell: `$x`, `${x}`, `$1`, `${#x}`,
+  `${a[1]}`, `${m[k]}`, `${x#p}`, `${x:0:1}`, arithmetic (`$((n+1))`, `(( z > 0 ))`, `let`), a
+  `for` list, a test operand. Messages: `x: unbound variable`, `$1: …` for `$1`, `10: …` for `${10}`.
+- Never an error: `${x-…}` `${x:-…}` `${x+…}` `${x:+…}` `${x=…}` (and `${x?…}`, its own error), `$@`, `$*`,
+  `"${a[@]}"` empty or unset, `${#a[1]}` (0), `[[ -v x ]]`.
+- Only the unit fails, and the shell goes on: a `( )` subshell (status 1), a `$( )` (status 1), a
+  pipeline stage, a here-document or here-string (the command fails with status 1).
+- Exit status of the shell: 1 for a script file; under `bash -c`, 127, or 1 where `set -e` is IN
+  FORCE (on, and not suspended inside a command followed by `&&`/`||`, an `if` condition, …).
+  Claude Code's wrapper runs `eval '<cmd>' < /dev/null && pwd -P`, so there it is 127 even with
+  `set -e` inside the command: measured.
+
+**Fix:**
+- `WordExpander.GetChecked` (the parameter value, or `Unbound(name)`) at every expansion site: `$x`,
+  the `${x}` fast paths, `${#x}`, the arithmetic resolver (`ArithVars.Get`, whose catch-all no
+  longer swallows it) and `$name` inside arithmetic text and subscripts. `ExpandBraceParam` checks
+  subscripted and operator forms after the `-=+?` family; whole arrays are exempt.
+- `FatalShellException.ExpansionError` marks unbound and `${x:?}` errors. `RunStatement` records
+  on the `ExitException` whether errexit was in force (`_errexitSuppress`); `Program` (the `-c`
+  path) turns an expansion exit into 127 unless it was. `${x:?}` follows the same rule, as in bash.
+- `ExpandRedirectBody`: an expansion error in a here-document or here-string fails the command
+  (`RedirectException`, status 1) instead of ending the shell.
+- **Also fixed (needed, or `set -u` would raise false errors):** the word of `${x:-word}` /
+  `${x:=word}` / `${x:+word}` / `${x:?word}` was expanded BEFORE the operator decided whether it
+  was needed, so `${x:-$(cmd)}` ran `cmd` with x set, and under `-u` `${v:-$undefined}` failed
+  with v set. It is expanded only when selected now (case lines 36-38).
+
+**Verified:** new case `nounset` (49 lines, expected = GNU bash via WSL, each case in its own shell,
+messages normalised; 41 differ on the deployed rev 150 build); suite 78/78 with a console and
+`-Detached`; compat battery 227/237 against Git Bash, exit 0, no baseline regression.
+
+**Not covered:** `$!` before any background job (bash calls it unbound; C#Bash treats it as set),
+`${!x}` with x unset, and the readonly-assignment error (GNU continues a SCRIPT after it, C#Bash
+exits; unchanged, separate).
+
+## 2026-10-08 -- DEFECT FIXED: `$HOME`, `~`, `$BASH` and `command -v` / `type` / `which` / `hash` gave backslash paths
+**Status:** Active. The architect: "go" (the next bug). Applies the ratified rule of DECISIONS
+2026-09-11/12 ("If Bash is handed a windows form path (using backslash), it must convert it to a
+forward slash path before using"), which until now covered `pwd`, `$PWD`, `$OLDPWD`, `dirs`,
+`mktemp` and `realpath` only.
+
+**Defect:** `HOME` arrived from Windows as `C:\Users\guy`, so `$HOME`, `~`, `~/x` and `x=~/y` (rev
+150) gave `C:\Users\guy/y`; `$BASH` and a default `$SHELL` were `Environment.ProcessPath` as is; and
+`command -v`, `command -V`, `type`, `type -p`, `type -a`, `which` and the `hash` listing printed
+`F:\Tools\PortableGit\mingw64\bin\git.EXE`. Mixed or backslash paths that the shell's own string
+operations misread (the reason the rule exists).
+
+**Fix:** the shell converts the paths IT produces: `HOME` once at startup (it is exported, so
+children see `C:/Users/guy`, which Windows programs accept), `BASH`/`SHELL` when it sets them, and
+tilde expansion always (a `HOME` the user sets with backslashes still yields `C:/…` from `~`, while
+`$HOME` itself keeps what was set). The lookup output goes through `Builtins.Shown`; the lookup
+itself (`ResolveOnPath`) keeps the native form, which is what launches the program (a `.cmd` run
+through cmd.exe with a forward-slash path is a risk not worth taking for display). A path the user
+gives (`type -p ./x`) prints as given. Other inherited Windows variables (`USERPROFILE`, `TEMP`,
+`APPDATA`, PATH's native `C:\x;…` form) are left alone: they are Windows', not the shell's.
+
+**Verified:** new case `shell_paths` (17 lines, authored: Windows-specific values, no GNU oracle;
+13 fail on the deployed rev 150 build); suite 79/79 with a console and `-Detached`; compat battery
+227/237 against Git Bash, exit 0, no baseline regression.
+
+**Found while writing the test (separate, added to the list):**
+- In a `case` or `[[ == ]]` pattern, an unquoted `\\` does not match a backslash: `case 'a\b' in
+  *\\*)` and `[[ 'a\b' == *\\* ]]` fail where GNU matches (`*[\\]*` and `*"\\"*` work). The first
+  version of this test's check used that form and could not fail; found by running it on the old
+  build as a control.
+- `command -v git` prints `git.EXE` (the PATHEXT spelling) for the on-disk `git.exe`.
+- `hash -t name` prints nothing; the `hash` listing is paths only, not bash's `hits command` table.
+
+## 2026-10-08 -- DEFECT FIXED: `env`'s options did not reach the command it runs
+**Status:** Active. Reported by koliada-net-f7 (2026-10-10: `env "STDOUT.OutputLevel=trace" <app>`,
+the documented way to set every Koliada STDOUT program's verbosity, failed, so the workaround was
+PowerShell); the architect: "yes". Includes the older open item "`env -u VAR cmd` does not remove VAR
+for cmd" (2026-10-04), which lives in the same function.
+
+**Defects (each compared with GNU env, 21 cases):**
+- a NAME=VALUE whose NAME was not a shell identifier (`A.B=1`, `X-Y=2`, `A B=1`) became the COMMAND
+  (`A.B=1: command not found`, 127). GNU: every leading operand containing `=` is an assignment;
+  only the shell's own `NAME=value cmd` prefix is limited to identifiers (unchanged, correct);
+- `-u NAME` was applied only when env printed the environment, never to a command, builtin or program;
+- `-i` reached only external programs: `env -i printenv` printed the whole environment;
+- `-uNAME`, `--unset=NAME` and `--unset NAME` were refused as invalid options; `-` (GNU's `-i`)
+  ran `-` as the command; `-0` was accepted and ignored.
+
+**Fix:** `Env` parses the GNU forms and treats any operand containing `=` as an assignment (`=x`,
+an empty name, is accepted and sets nothing: Windows has no empty-named variable). `RunCommand`
+takes the unset list. For an external program, `ExecExternal` removes the names from the child's
+environment block. For a builtin or function, `env -i` / `env -u` unexport the names for the
+duration (what such a command sees as its environment: printenv, env, the programs it starts) and
+re-export them after; `env`'s assignments are applied on top, as before. Live check: `cmd /C` sees
+`%A.B%` and `%STDOUT.OutputLevel%`, and `env -u FOO cmd` does not see FOO.
+
+**Verified:** new case `env_options` (21 lines, expected = GNU env via WSL; 18 fail on the deployed
+rev 150 build); suite 80/80 with a console and `-Detached`; compat battery 227/237 against Git Bash,
+exit 0, no baseline regression.
+
+**Known, kept:** a FUNCTION run by `env -u X f` still sees `$X` as a shell variable (only the export
+is hidden); GNU env cannot run a function at all. `env` lists in the shell's internal order, not the
+order variables were added (GNU's), so the test sorts.
+
+**Incident while testing:** the first run of the comparison printed C#Bash's whole environment
+(`env -i A=1 printenv`, the `-i` defect itself) into the session transcript, including an API key.
+The cases now never print an environment: they count lines or ask for named variables.
+
+## 2026-10-08 -- DEFECT FIXED: an unquoted `\\` in a pattern did not stand for a backslash
+**Status:** Active. The architect: "next; go". Found 2026-10-08 when the check in `shell_paths`
+(`case $v in *\\*)`) could not fail: run against the old build as a control, it passed there too.
+
+**Defect:** the lexer drops the escaping backslash and keeps the escaped character as literal text,
+except for `* ? [ { } , ~`, which it marks so the parser makes them quoted parts (2026-10-03). A
+backslash was not in that set, so `\\` reached a pattern as a lone `\`, which the matcher reads as
+"escape the next character". The hypothesis was tested before the fix by its sharpest consequence:
+`case 'a*' in *\\*)` MATCHED in C#Bash (the pattern meant "ends in a literal `*`"); GNU does not.
+Wrong in `case`, `[[ == ]]` (`*\\*`, `a\\b`, `a\\?`) and `[[ =~ \\ ]]` ("invalid regular expression");
+right already in the `${p//\\//}` family, which reads the raw text, and when `\\` ended the pattern.
+Silent wrong branch.
+
+**Fix:** `\\` joins the lexer's marked set, so an escaped backslash is a quoted one-character part:
+patterns escape it (`EscapeGlob`), regexes quote it, and every other use still yields one backslash.
+
+**Verified:** new case `backslash_pattern` (29 lines, expected = GNU bash via WSL: 18 pattern cases,
+6 of which fail on the deployed rev 156 build, and 11 other uses of `\\` in words, unchanged and
+identical to GNU on both builds); suite 81/81 with a console and `-Detached`; compat battery 227/237
+against Git Bash, exit 0, no baseline regression.
+
+## 2026-10-08 -- DEFECT FIXED: an MSYS program wrote nothing under `>>` or under the shell's own redirect
+**Status:** Active. The architect: "go all" (the remaining list). Found 2026-10-08 as "a coreutil
+that defers to a PATH external loses its output into a file" (awk with `getline` falling back to
+Git's awk, `> out.txt`); isolated to a wider cause.
+
+**Defect:** every MSYS2 program (Git for Windows' `usr/bin`: sed, awk, perl, ssh, tar, find, ...)
+failed every write with "Bad file descriptor", status 1, an empty file, when given a file by
+`>>` (`tool >> f`) or by the shell's own redirect (`{ tool; } > f`, `{ tool; } >> f`, a builtin's
+`> f` when the builtin falls back to the program). A Windows program was fine; so was a plain
+`tool > f`. Those handles are opened `FILE_APPEND_DATA` without `FILE_WRITE_DATA` (DECISIONS
+2026-10-04: atomic appends, so concurrent appenders interleave, as O_APPEND does), and MSYS derives
+an inherited handle's mode from FILE_WRITE_DATA: without it the descriptor is read-only.
+
+**Decision (settled from the record, not a new design):** keep the ratified append-only handle for
+Windows programs, which honour it; give an MSYS program an ordinary write handle positioned at the
+end (`ChildLauncher.Access.AppendAtEnd`), the most it can use. `ChildLauncher.IsMsysProgram`: the
+program's directory holds `msys-2.0.dll` or `cygwin1.dll` (an MSYS program loads it from there),
+cached per directory.
+
+**Alternatives:** a write handle for every program (simple, but drops the ratified atomic append for
+native concurrent appenders); leave it (MSYS output lost). Cost accepted: two MSYS programs appending
+to one file at the same time share no atomicity.
+
+**Verified:** new case `msys_redirects` (authored, needs Git for Windows; 6 of 7 lines fail on the
+deployed rev 156 build, the Windows-program control line passes on both); suite 82/82 with a console
+and `-Detached`; compat battery 227/237, exit 0, no baseline regression.
+
+## 2026-10-08 -- DEFECTS FIXED: PATH lookups printed PATHEXT's spelling; `hash` ignored -t / -l / -d and had no hits
+**Status:** Active. The architect: "go all".
+
+**Defects:** `command -v git`, `type`, `which` and the `hash` listing printed `git.EXE`, the PATHEXT
+spelling the lookup appended, for the file `git.exe`. `hash -t NAME` printed nothing, `-l` and `-d`
+were ignored, and the listing was bare paths, not bash's `hits command` table.
+
+**Fix:** `Builtins.Shown` (display only; the cached path that launches the program is untouched)
+gives a found program its on-disk name (one directory lookup, only when something is printed). The
+PATH cache counts executions (`HashHit` in `ExecExternal`); `hash` prints `hits<tab>command` with
+`%4d` counts, `-t` (one name: the path; several: `name<tab>path`; not hashed: an error, status 1;
+counted as a hit, as bash does), `-l` (`builtin hash -p PATH NAME`), `-d`, `-p`, `-r`; a builtin or
+function name is skipped with status 0. Formats measured against GNU bash 5.1 in WSL.
+
+**Verified:** new case `command_lookup` (authored: Windows paths; fails on the deployed build); suite
+83/83 with a console and `-Detached`; compat battery 227/237, exit 0, no baseline regression.
+
+**Known, kept:** the table also holds names resolved by `type` / `command -v` (bash hashes only what
+it runs), shown with 0 hits.
+
+## 2026-10-08 -- DEFECT FIXED: a stray `fi` / `done` / `esac` / … ran as a command
+**Status:** Active. The architect: "go all".
+
+**Defect:** with no construct open, a closing reserved word (`fi`, `done`, `esac`, `then`, `do`,
+`else`, `elif`) was parsed as a simple command: `echo a; fi` printed `a`, then
+`fi: command not found`, status 127, and `bash -n` passed the file. bash: "syntax error near
+unexpected token `fi'", status 2 (script, `-c`, `-n`, `eval`), nothing of that line run.
+
+**Fix:** the top-level `Parser.Parse` loop rejects an unquoted closing word before parsing a list.
+Inside a construct the existing terminator logic already applied; a quoted `'fi'` stays an ordinary
+command name, as in bash.
+
+**Verified:** new case `stray_keyword` (16 lines, expected = GNU bash via WSL, messages normalised to
+token and status; 12 differ on the deployed build); suite 84/84 with a console and `-Detached`;
+compat battery 227/237, exit 0, no baseline regression.
+
+**Known divergence, unchanged (separate, larger):** bash parses a script line by line and runs what
+precedes a syntax error (`echo before` / `fi` prints `before`, then fails); C#Bash parses the whole
+file first, so a syntax error anywhere runs nothing. The same was already true of a stray `}`.
+
+## 2026-10-08 -- DEFECTS FIXED: `date +%3N` printed 9 digits; `date -d` refused a fractional `@epoch`
+**Status:** Active. The architect: "go all".
+
+**Defects:** `%N`'s width was applied as left padding, so `%3N` printed all nine digits (GNU: a
+precision, the first 3: milliseconds). `-d @1700000000.5` was "invalid date" (whole seconds only).
+
+**Fix, to GNU's measured rule:** `%wN` is the first w digits (default 9; zeros on the right past 9);
+the trailing zeros are its padding, so `-` drops them and `_` turns them into spaces, keeping at least
+one digit (`%-N` of .5 s is `5`); `0` and no flag keep them. `@[-]S[.F]` takes a fraction, negative
+epochs counting back from 1970 (`@-1.5` is second -2, fraction .5, as GNU prints).
+
+**Limit:** .NET time keeps 100 ns, so fraction digits past the 7th are dropped (`@1.123456789` prints
+`%N` as 123456700; GNU 123456789). The test uses at most 7 digits.
+
+**Verified:** new case `date_nanos` (11 lines, expected = GNU date via WSL; 9 differ on the deployed
+build); suite 85/85 with a console and `-Detached`; compat battery 227/237, exit 0, no regression.
+
+## 2026-10-08 -- DEFECTS FIXED: `fold` counted `\r`, `\b` and tabs as one column; `tee /dev/null` failed
+**Status:** Active. The architect: "go all".
+
+**Defects:** `fold` cut each line into fixed runs of characters, so a `\r` (column back to 0), `\b`
+(one back) and a tab (to the next multiple of 8) each counted as one column, `-s` broke at the wrong
+place, a final line without a newline got one, and UTF-8 counted characters where GNU fold counts
+bytes. `tee /dev/null` (and `/dev/stdout`, `/dev/stderr`) translated the name to a file path and
+failed: "No such file or directory", status 1.
+
+**Fix:** `fold` is a port of coreutils fold.c (its `adjust_column`, the "this byte would make the
+line too long" rule, `-s`'s rescan after the last blank), over bytes, streamed in 8 KB reads so
+`yes | fold | head` still ends on the closed pipe (statuses 141 141 0, as GNU). `tee` takes the
+three device names as the redirects do: `/dev/null` is no output, `/dev/stdout` and `/dev/stderr`
+are extra copies to the shell's own streams.
+
+**Verified:** new case `fold_tee` (20 lines, expected = GNU coreutils via WSL; 13 differ on the
+deployed build); suite 86/86 with a console and `-Detached`; compat battery 227/237, exit 0.
+
+## 2026-10-08 -- DEFECT FIXED: a Windows program's exit code reached `$?` unreduced (-1, 256, NTSTATUS)
+**Status:** Active. The architect: "go meant 'still open' gogogo". Open since 2026-09-14.
+
+**Defect:** `$?` after a native program was its raw 32-bit exit code: `-1`, `256`, `-1073741819`.
+A shell status is 0-255. (The shell's own `exit`/`return` statuses were already reduced.)
+
+**Measured first:** the record said "bash gives 255" for -1; that was never measured. Git Bash's
+runtime gives 127 for -1, for Ctrl+C (0xC000013A), divide by zero and stack overflow, and maps only
+an access violation (139, printing "Segmentation fault") and an illegal instruction (132). 127 reads
+as "command not found".
+
+**Decision (the ratified rule of 2026-10-03: GNU bash on Linux, not Git for Windows' quirks):** the
+status bash on Linux would report for the same outcome. `Evaluator.ShellStatus`: an NTSTATUS crash
+is 128 + its signal (access violation and stack overflow 139 SIGSEGV; illegal and privileged
+instruction 132 SIGILL; integer and float divide by zero, integer overflow 136 SIGFPE; Ctrl+C exit
+130 SIGINT; breakpoint 133 SIGTRAP; fail-fast 0xC0000409 134 SIGABRT); any other code its low byte
+(-1 is 255, 256 is 0, 1000 is 232). Applied where every external's exit code is read, so pipelines,
+subshells, `$( )` and `wait` follow.
+
+**Not done:** bash also prints "Segmentation fault" (etc.) for a signalled foreground child; C#Bash
+prints nothing extra.
+
+**Verified:** new case `exit_status_range` (authored: Windows exit codes via `cmd /c exit N`; the
+deployed build prints the raw codes); suite 87/87 with a console and `-Detached`; compat battery
+227/237, exit 0, no baseline regression.
+
+## 2026-10-08 -- DEFECT FIXED: an unquoted `${…${…}…}` swallowed the rest of the script, silently
+**Status:** Active. The architect: "gogogo" (the open list: Git's `__git_ps1_show_upstream` "fails to
+parse"); then "this is the second time ${ has been a bug!!".
+
+**Defect:** the lexer reads an unquoted `${…}` as one raw token by counting braces. At a nested `${`
+it raised the depth at the `$` and left the `{` for the next pass, which raised it again: two
+openings, one closing. The depth never returned to 0, and the token took everything up to the end
+of the file, with no error. `x=${1:-${HOME}}`, `${a#${b}}`, `${a%${b}c}`: nothing after them ran (a
+script printed nothing, status 0). Inside double quotes a different reader is used, which is why it
+went unseen. Git's git-prompt.sh (`svn_upstream=${svn_upstream#${svn_remote[$n]}}`) "failed to
+parse" this way: the loop's `done` had been swallowed.
+
+**Fix:** the nested `{` is consumed with its `$` (one level); an unclosed `${` at end of input is a
+loud error (`LexException`, Incomplete for the interactive prompt) instead of the rest of the file.
+
+**Verified:** new case `nested_brace` (expected = GNU bash via WSL; the deployed build prints nothing
+at all); git-prompt.sh parses (`-n` 0), loads, and `__git_ps1 "[%s]"` prints the branch; suite 88/88
+with a console and `-Detached`; compat battery 227/237, exit 0, no baseline regression.
+
+**Why it recurs (the architect's point):** `${…}` is matched by several separate hand-written
+scanners (the lexer's raw token, the double-quote interior parser, `ExpandVarsInArith`,
+`ExpandSubscript`, and `SplitAtBlanks` / `RemoveTopLevelDoubleQuotes` from rev 148), each with its
+own brace and quote counting. A bug class fixed in one can remain in the others. Audited next.
+
+## 2026-10-10 -- One construct matcher (`Lexer.ConstructEnd`) for `${ }`, `$( )`, `$(( ))`, backquotes and quotes; `{` / `}` are words after the command name
+**Status:** Active. The architect, after rev 165: "this is the second time ${ has been a bug!!"
+(that entry's last paragraph names the cause: several hand-written scanners).
+
+**Context:** where a `${…}`, `$(…)`, `$((…))`, `` `…` `` or quoted string ends was decided by seven
+separate scanners, each with its own brace, parenthesis and quote counting: the lexer's raw `${`
+token, the lexer's `"…"` scanner, the parser's `ParseDoubleQuotedInterior`, and in `WordExpander`
+`SkipConstruct`, `ExpandVarsInArith`, `ExpandSubscript`, and `SplitAtBlanks` /
+`RemoveTopLevelDoubleQuotes`. A 42-case audit (each case in its own shell, so one swallowing bug
+cannot hide the rest; expected = GNU bash via WSL) found 13 still wrong on rev 165:
+`${u:-\}}` kept the backslash, quoted and unquoted; `${a//\}/x}` and `${a/b/\}}` ended at the
+escaped brace; `${a:-{x}}` dropped the `}` (a bare `{` was counted as a level); `${u:-"a\"b"}`
+was an error; `${u:-$(echo })}` was an error unquoted and printed `)}` quoted; `` ${u:-`echo }`} ``
+ran `}` as a command; `"${u:-'a}b'}"` and `"${u:-"a}b"}"` closed at the inner `}`;
+`${u:-${a:+$(echo })}}` printed its source text.
+
+**Decision:** one matcher, `Lexer.ConstructEnd(s, i)`, is bash's single rule (parse.y,
+`parse_matched_pair`). It returns the index just past the construct at `i`, or -1 if it never
+closes. A backslash skips the next character. Quotes, backquotes, `$'…'`, `$( )` and `${ }` inside
+are matched as units, so a `}` or `)` in them closes nothing. Within `${…}` only a `${` opens a brace
+level; within `$( )` a bare `(` does. All seven scanners call it; an unclosed construct is
+`Unterminated …` in the lexer, and runs to the end of the text where the text has already been
+lexed. Two related changes were needed for the audit cases:
+- `{` and `}` are reserved only where a command starts, so after the command name they are
+  ordinary words glued to adjacent text (`echo }`, `echo a } b`, `$(echo })`). Before, `echo }`
+  was a syntax error, so `${u:-$(echo })}` could not run.
+- In a double-quoted operator word, `\}` is `}`, which `RemoveTopLevelDoubleQuotes` now applies.
+
+**Alternatives considered:**
+- **Patch the 13 cases in place**, in whichever scanner each one hit. Rejected: that is how the
+  defect came back after rev 165. Each scanner would keep its own counting, and the next construct
+  would be wrong in the ones not patched.
+- **A real recursive word parser** that keeps the parsed structure, instead of re-scanning raw
+  text in the expander. This is the larger and more correct change, but it touches every
+  expansion path. A shared end-matcher removes the divergence, which is the defect class, at a
+  fraction of the risk. Revisit if a construct needs the parse itself, not just where it ends.
+
+**Verified:** all 42 audit cases now match GNU. New case `brace_constructs` (the 42 cases plus a
+line of `{` / `}` as words; expected = GNU bash via WSL, 52 lines; the deployed build, rev 156,
+prints one line instead: a syntax error at `echo }`). git-prompt.sh still loads and `__git_ps1 "[%s]"` prints `[main]`. Suite 89/89 with a
+console and with `-Detached`; compat battery 227/237, exit 0, no baseline regression.
+
+**Correction to this log's dating:** the defect entries above for revs 146 to 165 are headed
+2026-10-08, the day the defect list was opened. The commits are dated 2026-10-09 (revs 146-153)
+and 2026-10-10 (revs 154-165), per `hg log`. The entries stay as written (append-only); the code
+comments that say "until 2026-10-08" carry the same offset.
+
+**Implemented by:** rev 166. Files: `Bash/Lexer/Lexer.cs`, `Bash/Parser/Parser.cs`,
+`Bash/Evaluator/WordExpander.cs`, `tests/cases/brace_constructs.sh`,
+`tests/expected/brace_constructs.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED).
+
+## 2026-10-10 -- DEFECT FIXED: FUNCNAME / BASH_SOURCE / BASH_LINENO were two drifting lists (a `source` dropped the script; inside a function BASH_SOURCE was empty)
+**Status:** Active. Found while working the open item "script errors say `bash:` where bash says
+`<script>: line N:`" (the architect, 2026-10-10: "go meant 'still open' gogogo"): bash names the
+file in that prefix from `BASH_SOURCE[0]`, so the prefix cannot be right until BASH_SOURCE is.
+
+**Defect (measured against bash 5.1 via WSL):** the evaluator kept a function-name list and a
+source-file list separately. The script itself was never on the source list, so after `. ./lib.sh`
+BASH_SOURCE was empty. A function did not record the file it was defined in, so inside any
+function BASH_SOURCE was empty (the common `$(dirname "${BASH_SOURCE[0]}")` idiom inside a
+function got `.`). BASH_LINENO did not exist. FUNCNAME was `(main)` at a script's top level.
+12 of the 13 lines of the new case differed from GNU.
+
+**Decision:** one frame stack, innermost first, as in bash:
+- A function call pushes (its name, the file it was defined in, the line it was called from).
+- `source` pushes ("source", the file, the line).
+- A script file has a bottom frame ("main", the script as named, 0). `-c` and stdin have none.
+- A function records its file when its definition runs: `BASH_SOURCE[0]`, else "environment"
+  under `-c` and "main" from stdin (bash's `make_function_def`).
+- FUNCNAME exists only while a function runs.
+
+The three arrays are written only when an array is next read. A call or return just marks them
+stale. Rebuilding them on every call and return cost ~0.9 us a call, +34% on a bare call (20,000
+calls in-process: 0.053 s to 0.071 s). Written lazily, the cost is the old build's (0.047 s vs
+0.050 s, within noise).
+
+**Alternatives considered:**
+- **Patch the source list** (push the script at startup, push the file on a function call),
+  keeping the separate lists. Rejected: the lists drifting apart was the defect, and BASH_LINENO
+  needs the same frames.
+- **Publish eagerly.** Measured above. Rejected for the per-call cost.
+
+**Compat battery:** probe 199 (`${FUNCNAME[0]:-nofn}` at top level) now differs from Git Bash,
+which is bash 4.4.23 and prints `main` (inconsistently: `${#FUNCNAME[@]}` is 0 there). GNU 5.1 on
+Linux prints `nofn`, and the ruling of 2026-10-03 is GNU bash on Linux, not Git for Windows'
+quirks, so 199 left the baseline (226 to 225).
+
+**Verified:** new case `call_stack` (scripts run by relative name from a temp dir: a sourced
+file, nested calls, `source` inside a function, `( )`, `$( )`, an in-process `./child.sh`, `-c`,
+stdin; expected = GNU bash via WSL); the rev 166 build differs on 12 of 13 lines. Suite 90/90 with a
+console and `-Detached`; compat battery 226/237, exit 0, no regression against the new baseline.
+
+**Implemented by:** rev 167. Files: `Bash/Evaluator/Evaluator.cs`, `Bash/Evaluator/ShellEnvironment.cs`,
+`Bash/Parser/Nodes.cs` (`FunctionDef.DefinedIn`), `Bash/Program.cs`, `tests/cases/call_stack.sh`,
+`tests/expected/call_stack.out`, `tests/run-tests.ps1`, `tests/compat/baseline.txt`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; battery baseline 225).
+
+## 2026-10-10 -- DEFECT FIXED: every error said `bash:` where bash says `script: line N:`; `eval` and `$( )` text restarted at line 1
+**Status:** Active. The open item "message placement" (recorded 2026-09-12; the architect,
+2026-10-10: "go meant 'still open' gogogo"). Step 2; step 1 was the call stack (rev 167).
+
+**Defect (measured against bash 5.1 via WSL):**
+- Every shell error was printed as `bash: …`. bash prints `name: line N: …` in a
+  non-interactive shell (error.c, `error_prolog`), and `printf`'s own messages had no prefix at all.
+  The name is `BASH_SOURCE[0]`, else `$0`, so a function's error names the file it was defined
+  in (`./lib.sh: line 2:`). `-c '…' myname` gives `myname: line N:`, stdin gives `$0: line N:`,
+  and a function defined under `-c` gives `environment: line 1:`.
+- A syntax error adds the input name when it is not the error name (parse.y, `parser_error`):
+  `script: eval: line N:`, `name: -c: line N:`.
+- Text parsed apart from its file restarted at line 1: an `eval` string, a `$( )` inside double
+  quotes, a heredoc or a `${x:-word}`, and `$( )` in arithmetic. bash continues the line of the
+  command that runs it (an `eval` on line 7 runs its line 2 as line 8). A `$( )` also left the
+  caller's `$LINENO` at its own last line.
+
+**Decision:**
+- One prefix, `Evaluator.ErrorPrefix`: `name: line N: `, or `bash: ` when interactive. Every
+  `"bash: "` site in the evaluator uses it, and builtins use it through `Builtins.Err`. The in-process utilities
+  (`ls`, `sed`, …) stand in for programs and keep their bare `ls: `, as the programs do.
+- An `EvalException` captures the prefix when it is raised. It is printed where it is caught, after
+  the function's frame and line have unwound.
+- Line numbers: a substitution body or eval string counts from 1, and `Evaluator._lineBase` is
+  added while it runs: the enclosing command's line − 1. An unquoted `$( )` from the main token
+  stream is rebased to match. A file runs at base 0. A function keeps the base it was defined
+  under, so one defined in an `eval` still reports the eval's lines.
+- Startup errors stay `bash: ` (bad option, missing script file), as in bash.
+
+**Alternatives considered:**
+- **Lex eval and substitution text at absolute file lines.** Tried first for `eval`, then
+  withdrawn. A heredoc's `$( )` would report its body line (5) where bash reports the command's
+  (4), and a `$( )` re-parsed at run time has no file line to start from.
+- **Print the current prefix where an exception is caught.** Rejected: by then a function's
+  frame is gone, so the file would be the caller's.
+
+**Not done (each recorded in the anchor):**
+- bash numbers a simple command from the line where its SECOND word ends (parser lookahead).
+  So for a multi-line `x=$(…)` on lines 3-6, an error inside it is reported at 6 + offset (8); C#Bash
+  reports 3 + offset (5). Not imitated: it is a parser artefact, and it would move `$LINENO`.
+- Syntax-error text: bash's ``syntax error near unexpected token `fi'`` plus a second line
+  echoing the source; C#Bash prints its own text (`Expected 'then' but got '' at 1:8`), and for
+  `if true; then` + `fi` at line 3 it reports line 5.
+- `trap 'cmd' BADSIG` and `trap - BADSIG` are accepted silently; bash prints `trap: BADSIG:
+  invalid signal specification` (found by this case).
+- `read -z` prints no usage line after the error; bash prints `read: usage: …`.
+
+**Verified:** new case `error_prefix` (42 lines: sourced file, function in a sourced file, `eval`,
+`$( )` unquoted / quoted / in a heredoc / in `${ }` / in arithmetic, pipeline, subshell, loop,
+condition, continued line, builtin, `printf`, redirects, missing `source` file, `${u:?}`, `-c`
+with a name, a `-c` function, syntax-error prefixes for `eval`, `-c` and a script; expected = GNU
+bash via WSL); the rev 166 build differs on 35 of the 42. `shellbuiltins`' expected file
+(authored 2026-09-04, rev 39) pinned the old `bash: nosuch_cmd_zz: …`; it now has the script's
+prefix. Suite 91/91 with a console and `-Detached`. Compat battery 227/237, exit 0; probe 187
+(`python --version 2>&1 | cut -d' ' -f1` where python is absent) now passes because of the prefix
+and joined the baseline (225 to 226).
+
+**Implemented by:** rev 168. Files: `Bash/Evaluator/Evaluator.cs`, `Bash/Evaluator/EvalException.cs`,
+`Bash/Evaluator/ShellEnvironment.cs`, `Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/Builtins.Shell.cs`,
+`Bash/Evaluator/WordExpander.cs`, `Bash/Parser/Parser.cs`, `Bash/Parser/Nodes.cs`, `Bash/Program.cs`,
+`tests/cases/error_prefix.sh`, `tests/expected/error_prefix.out`, `tests/expected/shellbuiltins.out`,
+`tests/run-tests.ps1`, `tests/compat/baseline.txt`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECT FIXED: `ls dir missing` printed no `dir:` heading; directory operands were not sorted
+**Status:** Active. The open item "[not isolated] `ls a\ b/ x` with a failing second operand
+printed no `a b/:` heading" (found 2026-10-08 in the escaped-space probe); the architect,
+2026-10-10: "go meant 'still open' gogogo".
+
+**Isolated (against GNU ls via WSL, 14 operand forms):** the space was irrelevant. Two
+defects in the in-process `ls`:
+- The heading rule counted only the operands that exist. GNU ls (ls.c) drops the heading only
+  when there is a single operand and it is a directory; a failed operand counts. So
+  `ls plain x` and `ls x plain` printed `f2` where GNU prints `plain:` then `f2`.
+- Directory operands were listed in command-line order. GNU sorts them with the listing's own
+  order (name, `-r`, `-t`, ...): `ls plain 'a b'` lists `a b:` first.
+
+**Decision:** a heading whenever there is more than one operand, or under `-R`. Directory
+operands are sorted with the same comparison as the entries, except under `-U`, which keeps
+command-line order.
+
+**Not done:** `-U` within a directory still sorts by name (the comparison falls back to the name
+when the sort key is 0). GNU lists directory order. Not measured against GNU here, not raised.
+
+**Verified:** new case `ls_operands` (14 forms: failing operands before and after, two failing,
+a file and a directory, `-r`, `-d`, `-R`; expected = GNU ls via WSL, 80 lines); the rev 166 build
+differs on 23 lines. Suite 92/92 with a console and `-Detached`; compat battery 227/237, exit 0,
+no regression.
+
+**Implemented by:** rev 169. Files: `Bash/Evaluator/Builtins.Files.cs`, `tests/cases/ls_operands.sh`,
+`tests/expected/ls_operands.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECTS FIXED: `trap` accepted any word as a signal (`trap x BADSIG`, `trap x 65`); `trap -p` spelling, order and operands
+**Status:** Active. Found by the `error_prefix` case (DECISIONS "every error said `bash:`", Not
+done); the architect, 2026-10-10: "go meant 'still open' gogogo".
+
+**Defect (measured against bash 5.1 via WSL, 33 signal specs):**
+- Any alphanumeric word was a signal, so `trap x BADSIG`, `trap - BADSIG`, `trap x 65`, `IOT`
+  and `CLD` all succeeded silently. bash says `trap: BADSIG: invalid signal specification`,
+  status 1.
+- `trap x INT BADSIG TERM` stopped at BADSIG, leaving TERM unset; bash sets every valid one.
+- `RTMIN+3` and `RTMAX-2` were refused.
+- `trap -p` printed `INT` (bash: `SIGINT`), in hash order (bash: EXIT, the signals by number,
+  DEBUG, ERR, RETURN), and ignored its operands.
+
+**Decision:**
+- A table of Linux's signal numbers as bash names them: 1-31 by name, 32 and 33 bare,
+  RTMIN … RTMIN+15, RTMAX-14 … RTMAX. A spec is valid if it is one of those names in any case,
+  with or without SIG, or `RTMIN+n` (n 0-30), `RTMAX-n` (n 0-29, bash's `decode_signal`), a number
+  0-64, EXIT, DEBUG, ERR or RETURN. Windows raises none but INT, but a script may still set and list
+  traps for any of them.
+- Every bad spec is reported and the valid ones are set.
+- `trap -p` uses bash's spelling and order. With operands it prints each in turn as given: a
+  repeat prints again, an unset one prints nothing.
+
+**Not done:** `trap -l` and `kill -l` still print the short list of nine names. bash prints the
+numbered table (` 1) SIGHUP  2) SIGINT …`). Not measured here, not raised.
+
+**Verified:** new case `trap_signals` (the 33 specs, a bad spec among good ones, `trap -p` with
+and without operands, a quote in a trap command; streams merged inside the script, because
+wsl.exe relays stdout and stderr separately and loses their order under an outer `2>&1`;
+expected = GNU bash via WSL); the rev 166 build differs on 29 lines. Suite 93/93 with a console
+and `-Detached`; compat battery 227/237, exit 0, no regression.
+
+**Implemented by:** rev 170. Files: `Bash/Evaluator/Builtins.cs`, `tests/cases/trap_signals.sh`,
+`tests/expected/trap_signals.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECTS FIXED: builtins took bad options as operands or ignored them, and printed no usage line (`printf -Z`, `cd -Z`, `kill -Z 1`, `trap -- 'cmd' SIG`)
+**Status:** Active. Grew from the open item "`read -z` prints no usage line" (found by the
+`error_prefix` case); the architect, 2026-10-10: "go meant 'still open' gogogo". Grounded in the
+README's own contract: "an option … that is not implemented is never silently ignored".
+
+**Defect (measured against bash 5.1 via WSL, every option-taking builtin):**
+- No builtin printed bash's usage line after an invalid option (`read: usage: read [-ers] …`).
+  `readarray`, `typeset` and `local` reported themselves as `mapfile` or `declare`.
+- These took `-Z` as an operand, ignored it, or did something else with it: `printf` (printed it),
+  `cd`, `pwd`, `export` and `readonly` (a bad identifier), `unset`, `alias` and `unalias` ("not
+  found"), `source` (a file named `-Z`), `pushd`, `popd` and `dirs` (`pushd +3` ran `cd +3`),
+  `trap`, `history`, `jobs` and `wait`. `kill -Z 1` went on to signal pid 1.
+- `trap -- 'cmd' SIG`, the form `trap -p` prints, set a trap that runs `--` and reported the
+  command as a signal. `source -- file` read `--` as the file. `cd a b` ignored `b`, where bash
+  says "too many arguments".
+- The usage lines that did exist (`printf`, `getopts`, `kill`, `trap`) carried the script prefix
+  from rev 168; bash prints usage lines without it (`builtin_usage`).
+
+**Decision:**
+- One helper, `Builtins.BadOption`, prints `name: -Z: invalid option` and bash's usage line, for
+  status 2. `name` is the builtin as called (`Builtins._called`, saved and restored when a
+  builtin runs another). The usage texts are bash 5.1's `help -s`, in `Builtins.Usages`.
+- `FlagOptions` reads leading flag letters against each builtin's set; options end at the
+  first operand or `--`.
+- Each builtin follows bash's own rules where they differ, all measured:
+  - `pwd` ignores operands. `cd` with two operands is "too many arguments", status 1.
+  - `alias -p` prints all and then processes any names. `unalias -a` clears all; `unalias` alone
+    prints the usage line.
+  - `source`/`.` with no file is "filename argument required" plus usage, under the called name.
+    `source` also passes the file name as given, so `BASH_SOURCE` and the error prefix name it as
+    bash does.
+  - `pushd`/`popd`/`dirs` take a bad `+N`/`-N` as "invalid number". `dirs` takes one flag per
+    word (`dirs -cv` is an invalid number) and an operand as an invalid option. `popd foo` is an
+    invalid argument. `pushd a b` is "too many arguments". An empty stack is reported before
+    `+N`. A good `+N`/`-N` is reported as not supported (rotation is not implemented).
+  - `kill` checks its signal spec with trap's table and signals nothing on a bad one ("invalid
+    signal specification", 1). `kill -s` with no spec is "option requires an argument", 1.
+    `kill -l N` / `kill -l NAME` translate (N may be 128+signal).
+  - `trap` reads `-l`/`-p`/`--` as options. A first operand that is a signal number, or a lone
+    signal, resets (`trap 2 15`, `trap INT`). An action with no signal prints the usage line.
+  - `history` checks its letters before its script-mode early return.
+
+**Not done (recorded in the anchor):** what the accepted-but-unimplemented options select:
+`jobs -l -n -p -r -s -x`, `wait -n` (does not wait for just one job; `jobs` then still lists a
+finished job), `wait -p VAR`, the directory stack's `+N`/`-N` rotation, and `kill -l`/`trap -l`'s
+numbered table. `umask`, `times` and `fc` are not builtins at all; `fc` reaches Windows'
+`fc.exe`. Those three are scope, raised with the architect, not built.
+
+**Verified:** new case `builtin_options` (every option-taking builtin with `-Z`, then 40 edge
+forms: valid options still work, operands after options, `--`, the stack forms, `kill` and `trap`
+forms; run by relative name from a temp dir, streams merged inside; expected = GNU bash via WSL,
+188 lines). The rev 166 build differs on 142 lines. Git's `__git_ps1` (which uses
+`printf -v VAR -- fmt`) still prints `[main *=]`. Suite 94/94 with a console and `-Detached`;
+compat battery 227/237, exit 0, no regression.
+
+**Implemented by:** rev 171. Files: `Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/Builtins.Shell.cs`,
+`Bash/Evaluator/Evaluator.cs` (disown's usage line), `tests/cases/builtin_options.sh`,
+`tests/expected/builtin_options.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS; AWAITING).
+
+## 2026-10-10 -- DEFECTS FIXED: syntax errors in C#Bash's own words, often at the wrong line; grammar bash rejects was accepted (`then fi`, `a &&`, `f() echo x`, `[[ -f ]]`)
+**Status:** Active. The open item recorded with the error-prefix fix (DECISIONS "every error said
+`bash:`", Not done); the architect, 2026-10-10: "go meant 'still open' gogogo".
+
+**Defect (measured against bash 5.1 via WSL, 43 scripts):**
+- Every syntax error had C#Bash's text: `Expected 'fi' but got '' at 5:1`, `Expected RParen but got
+  Eof`, `Unterminated double-quoted string at 1:6`. bash has three forms (parse.y,
+  `report_syntax_error`, `parser_error`): ``syntax error near unexpected token `fi'`` followed by
+  the source line quoted; `syntax error: unexpected end of file`; and, for an unclosed quote, `$(`,
+  `${` or backquote, ``unexpected EOF while looking for matching `)'`` at its line, then the end of
+  file. `[[ ]]` has its own (`cond_error`): ``unexpected argument `]]' to conditional binary
+  operator`` / ``syntax error near `]]'`` / the line.
+- Grammar bash rejects was accepted:
+  - an empty body (`then fi`, `do done`, `{ }`, `( )`): the closing word was parsed as a command
+    named `fi`, and the error came at the end of the file;
+  - `a &&` or `a ||` at the end, which ran `a`;
+  - `f() echo x`, where the function body must be a compound command;
+  - `[[ -f ]]`, `-f` read as a string, status 0;
+  - `[[ a == ]]`, which took `]]` as the operand;
+  - an unclosed backquote.
+- An unterminated heredoc was silent; bash warns ``here-document at line 1 delimited by
+  end-of-file (wanted `EOF')``.
+
+**Decision:**
+- A `ParseException` carries the token it failed at, plus, where bash words it differently, the
+  missing closer, an "unsupported" flag (`>( )` keeps its own message), the `[[ ]]` form, and the
+  status (an array literal's is 1, as in bash).
+- One renderer, `Parser.SyntaxMessage`, produces bash's lines, and `RunString` prints them with the
+  error prefix.
+- The grammar is fixed where it was wrong: a list does not start at an unquoted closing word;
+  bodies need a command; a command must follow `&&`/`||`; a function body is a compound command;
+  `[[ ]]` operands are words and never `]]`, and its unary operators are bash's own list. The
+  lexer reports the heredoc warning before the text runs.
+- An unquoted `$( )` body parsed from rebased tokens (rev 168) reports its errors at the file's
+  line again.
+
+**Alternatives considered:** keep C#Bash's messages and fix only the grammar. Rejected: the
+messages are what people and agents match on, and the line was often wrong.
+
+**Not done (raised with the architect, recorded in the anchor):**
+- bash parses and runs one top-level command at a time, so the lines before a syntax error RUN
+  (`echo a` then an error on line 3 prints `a`). C#Bash parses the whole text first and runs
+  nothing.
+- The same model makes bash report a syntax error inside `$( )` at run time, as `name: command
+  substitution: line N+1:`, with that command failing (status 1) and the script going on. C#Bash
+  ends the whole script before it starts.
+- Interactive mode (`Program.cs`'s REPL) still prints the old text.
+
+**Corpus check:** `-n` over Git for Windows' 24 scripts (all agree with GNU) and Ubuntu 22.04's 912
+bash-completion scripts. 843 agree; the 69 that C#Bash rejects all use extglob in `[[ $x ==
+@(a|b) ]]`, which bash parses with extglob off. The rev 166 build rejects the same 69, so this
+change adds no false rejections. That extglob gap is the 2026-09-04 decision, not this one.
+
+**Verified:** new case `syntax_errors` (43 scripts; commands before an error are `true`, so the
+open question above is not tested; expected = GNU bash via WSL, 170 lines); the rev 166 build
+differs on 92. `stray_keyword` caught a regression during the work: a quoted `'fi'` must stay a
+command name. Git's `__git_ps1` prints `[main *=]`. Suite 95/95 with a console and `-Detached`;
+compat battery 227/237, exit 0, no regression.
+
+**Implemented by:** rev 172. Files: `Bash/Parser/Parser.cs`, `Bash/Parser/ParseException.cs`,
+`Bash/Parser/SyntaxMessage.cs` (new), `Bash/Lexer/Lexer.cs`, `Bash/Lexer/LexException.cs`,
+`Bash/Evaluator/Evaluator.cs`, `tests/cases/syntax_errors.sh`, `tests/expected/syntax_errors.out`,
+`tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS; AWAITING).
+
+## 2026-10-10 -- DEFECT FIXED: `while read -r f; do prog; done < list` ended after one line (a program run while the shell reads a file took the rest of it)
+**Status:** Active. Found 2026-10-10 by Claude while running a `-n` corpus check (a loop over a file
+list ran one file). It is in every build back to the deployed rev 156. The architect: "go meant
+'still open' gogogo".
+
+**Defect:** when any external program ran inside a loop reading a file, the loop got end of file
+after the first line:
+- with the program's stdin redirected (`prog < /dev/null`): the child's default stdin was computed
+  BEFORE its redirects, and computing it took (`TakeBuffered`) what the loop's `read` had read
+  ahead. The default was then discarded, and the data with it.
+- with the program inheriting stdin: the rest of the file was PUMPED into the program through a
+  pipe (`FeedChild` copies to the end), whether or not the program reads it.
+- a C#Bash child (`"$BASH" -c 'read -r y'`) read 4 KB ahead and lost the rest to its parent at
+  exit.
+On Unix the child shares the file offset: it consumes only what it reads, and the shell goes on from
+there. bash's `read` also seeks back what it read ahead on a seekable stdin.
+
+**Decision:**
+- A child's fd 0 default is taken only when no redirect replaces it (`<&0` takes it on demand).
+- When the shell reads a seekable FILE, the child gets the file itself (`SharedFileFd`), and the
+  OS file pointer is set to the shell's logical offset (the stream position minus the read-ahead).
+  After the child exits, the shell reads on from where the child left the pointer.
+- When the shell's own stdin is a disk file (`bash script < list`), the read-ahead is rewound and
+  the handle inherited.
+- At exit, a C#Bash whose stdin is a disk file seeks back over what its reader read ahead and did
+  not use (`ConsoleMux.GiveBackStdin`), as bash's `read` does.
+
+**A trap found on the way:** .NET's `FileStream.SafeFileHandle` getter moves the OS pointer to the
+stream's cached position. Calling it after the child undid exactly what the child read. The handle is
+taken once, before the launch.
+
+**Not done (a known limitation, recorded in the anchor):** a PIPE into the loop
+(`producer | while read; do prog; done`) is still pumped into `prog`, because pipeline stages are
+in-process pipes, not OS pipes. A program that reads part of its stdin (bash's `read` takes one
+line) then loses the rest of the pipe for the loop. A program that reads none of it, given
+`< /dev/null`, now leaves it alone. Fixing that means OS pipes between stages, which is an
+architectural change.
+
+**Verified:** new case `stdin_sharing` (10 forms: no program, a program with `< /dev/null`, one
+inheriting, a C#Bash child reading one line per pass, in-process `head -n 1`, a `{ }` group, the
+shell's own stdin a file, a pipe with `< /dev/null`, `cat` consuming the rest; expected = GNU bash
+via WSL); the rev 166 build differs on 7 of the 10 lines. `cmd.exe /c rem` in such a loop takes the
+rest of the file under Git Bash too: cmd reads its stdin. Suite 96/96 with a console and
+`-Detached`; compat battery 227/237, exit 0, no regression.
+
+**Implemented by:** rev 173. Files: `Bash/Evaluator/Evaluator.cs` (`CurrentStdin`, `ExecExternal`,
+`SharedFileFd`), `Bash/Evaluator/ChildLauncher.cs` (`SeekHandle`, `HandlePosition`, `IsDiskFile`),
+`Bash/Evaluator/ConsoleMux.cs` (`GiveBackStdin`), `tests/cases/stdin_sharing.sh`,
+`tests/expected/stdin_sharing.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; KNOWN LIMITATIONS).
+
+## 2026-10-10 -- DEFECT FIXED: a UTF-8 character cut by a read's 4096-byte block (or split across pipe writes) became two raw bytes
+**Status:** Active. The open item "UTF-8 split at read boundaries [inferred 2026-10-03, never
+reproduced]". Reproduced 2026-10-10 once rev 173's work showed the mechanism; the architect: "go
+meant 'still open' gogogo".
+
+**Defect (measured against bash 5.1 via WSL):** `LfReader` decodes stdin in 4096-byte blocks
+through `ShellEncoding.Utf8.GetDecoder()`. `ShellEncoding` did not override `GetDecoder`, and
+Encoding's default decoder is stateless, so a character whose bytes straddled a block became its
+bytes as raw-byte characters. With `é` at bytes 4096-4097, `read`, a pipe, `mapfile` and `while read`
+gave a line of 4098 characters, not 4097, and `${line: -2}` showed a raw byte. Output stayed byte
+for byte (the raw-byte characters write back as the same bytes), so it showed only in lengths,
+slicing and pattern matches. `$(< file)` was right: it decodes the whole file at once. The code
+had assumed the opposite ("Callers that read in chunks must therefore decode whole buffers (all of
+ours do)").
+
+**Decision:** `ShellEncoding.CarryDecoder`, returned by `GetDecoder`. At a chunk's end it holds back
+a lead byte followed only by continuation bytes, fewer than the lead needs (at most 3), and joins
+them to the next chunk; at the final flush they decode as anywhere (raw bytes if nothing completes
+them). Every `StreamReader` over `ShellEncoding` gets it too. `LfReader.TakeBuffered` hands back
+the held bytes with the read-ahead, so rev 173's file-offset handoff stays exact when the
+read-ahead ends mid-character.
+
+**Verified:** new case `utf8_boundary` (2-, 3- and 4-byte characters at the boundary through
+`read`, a pipe, `mapfile` and `while read`; an invalid byte at the boundary; a sequence cut by the
+end of the file; a character split across two pipe writes 0.2 s apart; the offset handoff to a
+child; expected = GNU bash via WSL); the rev 166 build differs on 14 of 19 lines. Suite 97/97 with
+a console and `-Detached`; compat battery 227/237, exit 0, no regression.
+
+**Implemented by:** rev 174. Files: `Bash/Evaluator/ShellEncoding.cs`, `tests/cases/utf8_boundary.sh`,
+`tests/expected/utf8_boundary.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECTS FIXED: Linux's device files did not exist (`cat /dev/null`, `head -c 5 /dev/zero`, `diff -u /dev/null new`, `[ -e /dev/null ]`); `tr` did not stream; `od` printed nothing for empty input
+**Status:** Active. Found 2026-10-10 by the UTF-8 boundary work (`head -c 4095 /dev/zero` could not
+be used to build the test file); the architect: "go meant 'still open' gogogo".
+
+**Defect (measured against bash 5.1 via WSL):**
+- Only the redirect code knew `/dev/null`, `/dev/stdout` and `/dev/stderr`, and only as output
+  targets (and `/dev/null` as input). Everywhere else a device path resolved against the current
+  drive (`F:\dev\null`) and was missing:
+  - as an operand: `cat /dev/null`, `head -c 5 /dev/zero`, `cat /dev/stdin`, `cat /dev/fd/3`,
+    `diff -u /dev/null new` (how a new-file patch is made), `cp /dev/null f`, `tail`, `ls`, `stat`;
+  - as a redirect: `< /dev/zero`, `< /dev/urandom`, `> /dev/fd/2`;
+  - under `test`: `[ -e /dev/null ]` was false.
+- `tr` read ALL its input before writing, so `tr '\0' z < /dev/zero | head -c 3` never ended, and
+  a large input had to fit in memory.
+- `od` printed nothing for an empty input; GNU prints the offset `0000000`.
+
+**Decision:** one device layer in `ShellFile`:
+- `Device(path)` names the device: null, zero, random (/dev/random and /dev/urandom), tty, fd:N.
+  /dev/stdin, /dev/stdout and /dev/stderr are fd:0, fd:1 and fd:2.
+- `OpenInput` reads files and devices. Zero and random are endless streams; fd:0 is the shell's
+  current stdin, read-ahead included; fd:N comes from the evaluator (`ShellEnvironment.FdStream`).
+  `Exists` is true for devices.
+- `ShellFile.ReadAllBytes`, and so `ShellEncoding.ReadAllText`, go through it. That covers `sed`,
+  `awk`, `diff`, `jq`, the checksum tools and script loading. `cat`, `head`, `tail`, `fold`,
+  `grep` and `OpenText` open through it.
+- `cp`, `ls` and `stat` know devices (`stat -c '%F %s %a %f'` gives `character special file 0 666
+  21b6`).
+- Redirects, in-process and for a program: `DeviceRedirect` rewrites a device redirect as what it
+  amounts to on Linux:
+  - `> /dev/zero` and `> /dev/urandom` are `> /dev/null`;
+  - `> /dev/fd/1` and `> /dev/fd/2` are /dev/stdout and /dev/stderr;
+  - `> /dev/fd/N` and `< /dev/fd/N` are `>&N` and `<&N`;
+  - `< /dev/stdin` is nothing.
+  A device read is opened by the layer, and a program gets zero or random through a pump that runs
+  until it stops reading. `/dev/tty` is the console (CONIN$, CONOUT$); with none, it is "No such
+  device or address".
+- `test` (FileTests): a device exists, is readable and writable, and is a character device. A
+  /dev/fd/N or /dev/std* is one only when its descriptor is the console or /dev/null.
+- `tr` streams a block at a time; `od` always prints its last offset (none under `-An`).
+
+**Not done:** `exec 3>&1` (copying a standard descriptor to a numbered one) does not work at all:
+`echo >&3` is "Bad file descriptor" (found by this case, recorded as the next open item). For
+`> /dev/fd/3` inside `$( )`, GNU's own result is a /proc artefact (Permission denied), so the case
+leaves it out. `/dev/tty` depends on a console, so it is not in the case either. Utilities not
+named above that check `File.Exists` before opening may still miss a device.
+
+**Verified:** new case `device_files` (52 lines: 7 devices under `test`, 24 utilities with
+`/dev/null`, zero and random through `head` and a redirect, `/dev/stdin`, `/dev/fd/0` and
+`/dev/fd/3`, `/dev/fd/2` and `/dev/stderr` as targets, programs given `< /dev/zero`, `2> /dev/fd/1`,
+`> /dev/fd/2` and `cat /dev/stdin`, `tr` from `/dev/zero`; expected = GNU bash via WSL); the rev 166
+build differs on 46 lines. Suite 98/98 with a console and `-Detached`; compat battery 227/237, exit
+0, no regression.
+
+**Implemented by:** rev 175. Files: `Bash/Evaluator/ShellFile.cs`, `Bash/Evaluator/ShellEnvironment.cs`,
+`Bash/Evaluator/Evaluator.cs` (`DeviceRedirect`, the redirect loops), `Bash/Evaluator/ChildLauncher.cs`
+(`Access.Device`), `Bash/Evaluator/FileTests.cs`, `Bash/Evaluator/Builtins.Text.cs` (cat, head, tail,
+fold, tr, od), `Bash/Evaluator/Builtins.Search.cs` (grep), `Bash/Evaluator/Builtins.Find.cs` (diff),
+`Bash/Evaluator/Builtins.Files.cs` (cp, ls, stat), `tests/cases/device_files.sh`,
+`tests/expected/device_files.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECTS FIXED: `exec 3>&1` (a standard descriptor copied to a numbered one) did nothing; closing a copied descriptor broke the other copy
+**Status:** Active. Found 2026-10-10 by the `device_files` work; the architect: "go meant 'still
+open' gogogo".
+
+**Defect (measured against bash 5.1 via WSL):**
+- `N>&1`, `N>&2` and `N<&0` with N ≥ 3 fell through the redirect code without making fd N. So
+  `exec 3>&1; echo x >&3` said "3: Bad file descriptor", and so did the stderr-capture idiom
+  `exec 3>&1; out=$(cmd 2>&1 >&3)`, `{ …; } 3>&1 1>&2 2>&3` (swap stdout and stderr), `f 4>&1`, and
+  `exec 3<&0; read -u 3`.
+- With fd 3 made (from a file, or by this fix), `exec 1>&3 3>&-` DISPOSED the stream fd 1 had just
+  started writing through: the next `echo` failed ("The handle is invalid"), and a later `4>&1`
+  threw an unhandled exception out of the shell. Closing one of two dup'd descriptors must leave
+  the other open.
+
+**Decision:**
+- fd N is a stream onto where fd 1, 2 or 0 points at that moment (`StdStream`): the file or pipe
+  it writes or reads, a `$( )` capture through `TextWriterStream` (decoded with the carrying
+  decoder), or the process's own handle. A later `exec >f` leaves it where it was, as in bash.
+- A stream that more than one descriptor uses is marked shared (`RedirectScope.MarkShared`): a
+  copy, or a stream fd 1/2 writes through after `1>&N`. `N>&-` then drops fd N without disposing
+  it. A stream only fd N held is still closed.
+- A dup onto a stream that cannot be written is a redirect error ("N: Bad file descriptor"), never
+  an exception.
+
+**Verified:** new case `fd_copy` (13 lines: the stderr-capture idiom, the stdout/stderr swap, `exec
+>/dev/null` with fd 3 kept, `exec 1>&3 3>&-`, `f 4>&1`, a program's stderr captured with stdout to
+fd 3, `exec 3<&0; read -u 3`, `exec 4>&2`, a closed fd, `exec 3>&1` inside `$( )`; run by relative
+name from a temp dir; expected = GNU bash via WSL); the rev 166 build differs on all 13. Suite 99/99
+with a console and `-Detached`; compat battery 227/237, exit 0, no regression.
+
+**Implemented by:** rev 176. Files: `Bash/Evaluator/Evaluator.cs` (`StdStream`, `TextWriterStream`,
+the dup cases, `RedirectScope.TrackFd`/`MarkShared`), `tests/cases/fd_copy.sh`,
+`tests/expected/fd_copy.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECT FIXED: `wait -n` did not wait (and `wait -p VAR` was ignored)
+**Status:** Active. The open item "accepted options whose effect is not implemented" (DECISIONS
+"builtins took bad options …", Not done); the architect: "go meant 'still open' gogogo".
+
+**Defect (measured against bash 5.1 via WSL):** `wait` skipped every argument starting with `-`,
+so `wait -n` returned at once, status 0, and left the finished job in the table (`jobs` still
+listed it). A job pool (`while …; do cmd & ((++n >= 4)) && wait -n; done`) therefore ran unbounded.
+`wait -p VAR` was ignored.
+
+**Decision:** bash 5.1's semantics. `wait -n` waits for the next of the shell's jobs, or of the ids
+given, to finish, removes it, and returns its status; 127 when there is none. `-p VAR` is set to
+that job's id; with plain `wait`, to the last job waited for. The wait blocks on an event that
+each job sets when it finishes (`BackgroundJob.Finished`, one `ManualResetEvent` per shell). The
+event is reset BEFORE the jobs are checked, so a job finishing in between is not missed. The
+interrupt handles wake it too, as for `tail -f`. No polling (the architect's rule).
+
+**Verified:** new case `wait_next` (two jobs finish out of order, `wait -n` twice, a third with none
+left (127), `-p`, `wait -n ID`, plain `wait`, the job table empty after; gaps of a second so the
+order does not depend on a child's start-up; expected = GNU bash via WSL); the rev 166 build differs
+on 4 lines. Suite 100/100 with a console and `-Detached`; compat battery 227/237, exit 0, no
+regression.
+
+**Implemented by:** rev 177. Files: `Bash/Evaluator/Evaluator.cs` (`WaitJobs`, `WaitNext`,
+`WaitEach`), `Bash/Evaluator/BackgroundJob.cs` (`Finished`), `tests/cases/wait_next.sh`,
+`tests/expected/wait_next.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECT FIXED: `jobs` ignored its options (`jobs -p` printed whole lines), used its own format, and listed nothing in a pipeline stage
+**Status:** Active. The open item "accepted options whose effect is not implemented"; the architect:
+"go meant 'still open' gogogo".
+
+**Defect (measured against bash 5.1 via WSL):**
+- `jobs -p` printed the full listing, so `kill $(jobs -p)` in a cleanup trap got words like
+  `[1]+`. That idiom happened to work only because `kill` skips non-numbers.
+- `-l`, `-r` and `-s` were ignored (`jobs -s` listed the running jobs), and so were job specs
+  (`jobs %1` listed every job).
+- The format was `[1]+  Running  cmd`. bash's is `[1]+  Running` with the state 24 wide, the
+  command, and ` &` while it runs.
+- In a pipeline stage (`jobs | sed`) the list was empty, because a stage starts a fresh table. A
+  bash subshell lists its parent's jobs.
+
+**Decision:** bash's `pretty_print_job` format. `-l` adds the pid (`%5ld`, here the synthetic job
+pid that `kill` and `wait` accept). `-p` prints pids alone, `-r` only running jobs, and `-s` only
+stopped ones, which is none, since jobs are never stopped here. Job specs filter the list; an
+unknown spec is "no such job", status 1. A subshell keeps a snapshot of its parent's jobs
+(`_parentJobs`) for `jobs` alone; `wait` there still has only its own. `jobs -x` is reported as
+not supported.
+
+**Verified:** new case `jobs_list` (plain, `-l`, `-p`, `-r`, `-s`, `%1`, `-p %2`, `kill $(jobs -p)`;
+all through a pipe, so it also covers the subshell listing; pids replaced and `-l`'s padding
+collapsed, since pids differ between shells; expected = GNU bash via WSL); the rev 166 build differs
+on 10 of 17 lines. Suite 101/101 with a console and `-Detached`; compat battery 227/237, exit 0, no
+regression.
+
+**Implemented by:** rev 178. Files: `Bash/Evaluator/Evaluator.cs` (`ListJobs`, `FindJobIn`,
+`_parentJobs`), `Bash/Evaluator/Builtins.cs` (`Jobs`), `tests/cases/jobs_list.sh`,
+`tests/expected/jobs_list.out`, `tests/run-tests.ps1`.
+
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor (FIXED, NOT DEPLOYED; OPEN DEFECTS).
+
+## 2026-10-10 -- DEFECT FIXED: a syntax error at the end of a text with no final newline was reported one line early
+**Status:** Active. Found while checking the deploy notice's examples against GNU (the architect:
+"deploy and notify"). It is part of rev 172's syntax-error work, so it is fixed before shipping.
+
+**Defect (measured against bash 5.1 via WSL):** for `bash -c 'echo a &&'`, or a file whose last line
+has no newline, bash reports `syntax error: unexpected end of file` at the line AFTER the last line
+(line 2). C#Bash counted only newlines and said line 1. The `syntax_errors` case missed it because all
+its scripts ended with a newline.
+
+**Decision:** the end of file is the line after the last line, whether or not that line ends with a
+newline (`SyntaxMessage`).
+
+**Verified:** `syntax_errors` gains four scripts with no final newline and a `-c` case (expected = GNU
+bash via WSL); the rev 178 build differs on 5 lines. Suite 101/101 with a console and `-Detached`;
+compat battery 227/237, exit 0.
+
+**Implemented by:** rev 179. Files: `Bash/Parser/SyntaxMessage.cs`, `tests/cases/syntax_errors.sh`,
+`tests/expected/syntax_errors.out`.
+
+## 2026-10-10 -- FINDING: the "+1.2 ms startup" of revs 158-179 was the benchmark's own noise; the startup row is one sample
+**Status:** Active (a finding, not a method change). The architect, 2026-10-10: "bisect the 1.2ms
+first".
+
+**What was seen:** on a quiet machine, `compare3.sh` gave rev 179 a startup of 16.0 ms and, four
+minutes later (`--cs`), rev 156 14.8 ms; Git Bash read 15.7 and 15.8. That looked like a regression of
++1.2 ms. (An earlier run while the machine was busy gave rev 179 18.2 ms.)
+
+**The check (a diagnostic, NOT the benchmark, as the benchmark memory allows for a bisect):**
+compare3's own startup measurement, `benchtimer 100 <exe> -c 'exit 0'`, run under the same Git Bash
+login environment, rev 156 and rev 179 alternating, 15 rounds:
+- 5 rounds: rev 156 15.34 ms, rev 179 15.26 ms on average;
+- 10 rounds: rev 156 16.23 (sd 0.83), rev 179 15.79 (sd 0.50), so rev 179 was 0.44 ms FASTER;
+- one binary's 100-launch samples ranged from 14.9 to 17.7 ms.
+From Claude Code's own shell, with a smaller environment, both start in about 12 ms, level.
+
+**Conclusion:** no regression; nothing to bisect. compare3's startup row is ONE 100-launch total,
+so it moves by about +-1.5 ms between runs on this machine. A difference of that size between two
+compare3 runs is not evidence. Confirm with an interleaved run of the same measurement before
+calling a regression. (This is the sibling of 2026-10-06's "+1 ms" from a best-of-N minimum.)
+
+**Not done:** the method itself (one startup sample) is unchanged. Changing it (several samples,
+interleaved, a median) is the architect's call (DECISIONS 2026-10-06, "The benchmark is one fixed
+command").
