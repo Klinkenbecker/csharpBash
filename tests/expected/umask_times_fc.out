@@ -1,0 +1,53 @@
+1 0022
+2 u=rwx,g=rx,o=rx
+3 umask 0022
+4 umask -S u=rwx,g=rx,o=rx
+5 0077 u=rwx,g=,o=
+6 0027
+7 0037
+8 0033
+t.sh: line 8: umask: `u': invalid symbolic mode character
+9 rc=1 0033
+10 0007
+t.sh: line 11: umask: 089: octal number out of range
+11 rc=1
+t.sh: line 12: umask: 12345: octal number out of range
+12 rc=1 0022
+t.sh: line 13: umask: `x': invalid symbolic mode operator
+13 rc=1
+t.sh: line 14: umask: -Z: invalid option
+umask: usage: umask [-p] [-S] [mode]
+14 rc=2
+15 rc=0 0022
+16 0022
+u=rwx,g=,o=
+17 rc=0 0077
+18 0027
+19 0117
+20 rc=0 0022
+21 rc=0 0333
+22 0022
+23 0077
+t.sh: line 24: umask: `s': invalid symbolic mode character
+24 rc=1 0022
+25 0777
+26 0022
+27 0000 0022
+umask is a shell builtin
+times is a shell builtin
+fc is a shell builtin
+builtin
+builtin
+builtin
+NmN.NNNs NmN.NNNs
+NmN.NNNs NmN.NNNs
+NmN.NNNs NmN.NNNs
+NmN.NNNs NmN.NNNs
+28 rc=0
+t.sh: line 31: times: -Z: invalid option
+times: usage: times
+29 rc=2
+t.sh: line 32: fc: -Z: invalid option
+fc: usage: fc [-e ename] [-lnr] [first] [last] or fc -s [pat=rep] [command]
+30 rc=2
+31 fc ok

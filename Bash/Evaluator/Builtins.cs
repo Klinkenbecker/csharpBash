@@ -22,7 +22,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"echo", "printf", "cd", "pwd", "export", "unset", "set", "shift", "read",
 		"true", "false", ":", "exit", "return", "break", "continue", "source", ".",
 		"local", "declare", "typeset", "eval", "type", "command", "test", "[",
-		"sleep", "env", "history", "trap", "jobs", "wait", "fg", "bg", "disown", "nohup", "setsid",
+		"sleep", "env", "history", "fc", "umask", "times", "trap", "jobs", "wait", "fg", "bg", "disown", "nohup", "setsid",
 		"shopt", "alias", "unalias", "builtin", "readonly", "exec", "let",
 		"pushd", "popd", "dirs", "mapfile", "readarray", "getopts", "yes",
 		"basename", "dirname", "seq", "mkdir", "cat", "head", "tail", "wc", "rev", "tac",
@@ -143,6 +143,9 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		["popd"] = "popd [-n] [+N | -N]",
 		["dirs"] = "dirs [-clpv] [+N] [-N]",
 		["history"] = "history [-c] [-d offset] [n] or history -anrw [filename] or history -ps arg [arg...]",
+		["fc"] = "fc [-e ename] [-lnr] [first] [last] or fc -s [pat=rep] [command]",
+		["umask"] = "umask [-p] [-S] [mode]",
+		["times"] = "times",
 		["source"] = "source filename [arguments]",
 		["getopts"] = "getopts optstring name [arg ...]",
 		["kill"] = "kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]",
@@ -240,6 +243,9 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"sleep"   => Sleep(args),
 			"env"     => Env(args),
 			"history" => HistoryCmd(args),
+			"fc"      => Fc(args),
+			"umask"   => Umask(args),
+			"times"   => Times(args),
 			"trap"    => Trap(args),
 			"jobs"    => Jobs(args),
 			"wait"    => Wait(args),
@@ -750,5 +756,133 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		for (int i = start; i < items.Count; i++)
 			Console.WriteLine($"{(i + 1).ToString().PadLeft(width + 4)}  {items[i]}");
 		return 0;
+		}
+
+	/// <summary>`fc`: bash's history editor. C#Bash keeps no editable history, so after bash's option
+	/// check every form is reported as not supported. Until 2026-10-10 `fc` was not a builtin and ran
+	/// Windows' fc.exe ("FC: Insufficient number of file specifications").</summary>
+	private int Fc(List<string> args)
+		{
+		for (int i = 0; i < args.Count; i++)
+			{
+			var a = args[i];
+			if (a == "--" || a.Length < 2 || a[0] != '-' || char.IsAsciiDigit(a[1])) break;   // `fc -2` is an offset
+			for (int k = 1; k < a.Length; k++)
+				{
+				char c = a[k];
+				if (c == 'e')
+					{
+					if (k == a.Length - 1 && ++i >= args.Count) return BadOption("-e", "option requires an argument");
+					break;   // the rest of the word, or the next one, is the editor
+					}
+				if ("lnrs".IndexOf(c) < 0) return BadOption($"-{c}");
+				}
+			}
+		Console.Error.WriteLine($"{Err}fc: history editing is not supported by this interpreter");
+		return 2;
+		}
+
+	// ── times ───────────────────────────────────────────────────────────────────
+
+	/// <summary>`times`: the shell's user and system CPU, then its children's, as bash prints them
+	/// (`0m0.019s 0m0.005s`, fractions truncated). Operands are ignored, as in bash.</summary>
+	private int Times(List<string> args)
+		{
+		if (FlagOptions(args, "", []) < 0) return 2;
+		var self = System.Diagnostics.Process.GetCurrentProcess();
+		var (cu, cs) = Evaluator.ChildCpuTicks();
+		Console.WriteLine($"{Clock(self.UserProcessorTime.Ticks)} {Clock(self.PrivilegedProcessorTime.Ticks)}");
+		Console.WriteLine($"{Clock(cu)} {Clock(cs)}");
+		return 0;
+
+		static string Clock(long ticks)
+			{
+			long ms = ticks / TimeSpan.TicksPerMillisecond;
+			return $"{ms / 60000}m{ms / 1000 % 60}.{ms % 1000:D3}s";
+			}
+		}
+
+	// ── umask ───────────────────────────────────────────────────────────────────
+
+	/// <summary>`umask [-p] [-S] [mode]`, bash 5.1's umask.def: octal (at most 07777, kept as the 9
+	/// permission bits) or symbolic clauses (`u=rwx,g=rx,o=`, `g-w`, `a+r`, `=r`), applied all or
+	/// none. Stored per shell (a subshell's change stays there) and printed; it has NO effect on
+	/// files C#Bash creates, since Windows files have no mode bits to clear (DECISIONS 2026-10-10).</summary>
+	private int Umask(List<string> args)
+		{
+		var flags = new HashSet<char>();
+		int first = FlagOptions(args, "pS", flags);
+		if (first < 0) return 2;
+		bool symbolic = flags.Contains('S');
+		if (first < args.Count)
+			{
+			var mode = args[first];   // further operands are ignored, as in bash
+			int mask;
+			if (mode.Length > 0 && char.IsAsciiDigit(mode[0]))
+				{
+				mask = 0;
+				foreach (char c in mode)
+					{
+					if (c is < '0' or > '7' || (mask = mask * 8 + (c - '0')) > 0xFFF)
+						{ Console.Error.WriteLine($"{Err}umask: {mode}: octal number out of range"); return 1; }
+					}
+				}
+			else
+				{
+				int? bits = SymbolicMode(mode, ~_env.Umask & 0x1FF);
+				if (bits is null) return 1;
+				mask = ~bits.Value;
+				}
+			_env.Umask = mask & 0x1FF;
+			if (symbolic) Console.WriteLine(SymbolicUmask(_env.Umask));
+			return 0;
+			}
+		if (flags.Contains('p')) Console.Write(symbolic ? "umask -S " : "umask ");
+		Console.WriteLine(symbolic ? SymbolicUmask(_env.Umask) : "0" + Convert.ToString(_env.Umask, 8).PadLeft(3, '0'));
+		return 0;
+		}
+
+	/// <summary>bash's parse_symbolic_mode, on the permitted bits (the complement of the mask): clauses
+	/// `[ugoa]*[+-=][rwx]*` separated by commas. Null after reporting a bad operator or character.</summary>
+	private int? SymbolicMode(string mode, int bits)
+		{
+		const int U = 0x1C0, G = 0x038, O = 0x007, All = U | G | O;
+		int s = 0;
+		while (true)
+			{
+			int who = 0, perm = 0;
+			for (; s < mode.Length && "agou".IndexOf(mode[s]) >= 0; s++)
+				who |= mode[s] switch { 'u' => U, 'g' => G, 'o' => O, _ => All };
+			char op = s < mode.Length ? mode[s++] : '\0';
+			if (op is not ('+' or '-' or '='))
+				{
+				Console.Error.WriteLine($"{Err}umask: `{(op == '\0' ? "" : op.ToString())}': invalid symbolic mode operator");
+				return null;
+				}
+			for (; s < mode.Length && "rwx".IndexOf(mode[s]) >= 0; s++)
+				perm |= mode[s] switch { 'r' => 0x124, 'w' => 0x092, _ => 0x049 };
+			if (s < mode.Length && mode[s] != ',')
+				{
+				Console.Error.WriteLine($"{Err}umask: `{mode[s]}': invalid symbolic mode character");
+				return null;
+				}
+			if (who != 0) perm &= who;
+			switch (op)
+				{
+				case '+': bits |= perm; break;
+				case '-': bits &= ~perm; break;
+				default: bits &= ~(who == 0 ? All : who); bits |= perm; break;
+				}
+			if (s >= mode.Length) return bits;
+			s++;   // past the ','
+			}
+		}
+
+	/// <summary>`u=rwx,g=rx,o=rx`: the permissions a mask leaves.</summary>
+	private static string SymbolicUmask(int mask)
+		{
+		static string Class(int m, int shift) =>
+			((m >> shift & 4) == 0 ? "r" : "") + ((m >> shift & 2) == 0 ? "w" : "") + ((m >> shift & 1) == 0 ? "x" : "");
+		return $"u={Class(mask, 6)},g={Class(mask, 3)},o={Class(mask, 0)}";
 		}
 	}

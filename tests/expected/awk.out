@@ -136,8 +136,10 @@ pf|7
 alice
 bob
 awk: unsupported: getline
-awk: unsupported: user-defined function
-awk: unsupported: print redirection to a file (only "/dev/stderr" and "/dev/stdout" are supported)
+awk: unsupported: getline from the main input
+awk: unsupported: print piped to a command
 awk: unsupported: printf %e
 rc=2
 awk: unsupported: ENVIRON
+awk: cmd. line:1: fatal: function `d': calls nested too deep for C#Bash's in-process awk
+rc=2

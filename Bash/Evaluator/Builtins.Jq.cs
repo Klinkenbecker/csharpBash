@@ -12,7 +12,7 @@ public sealed partial class Builtins
 	/// </summary>
 	private int Jq(List<string> args)
 		{
-		bool nullInput = false, slurp = false, raw = false, join = false, compact = false, exitStatus = false;
+		bool nullInput = false, slurp = false, raw = false, join = false, compact = false, exitStatus = false, rawInput = false;
 		var named = new Dictionary<string, object?>(StringComparer.Ordinal);
 		string? filter = null;
 		var files = new List<string>();
@@ -27,6 +27,7 @@ public sealed partial class Builtins
 					{
 					case "--null-input": nullInput = true; continue;
 					case "--slurp": slurp = true; continue;
+					case "--raw-input": rawInput = true; continue;
 					case "--raw-output": raw = true; continue;
 					case "--join-output": raw = join = true; continue;
 					case "--compact-output": compact = true; continue;
@@ -51,13 +52,16 @@ public sealed partial class Builtins
 					}
 				throw new UnsupportedOptionException("jq", a);
 				}
-			if (!endOfOptions && a.Length > 1 && a[0] == '-' && filter is null)
+			// short options anywhere before `--`, after the filter and files too, as jq takes them
+			// (`jq . f -c`); until 2026-10-11 one after the filter was read as a file name
+			if (!endOfOptions && a.Length > 1 && a[0] == '-')
 				{
 				foreach (var ch in a[1..])
 					switch (ch)
 						{
 						case 'n': nullInput = true; break;
 						case 's': slurp = true; break;
+						case 'R': rawInput = true; break;
 						case 'r': raw = true; break;
 						case 'j': raw = join = true; break;
 						case 'c': compact = true; break;
@@ -119,6 +123,32 @@ public sealed partial class Builtins
 			}
 
 		if (nullInput) Run(null, "<unknown>");
+		else if (rawInput)
+			{
+			// -R: the inputs are ONE text, as in jq 1.6 (a file with no final newline runs into the next
+			// file's first line); each line is a string, located where its newline is (file:count of
+			// newlines so far in it). With -s the whole text is one string.
+			var all = new StringBuilder();
+			var pending = new StringBuilder();
+			string where = "<stdin>:0";
+			foreach (var (name, text) in JqInputs(files, ref rc))
+				{
+				int lineNo = 0, start = 0;
+				for (int nl; (nl = text.IndexOf('\n', start)) >= 0; start = nl + 1)
+					{
+					lineNo++;
+					if (slurp) continue;
+					pending.Append(text, start, nl - start);
+					Run(pending.ToString(), $"{name}:{lineNo}");
+					pending.Clear();
+					}
+				if (slurp) all.Append(text);
+				else pending.Append(text, start, text.Length - start);
+				where = $"{name}:{lineNo}";
+				}
+			if (slurp) Run(all.ToString(), where);
+			else if (pending.Length > 0) Run(pending.ToString(), where);
+			}
 		else
 			{
 			var slurped = slurp ? new List<object?>() : null;
@@ -158,7 +188,7 @@ public sealed partial class Builtins
 			try { list.Add((f, ShellEncoding.Utf8.GetString(ShellFile.ReadAllBytes(ShellEnvironment.TranslatePath(f))))); }
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 				{
-				Console.Error.WriteLine($"jq: error: Could not open {f}: {IoError(ex)}");
+				Console.Error.WriteLine($"jq: error: Could not open file {f}: {IoError(ex)}");   // jq 1.6's words
 				rc = 2;
 				}
 			}

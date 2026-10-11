@@ -1,0 +1,65 @@
+one
+cs.sh: command substitution: line 3: syntax error near unexpected token `then'
+cs.sh: command substitution: line 3: `if then)'
+two rc=1
+in-f
+cs.sh: command substitution: line 5: syntax error near unexpected token `then'
+cs.sh: command substitution: line 5: `if then)'
+after f rc=1
+cs.sh: command substitution: line 8: syntax error near unexpected token `then'
+cs.sh: command substitution: line 8: `if then)'
+pipe same line
+pipe rc=0
+cs.sh: command substitution: line 10: syntax error near unexpected token `then'
+cs.sh: command substitution: line 10: `if then)'
+sub same line
+sub rc=0
+cs.sh: command substitution: line 11: syntax error near unexpected token `then'
+cs.sh: command substitution: line 11: `if then'
+bt same line
+bt rc=0
+cs.sh: command substitution: line 14: syntax error near unexpected token `then'
+cs.sh: command substitution: line 14: `if then) b"'
+dq rc=1
+loop 1
+cs.sh: command substitution: line 16: syntax error near unexpected token `then'
+cs.sh: command substitution: line 16: `if then)'
+loop rc=1
+cs.sh: command substitution: line 18: syntax error near unexpected token `then'
+cs.sh: command substitution: line 18: `echo ok; if then; echo no)'
+end
+cs.sh: command substitution: line 19: syntax error near unexpected token `then'
+cs.sh: command substitution: line 19: `if then'
+bt status=2
+cs.sh: command substitution: line 21: syntax error near unexpected token `then'
+cs.sh: command substitution: line 21: `if then)'
+nested same line
+nested rc=0
+cs.sh: command substitution: line 23: syntax error near unexpected token `then'
+cs.sh: command substitution: line 23: `if then) end'
+heredoc rc=1
+cs rc=0
+s1
+./srcbad.sh: command substitution: line 3: syntax error near unexpected token `then'
+./srcbad.sh: command substitution: line 3: `if then)'
+s3 rc=1
+after source same line rc=0
+next line
+e1
+cs2.sh: command substitution: line 4: syntax error near unexpected token `then'
+cs2.sh: command substitution: line 4: `if then)'
+after eval same line rc=1
+m1
+cs2.sh: command substitution: line 6: syntax error near unexpected token `then'
+cs2.sh: command substitution: line 6: `if then)'
+m3 rc=1
+after eval2 rc=0
+cs2.sh: command substitution: line 6: syntax error near unexpected token `then'
+cs2.sh: command substitution: line 6: `if then)'
+bg rc=1
+cs2 rc=0
+one
+cname: command substitution: line 2: syntax error near unexpected token `then'
+cname: command substitution: line 2: `if then)'
+-c rc=1
+-n rc=0

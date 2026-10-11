@@ -21,8 +21,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	// ── public API ────────────────────────────────────────────────────────────
 
 	/// <summary>Expand a word to a single string (no word-splitting or globbing).</summary>
-	public string ExpandToString(Word word) =>
-		string.Concat(word.Parts.Select(ExpandPart));
+	public string ExpandToString(Word word) => ShellEncoding.Canonical(
+		string.Concat(word.Parts.Select(ExpandPart)));   // carried bytes that spell a character become it
 
 	/// <summary>Expand a word to a single string then translate it as a filesystem path.</summary>
 	public string ExpandToPath(Word word) =>
@@ -197,6 +197,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		// empty string ("" / '') is anchored above and survives as one field.
 		if (fields.Count == 0) return [];
 
+		// bytes that spell a UTF-8 character become it (`$'\xc3\xa9'` is é), before globbing
+		for (int k = 0; k < fields.Count; k++) fields[k] = ShellEncoding.Canonical(fields[k]);
+
 		// Steps 4 & 5: brace then glob — ONLY on fields with an unquoted metachar.
 		// Quoted text (echo '*', echo "{a,b}") is literal. Fields without a metachar
 		// (the common case) pass straight through with no allocation.
@@ -235,7 +238,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				default: sb.Append(ExpandPart(p)); break;
 				}
 			}
-		return sb.ToString();
+		return ShellEncoding.Canonical(sb.ToString());   // as ExpandToString: `$'\xc3\xa9'` matches é
 		}
 
 	/// <summary>Expand a word into a regex for `[[ =~ ]]`: quoted parts are literal.</summary>
@@ -252,7 +255,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				default: sb.Append(ExpandPart(p)); break;
 				}
 			}
-		return sb.ToString();
+		return ShellEncoding.Canonical(sb.ToString());
 		}
 
 	private static string EscapeGlob(string s)
@@ -353,6 +356,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		                              : $"{aa.Name}[{ExpandToString(aa.Index)}]={ExpandToString(aa.Value)}",
 		VarExpansionPart v         => GetChecked(v.Name, dollarForm: true),
 		BraceExpansionPart b       => ExpandBraceParam(b.Raw),
+		CommandSubstitutionPart { Command: SubstitutionSyntaxError se } => SubstitutionError(se),
 		CommandSubstitutionPart cs => OutsideDoubleQuotes(() => RunSubstitution(cs.Command)),
 		ProcessSubstitutionPart ps => OutsideDoubleQuotes(() => RunProcessSubstitution(ps.Command)),
 		ArithmeticExpansionPart a  => EvalArithmetic(a.Expression).ToString(),
@@ -1077,6 +1081,19 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	/// <summary>Run a `$( )` body as a subshell: output captured (trailing newlines
 	/// trimmed), variable/cwd changes discarded, `exit` ends only the substitution. The
 	/// exit status is recorded in <see cref="LastSubstStatus"/> and `$?`.</summary>
+	/// <summary>A substitution whose body did not parse (item 6, phase 3), met now as bash meets it:
+	/// bash's message, then for `$( )` (parsed by the shell running the command) the top-level command
+	/// is abandoned; a backquote body is parsed in the substitution's own process, so only it fails,
+	/// status 2, giving nothing (measured, bash 5.1).</summary>
+	private string SubstitutionError(SubstitutionSyntaxError se)
+		{
+		_eval.ReportSubstitutionError(se);
+		if (!se.Backquoted) throw new CommandAbortException();
+		LastSubstStatus = 2;
+		_env.LastExitCode = 2;
+		return "";
+		}
+
 	private string RunSubstitution(Node command)
 		{
 		var captured = new System.Text.StringBuilder();
@@ -1095,6 +1112,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		try   { status = _eval.Execute(command); }
 		catch (ExitException ex) { status = ex.Code; }
 		catch (BrokenPipeException) { status = 141; }
+		catch (CommandAbortException) { status = 1; }   // a bad `$( )` inside ends this one only (bash: its own process)
 		finally
 			{
 			status = SubshellExitTrap(mark, status);   // still captured: its output is part of the result
@@ -1180,6 +1198,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			try   { status = _eval.Execute(command); }
 			catch (ExitException ex) { status = ex.Code; }
 			catch (BrokenPipeException) { status = 141; }
+			catch (CommandAbortException) { status = 1; }   // as for $( )
 			finally
 				{
 				status = SubshellExitTrap(mark, status);

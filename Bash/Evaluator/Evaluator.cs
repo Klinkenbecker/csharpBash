@@ -196,7 +196,9 @@ public sealed class Evaluator
 	public int RunEval(string src)
 		{
 		int old = EnterLineBase();
-		try { return RunString(src, origin: "eval", syntaxErrorCode: 1); }
+		// a syntax error is status 2, as anywhere else (bash 5.1, measured 2026-10-11: 14 kinds); only an
+		// unclosed array literal is 1, which its ParseException carries. It was 1 for all of them.
+		try { return RunString(src, origin: "eval"); }
 		finally { LeaveLineBase(old); }
 		}
 
@@ -456,12 +458,33 @@ public sealed class Evaluator
 		ShellEnvironment.Active = _env;
 		try
 			{
+			// One top-level command at a time, as bash reads a script (DECISIONS 2026-10-11): parse a
+			// command, run it, parse the next. The commands before a syntax error run, and nothing after
+			// an `exit` is parsed (an installer's payload). Until then the whole text was parsed first
+			// and a syntax error anywhere ran nothing.
+			// tokens are lexed as the parser asks for them (phase 2), so text after an `exit` is never read
 			var lexer  = new Lexer.Lexer(source);
-			var tokens = lexer.Tokenize();
-			if (reportErrors)   // bash's warnings while reading (an unterminated heredoc), before it runs
-				foreach (var (line, text) in lexer.Warnings) Console.Error.WriteLine($"{SyntaxPrefix(origin, line + _lineBase)}{text}");
-			var ast    = new Parser.Parser(tokens, source).Parse();
-			return Execute(ast);
+			var parser = new Parser.Parser(lexer, source);
+			bool warned = false;
+			int code = 0;
+			while (true)
+				{
+				var node = parser.ParseNext();
+				// bash's one warning while reading (a here-document closed by the end of the text) comes
+				// when it reads that last command, before running it
+				if (!warned && parser.AtEnd)
+					{
+					warned = true;
+					if (reportErrors)
+						foreach (var (line, text) in lexer.Warnings) Console.Error.WriteLine($"{SyntaxPrefix(origin, line + _lineBase)}{text}");
+					}
+				if (node is null) break;
+				CheckInterrupt();
+				try { code = RunStatement(node); }
+				catch (CommandAbortException) { code = 1; _env.LastExitCode = 1; }   // a bad `$( )` abandons this command only
+				}
+			_env.LastExitCode = code;
+			return code;
 			}
 		catch (ExitException) { throw; }
 		catch (Exception ex) when (ex is Lexer.LexException or Parser.ParseException)
@@ -484,6 +507,16 @@ public sealed class Evaluator
 		                                or NotSupportedException or System.Security.SecurityException)
 			{ if (reportErrors) Console.Error.WriteLine($"{ErrorPrefix}{ex.Message}"); _env.LastExitCode = 1; return 1; }
 		finally { ShellEnvironment.Active = callerEnv; }
+		}
+
+	/// <summary>bash's lines for a substitution body that did not parse (item 6, phase 3), prefixed
+	/// `name: command substitution: line N:`: a `$( )` body's first line is the running command's line
+	/// + 1, a backquote body's the command's own (measured, bash 5.1).</summary>
+	internal void ReportSubstitutionError(SubstitutionSyntaxError se)
+		{
+		int first = _env.CurrentLine + (se.Backquoted ? 0 : 1);
+		foreach (var (k, text) in Parser.SyntaxMessage.For(se.Error, se.Shown))
+			Console.Error.WriteLine($"{SyntaxPrefix("command substitution", first + k - 1)}{text}");
 		}
 
 	/// <summary>Source a file (startup files, BASH_ENV, `source`/`.`). When silentIfMissing
@@ -986,6 +1019,10 @@ public sealed class Evaluator
 		catch { }   // a process whose times cannot be read: counted as zero
 		}
 
+	/// <summary>The user and system CPU of every waited-for child so far, in ticks (`times`).</summary>
+	internal static (long User, long Sys) ChildCpuTicks() =>
+		(System.Threading.Interlocked.Read(ref s_childUserTicks), System.Threading.Interlocked.Read(ref s_childSysTicks));
+
 	/// <summary>`time [-p] pipeline`: run it, then report real/user/sys on the shell's stderr in
 	/// TIMEFORMAT (bash's default when unset; nothing when set but empty). DECISIONS 2026-10-04.</summary>
 	private int ExecTimedPipeline(Pipeline p)
@@ -1134,6 +1171,7 @@ public sealed class Evaluator
 
 				try { exitCodes[idx] = shells[idx].Execute(stageNode); }
 				catch (ExitException ex)      { exitCodes[idx] = ex.Code; }
+				catch (CommandAbortException) { exitCodes[idx] = 1; }   // a bad `$( )` ends this stage only (phase 3)
 				catch (BrokenPipeException)   { exitCodes[idx] = 141; }
 				catch (InterruptException)    { exitCodes[idx] = 130; }
 				catch (FatalShellException ex){ Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); exitCodes[idx] = ex.Code; }
@@ -1598,8 +1636,15 @@ public sealed class Evaluator
 			WorkingDirectory = _env.Cwd,   // this shell's own cwd (a pipeline stage's may differ from the process's)
 			};
 
+		// a Windows program gets MSYS-form paths at the start of an argument in Windows form, as under
+		// Git Bash (ShellEnvironment.NativeArgument); an MSYS program reads them itself. Off with
+		// MSYS_NO_PATHCONV, or MSYS2_ARG_CONV_EXCL (`*`, or `;`-separated prefixes), as in Git Bash.
+		string Setting(string n) => tempAssign.FindLast(t => t.Item1 == n) is { Item1: not null } a ? a.Item2 : _env.Get(n);
+		var excl = Setting("MSYS2_ARG_CONV_EXCL");
+		bool convert = !ChildLauncher.IsMsysProgram(fileName) && Setting("MSYS_NO_PATHCONV").Length == 0 && excl != "*";
+		var excluded = excl.Length > 0 ? excl.Split(';') : null;
 		foreach (var arg in args)
-			psi.ArgumentList.Add(arg);
+			psi.ArgumentList.Add(convert ? ShellEnvironment.NativeArgument(arg, excluded) : arg);
 
 		if (clearEnv) psi.Environment.Clear();
 		else
@@ -2274,6 +2319,7 @@ public sealed class Evaluator
 			}
 		catch (ExitException ex) { return ex.Code; }
 		catch (FatalShellException ex) { Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); return ex.Code; }   // fatal to the subshell only
+		catch (CommandAbortException) { return 1; }   // a bad `$( )` ends the subshell only (phase 3)
 		finally { _env.RestoreSnapshot(snap); LeaveSubshell(mark); }
 		}
 

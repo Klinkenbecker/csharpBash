@@ -4651,3 +4651,581 @@ calling a regression. (This is the sibling of 2026-10-06's "+1 ms" from a best-o
 **Not done:** the method itself (one startup sample) is unchanged. Changing it (several samples,
 interleaved, a median) is the architect's call (DECISIONS 2026-10-06, "The benchmark is one fixed
 command").
+
+## 2026-10-10 -- METHOD CHANGE: the benchmark's startup row is the median of 5 samples
+**Status:** Active. Supersedes the single-sample startup measurement of the 2026-10-06 entry "The
+benchmark is one fixed command" (the rest of that method stands). The architect, 2026-10-10:
+"Median of 5 sounds fair".
+
+**Why:** one sample (the total of 100 launches / 100) moves by about +-1.5 ms between runs on this
+machine (14.9 to 17.7 ms for one binary), and two single runs invented a "+1.2 ms regression"
+(DECISIONS 2026-10-10, "the +1.2 ms startup … was the benchmark's own noise").
+
+**Decision:** `compare3.sh` takes `STARTUP_SAMPLES=5` samples per shell, each still `benchtimer 100
+<exe> -c 'exit 0'` with the exit-7 control first, and reports their median. A median, not a mean,
+so one disturbed sample cannot move it. The rows (best of 9 / best of 3) are unchanged.
+
+**Alternatives considered:** a mean of 5 (a single bad sample still moves it); interleaving the three
+shells round by round (not asked for; the median already absorbs the drift seen); more launches per
+sample (the noise is between samples, not within one).
+
+**Verified:** the new `startup()` with a fake timer whose five totals are known: median 0.0160 where
+the mean would be 0.0164; a shell that fails the control still reads FAIL. `bash -n` under Git Bash.
+Not run as a benchmark (not asked). The README's table is still the 2026-10-10 single-sample run,
+and its method text says so; the next push re-measures with this method.
+
+**Implemented by:** rev 184. Files: `tests/bench/compare3.sh`.
+
+## 2026-10-10 -- DECIDED AND BUILT: a Windows program's MSYS-form path arguments are converted (open since 2026-09-11)
+**Status:** Active. Resolves the open item "MSYS paths in arguments to native programs" (raised
+2026-09-11, rev 67; DECISIONS 2026-09-11 "Sharpened"). The architect, 2026-10-10, after it was laid
+out ("we are now mapping MSYS internally for ourselves, but not when calling windows native
+programs?" -- yes): "ok, your recommendation is good".
+
+**Before:** the shell converted MSYS forms wherever it handled a path itself (`cd`, builtins,
+`test`, redirect targets; rev 71). A Windows program's ARGUMENTS reached it verbatim, so the same
+session meant two things by one path: `cd /f/repo` worked and `git -C /f/repo` failed ("cannot
+change to '/f/repo'"); `/tmp/x` was `F:/TEMP/x` to the shell and `<current drive>:\tmp\x` to a
+program.
+
+**Decision (the recommendation as given, two refinements marked):**
+- Only at the START of an argument: `/<letter>/…` becomes `<LETTER>:/…`, and `/tmp`, `/tmp/…` the
+  temp directory. Never a bare `/c` (`cmd /c`), never inside an argument (`--file=/c/x`), and the
+  rest of the argument is left as typed (no backslash rewriting). `//host/share/…` is already
+  Windows form; `~` the shell expands before.
+- Only for Windows programs. An MSYS program (Git's usr/bin, detected by msys-2.0.dll beside it,
+  rev 159) reads `/c/x` itself and is left alone, so Git's `sed` and `awk` never see a script like
+  `/a/d` rewritten.
+- Off switches as in Git Bash: `MSYS_NO_PATHCONV` (any value), and `MSYS2_ARG_CONV_EXCL` (`*` for
+  all, or `;`-separated prefixes to leave alone), from the environment or a `VAR=x prog` prefix.
+- Refinement 1: the drive must exist, so `/a/b` with no A: stays as typed.
+- Refinement 2: honouring Git Bash's own variable names means habits sessions already have keep
+  working. This is the environment switch the recommendation called for.
+
+**The risk, stated:** an argument that only LOOKS like an MSYS path, given to a Windows-native
+tool, is rewritten: a regex or script text such as `/e/i`, or combined switches like `xcopy
+/e/i/h` on a machine with an E: drive. Git Bash has the same behaviour; the off switches are the
+remedy. The 2026-10-10 notice says so.
+
+**Verified:** new case `native_args` (15 checks through `cmd /c echo`: drive, root, `/tmp`, bare
+`/c`, inside an argument, mid-argument, UNC, a missing drive, a backslash kept, both switches and a
+prefix list, an MSYS program untouched, `git -C /c/…`; expected authored, Windows-specific, values
+computed at run time); the deployed rev 179 fails 7 of them. Suite 102/102 with a console and
+`-Detached`; compat battery 227/237, exit 0, no regression.
+
+**Implemented by:** rev 186. Files: `Bash/Evaluator/ShellEnvironment.cs` (`NativeArgument`),
+`Bash/Evaluator/Evaluator.cs` (`ExecExternal`), `tests/cases/native_args.sh`,
+`tests/expected/native_args.out`, `tests/run-tests.ps1`.
+
+## 2026-10-10 -- DECIDED AND BUILT: UTF-8 for external programs = PYTHONIOENCODING only; HGENCODING measured harmful and dropped
+**Status:** Active. Resolves the open item "UTF-8 for external programs" (koliada-net-dd,
+2026-10-06). The architect, 2026-10-10: "your recommendation is good; go up to …". The
+recommendation was to export PYTHONIOENCODING=utf-8 and HGENCODING=utf-8 when unset, with a recorded
+doubt about HGENCODING: "test before building". The test failed that half, so it is dropped (the
+stated falsifier).
+
+**Measured (Python 3.13.2 via `py`, Mercurial 6.6.3, Windows ANSI codepage cp1252):**
+- Python, piped: `print("café ✓")` crashed with `UnicodeEncodeError: 'charmap' codec can't encode
+  character '\u2713'`. With PYTHONIOENCODING=utf-8 it wrote `63 61 66 c3 a9 20 e2 9c 93`. Piped UTF-8
+  input was read as 6 characters. Python 3.6+ ignores the variable for an interactive console, so
+  only pipes and files change.
+- hg with HGENCODING=utf-8: `hg commit -m 'm1 café ✓'` ABORTS ("'utf-8' codec can't decode byte
+  0xe9"): on Windows hg receives its arguments in the ANSI codepage whatever HGENCODING says.
+  Messages committed with the default setting from a UTF-8 `-l` file read back as mojibake. So
+  exporting it would break a working command for every session.
+- hg with the default: piped output is cp1252 (the original report stands), a UTF-8 `-l` file is
+  stored double-encoded, and `-m` drops `✓`. These are hg-on-Windows behaviours with no safe
+  environment fix. For READING, `hg --encoding utf-8 log …` is safe per command (no argument
+  decoding involved).
+
+**Decision:** export PYTHONIOENCODING=utf-8 at startup when the environment does not set it (a
+session's own value wins). Not PYTHONUTF8, which also changes `open()`'s default for user scripts
+(the 2026-10-06 position). Not HGENCODING.
+
+**Found on the way, separate:** `"caf$(printf '\xc3\xa9').txt"` makes a file whose name hg (and
+Windows) sees as `caf??.txt`; Git Bash makes `café.txt`. Recorded as the next item.
+
+**Verified:** new case `python_utf8` (exported; a set value kept; py's piped output and input;
+expected authored, Windows-specific; it skips without py); the deployed rev 179 fails it. Suite
+103/103 with a console and `-Detached`; compat battery 227/237, exit 0.
+
+**Implemented by:** rev 187. Files: `Bash/Program.cs`, `tests/cases/python_utf8.sh`,
+`tests/expected/python_utf8.out`, `tests/run-tests.ps1`.
+
+## 2026-10-10 -- DEFECT FIXED: carried bytes that spell a UTF-8 character stayed bytes (`$'\xc3\xa9'` had length 2; files named with it got invalid names)
+**Status:** Active. Found 2026-10-10 by the HGENCODING test (DECISIONS "UTF-8 for external programs
+= PYTHONIOENCODING only"): `hg add` skipped a file C#Bash had named `"caf$(printf '\xc3\xa9').txt"`,
+which hg saw as `caf??.txt`; under Git Bash it is `café.txt`.
+
+**Defect (measured against bash 5.1 via WSL, C.UTF-8):** a shell string carries a byte that is not
+text as a raw-byte character (ShellEncoding, 2026-09-12). Bytes that came from `$'\xNN'`, from
+`printf '\xNN'` captured by `$( )` or `printf -v`, or from concatenating such pieces, stayed raw
+bytes even when together they spelled a valid UTF-8 character. bash, in a UTF-8 locale, sees that
+character:
+- `${#x}` for `x=$'\xc3\xa9'` was 2 (bash: 1); `$'\xe2\x9c\x93'` was 3;
+- `[[ $x == é ]]`, `case … in café)` and `[ -e café.txt ]` failed;
+- `${x^^}` left `é` alone (bash: `É`, `c3 89`);
+- a file named with them got two invalid UTF-16 characters, which other programs see as `??`.
+
+**Decision:** `ShellEncoding.Canonical`: a run of raw bytes that spells a valid UTF-8 character
+becomes that character; anything else stays raw. Applied where a word's expansion is finished
+(`ExpandToString`, `ExpandToFields` before brace and glob, `ExpandToPattern`, `ExpandToRegex`), so
+`$'\xc3'$'\xa9'` merges too, and in builtin assignments (`AssignVar`: `printf -v`, `read`,
+`getopts`). Output is still byte for byte: a canonical string encodes to the same bytes. A string
+with no raw byte is returned as it is (one vectorised scan).
+
+**Not done:** a file name containing `\` (`n$'\xe2\x9c\x93'` inside double quotes is a literal
+backslash name in bash) cannot exist on Windows, so the case leaves it out.
+
+**Verified:** new case `utf8_bytes` (13 lines: the three sources and two concatenations, invalid
+bytes, a mixed string, a 3-byte character with `${x:0:1}`, `case`, file names, `${x^^}`; expected =
+GNU bash via WSL); the deployed rev 179 differs on 9. hg now adds the file as under Git Bash. Suite
+104/104 with a console and `-Detached`, the byte-transparency case included; compat battery
+227/237, exit 0.
+
+**Implemented by:** rev 188. Files: `Bash/Evaluator/ShellEncoding.cs`, `Bash/Evaluator/WordExpander.cs`,
+`Bash/Evaluator/Builtins.Shell.cs`, `tests/cases/utf8_bytes.sh`, `tests/expected/utf8_bytes.out`,
+`tests/run-tests.ps1`.
+
+## 2026-10-10 -- SUBSET EXTENDED: awk user functions, `print > file`, `getline [var] < file`, `close`, `fflush`, 3-argument `match`, `--version`
+**Status:** Active. Adds to the 2026-09-04 #7 supported list. Requested by installer-79 (2026-09-08:
+`print > file` and `close()`, 3-argument `match()`, user functions, `awk --version`); `getline [var] <
+file` added on the architect's "1, 2, 3 go" to Claude's position (nupkg-28 used it; `close()` is
+mostly for re-reading). Under the directive "go up to but not including the scrip question".
+
+**Behaviour, as gawk 5.1 (measured via WSL):**
+- Functions (`function`/`func`): parameters beyond the arguments are locals; scalars by value, arrays
+  by reference; an untyped variable becomes an array in the caller when the function uses it as one,
+  through any number of calls; recursion; calls before the definition. Surplus arguments are
+  evaluated, then gawk's warning, at every call that runs (gawk does not warn while parsing). An
+  undefined function is gawk's fatal error, exit 2, before anything runs. `return` outside a
+  function, `break`/`continue` outside a loop, and a function name used as a variable (`f (x)`
+  with a space) are syntax errors, as in gawk.
+- `print`/`printf` `> t` and `>> t`: `t` is a concatenation (`> "f" n` is `f1`); truncated at the
+  first open, open until `close()` or the end. `"-"`, `/dev/stdout`, `/dev/stderr`, `/dev/fd/N`;
+  `/dev/null`, `/dev/zero`, `/dev/random` discard (as the shell's redirects). An open failure is
+  gawk's `fatal: cannot redirect to `x': <reason>`, exit 2, with gawk's `cmd. line:N:` prefix.
+- `getline [var] < file`: 1, 0 at the end, -1 silently when it cannot be opened (or is a
+  directory); no var sets `$0` and `NF`; never NR/FNR; `"-"` is stdin. The file is the additive
+  expression after `<` (gawk: `getline < "a" "b"` reads `a`).
+- `close(name)`: 0 if an output or input was open, else -1. `fflush()`: everything, 0;
+  `fflush(name)`: 0, or gawk's warning and -1 when not open.
+- `match(s, re, arr)`: arr cleared even on no match; `arr[n]` (strnum), `arr[n,"start"]`,
+  `arr[n,"length"]` for the match and each group that took part. A capturing copy of the regex;
+  every other use keeps ExplicitCapture.
+- `awk --version`: `awk (C#Bash in-process subset, gawk-5.1 compatible) <build stamp>`, never
+  "GNU Awk", so a script that greps for gawk does not take this for it.
+- Still outside (loud, falls through): `getline` from the main input, `cmd | getline`, `print |
+  cmd`, `system()`, `ENVIRON`, `RS`, `printf %e/%g`, `nextfile`.
+
+**`return`** is a flag every block and loop checks, not an exception: break/continue/next throw,
+but a throw per function call is too dear.
+
+**Recursion limit [measured]:** the interpreter recurses on the .NET stack, and a stack overflow
+kills the whole shell (it cannot be caught). Each call runs `RuntimeHelpers.EnsureSufficientExecutionStack`
+and stops the program with a fatal error (exit 2) when the stack is nearly spent. Depth of
+`d(n){return n==0?0:1+d(n-1)}`, main thread and pipeline stage alike: AOT (the deployed build)
+900-950, JIT Release 300-350 (about 2.7 KB of stack per call). gawk did 5000. A fixed depth counter
+was rejected: the stack per level differs by build and expression shape. A large-stack thread for
+programs with functions would lift the limit; not done, by #7's own rule ("grow the list from
+measurements of what Claude actually sends, never by inference"): no session has needed it.
+**Revisit** when one does.
+
+**Verified:** new case `awk_extended` (84 lines; expected = gawk 5.1 via WSL running the same
+script; `BASH_COREUTILS=builtin`, so nothing falls through); rev 179 differs on 90 lines. `awk.sh`'s
+boundary block now shows main-input `getline`, `print | "sort"` and the depth limit. Suite 105/105
+with a console and `-Detached`, on the Release and the AOT build; compat battery 227/237, baseline
+intact.
+
+**Found on the way (not in this rev):** awk string escapes above 0x7F made characters, not bytes:
+`"\xc3\xa9"` wrote `c3 83 c2 a9` where gawk writes `é`, `"\377"` wrote `c3 bf` where gawk writes
+`ff`. Rev 179 too.
+
+**Implemented by:** rev 193. Files: `Bash/Evaluator/Builtins.Awk.cs`, `tests/cases/awk_extended.sh`,
+`tests/expected/awk_extended.out`, `tests/cases/awk.sh`, `tests/expected/awk.out`, `tests/run-tests.ps1`.
+
+## 2026-10-10 -- DEFECT FIXED: awk string escapes above 0x7F made characters, not bytes (`"\xc3\xa9"` wrote 4 bytes, `"\377"` wrote `c3 bf`)
+**Status:** Active. Found at rev 193 (that entry's "Found on the way"); in rev 179 too.
+
+**Defect (measured against gawk 5.1 via WSL):** `AwkLex` turned `\xNN` and `\NNN` into the character
+U+00NN, so `printf "\xc3\xa9"` wrote `c3 83 c2 a9` (gawk: `é`, `c3 a9`), `"\377"` wrote `c3 bf` (gawk:
+`ff`), `length("\xc3\xa9")` was 2 (gawk: 1) and `"\xc3\xa9" == "é"` was false.
+
+**Decision:** the escapes make carried bytes (`ShellEncoding.ByteChar`; an octal value is taken mod
+256, as gawk stores a byte), and the literal is canonicalised as the shell's words are since rev 188:
+bytes that spell a UTF-8 character are that character. A concatenation re-canonicalises only when
+both sides meet at a carried byte (gawk: `"\xc3" "\xa9"` is `é`, length 1); each side is already
+canonical, so the seam is the only place a new character can form, and the check is O(1).
+
+**Verified:** new case `awk_escapes` (8 lines; expected = gawk 5.1 via WSL); rev 179 differs on 7.
+Suite 106/106 with a console and `-Detached`.
+
+**Found on the way, not in this rev:** `-v name=value` (and `name=value` operands) process only
+`\n \t \r \a \b \f \v \\ \" \/`: gawk also takes octal and `\x` there (`-v s='\101\303\251'` is `Aé`;
+ours printed the text unchanged). `AwkInterp.Unescape`.
+
+**Implemented by:** rev 194. Files: `Bash/Evaluator/Builtins.Awk.cs`, `tests/cases/awk_escapes.sh`,
+`tests/expected/awk_escapes.out`, `tests/run-tests.ps1`.
+
+## 2026-10-10 -- DEFECT FIXED: awk `-v name=value` ignored octal and `\x` escapes; a `name=value` operand with a backslash was read as a file
+**Status:** Active. Found at rev 194 (that entry's "Found on the way"); in rev 179 too.
+
+**Defect (measured against gawk 5.1 via WSL):** `AwkInterp.Unescape` (for `-v`, `name=value`
+operands and `-F`) knew only `\n \t \r \a \b \f \v \\ \" \/`: `-v s='\101\303\251'` printed the text
+(gawk: `Aé`, length 2). And `Run` took an operand containing any backslash as a file, so
+`v='\303\251'` failed "cannot open file"; the identifier-then-`=` pattern already rules out paths.
+
+**Decision:** `Unescape` takes octal and `\x` as a string literal does (bytes, then canonical), and
+the backslash test is gone: an identifier then `=` is an assignment, as in gawk, whatever the value.
+
+**Verified:** 4 lines added to case `awk_escapes` (expected = gawk 5.1 via WSL); the rev 193 build
+differs on 10 of its 12 lines. Suite 106/106 with a console and `-Detached`.
+
+**Implemented by:** rev 195. Files: `Bash/Evaluator/Builtins.Awk.cs`, `tests/cases/awk_escapes.sh`,
+`tests/expected/awk_escapes.out`.
+
+## 2026-10-10 -- BUILT: `umask`, `times` and `fc` are builtins (they were "command not found"; `fc` ran Windows' fc.exe)
+**Status:** Active. AWAITING item 4 of the resume anchor, built as Claude proposed on the architect's
+"1, 2, 3 go" (2026-10-10).
+
+**Before:** each was status 127; `fc` found `C:/Windows/System32/fc.exe` ("FC: Insufficient number of
+file specifications"). `umask 077` before creating files is a common script line.
+
+**Decision (bash 5.1 measured via WSL):**
+- `umask [-p] [-S] [mode]`, after bash's umask.def: octal up to 07777 (else "octal number out of
+  range", 1), kept as the 9 permission bits (`umask 1777` prints `0777`); symbolic clauses
+  `[ugoa]*[+-=][rwx]*` on the permitted bits, all or none (`o+w,g=u` changes nothing: "`u': invalid
+  symbolic mode character"); `=r` with no class means all; extra operands ignored; with a mode only
+  `-S` prints (the new mask); bad option = message, usage, 2. Default 0022. Stored in
+  ShellEnvironment, copied to pipeline stages and restored after `( )` / `$( )`, so a subshell's
+  mask stays there. **It does not affect file creation:** Windows files have no mode bits to clear
+  (README says so). A separate C#Bash process starts at 0022 (no inherited process umask).
+- `times`: the shell's user and system CPU, then its waited-for children's (the accounting `time`
+  already keeps), bash's `%ldm%d.%03ds`, truncated; operands ignored; options rejected as bash.
+- `fc`: bash's option check (`-e ename`, `-lnrs`, `-N` is an offset), then "history editing is not
+  supported by this interpreter", status 2, the wording of the other unsupported builtin forms.
+  bash in a script lists an empty history (status 0); the case accepts both.
+
+**Alternatives:** `umask` denying writes through ACLs: a bigger, separate design, not proposed (the
+falsifier stated with the proposal). `fc` emulating bash's script-mode no-op: rejected in the
+proposal for a loud "not supported", since the interactive history it would edit is not editable here.
+
+**Verified:** new case `umask_times_fc` (53 lines; expected = GNU bash via WSL; inner script by
+relative name so both shells print `t.sh: line N:`); rev 179 differs throughout. Suite 107/107 with a
+console and `-Detached`; compat battery 227/237, baseline intact.
+
+**Implemented by:** rev 196. Files: `Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/ShellEnvironment.cs`,
+`Bash/Evaluator/Evaluator.cs`, `README.md`, `tests/cases/umask_times_fc.sh`,
+`tests/expected/umask_times_fc.out`, `tests/run-tests.ps1`.
+
+## 2026-10-10 -- BUILT: `jq -R` / `--raw-input` (each line a string) and `-Rs` (the whole input one string)
+**Status:** Active. AWAITING item 5 of the resume anchor, as Claude proposed on the architect's "1, 2, 3
+go": build `jq -R`; `strings` deferred until a second session needs it (one non-blocking hit, a new
+tool, not on PATH here either). msp430-a2 (2026-10-10) wanted `jq -Rs '{text: .}' file`.
+
+**Behaviour, as jq 1.6 (measured via WSL):** the inputs are ONE text: a file with no final newline
+runs into the next file's first line (`d` + `e` = `"de"`); a last line with no newline still counts;
+empty input gives nothing (`-Rs`: `""`); `-n` wins (`-nR .` is `null`); errors are located at the file
+and newline count where the line ends (`f2:1`), `-Rs` at the last file's count.
+
+**Not copied:** jq 1.6 drops the rest of the next file after a file that cannot be opened under `-R`
+(`jq -R . nofile f1` printed only `"a"`): a jq bug; here every line of `f1` is read.
+
+**Found while testing, NOT fixed (recorded in PROJECT_CONTEXT OPEN DEFECTS):** short options after the
+filter are read as files (`jq . f -c`; jq takes options anywhere); the open error says `Could not open
+nofile` where jq 1.6 says `Could not open file nofile`; invalid UTF-8 passes through as bytes where
+jq 1.6 writes U+FFFD (in JSON input too; the shell's byte transparency vs jq fidelity: the
+architect's call).
+
+**Verified:** new case `jq_raw_input` (19 probes; expected = jq 1.6 via WSL; `BASH_COREUTILS=builtin`);
+rev 179 misses 42 of its lines. Suite 108/108 with a console and `-Detached`.
+
+**Implemented by:** rev 197. Files: `Bash/Evaluator/Builtins.Jq.cs`, `tests/cases/jq_raw_input.sh`,
+`tests/expected/jq_raw_input.out`, `tests/run-tests.ps1`.
+
+## 2026-10-11 -- DECIDED: C#Bash runs scripts one command at a time, as bash does; a parse-first "safe" mode only ever as an opt-in
+**Status:** Decided by the architect 2026-10-11. NOT built: an architectural change to the script runner,
+its plan awaits the architect's go. Settles the "known divergence" left open in the 2026-10-08 entry on
+a stray `fi` and in 2026-10-10 "syntax errors in C#Bash's own words" ("Not done").
+
+**The ruling (verbatim):** "C#Bash needs to match (and track) users 'expectation' of 'bash', otherwise
+it is not 'bash'. C#Bash primary user is, now, Claude, thus C#Bash needs to match (and track) Claudes
+expectations." And: "A 'safe' C#Bash script is a different tool, if it is included, it must be
+'optioned in', not the default."
+
+**As a rule for later choices:** the default is bash as its users expect it; a C#Bash-only protection
+is opt-in, never the default.
+
+**Evidence (measured 2026-10-10, bash 5.1 via WSL against rev 197):** bash parses and runs one
+top-level command at a time; C#Bash parses the whole text first. A script `echo before` / `if then`:
+bash prints `before`, C#Bash nothing. A stray `fi` after `rm -f marker; touch marker`: bash ran both.
+`x=$(if then)`: bash reports it when it runs it and carries on (exit 0); C#Bash runs nothing (exit 2).
+A script with data after `exit 0` (installer style): bash runs it, exit 0; C#Bash fails on the data,
+exit 2, so valid scripts break. A one-line `-c` command: identical (bash parses a whole line first);
+multi-line `-c`: bash runs the lines before the error.
+
+**Open, Claude's position [proposal]:** no opt-in parse-first mode now. `bash -n file && bash file`
+gives exactly that with standard bash, and the habit carries to real bash. Falsifier: a human user
+asking for it as one switch.
+
+## 2026-10-11 -- DEFECTS FIXED: jq read a short option after the filter as a file (`jq . f -c`); its open error lacked jq 1.6's word "file"
+**Status:** Active. Found 2026-10-10 testing `jq -R` (that entry's "Found while testing"); the
+architect: "go for both jq bugs".
+
+**Defects (measured against jq 1.6 via WSL):** short options counted only before the filter, so `jq .
+f -c`, `jq '1+1' -n` and `jq -c .b f -r` failed "Could not open -c" (long options already worked
+anywhere). A file that cannot be opened said `Could not open nofile`; jq 1.6 says `Could not open file
+nofile`.
+
+**Decision:** short options are options anywhere before `--`, as jq parses them; the message takes
+jq's words.
+
+**Verified:** 8 lines added to case `jq_messages` (expected regenerated from jq 1.6; its earlier lines
+unchanged); rev 179 fails 6 of them. Suite 108/108 with a console and `-Detached`; compat battery
+227/237, baseline intact.
+
+**Implemented by:** rev 198. Files: `Bash/Evaluator/Builtins.Jq.cs`, `tests/cases/jq_messages.sh`,
+`tests/expected/jq_messages.out`.
+
+## 2026-10-11 -- DECIDED: a feature C#Bash lacks says so with a prefilled GitHub issue link, never an automatic post; restricted mode refuses to start
+**Status:** Decided by the architect 2026-10-11 ("Yes ... your version is much better than mine"), on
+Claude's counter-proposal. NOT built; GREENLIT, after the item 6 build plan.
+
+**The request:** when a user asks for a mode C#Bash lacks, say "not currently available, a build request
+has been sent to the project", posting a comment on the GitHub project.
+
+**Decision:** print "not currently available in C#Bash" and a link that opens a NEW ISSUE on
+github.com/klinkenbecker/csharpBash with title and body prefilled (the feature, the C#Bash build). The
+user sends it, with one click, under their own account. Nothing is posted automatically.
+
+**Why not the automatic post:** it needs a GitHub token with write access inside an MIT binary anyone
+can open: extracted within days, used to spam or deface the repo, revoked by GitHub. And a shell that
+contacts a server because a command was typed breaks the user's trust (telemetry without consent);
+under Claude Code the shell's network may also be sandboxed. **Revisit** if the project runs its own
+collection endpoint that users switch on explicitly.
+
+**First use: restricted mode.** `bash -r`, `--restricted` (and running as `rbash`; `set -r` not yet
+checked) are accepted and IGNORED today (`Program.cs`: `case 'r': break; // restricted: not
+implemented`; `--restricted` in the no-op list), so a user who asks for restrictions gets an
+unrestricted shell, silently. Decision: refuse to start, with the message and the link. Refusing is the
+secure default: running unrestricted would remove the protection the user asked for.
+
+**Not "safe modes" in this sense:** `bash -n` (check without running) works; `set -euo pipefail`
+("strict mode") works.
+
+## 2026-10-11 -- BUILT (item 6, phase 1 of 5): scripts, `-c`, `source` and `eval` run one top-level command at a time
+**Status:** Active. Phase 1 of the plan the architect ratified 2026-10-11 (PROJECT_CONTEXT AWAITING 6;
+DECISIONS "DECIDED: C#Bash runs scripts one command at a time").
+
+**Change:** `RunString` (every whole-text path: script, `-c`, stdin, `source`, `eval`, an in-process
+child script) parses one top-level command with `Parser.ParseNext()`, runs it, then parses the next.
+A lexing error is held back (`Tokenize(deferErrors: true)` ends the tokens with an Eof and keeps the
+error) and raised when the parser reaches it. The here-document-at-end-of-file warning prints when
+the parser reaches the end, before that last command runs, as bash.
+
+**The unit is the LINE, measured:** bash parses a whole line before running any of it (`echo a; fi`,
+`(echo p) fi`, `echo q; )` run nothing), and only `&&` / `||` carry a command over a newline. So a
+top-level list now ends at a newline, also after `;` or `&` (before, a newline was a `;` everywhere,
+and one top-level list held the whole script), and any other token left on the line is a syntax error
+before the line runs. Inside compound commands newlines still separate commands. `ParseNext` skips
+newlines BEFORE a command, never after, so a finished command runs before anything later is read.
+
+**Found while building:** the first version ran `echo a` in `echo a; fi`: the unit had been taken as
+the command, not the line. Caught by the existing cases `stray_keyword` and `syntax_errors`.
+
+**Verified:** new case `one_at_a_time` (expected = GNU bash via WSL: lines before an error run,
+including an `rm`/`touch`; an unterminated quote; a here-document at the end; a text payload after
+`exit 0`; `source`; `eval`'s first line; multi-line `-c`; same-line errors; `&&` over a newline; `-n`
+still checks the whole file); rev 179 misses 19 of its lines. Suite 109/109 with a console and
+`-Detached`; compat battery 227/237; `-n` over Ubuntu's 912 bash-completion scripts: 843 agree with
+GNU before and after, no verdict changed.
+
+**Implemented by:** rev 201. Files: `Bash/Lexer/Lexer.cs`, `Bash/Parser/Parser.cs`,
+`Bash/Evaluator/Evaluator.cs`, `tests/cases/one_at_a_time.sh`, `tests/expected/one_at_a_time.out`,
+`tests/run-tests.ps1`.
+
+## 2026-10-11 -- BUILT (item 6, phase 2 of 5): the lexer produces tokens as the parser asks for them
+**Status:** Active. Phase 2 of the ratified plan.
+
+**Change:** `Lexer.Step(tokens)` lexes one more step into the list a parser reads (a token; after a
+newline, that line's here-document bodies; the Eof), holding a lexing error back as phase 1 does.
+`new Parser(lexer, source)` reads through `Fill(i)`: `Peek`, `PeekAhead`, `Advance`, `AtEnd` and the
+here-document lookup lex only as far as they look. `RunString` uses it, so text after a top-level `exit`
+is never lexed. The other parsers (`$( )` bodies, alias text, `ParseWords`, the REPL) still tokenize
+whole: short texts.
+
+**Here-document bodies:** a body is emitted after its line's newline; the redirect lexes on until the
+next body appears. The lexer records each pending delimiter as an index into the same list the parser
+removes bodies from; the order makes it safe (a line's bodies are flushed before its redirects are
+parsed, and removed only then), and the here-document cases pass.
+
+**Measured (one run each, wall clock, this machine):** 20 MB after `exit 0`: base64 268 ms, binary
+520 ms, both print `installing`, exit 0 (bash: 4 ms; before phase 1: 1.3 s, and the binary one failed).
+What is left is, inferred and not measured apart, reading and decoding the whole file: the plan's
+out-of-scope "reading the file in chunks".
+
+**Verified:** case `one_at_a_time` gains a 300 KB binary payload after `exit 0` (expected = GNU bash
+via WSL). Suite 109/109 with a console and `-Detached`; compat battery 227/237; `-n` corpus 843/912
+agree with GNU, no verdict changed.
+
+**Implemented by:** rev 202. Files: `Bash/Lexer/Lexer.cs`, `Bash/Parser/Parser.cs`,
+`Bash/Evaluator/Evaluator.cs`, `tests/cases/one_at_a_time.sh`, `tests/expected/one_at_a_time.out`.
+
+## 2026-10-11 -- BUILT (item 6, phase 3 of 5): a syntax error inside a command substitution is met when it runs
+**Status:** Active. Phase 3 of the ratified plan; the plan's one line ("that top-level command stops (1),
+the next runs") was measured out in full before building, and holds.
+
+**bash 5.1, measured via WSL:** a substitution's body is parsed when it runs, and `-n` never sees it.
+- `$( )` (bare, in `"…"`, in a here-document, in a loop, in a function called from the line): the error
+  is printed as `name: command substitution: line N:` plus the text bash parsed (the body with its `)`;
+  inside quotes, the rest of the string), and the whole top-level command is abandoned, status 1; the
+  next one runs. A subshell `( )`, a pipeline stage, an enclosing `$( )` or `<( )`, a background job
+  end there instead (their own processes in bash). `source` and `eval` are their own top level.
+- Backquotes: parsed in the substitution's own process: message at the command's own line, the
+  substitution fails with status 2, gives nothing, and the line carries on.
+- N: a one-line body is the running command's line + 1 (backquotes: the line itself).
+
+**Change:** a body that does not parse becomes a `SubstitutionSyntaxError` node in its
+`CommandSubstitutionPart`, holding the error of parsing the text bash parses (lexed on demand, so a
+closing `"` after the body is not met first). Expanding it prints bash's lines; for `$( )` it throws
+`CommandAbortException`, caught by RunString's loop (status 1, next command), and by `( )`, pipeline
+stages, `$( )`, `<( )` and the REPL (status 1). Body parsers record their line shift so `OffsetOf`
+finds their tokens in the file's text (it was wrong for nested substitutions).
+
+**Known difference, measured, kept:** a MULTI-line `$( )` body at the top level reports its line 1 to 2
+lines early (bash: the command's last line + k; C#Bash: its first line + k). No single rule fitted all
+measured shapes (a backslash-continued command and a function body follow first line + k), so the
+matching shapes were not traded for a guess. Message text only; the behaviour matches.
+
+**Verified:** new case `substitution_errors` (every context above, `source`, `eval`, a background job,
+`-c`, `-n`; expected = GNU bash via WSL); rev 179 misses 65 of its lines. Suite 110/110 with a console and
+`-Detached`; compat battery 227/237; `-n` corpus now 844/912 agree with GNU (`invoke-rc.d` joins, as GNU
+does not look inside the substitution), no other verdict changed.
+
+**Implemented by:** rev 203. Files: `Bash/Parser/Nodes.cs`, `Bash/Parser/Parser.cs`,
+`Bash/Evaluator/EvalException.cs`, `Bash/Evaluator/WordExpander.cs`, `Bash/Evaluator/Evaluator.cs`,
+`Bash/Program.cs`, `tests/cases/substitution_errors.sh`, `tests/expected/substitution_errors.out`,
+`tests/run-tests.ps1`.
+
+## 2026-10-11 -- BUILT (item 6, phase 4 of 5, statuses only): `eval`'s syntax errors are status 2; its line numbers are an OPEN question
+**Status:** Statuses Active. The line half is NOT built: its plan rule was falsified by measurement and
+is back with the architect (PROJECT_CONTEXT AWAITING 6).
+
+**Corrects 2026-09-04 ("P1 implemented …"):** that entry says a syntax error is "1 for eval (bash)".
+Measured 2026-10-11 over 15 kinds (bash 5.1 via WSL): 2 for every one (a token, a stray `fi`, a stray
+`)`, an unfinished `if`/`case`/`for`/`{`/`&&`, unclosed quotes, `$(`, `${`, `[[ -f ]]`), except an
+unclosed array literal (`x=(`), 1, which its ParseException already carries. `RunEval` now passes no
+status of its own. 14 of the 15 were 1.
+
+**The line half, falsified:** the plan said eval's lines count from where the eval command ENDS, from
+one sample (a two-line `eval` in `-c`: bash line 3, C#Bash 2). More samples in one script: `eval "if
+then"` on line 7, inside a top-level `if`, is bash's line **5**; `eval "x=("` on line 13 is **11**; a
+two-line eval on lines 10-11 erring on its line 2 is **10**. C#Bash prints the physical lines 7, 13, 11.
+No rule from where the command starts or ends fits, so none was built.
+
+**Verified:** 7 status probes added to case `one_at_a_time` (expected = GNU bash via WSL). Suite 110/110
+with a console and `-Detached`.
+
+**Implemented by:** rev 204. Files: `Bash/Evaluator/Evaluator.cs`, `tests/cases/one_at_a_time.sh`,
+`tests/expected/one_at_a_time.out`.
+
+## 2026-10-11 -- VERIFIED (item 6, phase 5 of 5): no slowdown from reading one command at a time
+**Status:** Active. The ratified plan's last phase.
+
+**Method, unchanged:** `tests/bench/compare3.sh --cs <exe>` under Git Bash, both builds AOT (as
+shipped): rev 200 (the code before item 6, from `hg archive`; its stamp reads a bare `1.0.0`) and rev
+204, one run each, nothing else running; both tables are in `tests/bench/results.md`.
+
+**Result (seconds, C#Bash, rev 200 → rev 204):** loop 0.165 → 0.157, arith 0.258 → 0.254, func 0.222 →
+0.210, loop_big 1.441 → 1.421, coreutils 0.060 → 0.059, pipeline 0.250 → 0.253, find 0.021 → 0.023,
+startup 0.0164 → 0.0166. All within the method's noise (Git Bash's own startup moved 0.0165 → 0.0171
+between the two runs); outputs agree in every row. Suite 110/110 on the rev 204 AOT build, with a console
+and `-Detached`.
+
+**Item 6 stands at:** P1-P3 and P5 done, P4 done for statuses; P4's line numbers are with the architect.
+
+## 2026-10-11 -- Compat battery: probe 145 leaves the baseline (Git Bash 4.4's `eval` status), 226 to 225
+**Status:** Active. Found by re-running the battery after phase 4 (the phase 4 and 5 entries above were
+written before it was run; this closes that gap).
+
+Probe 145 ends with `eval 'echo ev'"'"'al'`, an unclosed quote. The battery's reference is Git for
+Windows' bash 4.4.23, which gives 1; GNU bash 5.1 (WSL) gives 2, as for every eval syntax error but an
+unclosed array literal (phase 4). The ruling of 2026-10-03 is GNU bash on Linux, not Git for Windows'
+quirks; probe 199 left the baseline the same way (2026-10-10, FUNCNAME). So 145 leaves it too, edited
+by hand (`-UpdateBaseline` would also add probe 172, which is kept out on purpose). Battery: 226/237
+against the baseline of 225, no regression.
+
+## 2026-10-11 -- DECIDED: error messages keep the PHYSICAL line (eval, multi-line `$( )`), not bash's drifting numbers
+**Status:** Decided by the architect 2026-10-11 ("physical line"), on Claude's position. Closes the line
+half of item 6 phase 4, and the multi-line `$( )` difference of phase 3.
+
+bash 5.1 numbers some of these lines in a way no measured rule fitted (`eval "if then"` on line 7, inside
+a top-level `if`, is its line 5; `eval "x=("` on line 13 is 11; a multi-line `$( )` body at the top level
+is 1-2 lines later than its physical line). C#Bash prints the line the error is on: what a reader of
+the message, Claude above all, looks at. A documented difference from bash, kept on purpose.
+**Revisit** if matching bash's numbers is ever needed: read bash's evalstring.c first, do not guess.
+
+## 2026-10-11 -- BUILT: restricted mode is refused with a prefilled-issue link (`-r`, `--restricted`, `rbash`, `set -r`)
+**Status:** Active. Builds the 2026-10-11 decision "a feature C#Bash lacks says so … restricted mode
+refuses to start", GREENLIT by the architect ("next go").
+
+**Before:** `bash -r` and `--restricted` were accepted and ignored (`cd /` worked); `set -r` said
+"invalid option" (it is valid in bash) and the script went on unrestricted.
+
+**Now:** `-r` (alone or in a cluster such as `-cr`), `--restricted` and a program named `rbash` refuse to
+start, status 2: `bash: restricted mode (-r) is not currently available in C#Bash` and `bash: to ask
+for it, open: <link>`, the link opening a NEW issue on github.com/klinkenbecker/csharpBash with title
+and body filled in (the feature and the build stamp, never the command line, which can hold secrets;
+no final `.`, which terminals drop from links). `+r` stays harmless; `shopt restricted_shell` is off.
+
+**`set -r`, decided by Claude while building (the decision named it "not yet checked"):** the shell
+ENDS, status 2, with the same lines; a subshell ends only itself, as bash restricts only it. Failing just
+the `set` and going on would run the rest of a script that asked for restrictions without them: refusing
+is the secure default, the run-time form of refusing to start.
+
+**Shared:** `NotAvailable` (message + link) for the next feature that says so; `BuildInfo.Stamp`, now the
+one place the build stamp is read (Program.cs and awk's `--version` read it there).
+
+**Seen, not changed (open, for the architect):** `--posix` is also accepted and silently ignored. Not a
+safety mode; POSIX mode changes a set of behaviours.
+
+**Verified:** new case `restricted_mode` (authored: bash has restricted mode, so there is no GNU oracle
+for refusing it; the stamp is masked; it checks the command text never reaches the link); rev 179 differs
+on 16 of its lines. `rbash` checked by hand (a copy of the launcher named rbash.exe: refused, status 2).
+Suite 111/111 with a console and `-Detached`; compat battery 226/237 against 225.
+
+**Implemented by:** rev 208. Files: `Bash/Evaluator/NotAvailable.cs` (new), `Bash/Program.cs`,
+`Bash/Evaluator/Builtins.Shell.cs`, `Bash/Evaluator/Builtins.Awk.cs`, `tests/cases/restricted_mode.sh`,
+`tests/expected/restricted_mode.out`, `tests/run-tests.ps1`.
+
+## 2026-10-11 -- BUILT: POSIX mode says it is not available and goes on (`--posix`, `-o posix`, `set -o posix`, `shopt -so posix`)
+**Status:** Active. The architect: "fix --posix", on Claude's position (notice and go on, not refuse).
+
+**Before:** all four were accepted and silently ignored. **Now:** each prints `POSIX mode (<how>) is not
+currently available in C#Bash; going on in bash's default mode` and the prefilled-issue link
+(`NotAvailable.PosixMode`), and goes on, status 0; `set +o posix` says nothing. Not refused, unlike
+restricted mode: POSIX mode only narrows bash's behaviour, so a script that asks for it mostly runs as
+it is, and it protects nothing.
+
+**Seen, not changed (open, for the architect):** `ShellOptions.ApplyLong` also accepts with no effect
+options that change behaviour: `onecmd` (`-t`, exit after one command), `keyword` (`-k`), `functrace`
+(`-T`), `physical` (`-P`), `privileged` (`-p`); and `POSIXLY_CORRECT` in the environment (bash's other way
+into POSIX mode). The rest of that list (emacs, vi, history, monitor, …) has nothing to do outside an
+interactive terminal.
+
+**Verified:** 3 lines added to case `restricted_mode` (authored). Suite 111/111 with a console and
+`-Detached`.
+
+**Implemented by:** rev 209. Files: `Bash/Evaluator/NotAvailable.cs`, `Bash/Program.cs`,
+`Bash/Evaluator/Builtins.Shell.cs`, `tests/cases/restricted_mode.sh`, `tests/expected/restricted_mode.out`.
+
+## 2026-10-11 -- DEPLOYED: rev 209 (revs 180-209), notice sent
+**Status:** Active. The architect: "fix --posix, then deploy, notify and publish".
+
+`tools/publish-aot.cmd` into the scratchpad (never `dist/` directly: the script empties its output
+directory, where the rollback copies live), stamp `1.0.0+hg.4fa037d780c8 209` (committed tree). Suite
+111/111 on that exact binary with a console and `-Detached`; battery 226/237 against 225. The running
+rev 179 was renamed to `dist/Bash.exe.rev179` (Windows renames a running image; it cannot overwrite it)
+and rev 209 copied in. Live check in a Claude Code Bash call: rev 209, awk functions, umask, jq -R, the
+lines before a syntax error run, -r refused, eval status 2, `git -C /f/...` (MSYS path conversion).
+Notice to the six running sessions, leading with the six behaviour changes.

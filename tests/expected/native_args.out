@@ -1,0 +1,15 @@
+drive ok
+root ok
+tmp ok
+tmp-bare ok
+bare-c ok
+inside ok
+middle ok
+unc ok
+no-drive ok
+backslash ok
+off ok
+excl-all ok
+excl-pref ok
+msys ok
+git ok

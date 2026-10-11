@@ -150,7 +150,17 @@ feeding the REPL's continuation loop.
 `ExecCase`, `ExecFunctionDef`, `ExecConditional`, …). The tree is walked directly; there is no
 separate compile step.
 
-Two cross-cutting mechanisms:
+Three cross-cutting mechanisms:
+
+- **One top-level command at a time.** A script, a `-c` string, `source` and `eval` go through
+  `RunString`, which parses one top-level command (`Parser.ParseNext`; a whole LINE, as bash: only
+  `&&`/`||` carry it over a newline), runs it, then parses the next, with the lexer producing tokens
+  only as the parser asks (`Lexer.Step`). So the lines before a syntax error run, a lexing error
+  waits until it is reached, and nothing after an `exit` is read. A `$( )` or backquote body that
+  does not parse becomes a `SubstitutionSyntaxError` node, met when the substitution runs: `$( )`
+  then abandons the top-level command (`CommandAbortException`, status 1), contained by `( )`,
+  pipeline stages and other substitutions; backquotes fail only the substitution (2).
+  *(DECISIONS: 2026-10-11 — item 6, phases 1-5.)*
 
 - **Per-statement error isolation.** Top-level statements run through `RunStatement`, which
   catches `EvalException` (and other runtime faults like divide-by-zero), prints it with
@@ -304,8 +314,10 @@ Two model points:
   token, the parser is a small recursive descent to an AST, and values carry awk's
   number/string/strnum typing so comparisons follow POSIX (input-derived numeric text compares
   numerically, string constants compare as strings). Unsupported constructs surface through the
-  same policy as an unsupported option. The one redirection form admitted (ratified 2026-09-04)
-  is `print … > "/dev/stderr"` / `"/dev/stdout"`; files and pipes stay loud.
+  same policy as an unsupported option. Extended 2026-10-10 (as gawk 5.1): user functions (a frame
+  of cells: scalars by value, arrays by reference, `return` by a flag, a stack guard instead of an
+  overflow), `print > file` / `>> file`, `getline [var] < file`, `close`, `fflush`, 3-argument
+  `match`. Pipes (`print | cmd`, `cmd | getline`), `system()` and main-input `getline` stay loud.
 - **Processes without procps.** `pgrep`/`pkill`/`ps` are in-process (Toolhelp32 for the list,
   `NtQueryInformationProcess` for command lines), because a Git-less Windows PATH has none and
   Claude Code's own `pkill` shim ends in `command pkill`. Names match case-insensitively; the

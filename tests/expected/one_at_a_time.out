@@ -1,0 +1,83 @@
+== a.sh
+before
+a.sh: line 2: syntax error near unexpected token `then'
+a.sh: line 2: `if then'
+rc=2
+== b.sh
+start
+b.sh: line 3: syntax error near unexpected token `fi'
+b.sh: line 3: `fi'
+rc=2
+== c.sh
+installing
+rc=0
+== e.sh
+q1
+e.sh: line 2: unexpected EOF while looking for matching `"'
+e.sh: line 4: syntax error: unexpected end of file
+rc=2
+== h.sh
+h1
+h.sh: line 3: warning: here-document at line 2 delimited by end-of-file (wanted `EOF')
+body line
+rc=0
+== f.sh
+fn
+f.sh: line 3: syntax error near unexpected token `then'
+f.sh: line 3: `if then'
+rc=2
+== g.sh
+g.sh: line 1: syntax error near unexpected token `then'
+g.sh: line 1: `echo same; if then'
+rc=2
+== x.sh
+x
+rc=3
+== p.sh
+p.sh: line 1: syntax error near unexpected token `fi'
+p.sh: line 1: `(echo p) fi'
+rc=2
+== q.sh
+q.sh: line 1: syntax error near unexpected token `)'
+q.sh: line 1: `echo q; )'
+rc=2
+== m.sh
+c1
+c2
+s
+in
+m.sh: line 5: syntax error near unexpected token `then'
+m.sh: line 5: `if then'
+rc=2
+== big.sh
+installing
+rc=0
+== b.sh made marker: yes
+== source
+s1
+./bad.sh: line 2: syntax error near unexpected token `then'
+./bad.sh: line 2: `if then'
+after source rc=2
+== eval
+e1
+eval ran its first line
+== -c multi-line
+l1
+cname: -c: line 2: syntax error near unexpected token `then'
+cname: -c: line 2: `if then'
+rc=2
+== -n checks the whole file and runs nothing
+a.sh: line 2: syntax error near unexpected token `then'
+a.sh: line 2: `if then'
+rc=2
+c.sh: line 4: syntax error near unexpected token `)'
+c.sh: line 4: `)(*& not ( shell'
+rc=2
+== eval syntax-error statuses (2; an unclosed array literal 1)
+token rc=2
+stray-fi rc=2
+eof-array rc=1
+eof-if rc=2
+eof-quote rc=2
+eof-and rc=2
+cond rc=2

@@ -41,38 +41,77 @@ public sealed class Lexer
 
 	// ── public API ───────────────────────────────────────────────────────────
 
-	public List<Token> Tokenize()
+	/// <summary>A lexing error held back by <c>Tokenize(deferErrors: true)</c>, for the parser to raise
+	/// when it reaches the end of the tokens before it.</summary>
+	public LexException? DeferredError { get; private set; }
+
+	/// <param name="deferErrors">A lexing error ends the tokens instead of being thrown: the tokens before
+	/// it come back closed by an Eof, and the error waits in <see cref="DeferredError"/>. So a script's
+	/// commands before an unterminated quote run first, as in bash (DECISIONS 2026-10-11, one command at
+	/// a time).</param>
+	public List<Token> Tokenize(bool deferErrors = false)
 		{
 		var tokens = new List<Token>();
-
-		while (true)
+		try { TokenizeInto(tokens); }
+		catch (LexException ex) when (deferErrors)
 			{
-			_hadSpace = _pos < _src.Length && _src[_pos] is ' ' or '\t' or '\r';
-			bool hadSpace = _hadSpace;
-			SkipWhitespace();
+			DeferredError = ex;
+			tokens.Add(Token.Eof(ex.Line, ex.Col));
+			}
+		return tokens;
+		}
 
-			if (_pos >= _src.Length)
-				{
-				if (_heredocQueue.Count > 0) FlushHeredocs(tokens);   // heredoc delimited by EOF
-				tokens.Add(Token.Eof(_line, _col));
-				break;
-				}
+	private void TokenizeInto(List<Token> tokens)
+		{
+		while (StepCore(tokens)) { }
+		}
 
-			var tok = NextToken(tokens.Count);
-			if (tok is null) continue;
+	/// <summary>True once the Eof is in the tokens (<see cref="Step"/> adds nothing more).</summary>
+	public bool Done { get; private set; }
 
-			// Stamp leading-space flag: re-create the record with HasLeadingSpace set.
-			// Newlines and the first token never carry the flag (newline is its own token).
-			if (hadSpace && tok.Type != TokenType.Newline)
-				tok = tok with { HasLeadingSpace = true };
+	/// <summary>Lexing on demand (item 6, phase 2): one more step into <paramref name="tokens"/>, the
+	/// list a parser reads (a token, and after a newline that line's here-document bodies; the Eof at
+	/// the end). A lexing error is held back as with <c>Tokenize(deferErrors: true)</c>. So nothing past
+	/// what the parser has asked for is lexed: an installer's payload after `exit` never is.</summary>
+	public void Step(List<Token> tokens)
+		{
+		if (Done) return;
+		try { if (!StepCore(tokens)) Done = true; }
+		catch (LexException ex)
+			{
+			DeferredError = ex;
+			tokens.Add(Token.Eof(ex.Line, ex.Col));
+			Done = true;
+			}
+		}
 
-			tokens.Add(tok);
+	/// <summary>One step; false once it has added the Eof.</summary>
+	private bool StepCore(List<Token> tokens)
+		{
+		_hadSpace = _pos < _src.Length && _src[_pos] is ' ' or '\t' or '\r';
+		bool hadSpace = _hadSpace;
+		SkipWhitespace();
 
-			if (tok.Type == TokenType.Newline)
-				FlushHeredocs(tokens);
+		if (_pos >= _src.Length)
+			{
+			if (_heredocQueue.Count > 0) FlushHeredocs(tokens);   // heredoc delimited by EOF
+			tokens.Add(Token.Eof(_line, _col));
+			return false;
 			}
 
-		return tokens;
+		var tok = NextToken(tokens.Count);
+		if (tok is null) return true;
+
+		// Stamp leading-space flag: re-create the record with HasLeadingSpace set.
+		// Newlines and the first token never carry the flag (newline is its own token).
+		if (hadSpace && tok.Type != TokenType.Newline)
+			tok = tok with { HasLeadingSpace = true };
+
+		tokens.Add(tok);
+
+		if (tok.Type == TokenType.Newline)
+			FlushHeredocs(tokens);
+		return true;
 		}
 
 	private void FlushHeredocs(List<Token> tokens)

@@ -137,6 +137,13 @@ public abstract record Node
 	public int Line { get; init; }
 	}
 
+/// <summary>The body of a `$( )` or backquote substitution that does not parse. bash parses a body when
+/// the substitution runs, so the error is reported then, not with the enclosing line, and `-n` never
+/// sees it (DECISIONS 2026-10-11, item 6 phase 3). <see cref="Error"/> came from parsing
+/// <see cref="Shown"/> alone, the text bash parses and quotes (a `$( )` body with its `)` and, inside
+/// quotes, the rest of the string; a backquote body alone); its lines count from the body's first.</summary>
+public sealed record SubstitutionSyntaxError(Exception Error, string Shown, bool Backquoted) : Node;
+
 // ── Simple command ────────────────────────────────────────────────────────────
 
 /// <summary>

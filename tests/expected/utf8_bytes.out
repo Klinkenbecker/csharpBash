@@ -1,0 +1,13 @@
+1 1 eq
+2 1 eq
+3 1 eq
+4 1
+5 1 eq
+6 1
+7 1
+8 3
+9 1 ✓|
+10 case match
+ c a f 303 251 . t x t \n m 303 251 \n
+11 exists by literal name
+12  c3 89

@@ -5,15 +5,23 @@ using System.Text.RegularExpressions;
 namespace Bash.Evaluator;
 
 /// <summary>
-/// In-process `awk` implementing the subset ratified in DECISIONS 2026-09-04 #7 (the supported
-/// list there is the contract). Anything outside it raises an unsupported-construct error that
-/// the dispatcher handles per decision #2: fall through to a PATH awk when one exists, else
-/// `awk: unsupported: …` exit 2. Never a silent approximation.
+/// In-process `awk` implementing the subset ratified in DECISIONS 2026-09-04 #7 and extended
+/// 2026-10-10 (user functions, `print > file`, `getline [var] < file`, `close`, `fflush`,
+/// 3-argument `match`, `--version`); the supported lists there are the contract. Anything outside
+/// it raises an unsupported-construct error that the dispatcher handles per decision #2: fall
+/// through to a PATH awk when one exists, else `awk: unsupported: …` exit 2. Never a silent
+/// approximation.
 /// </summary>
 public sealed partial class Builtins
 	{
 	private int Awk(List<string> args)
 		{
+		if (args.Count > 0 && args[0] == "--version")
+			{
+			// never "GNU Awk": a script that greps for it must not take this for gawk
+			Console.WriteLine("awk (C#Bash in-process subset, gawk-5.1 compatible) " + BuildInfo.Stamp);
+			return 0;
+			}
 		var o = Opts.Parse("awk", args, "F:v:f:", ["field-separator=:F", "assign=:v", "file=:f"], stopAtFirstOperand: true);
 		var operands = new List<string>(o.Operands);
 		string program;
@@ -34,15 +42,24 @@ public sealed partial class Builtins
 			program = operands[0];
 			operands.RemoveAt(0);
 			}
+		// gawk's location prefix: "cmd. line:N:" for a program operand, "FILE:N:" for -f
+		var source = progFiles.Count > 0 ? progFiles[0] : "cmd. line";
 		try
 			{
-			var interp = new AwkInterp();
+			var interp = new AwkInterp { Source = source };
 			foreach (var a in o.All('v'))
 				{
 				if (!interp.AssignOperand(a)) { Console.Error.WriteLine($"awk: invalid -v argument '{a}'"); return 2; }
 				}
 			if (o.Get('F') is string fs) interp.SetVar("FS", AwkVal.Str(fs == "t" ? "\t" : AwkInterp.Unescape(fs)));
 			return interp.Run(program, operands);
+			}
+		catch (AwkFatalException ex)
+			{
+			// an error gawk also reports (and exits 2 for): not a subset gap, so no fall-through
+			try { Console.Out.Flush(); } catch { }
+			Console.Error.WriteLine($"awk: {source}:{ex.Line}: fatal: {ex.Message}");
+			return 2;
 			}
 		catch (AwkUnsupportedException ex) { throw new UnsupportedOptionException("awk", "unsupported", ex.Message); }
 		catch (AwkSyntaxException ex)
@@ -54,6 +71,9 @@ public sealed partial class Builtins
 
 	private sealed class AwkUnsupportedException(string what) : Exception(what);
 	private sealed class AwkSyntaxException(string what) : Exception(what);
+	/// <summary>An error gawk reports as fatal (exit 2) for the same program: an undefined function,
+	/// an output file that cannot be opened. Printed with gawk's location prefix.</summary>
+	private sealed class AwkFatalException(int line, string what) : Exception(what) { public int Line { get; } = line; }
 	private sealed class AwkNextException : Exception;
 	private sealed class AwkBreakException : Exception;
 	private sealed class AwkContinueException : Exception;
@@ -331,13 +351,13 @@ public sealed partial class Builtins
 								{
 								int v = 0, n = 0;
 								while (n < 3 && i < src.Length && src[i] >= '0' && src[i] <= '7') { v = v * 8 + (src[i] - '0'); i++; n++; }
-								sb.Append((char)v); break;
+								sb.Append(ShellEncoding.ByteChar(v & 0xFF)); break;   // a byte, as in gawk ("\377" is ff)
 								}
 							case 'x':
 								{
 								i++; int v = 0, n = 0;
 								while (n < 2 && i < src.Length && char.IsAsciiHexDigit(src[i])) { v = v * 16 + Convert.ToInt32(src[i].ToString(), 16); i++; n++; }
-								if (n == 0) sb.Append("\\x"); else sb.Append((char)v);
+								if (n == 0) sb.Append("\\x"); else sb.Append(ShellEncoding.ByteChar(v));
 								break;
 								}
 							default: sb.Append('\\').Append(src[i]); i++; break;   // gawk keeps unknown escapes
@@ -349,7 +369,8 @@ public sealed partial class Builtins
 					}
 				if (i >= src.Length) throw new AwkSyntaxException($"unterminated string at line {line}");
 				i++;
-				toks.Add(new(AT.String, sb.ToString(), 0, line));
+				// escaped bytes that spell a UTF-8 character are that character: "\xc3\xa9" is é, length 1
+				toks.Add(new(AT.String, ShellEncoding.Canonical(sb.ToString()), 0, line));
 				continue;
 				}
 			if (c == '/' && RegexAllowed())
@@ -417,14 +438,20 @@ public sealed partial class Builtins
 	private sealed record AConcat(AExpr A, AExpr B) : AExpr;
 	private sealed record AMatch(AExpr Subject, AExpr Pattern, bool Negate) : AExpr;
 	private sealed record AIn(List<AExpr> Keys, string Array) : AExpr;
-	private sealed record ACall(string Name, List<AExpr> Args) : AExpr;
+	private sealed record ACall(string Name, List<AExpr> Args, int Line = 0) : AExpr;
+	private sealed record AUserCall(string Name, List<AExpr> Args, int Line) : AExpr;
+	/// <summary>`getline [Target] &lt; File`; Target null sets $0 and NF. The main-input and `cmd |`
+	/// forms are not in the subset.</summary>
+	private sealed record AGetline(AExpr? Target, AExpr File) : AExpr;
 	private sealed record AGroupList(List<AExpr> Items) : AExpr;   // (a, b) — only valid as print's argument list
 
 	private abstract record AStmt;
 	private sealed record ABlock(List<AStmt> Body) : AStmt;
 	private sealed record AExprStmt(AExpr E) : AStmt;
-	/// <summary>Dest: 1 = stdout, 2 = stderr (`> "/dev/stderr"`, the one admitted redirection form).</summary>
-	private sealed record APrint(List<AExpr> Args, bool Formatted, int Dest) : AStmt;
+	/// <summary>Target null: stdout. Otherwise `> Target` (`>> Target` when Append): a file, or
+	/// "/dev/stdout", "/dev/stderr", "-" and the other device names.</summary>
+	private sealed record APrint(List<AExpr> Args, bool Formatted, AExpr? Target, bool Append, int Line) : AStmt;
+	private sealed record AReturn(AExpr? Value) : AStmt;
 	private sealed record AIf(AExpr C, AStmt Then, AStmt? Else) : AStmt;
 	private sealed record AWhile(AExpr C, AStmt Body) : AStmt;
 	private sealed record ADoWhile(AStmt Body, AExpr C) : AStmt;
@@ -437,7 +464,14 @@ public sealed partial class Builtins
 	private sealed record ADelete(string Array, List<AExpr>? Subs) : AStmt;
 
 	private sealed record ARule(AExpr? Pattern, AExpr? PatternEnd, AStmt? Action);
-	private sealed record AProgram(List<AStmt> Begin, List<ARule> Rules, List<AStmt> End);
+	private sealed record AFunc(string Name, List<string> Params, ABlock Body);
+	private sealed record AProgram(List<AStmt> Begin, List<ARule> Rules, List<AStmt> End, Dictionary<string, AFunc> Funcs);
+
+	/// <summary>Names a function parameter may not take (gawk: "cannot use special variable").</summary>
+	private static readonly HashSet<string> AwkSpecialVars =
+		["NF", "NR", "FNR", "FS", "OFS", "ORS", "RS", "SUBSEP", "CONVFMT", "OFMT", "FILENAME", "RSTART", "RLENGTH",
+		 "ENVIRON", "ARGC", "ARGV", "RT", "IGNORECASE", "BINMODE", "ERRNO", "FIELDWIDTHS", "FPAT", "LINT",
+		 "PROCINFO", "TEXTDOMAIN", "SYMTAB", "FUNCTAB"];
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// parser
@@ -448,6 +482,10 @@ public sealed partial class Builtins
 		private int _p;
 		private bool _noGt;   // inside print's argument list: `>` is a redirection, not a comparison
 		private bool _noIn;   // inside for(...) header: `in` belongs to for-in
+		private bool _inFunc;   // `return` is legal
+		private int _loops;     // `break` / `continue` are legal when > 0 (gawk rejects them outside a loop)
+		private readonly List<AUserCall> _calls = [];   // checked against the definitions after parsing
+		private readonly HashSet<string> _names = new(StringComparer.Ordinal);   // variables and arrays used
 
 		private AwkTok Peek => toks[_p];
 		private AwkTok Advance() => toks[_p++];
@@ -464,12 +502,13 @@ public sealed partial class Builtins
 		public AProgram ParseProgram()
 			{
 			var begin = new List<AStmt>(); var end = new List<AStmt>(); var rules = new List<ARule>();
+			var funcs = new Dictionary<string, AFunc>(StringComparer.Ordinal);
 			SkipTerms();
 			while (Peek.Type != AT.Eof)
 				{
 				if (IsKw("BEGIN")) { _p++; SkipNl(); begin.Add(ParseBlock()); }
 				else if (IsKw("END")) { _p++; SkipNl(); end.Add(ParseBlock()); }
-				else if (IsKw("function") || IsKw("func")) throw new AwkUnsupportedException("user-defined function");
+				else if (IsKw("function") || IsKw("func")) ParseFunction(funcs);
 				else if (IsOp("{")) rules.Add(new ARule(null, null, ParseBlock()));
 				else
 					{
@@ -481,7 +520,51 @@ public sealed partial class Builtins
 					}
 				SkipTerms();
 				}
-			return new AProgram(begin, rules, end);
+			// gawk's checks, made once the whole program is read (a call may precede its definition)
+			foreach (var name in _names)
+				if (funcs.ContainsKey(name))
+					throw new AwkSyntaxException($"function `{name}' called with space between name and `(', or used as a variable or an array");
+			foreach (var call in _calls)
+				if (!funcs.ContainsKey(call.Name)) throw new AwkFatalException(call.Line, $"function `{call.Name}' not defined");
+			return new AProgram(begin, rules, end, funcs);
+			}
+
+		/// <summary>`function NAME(params) { body }` (`func` too): parameters beyond the arguments a
+		/// call passes are its locals.</summary>
+		private void ParseFunction(Dictionary<string, AFunc> funcs)
+			{
+			_p++;
+			if (Peek.Type is not (AT.Name or AT.FuncName)) throw new AwkSyntaxException($"expected a function name near '{Peek.Text}' at line {Peek.Line}");
+			var name = Advance().Text;
+			if (funcs.ContainsKey(name)) throw new AwkSyntaxException($"function name `{name}' previously defined");
+			Expect("(");
+			var ps = new List<string>();
+			SkipNl();
+			while (!IsOp(")"))
+				{
+				if (Peek.Type != AT.Name) throw new AwkSyntaxException($"expected a parameter name near '{Peek.Text}' at line {Peek.Line}");
+				var pn = Advance().Text;
+				if (AwkSpecialVars.Contains(pn)) throw new AwkSyntaxException($"function `{name}': cannot use special variable `{pn}' as a function parameter");
+				if (pn == name || ps.Contains(pn)) throw new AwkSyntaxException($"function `{name}': parameter `{pn}' is not unique");
+				ps.Add(pn);
+				SkipNl();
+				if (IsOp(",")) { _p++; SkipNl(); continue; }
+				if (!IsOp(")")) throw new AwkSyntaxException($"expected ',' or ')' near '{Peek.Text}' at line {Peek.Line}");
+				}
+			_p++;
+			SkipNl();
+			bool saveFunc = _inFunc; int saveLoops = _loops;
+			_inFunc = true; _loops = 0;
+			try { funcs[name] = new AFunc(name, ps, ParseBlock()); }
+			finally { _inFunc = saveFunc; _loops = saveLoops; }
+			}
+
+		/// <summary>A loop body: `break` and `continue` are legal inside it.</summary>
+		private AStmt ParseLoopBody()
+			{
+			_loops++;
+			try { return ParseStmt(); }
+			finally { _loops--; }
 			}
 
 		private ABlock ParseBlock()
@@ -531,11 +614,11 @@ public sealed partial class Builtins
 						_p++; Expect("("); var c = ParseExpr(); Expect(")");
 						if (IsOp(";")) { _p++; return new AWhile(c, new ABlock([])); }
 						SkipNl();
-						return new AWhile(c, ParseStmt());
+						return new AWhile(c, ParseLoopBody());
 						}
 					case "do":
 						{
-						_p++; SkipNl(); var body = ParseStmt(); SkipTerms();
+						_p++; SkipNl(); var body = ParseLoopBody(); SkipTerms();
 						if (!IsKw("while")) throw new AwkSyntaxException("expected 'while' after do-body");
 						_p++; Expect("("); var c = ParseExpr(); Expect(")"); EndSimple();
 						return new ADoWhile(body, c);
@@ -546,19 +629,33 @@ public sealed partial class Builtins
 						if (_p + 3 < toks.Count && Peek.Type == AT.Name && toks[_p + 1] is { Type: AT.Keyword, Text: "in" } && toks[_p + 2].Type == AT.Name && toks[_p + 3] is { Type: AT.Op, Text: ")" })
 							{
 							var v = Advance().Text; _p++; var arr = Advance().Text; _p++; SkipNl();
-							return new AForIn(v, arr, ParseStmt());
+							_names.Add(v); _names.Add(arr);
+							return new AForIn(v, arr, ParseLoopBody());
 							}
 						AStmt? init = IsOp(";") ? null : new AExprStmt(ParseExpr()); Expect(";"); SkipNl();
 						AExpr? cond = IsOp(";") ? null : ParseExpr(); Expect(";"); SkipNl();
 						AStmt? step = IsOp(")") ? null : new AExprStmt(ParseExpr()); Expect(")");
 						if (IsOp(";")) { _p++; return new AFor(init, cond, step, new ABlock([])); }
 						SkipNl();
-						return new AFor(init, cond, step, ParseStmt());
+						return new AFor(init, cond, step, ParseLoopBody());
 						}
 					case "next": _p++; EndSimple(); return new ANext();
 					case "nextfile": throw new AwkUnsupportedException("nextfile");
-					case "break": _p++; EndSimple(); return new ABreak();
-					case "continue": _p++; EndSimple(); return new AContinue();
+					case "break" or "continue":
+						{
+						var kw = Advance();
+						if (_loops == 0) throw new AwkSyntaxException($"`{kw.Text}' is not allowed outside a loop at line {kw.Line}");
+						EndSimple();
+						return kw.Text == "break" ? new ABreak() : new AContinue();
+						}
+					case "return":
+						{
+						var kw = Advance();
+						if (!_inFunc) throw new AwkSyntaxException($"`return' used outside function context at line {kw.Line}");
+						AExpr? value = IsOp(";") || IsOp("}") || Peek.Type is AT.Newline or AT.Eof ? null : ParseExpr();
+						EndSimple();
+						return new AReturn(value);
+						}
 					case "exit":
 						{
 						_p++;
@@ -571,6 +668,7 @@ public sealed partial class Builtins
 						_p++;
 						if (Peek.Type != AT.Name) throw new AwkSyntaxException("expected array name after delete");
 						var name = Advance().Text;
+						_names.Add(name);
 						List<AExpr>? subs = null;
 						if (IsOp("[")) { _p++; subs = ParseExprList("]"); Expect("]"); }
 						EndSimple();
@@ -578,7 +676,8 @@ public sealed partial class Builtins
 						}
 					case "print" or "printf":
 						{
-						bool formatted = Advance().Text == "printf";
+						var kwTok = Advance();
+						bool formatted = kwTok.Text == "printf";
 						var args = new List<AExpr>();
 						bool saveGt = _noGt; _noGt = true;
 						try
@@ -595,26 +694,19 @@ public sealed partial class Builtins
 								}
 							}
 						finally { _noGt = saveGt; }
-						int dest = 1;
+						AExpr? target = null;
+						bool append = false;
 						if (IsOp(">") || IsOp(">>"))
 							{
-							// ratified extension (2026-09-04): only the standard streams, no files
-							_p++;
-							var target = ParsePrimary();
-							dest = target switch
-								{
-								AStr { V: "/dev/stderr" } => 2,
-								AStr { V: "/dev/stdout" } => 1,
-								_ => throw new AwkUnsupportedException("print redirection to a file (only \"/dev/stderr\" and \"/dev/stdout\" are supported)"),
-								};
+							append = Advance().Text == ">>";
+							// a concatenation, as in gawk: `print > "out" n ".txt"` names one file
+							target = ParseConcat();
 							}
 						if (IsOp("|")) throw new AwkUnsupportedException("print piped to a command");
 						EndSimple();
 						if (formatted && args.Count == 0) throw new AwkSyntaxException("printf: no format");
-						return new APrint(args, formatted, dest);
+						return new APrint(args, formatted, target, append, kwTok.Line);
 						}
-					case "getline": throw new AwkUnsupportedException("getline");
-					case "return": throw new AwkUnsupportedException("return outside a function");
 					}
 				}
 			var e = ParseExpr();
@@ -676,6 +768,7 @@ public sealed partial class Builtins
 				_p++;
 				if (Peek.Type != AT.Name) throw new AwkSyntaxException("expected array name after 'in'");
 				var arr = Advance().Text;
+				_names.Add(arr);
 				a = new AIn(a is AGroupList gl ? gl.Items : [a], arr);
 				}
 			return a;
@@ -810,7 +903,7 @@ public sealed partial class Builtins
 						while (IsOp(",")) { _p++; SkipNl(); items.Add(ParseExpr()); }
 						SkipNl(); Expect(")");
 						_noGt = saveGt; _noIn = saveIn;
-						if (IsKw("in")) { _p++; if (Peek.Type != AT.Name) throw new AwkSyntaxException("expected array name after 'in'"); return new AIn(items, Advance().Text); }
+						if (IsKw("in")) { _p++; if (Peek.Type != AT.Name) throw new AwkSyntaxException("expected array name after 'in'"); var arr = Advance().Text; _names.Add(arr); return new AIn(items, arr); }
 						return new AGroupList(items);
 						}
 					SkipNl(); Expect(")");
@@ -824,11 +917,21 @@ public sealed partial class Builtins
 				case AT.Op when t.Text == "+":
 					_p++; return new AUnary("+", ParseUnary());
 				case AT.FuncName:
-					throw new AwkUnsupportedException($"call of user-defined function {t.Text}()");
+					{
+					_p += 2;   // the name and its `(` (the lexer makes a FuncName only of a name followed by one)
+					bool saveGt = _noGt, saveIn = _noIn; _noGt = false; _noIn = false;
+					SkipNl();
+					var args = ParseExprList(")");
+					SkipNl(); Expect(")");
+					_noGt = saveGt; _noIn = saveIn;
+					var call = new AUserCall(t.Text, args, t.Line);
+					_calls.Add(call);
+					return call;
+					}
 				case AT.Builtin:
 					{
 					_p++;
-					if (t.Text is "system" or "close" or "fflush" or "systime" or "strftime" or "gensub" or "asort" or "asorti")
+					if (t.Text is "system" or "systime" or "strftime" or "gensub" or "asort" or "asorti")
 						throw new AwkUnsupportedException($"{t.Text}()");
 					if (t.Text is "sqrt" or "exp" or "log" or "sin" or "cos" or "atan2" or "rand" or "srand")
 						throw new AwkUnsupportedException($"{t.Text}()");
@@ -843,12 +946,13 @@ public sealed partial class Builtins
 					var args = ParseExprList(")");
 					SkipNl(); Expect(")");
 					_noGt = saveGt; _noIn = saveIn;
-					return new ACall(t.Text, args);
+					return new ACall(t.Text, args, t.Line);
 					}
 				case AT.Name:
 					{
 					_p++;
 					if (t.Text == "ENVIRON") throw new AwkUnsupportedException("ENVIRON");
+					_names.Add(t.Text);
 					if (IsOp("["))
 						{
 						_p++;
@@ -861,7 +965,20 @@ public sealed partial class Builtins
 					return new AVar(t.Text);
 					}
 				case AT.Keyword when t.Text == "getline":
-					throw new AwkUnsupportedException("getline");
+					{
+					_p++;
+					AExpr? target = null;
+					if (Peek.Type == AT.Name || IsOp("$"))
+						{
+						target = ParsePrimary();
+						if (!IsLvalue(target)) throw new AwkSyntaxException($"getline: not a variable at line {t.Line}");
+						}
+					// the main-input form (`getline`, `getline var`) and `cmd | getline` are outside the subset
+					if (!IsOp("<")) throw new AwkUnsupportedException("getline from the main input");
+					_p++;
+					// gawk's simp_exp: arithmetic but no concatenation, so `getline < "a" "b"` reads "a"
+					return new AGetline(target, ParseAdditive());
+					}
 				default:
 					throw new AwkSyntaxException($"unexpected '{(t.Type == AT.Newline ? "newline" : t.Type == AT.Eof ? "end of program" : t.Text)}' at line {t.Line}");
 				}
@@ -883,6 +1000,24 @@ public sealed partial class Builtins
 		private int _nr, _fnr;
 		private int _exitCode;
 		private bool _exiting;
+		private Dictionary<string, AFunc> _funcs = new(StringComparer.Ordinal);
+		private Dictionary<string, AwkCell>? _frame;   // the running function's parameters and locals; null outside one
+		private bool _returning;                        // a `return` ran: every enclosing statement stops (no exception per call)
+		private AwkVal _returnValue = AwkVal.Uninit;
+		private readonly Dictionary<string, TextWriter> _outputs = new(StringComparer.Ordinal);   // `print > name`, open until close()
+		private readonly Dictionary<string, (TextReader Reader, IEnumerator<string> Lines)> _inputs = new(StringComparer.Ordinal);   // `getline < name`
+		public string Source { get; init; } = "cmd. line";
+
+		/// <summary>A function's parameter or local. A scalar argument arrives by value; an array by
+		/// reference; an untyped caller variable arrives untyped, and if the function uses it as an
+		/// array, that array becomes the caller's variable too (BindCaller), as in gawk.</summary>
+		private sealed class AwkCell
+			{
+			public AwkVal Value = AwkVal.Uninit;
+			public bool IsScalar;
+			public Dictionary<string, AwkVal>? Array;
+			public Action<Dictionary<string, AwkVal>>? BindCaller;
+			}
 
 		public AwkInterp()
 			{
@@ -916,10 +1051,27 @@ public sealed partial class Builtins
 					case 'a': sb.Append('\a'); break; case 'b': sb.Append('\b'); break; case 'f': sb.Append('\f'); break;
 					case 'v': sb.Append('\v'); break; case '\\': sb.Append('\\'); break; case '"': sb.Append('"'); break;
 					case '/': sb.Append('/'); break;
+					case >= '0' and <= '7':
+						{
+						// octal and \x make bytes, as in a string literal (gawk: -v s='\303\251' is é)
+						int v = 0, n = 0;
+						while (n < 3 && i < s.Length && s[i] >= '0' && s[i] <= '7') { v = v * 8 + (s[i] - '0'); i++; n++; }
+						i--;   // the for loop steps past the last digit
+						sb.Append(ShellEncoding.ByteChar(v & 0xFF));
+						break;
+						}
+					case 'x':
+						{
+						int v = 0, n = 0, j = i + 1;
+						while (n < 2 && j < s.Length && char.IsAsciiHexDigit(s[j])) { v = v * 16 + Convert.ToInt32(s[j].ToString(), 16); j++; n++; }
+						if (n == 0) sb.Append("\\x");
+						else { sb.Append(ShellEncoding.ByteChar(v)); i = j - 1; }
+						break;
+						}
 					default: sb.Append('\\').Append(s[i]); break;
 					}
 				}
-			return sb.ToString();
+			return ShellEncoding.Canonical(sb.ToString());
 			}
 
 		/// <summary>`name=value` from -v or a file operand: escapes processed, strnum typed.</summary>
@@ -1006,8 +1158,22 @@ public sealed partial class Builtins
 				case "NR": return AwkVal.Num(_nr);
 				case "FNR": return AwkVal.Num(_fnr);
 				}
+			if (Local(name) is { } cell)
+				{
+				if (cell.Array is not null) throw new AwkSyntaxException($"attempt to use array {name} in a scalar context");
+				return cell.Value;
+				}
 			if (_arrays.ContainsKey(name)) throw new AwkSyntaxException($"attempt to use array {name} in a scalar context");
 			return _vars.TryGetValue(name, out var v) ? v : AwkVal.Uninit;
+			}
+
+		private AwkCell? Local(string name) => _frame is not null && _frame.TryGetValue(name, out var c) ? c : null;
+
+		/// <summary>The array a name denotes now, without creating one.</summary>
+		private bool TryArray(string name, out Dictionary<string, AwkVal> arr)
+			{
+			if (Local(name) is { } cell) { arr = cell.Array!; return arr is not null; }
+			return _arrays.TryGetValue(name, out arr!);
 			}
 
 		private void SetSpecialOrVar(string name, AwkVal v)
@@ -1021,12 +1187,29 @@ public sealed partial class Builtins
 					if (S(v) != "\n") throw new AwkUnsupportedException("RS other than newline");
 					break;
 				}
+			if (Local(name) is { } cell)
+				{
+				if (cell.Array is not null) throw new AwkSyntaxException($"attempt to use array {name} in a scalar context");
+				cell.Value = v;
+				cell.IsScalar = true;
+				return;
+				}
 			if (_arrays.ContainsKey(name)) throw new AwkSyntaxException($"attempt to use array {name} in a scalar context");
 			_vars[name] = v;
 			}
 
 		private Dictionary<string, AwkVal> GetArray(string name)
 			{
+			if (Local(name) is { } cell)
+				{
+				if (cell.Array is null)
+					{
+					if (cell.IsScalar) throw new AwkSyntaxException($"attempt to use scalar {name} as an array");
+					cell.Array = new Dictionary<string, AwkVal>(StringComparer.Ordinal);
+					cell.BindCaller?.Invoke(cell.Array);
+					}
+				return cell.Array;
+				}
 			if (!_arrays.TryGetValue(name, out var a))
 				{
 				if (_vars.ContainsKey(name)) throw new AwkSyntaxException($"attempt to use scalar {name} as an array");
@@ -1050,6 +1233,19 @@ public sealed partial class Builtins
 			}
 
 		private Regex RegexOf(AExpr e) => e is ARegex r ? GetRegex(r.Pattern) : GetRegex(S(Eval(e)));
+
+		/// <summary>The pattern with its groups numbered (POSIX order, by opening parenthesis), for
+		/// 3-argument match(); cached apart from the ExplicitCapture ones every other use takes.</summary>
+		private Regex CapturingRegexOf(AExpr e)
+			{
+			var pattern = e is ARegex r ? r.Pattern : S(Eval(e));
+			if (_captureCache.TryGetValue(pattern, out var re)) return re;
+			try { re = new Regex(EreToNet(pattern), RegexOptions.CultureInvariant); }
+			catch (ArgumentException ex) { throw new AwkSyntaxException($"invalid regular expression /{pattern}/: {ex.Message}"); }
+			_captureCache[pattern] = re;
+			return re;
+			}
+		private readonly Dictionary<string, Regex> _captureCache = new(StringComparer.Ordinal);
 
 		// ── evaluation ─────────────────────────────────────────────────────────
 
@@ -1119,7 +1315,17 @@ public sealed partial class Builtins
 					Store(d.Target, nv);
 					return d.Prefix ? nv : AwkVal.Num(old);
 					}
-				case AConcat c: return AwkVal.Str(S(Eval(c.A)) + S(Eval(c.B)));
+				case AConcat c:
+					{
+					var l = S(Eval(c.A));
+					var r = S(Eval(c.B));
+					var s = l + r;
+					// halves of a UTF-8 character carried as bytes join into it ("\xc3" "\xa9" is é, as in
+					// gawk); each side is already canonical, so only a seam of two carried bytes can change
+					if (l.Length > 0 && r.Length > 0 && ShellEncoding.IsByteChar(l[^1]) && ShellEncoding.IsByteChar(r[0]))
+						s = ShellEncoding.Canonical(s);
+					return AwkVal.Str(s);
+					}
 				case AMatch m:
 					{
 					var subject = S(Eval(m.Subject));
@@ -1132,8 +1338,160 @@ public sealed partial class Builtins
 					return AwkVal.Bool(arr.ContainsKey(SubscriptKey(i.Keys)));
 					}
 				case ACall call: return CallBuiltin(call);
+				case AUserCall uc: return CallUser(uc);
+				case AGetline g: return Getline(g);
 				}
 			throw new AwkSyntaxException("unknown expression");
+			}
+
+		// ── user functions ─────────────────────────────────────────────────────
+
+		private AwkVal CallUser(AUserCall call)
+			{
+			var fn = _funcs[call.Name];   // every call was checked against the definitions after parsing
+			// the interpreter recurses on the .NET stack; a stack overflow would kill the whole shell
+			// (uncatchable), so a call that finds the stack nearly spent stops the program instead
+			try { System.Runtime.CompilerServices.RuntimeHelpers.EnsureSufficientExecutionStack(); }
+			catch (InsufficientExecutionStackException)
+				{
+				throw new AwkFatalException(call.Line, $"function `{call.Name}': calls nested too deep for C#Bash's in-process awk");
+				}
+			// arguments are evaluated in the caller's frame, left to right; surplus ones only for
+			// their effects, then gawk's warning, at every call that has them (not while parsing)
+			var frame = new Dictionary<string, AwkCell>(fn.Params.Count, StringComparer.Ordinal);
+			for (int i = 0; i < call.Args.Count; i++)
+				{
+				if (i < fn.Params.Count) frame[fn.Params[i]] = BindArgument(call.Args[i]);
+				else Eval(call.Args[i]);
+				}
+			if (call.Args.Count > fn.Params.Count)
+				{
+				Console.Out.Flush();
+				Console.Error.WriteLine($"awk: {Source}:{call.Line}: warning: function `{call.Name}' called with more arguments than declared");
+				}
+			for (int i = call.Args.Count; i < fn.Params.Count; i++) frame[fn.Params[i]] = new AwkCell();   // a local
+			var saved = _frame;
+			_frame = frame;
+			try { Exec(fn.Body); }
+			finally { _frame = saved; }
+			var result = _returning ? _returnValue : AwkVal.Uninit;
+			_returning = false;
+			_returnValue = AwkVal.Uninit;
+			return result;
+			}
+
+		/// <summary>A bare variable name passes an array by reference, or an untyped variable that the
+		/// function may turn into one; anything else passes its value.</summary>
+		private AwkCell BindArgument(AExpr arg)
+			{
+			var cell = new AwkCell();
+			if (arg is AVar v && v.Name is not ("NF" or "NR" or "FNR"))
+				{
+				if (Local(v.Name) is { } lc)
+					{
+					if (lc.Array is not null) { cell.Array = lc.Array; return cell; }
+					if (!lc.IsScalar)
+						{
+						cell.BindCaller = arr => { lc.Array = arr; lc.BindCaller?.Invoke(arr); };
+						return cell;
+						}
+					cell.Value = lc.Value;
+					return cell;
+					}
+				if (_arrays.TryGetValue(v.Name, out var ga)) { cell.Array = ga; return cell; }
+				if (!_vars.ContainsKey(v.Name))
+					{
+					var name = v.Name;
+					cell.BindCaller = arr => _arrays[name] = arr;
+					return cell;
+					}
+				}
+			cell.Value = Eval(arg);
+			return cell;
+			}
+
+		// ── getline < file, print > file, close, fflush ────────────────────────
+
+		/// <summary>1 with a line read, 0 at the end of the file, -1 when it cannot be opened. Sets
+		/// the variable, or $0 and NF; never NR or FNR (a file, not the main input).</summary>
+		private AwkVal Getline(AGetline g)
+			{
+			var name = S(Eval(g.File));
+			if (!_inputs.TryGetValue(name, out var input))
+				{
+				TextReader reader;
+				try { reader = OpenText(name); }
+				catch (Exception) { return AwkVal.Num(-1); }   // gawk: -1, no message
+				input = (reader, ReadLines(reader).GetEnumerator());
+				_inputs[name] = input;
+				}
+			string line;
+			try
+				{
+				if (!input.Lines.MoveNext()) return AwkVal.Zero;
+				line = input.Lines.Current;
+				}
+			catch (IOException) { return AwkVal.Num(-1); }
+			catch (UnauthorizedAccessException) { return AwkVal.Num(-1); }
+			if (g.Target is null) SetRecord(line);
+			else Store(g.Target, AwkVal.StrNum(line));
+			return AwkVal.One;
+			}
+
+		private TextWriter OutputFor(APrint p)
+			{
+			if (p.Target is null) return Console.Out;
+			var name = S(Eval(p.Target));
+			if (_outputs.TryGetValue(name, out var w)) return w;
+			if (name == "-") return Console.Out;   // gawk 5.1: `print > "-"` is standard output
+			switch (ShellFile.Device(name))
+				{
+				case "fd:1": return Console.Out;
+				case "fd:2": return Console.Error;
+				case "null" or "zero" or "random": w = TextWriter.Null; break;   // as the shell's own `> /dev/zero` discards
+				default:
+					try
+						{
+						var dev = ShellFile.DeviceFd(name);
+						Stream s;
+						if (dev >= 3)
+							s = ShellEnvironment.Active?.FdStream?.Invoke(dev) is { CanWrite: true } fs ? fs : throw new IOException("Bad file descriptor");
+						else if (dev == 0) throw new IOException("Bad file descriptor");
+						else
+							{
+							var path = ShellEnvironment.TranslatePath(name);
+							s = p.Append ? ShellFile.Append(path) : ShellFile.Create(path);
+							}
+						w = new StreamWriter(s, ShellEncoding.Utf8, 65536, leaveOpen: dev >= 3);
+						}
+					catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+						{
+						throw new AwkFatalException(p.Line, $"cannot redirect to `{name}': {IoError(ex)}");
+						}
+					break;
+				}
+			_outputs[name] = w;
+			return w;
+			}
+
+		/// <summary>close(name): 0 when an output or input of that name was open (and is now closed), else -1.</summary>
+		private int Close(string name)
+			{
+			int rc = -1;
+			if (_outputs.Remove(name, out var w)) { try { w.Dispose(); } catch { } rc = 0; }
+			if (_inputs.Remove(name, out var input))
+				{
+				input.Lines.Dispose();
+				if (!ReferenceEquals(input.Reader, Console.In)) input.Reader.Dispose();
+				rc = 0;
+				}
+			return rc;
+			}
+
+		private void CloseAll()
+			{
+			foreach (var name in _outputs.Keys.ToList()) Close(name);
+			foreach (var name in _inputs.Keys.ToList()) Close(name);
 			}
 
 		private static double Div(double a, double b)
@@ -1173,7 +1531,7 @@ public sealed partial class Builtins
 				case "length":
 					{
 					if (a.Count == 0) return AwkVal.Num(_record.Length);
-					if (a[0] is AVar av && _arrays.TryGetValue(av.Name, out var arr)) return AwkVal.Num(arr.Count);
+					if (a[0] is AVar av && TryArray(av.Name, out var arr)) return AwkVal.Num(arr.Count);
 					return AwkVal.Num(S(Eval(a[0])).Length);
 					}
 				case "substr":
@@ -1234,13 +1592,55 @@ public sealed partial class Builtins
 					}
 				case "match":
 					{
-					if (a.Count < 2) throw new AwkSyntaxException("match needs (string, regex)");
-					if (a.Count > 2) throw new AwkUnsupportedException("match() with an array argument");
+					if (a.Count is < 2 or > 3) throw new AwkSyntaxException("match needs (string, regex[, array])");
+					if (a.Count == 3 && a[2] is not AVar) throw new AwkSyntaxException("match: third argument is not an array");
 					var s = S(Eval(a[0]));
-					var m = RegexOf(a[1]).Match(s);
+					var m = (a.Count == 3 ? CapturingRegexOf(a[1]) : RegexOf(a[1])).Match(s);
 					_vars["RSTART"] = AwkVal.Num(m.Success ? m.Index + 1 : 0);
 					_vars["RLENGTH"] = AwkVal.Num(m.Success ? m.Length : -1);
+					if (a.Count == 3)
+						{
+						// gawk: cleared even on no match; arr[n] (input-like text, so strnum), arr[n,"start"],
+						// arr[n,"length"] for the whole match (0) and every group that took part
+						var arr = GetArray(((AVar)a[2]).Name);
+						arr.Clear();
+						if (m.Success)
+							{
+							var sep = S(_vars["SUBSEP"]);
+							for (int gi = 0; gi < m.Groups.Count; gi++)
+								{
+								var grp = m.Groups[gi];
+								if (!grp.Success) continue;
+								var k = gi.ToString(CultureInfo.InvariantCulture);
+								arr[k] = AwkVal.StrNum(grp.Value);
+								arr[k + sep + "start"] = AwkVal.Num(grp.Index + 1);
+								arr[k + sep + "length"] = AwkVal.Num(grp.Length);
+								}
+							}
+						}
 					return AwkVal.Num(m.Success ? m.Index + 1 : 0);
+					}
+				case "close":
+					{
+					if (a.Count != 1) throw new AwkSyntaxException("close needs (name)");
+					return AwkVal.Num(Close(S(Eval(a[0]))));
+					}
+				case "fflush":
+					{
+					if (a.Count > 1) throw new AwkSyntaxException("fflush needs ([name])");
+					if (a.Count == 0)
+						{
+						// gawk 4.0.2 on: every open output, and standard output
+						Console.Out.Flush();
+						foreach (var w in _outputs.Values) w.Flush();
+						return AwkVal.Zero;
+						}
+					var name = S(Eval(a[0]));
+					if (_outputs.TryGetValue(name, out var ow)) { ow.Flush(); return AwkVal.Zero; }
+					if (name is "/dev/stdout" or "-") { Console.Out.Flush(); return AwkVal.Zero; }
+					if (name == "/dev/stderr") { Console.Error.Flush(); return AwkVal.Zero; }
+					Console.Error.WriteLine($"awk: {Source}:{c.Line}: warning: fflush: `{name}' is not an open file, pipe or co-process");
+					return AwkVal.Num(-1);
 					}
 				case "tolower": return AwkVal.Str(S(Eval(a[0])).ToLowerInvariant());
 				case "toupper": return AwkVal.Str(S(Eval(a[0])).ToUpperInvariant());
@@ -1273,11 +1673,21 @@ public sealed partial class Builtins
 			{
 			switch (s)
 				{
-				case ABlock b: foreach (var st in b.Body) Exec(st); break;
+				case ABlock b:
+					foreach (var st in b.Body)
+						{
+						Exec(st);
+						if (_returning) break;
+						}
+					break;
 				case AExprStmt es: Eval(es.E); break;
+				case AReturn r:
+					_returnValue = r.Value is null ? AwkVal.Uninit : Eval(r.Value);
+					_returning = true;
+					break;
 				case APrint p:
 					{
-					var sink = p.Dest == 2 ? Console.Error : Console.Out;
+					var sink = OutputFor(p);
 					if (p.Formatted)
 						{
 						var vals = p.Args.Select(Eval).ToList();
@@ -1290,7 +1700,7 @@ public sealed partial class Builtins
 						var text = p.Args.Count == 0 ? _record : string.Join(S(_vars["OFS"]), p.Args.Select(e => Out(Eval(e))));
 						sink.Write(text + S(_vars["ORS"]));
 						}
-					if (p.Dest == 2) sink.Flush();
+					if (ReferenceEquals(sink, Console.Error)) sink.Flush();
 					break;
 					}
 				case AIf i: if (Eval(i.C).Truth) Exec(i.Then); else if (i.Else is not null) Exec(i.Else); break;
@@ -1300,6 +1710,7 @@ public sealed partial class Builtins
 						try { Exec(w.Body); }
 						catch (AwkBreakException) { break; }
 						catch (AwkContinueException) { }
+						if (_returning) break;
 						}
 					break;
 				case ADoWhile dw:
@@ -1308,6 +1719,7 @@ public sealed partial class Builtins
 						try { Exec(dw.Body); }
 						catch (AwkBreakException) { break; }
 						catch (AwkContinueException) { }
+						if (_returning) break;
 						}
 					while (Eval(dw.C).Truth);
 					break;
@@ -1318,6 +1730,7 @@ public sealed partial class Builtins
 						try { Exec(f.Body); }
 						catch (AwkBreakException) { break; }
 						catch (AwkContinueException) { }
+						if (_returning) break;
 						if (f.Step is not null) Exec(f.Step);
 						}
 					break;
@@ -1330,6 +1743,7 @@ public sealed partial class Builtins
 						try { Exec(fi.Body); }
 						catch (AwkBreakException) { break; }
 						catch (AwkContinueException) { }
+						if (_returning) break;
 						}
 					break;
 					}
@@ -1354,6 +1768,7 @@ public sealed partial class Builtins
 		public int Run(string program, List<string> operands)
 			{
 			var prog = new AwkParser(AwkLex(program)).ParseProgram();
+			_funcs = prog.Funcs;
 			var rangeActive = new bool[prog.Rules.Count];
 			try
 				{
@@ -1367,7 +1782,9 @@ public sealed partial class Builtins
 					bool anyFile = false;
 					foreach (var op in inputs)
 						{
-						if (op != "-" && !op.StartsWith('/') && !op.Contains('\\') && Regex.IsMatch(op, @"^[A-Za-z_][A-Za-z0-9_]*=") && AssignOperand(op)) continue;
+						// an identifier then `=` is an assignment whatever the value holds (`v='\303\251'`,
+						// `out=C:\x`); a backslash in the value used to make it a file name
+						if (op != "-" && !op.StartsWith('/') && Regex.IsMatch(op, @"^[A-Za-z_][A-Za-z0-9_]*=") && AssignOperand(op)) continue;
 						anyFile = true;
 						_vars["FILENAME"] = AwkVal.Str(op == "-" ? "" : op);
 						_fnr = 0;
@@ -1400,7 +1817,11 @@ public sealed partial class Builtins
 				try { foreach (var b in prog.End) Exec(b); }
 				catch (AwkExitException) { }
 				}
-			finally { try { Console.Out.Flush(); } catch { } }
+			finally
+				{
+				try { CloseAll(); } catch { }   // every `print > file` flushed and closed, as gawk does at exit
+				try { Console.Out.Flush(); } catch { }
+				}
 			return _exitCode;
 			}
 

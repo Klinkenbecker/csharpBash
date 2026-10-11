@@ -13,8 +13,10 @@
 #     Bash: that made Git Bash the launcher, which added ~30 ms to every NATIVE launch (C#Bash, WSL)
 #     but not to Git Bash launching itself (fixed 2026-10-06);
 #   * each row runs the SAME script in each shell: C#Bash best of 9, Git Bash and WSL best of 3;
-#   * startup is the total of 100 consecutive `-c 'exit 0'` launches divided by 100, for all three
-#     shells (a minimum of single launches on a 1 ms clock invented a "+1 ms" on 2026-10-06);
+#   * startup is the MEDIAN of 5 samples, each the total of 100 consecutive `-c 'exit 0'` launches
+#     divided by 100, for all three shells (a minimum of single launches on a 1 ms clock invented a
+#     "+1 ms" on 2026-10-06; ONE such sample moves by ~1.5 ms between runs and invented a "+1.2 ms
+#     regression" on 2026-10-10, so the architect ratified the median of 5 that day);
 #   * the outputs are compared, so a fast wrong answer cannot look like a win;
 #   * every run prints its build stamp, date and method and appends its table to results.md here.
 # The only option is --cs, which times an undeployed build instead of dist/Bash.exe. Changing the
@@ -43,7 +45,8 @@ root="$(cd "$here/../.." && pwd)"
 
 CS_ROUNDS=9          # C#Bash: best of 9
 OTHER_ROUNDS=3       # Git Bash, WSL: best of 3
-STARTUP_N=100        # startup: total of 100 launches / 100
+STARTUP_N=100        # startup: total of 100 launches / 100 is one sample ...
+STARTUP_SAMPLES=5    # ... and the row is the median of 5 samples (2026-10-10)
 
 usage() { echo "usage: tests/bench/compare3.sh [--cs <exe>]   (the method is fixed; see the header)" >&2; exit 2; }
 
@@ -106,15 +109,19 @@ best() {
 
 ratio() { awk -v a="$1" -v b="$2" 'BEGIN{ if (a ~ /^[0-9.]+$/ && b ~ /^[0-9.]+$/ && b+0 > 0) printf "%.1fx", a/b; else printf "-" }'; }
 
-# per-launch startup of one shell: the total of STARTUP_N launches / STARTUP_N. Gated on a control
-# that the shell really ran a command (exit 7 comes back as 7), so a failing launch cannot time fast.
+# per-launch startup of one shell: the median of STARTUP_SAMPLES samples, each the total of STARTUP_N
+# launches / STARTUP_N. Gated on a control that the shell really ran a command (exit 7 comes back as
+# 7), so a failing launch cannot time fast.
 startup() {
-  local out
+  local out k samples=""
   "$@" -c 'exit 7' >/dev/null 2>&1
   [ $? -eq 7 ] || { printf 'FAIL'; return; }
-  out=$("$TIMER" "$STARTUP_N" "$@" -c 'exit 0') || { printf 'FAIL'; return; }
-  set -- $out
-  awk -v t="$2" -v n="$3" 'BEGIN{printf "%.4f", t/n}'
+  for ((k = 0; k < STARTUP_SAMPLES; k++)); do
+    out=$("$TIMER" "$STARTUP_N" "$@" -c 'exit 0') || { printf 'FAIL'; return; }
+    # fields: <n> <total seconds> <launches>; "$@" is the shell, so no `set --` here
+    samples+=$(awk '{printf "%.6f\n", $2/$3}' <<< "$out")$'\n'
+  done
+  printf '%s' "$samples" | sort -n | awk '{v[NR]=$1} END{printf "%.4f", v[int((NR+1)/2)]}'
 }
 
 report() {
@@ -126,7 +133,7 @@ report() {
   echo "WSL bash : ${wsl:-<none — skipped>}"
   [ -n "$wsl" ] && "${wslcmd[@]}" -c 'echo "           bash $BASH_VERSION on $(uname -sr)"' 2>/dev/null
   echo "method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)"
-  echo "           rows = best of $CS_ROUNDS (C#Bash) / best of $OTHER_ROUNDS (Git Bash, WSL); startup = total of $STARTUP_N launches / $STARTUP_N"
+  echo "           rows = best of $CS_ROUNDS (C#Bash) / best of $OTHER_ROUNDS (Git Bash, WSL); startup = median of $STARTUP_SAMPLES samples, each total of $STARTUP_N launches / $STARTUP_N"
   echo
 
   printf '%-11s %10s %10s %10s   %8s %8s\n' benchmark 'C#Bash' 'Git Bash' 'WSL' 'vs Git' 'vs WSL'
@@ -154,7 +161,7 @@ report() {
     "$( [ -n "$g" ] && ratio "$g" "$c" || echo - )" \
     "$( [ -n "$w" ] && ratio "$w" "$c" || echo - )"
   echo "  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost."
-  echo "  startup = bash -c 'exit 0', total of $STARTUP_N consecutive launches / $STARTUP_N."
+  echo "  startup = bash -c 'exit 0', median of $STARTUP_SAMPLES samples, each the total of $STARTUP_N consecutive launches / $STARTUP_N."
 
   # ── the outputs must agree, or a time means nothing ──────────────────────────
   echo

@@ -48,6 +48,13 @@ public sealed class ExitException(int code) : Exception
 	public bool ErrexitInForce { get; init; }
 	}
 
+/// <summary>A `$( )` body that does not parse, met while running: bash abandons the top-level command
+/// it is in (status 1), from inside functions and loops too, and goes on with the next one. A subshell,
+/// a pipeline stage, an enclosing `$( )` or `&lt;( )` ends there instead, as their own processes would
+/// in bash. Caught by RunString's loop (a script, `-c`, `source`, `eval`) and by those boundaries
+/// (DECISIONS 2026-10-11, item 6 phase 3).</summary>
+public sealed class CommandAbortException() : Exception("command abandoned");
+
 /// <summary>Thrown when execution is interrupted by SIGINT (Ctrl+C). Exit code 130.</summary>
 public sealed class InterruptException() : Exception("Interrupted");
 

@@ -136,6 +136,7 @@ public sealed class ShellEnvironment
 		LastBackgroundPid = src.LastBackgroundPid;
 		CurrentLine = src.CurrentLine;
 		AutoExport = src.AutoExport;
+		Umask = src.Umask;
 		Cwd = src.Cwd;              // a stage starts where the pipeline does ...
 		OwnsProcessCwd = false;     // ... and never moves the process cwd
 		_baseCwd = src.OwnsProcessCwd ? src.Cwd : src._baseCwd;
@@ -174,6 +175,34 @@ public sealed class ShellEnvironment
 	/// <summary>For a shell that does not own the process cwd: the process cwd it started from.
 	/// Until it moves away from it, the process cwd resolves its relative paths exactly as before.</summary>
 	private string _baseCwd = "";
+
+	/// <summary>
+	/// A Windows program's argument, with an MSYS-form path at its START converted to Windows form, as
+	/// Git Bash does: `/c/x` → `C:/x` (a drive that exists, so `/a/b` with no A: stays), `/tmp/x` → the
+	/// temp directory. Never a bare `/c` (`cmd /c`), never inside an argument (`--file=/c/x`), and the
+	/// rest of the argument is left as typed (no backslash rewriting). `//host/share/x` is already
+	/// Windows form; `~` the shell expands before. <paramref name="excluded"/>: Git Bash's
+	/// MSYS2_ARG_CONV_EXCL prefixes. Until 2026-10-10 every argument reached the program verbatim, so
+	/// `git -C /f/repo` failed while the shell's own `cd /f/repo` worked (the architect: "your
+	/// recommendation is good").
+	/// </summary>
+	public static string NativeArgument(string arg, string[]? excluded = null)
+		{
+		if (arg.Length < 3 || arg[0] != '/') return arg;
+		if (excluded is not null) foreach (var p in excluded) if (p.Length > 0 && arg.StartsWith(p, StringComparison.Ordinal)) return arg;
+		if (char.IsAsciiLetter(arg[1]) && arg[2] == '/')
+			{
+			char d = char.ToUpperInvariant(arg[1]);
+			if (!Array.Exists(Environment.GetLogicalDrives(), r => r.Length > 0 && char.ToUpperInvariant(r[0]) == d)) return arg;
+			return d + ":/" + arg[3..];
+			}
+		if (arg == "/tmp" || arg.StartsWith("/tmp/"))
+			{
+			var temp = ToShellPath(Path.TrimEndingDirectorySeparator(Path.GetTempPath()));
+			return arg.Length == 4 ? temp : temp + arg[4..];
+			}
+		return arg;
+		}
 
 	private static string TranslateForm(string path)
 		{
@@ -241,6 +270,10 @@ public sealed class ShellEnvironment
 	/// runs, and `cd sub | true` moved the shell (DECISIONS 2026-10-03).
 	/// </summary>
 	public string Cwd { get; private set; } = "";
+
+	/// <summary>The `umask` builtin's file-creation mask, as permission bits (default 0022). Stored and
+	/// printed only: Windows files have no mode bits for it to clear (DECISIONS 2026-10-10, umask).</summary>
+	public int Umask { get; set; } = 0b000_010_010;
 
 	/// <summary>True for a shell whose cwd IS the process cwd; false for a pipeline stage's copy.</summary>
 	public bool OwnsProcessCwd { get; private set; }
@@ -650,6 +683,7 @@ public sealed class ShellEnvironment
 		internal string[][] Positionals = [];
 		internal string Arg0 = "";
 		internal string Cwd = "";
+		internal int Umask;
 		}
 
 	/// <summary>Deep-copy the variable state (for `( )` / `$( )` isolation).</summary>
@@ -666,6 +700,7 @@ public sealed class ShellEnvironment
 			Positionals = _positionals.ToArray(),
 			Arg0      = _arg0,
 			Cwd       = this.Cwd,
+			Umask     = this.Umask,
 			};
 		return s;
 		}
@@ -681,6 +716,7 @@ public sealed class ShellEnvironment
 		_positionals.Clear();
 		foreach (var p in s.Positionals.Reverse()) _positionals.Push(p);
 		_arg0 = s.Arg0;
+		Umask = s.Umask;        // `( umask 077 )` leaves the parent's mask alone
 		Cwd = s.Cwd;            // `( cd x )` / `$( cd x )` end where they started
 		ReassertProcessCwd();   // the process cwd too, for the shell that owns it
 		}

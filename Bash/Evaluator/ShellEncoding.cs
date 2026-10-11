@@ -48,6 +48,17 @@ public sealed class ShellEncoding : Encoding
 	private static bool IsLoneByte(ReadOnlySpan<char> s, int i) =>
 		IsByteChar(s[i]) && (i == 0 || !char.IsHighSurrogate(s[i - 1]));
 
+	/// <summary>
+	/// The string with every run of carried bytes that spells a valid UTF-8 character turned into that
+	/// character, as bash in a UTF-8 locale sees it: `$'\xc3\xa9'`, `$(printf '\xc3\xa9')` and
+	/// `$'\xc3'$'\xa9'` ARE `é` (length 1, equal to a literal é, a file named with it). Until 2026-10-10
+	/// they stayed two carried bytes: `${#x}` was 2, `[[ $x == é ]]` and `case` failed, and Windows got
+	/// a file name with two invalid characters. Bytes that spell nothing stay carried, so output is
+	/// byte for byte as before. Strings with no carried byte are returned as they are (a vectorised scan).
+	/// </summary>
+	public static string Canonical(string s) =>
+		s.AsSpan().IndexOfAnyInRange('\uDC80', '\uDCFF') < 0 ? s : Utf8.GetString(Utf8.GetBytes(s));
+
 	/// <summary>Render a string for a device that cannot show lone surrogates (a console).</summary>
 	public static string ForConsole(string s)
 		{

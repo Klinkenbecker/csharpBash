@@ -35,7 +35,7 @@
 | `Evaluator/Builtins.Find.cs` | `find` (expression tree, `-exec ;`/`+`, `-printf`, `-delete`…), `diff` (normal/unified/recursive, GNU hunk order), `xargs` (`-0 -n -I -L -P -d -a -r -t`, exit codes 123/124/126/127). |
 | `Evaluator/Builtins.Search.cs` | `BreToNet`/`EreToNet`/`AppendBracket` (POSIX classes, `\<`/`\>`), `MakeRegex`; `grep` (all major flags) and `sed` (compiler + runtime: addresses, ranges, `{ }`, hold space, `s` flags, `-i[SUF]`, `-s`, `-z`). |
 | `Evaluator/Builtins.Sys.cs` | `date` (full `strftime`, `-d/-r/-u/-I/-R/-f`), `uname` (MSYS-style), `hostname`, `arch`, `nproc`, `tty`, `whoami`, `id`, `printenv`, `timeout` (worker thread + `RunAsJob` so an external child can be killed on expiry), `df` (Windows volumes via `GetLogicalDrives`/`GetVolumePathNameW`/`GetVolumeInformationW`/`GetDiskFreeSpaceExW`/`WNetGetConnectionW`; gnulib's `human_readable`, `humblock` and df's `get_header` ported as `GnuHuman`, `DfBlockSpec`, `DfBlockHeader`). |
-| `Evaluator/Builtins.Awk.cs` | The in-process `awk` subset (DECISIONS 2026-09-04 #7): lexer (regex-vs-division by previous token), recursive-descent parser to a small AST, interpreter with awk value typing (num/str/strnum), fields/NF rebuild, `printf`, `sub`/`gsub`/`split`/`match`…; unsupported constructs → `UnsupportedOptionException("awk","unsupported",…)`. |
+| `Evaluator/Builtins.Awk.cs` | The in-process `awk` subset (DECISIONS 2026-09-04 #7): lexer (regex-vs-division by previous token), recursive-descent parser to a small AST, interpreter with awk value typing (num/str/strnum), fields/NF rebuild, `printf`, `sub`/`gsub`/`split`/`match`…; user functions (`AwkCell` frames, `return` flag, `EnsureSufficientExecutionStack` guard), output files and `getline < file` tables, `close`/`fflush`, 3-argument `match`, `--version`; unsupported constructs → `UnsupportedOptionException("awk","unsupported",…)`; gawk's fatal errors → `AwkFatalException` (exit 2). |
 | `Evaluator/GnuDate.cs` | `GnuDate.TryParse`: GNU `-d` grammar subset (ISO/RFC/`Mon D YYYY`/`@epoch`/times/zones/relative items/weekdays), shared by `date -d` and `touch -d`. |
 | `Evaluator/Builtins.Proc.cs` | Minimal procps: `pgrep`/`pkill` (`-f -x -l -a -c -n -o -v -P -d`, signals accepted and forceful; self excluded, `pkill` also skips loudly this shell's ancestors and any process whose command line carries the pkill invocation itself) and `ps` (`-e/-ef/aux`, `-p`, `-o pid,ppid,comm,args`). Process list via Toolhelp32, command lines via `NtQueryInformationProcess(ProcessCommandLineInformation)`. |
 | `Evaluator/Printf.cs` | `PrintfFormatter`: bash `printf` semantics (flags/width/precision, `%q` `%b`, escapes, argument recycling); also used by `echo -e`. |
@@ -49,7 +49,8 @@
 | `Evaluator/ShellEncoding.cs` | The shell's single encoding: UTF-8 with surrogateescape (an undecodable byte ↔ the lone surrogate U+DC00+byte), so bytes that are not text survive variables, `$( )`, pipes and files. `ByteChar` is what the `\xNN`/`\NNN` escape handlers emit; `ReadAllText`/`ReadAllLines` replace the `File.*` equivalents, which silently ignore their encoding argument on a file that starts with a BOM. Encode and decode are both overridden because an `EncoderFallback` cannot emit raw bytes. **Lines are LF-only everywhere** (a CR is data, as in GNU): `LfReader` is the shell's text reader -- over a raw stream it decodes with ONE read per fill (a `StreamReader` asked for a block keeps reading until full, which stalled pipeline stages), and its `ReadLine` is a vectorised LF scan. Its decoder is `CarryDecoder`, which carries a character cut by a block's end into the next block (Encoding's default decoder is stateless, so a character across byte 4096 became two raw bytes). Every stdin the shell installs is an `LfReader` (pipeline stages, `< file`, `<&n`, a redirected process stdin), so all readers of a stdin share one buffer and none reads past another; tools open their files through one too. `ShellEncoding.ReadLine`/`Lines`/`LineReaderFor` are the entry points; never call `TextReader.ReadLine`, which also ends a line at a lone CR. |
 | `Evaluator/ShellOptions.cs` | `set` flags (`-e/-u/-x/-n/-f/-v/-C/-a/-o …`), the `shopt` set, invocation facts, `$-`. |
 | `Evaluator/BackgroundJob.cs` | Background-job record; `Finished` wakes `wait -n`. |
-| `Evaluator/EvalException.cs` | Runtime exception hierarchy (Exit/Return/Break/Continue/Interrupt/Eval). |
+| `Evaluator/EvalException.cs` | Runtime exception hierarchy (Exit/Return/Break/Continue/Interrupt/Eval/CommandAbort). |
+| `Evaluator/NotAvailable.cs` | `NotAvailable`: "not currently available in C#Bash" plus a prefilled-GitHub-issue link (feature and build only; restricted mode refused, POSIX mode goes on); `BuildInfo.Stamp`, the one reader of the build stamp. |
 | `IO/LineEditor.cs` | Interactive key-by-key line editor. |
 | `IO/History.cs` | Command history (`~/.bash_history`). |
 | `IO/CompletionEngine.cs` | Tab completion. |
@@ -81,7 +82,8 @@ constructor.
 
 | Method | Responsibility | Architecture concept |
 |--------|----------------|----------------------|
-| `Tokenize()` | Drive the scan, produce `List<Token>`. | §4 token stream |
+| `Tokenize(deferErrors)` | Drive the scan, produce `List<Token>`; with `deferErrors` a lexing error ends the list (an Eof) and waits in `DeferredError`. | §4 token stream |
+| `Step(tokens)` / `Done` | On-demand lexing: one more step into the list a parser reads (`new Parser(lexer, src)`), so text after a top-level `exit` is never lexed. | §6 one command at a time |
 | `NextToken(int)` | Emit the next token; sets `HasLeadingSpace`. | §4 word-boundary signal |
 | `ConsumeDollar()` | Read `$var` / `${…}` (entire body, balancing braces/quotes) / `$(…)` / `$((…))`. | §4 `${…}` consumed whole |
 | `ConsumeOperator(int)` | `\|`, `&&`, `\|\|`, `;`, redirections, `&`; bounds-safe `Peek`. | §5 operators |
@@ -98,7 +100,8 @@ Raises `LexException(Incomplete)` at EOF mid-construct.
 
 | Method | Builds |
 |--------|--------|
-| `Parse()` → `ParseList()` | `Script` / `List` (continues through `;`, stops at `IsListTerminator`). |
+| `Parse()` → `ParseNext()` → `ParseList(topLevel)` | `Script` / `List` (continues through `;`, stops at `IsListTerminator`). `ParseNext` returns ONE top-level command (a line: a top-level list ends at a newline; only `&&`/`\|\|` go on), for `RunString`'s parse-one-run-one loop; `Fill` lexes on demand. |
+| `DeferredSubstitution` | A `$( )` / backquote body that does not parse: a `CommandSubstitutionPart` holding a `SubstitutionSyntaxError` node, met when it runs. |
 | `ParsePipeline()` | `Pipeline` (and negation `!`). |
 | `ParseCommand()` → `ParseCompoundCommandBody()` | dispatch to simple vs compound. |
 | `ParseSimpleCommand()` | `SimpleCommand`; detects assignments, `arr=(…)` (`IsArrayCompoundAssign`), `arr[i]=v` (`IsArrayElementAssign`). |
@@ -134,7 +137,7 @@ looping.
 | Method | Role |
 |--------|------|
 | `Execute(Node)` | The type-switch over `Node` subtypes ([ARCHITECTURE §6](ARCHITECTURE.md#6-evaluation-model)). |
-| `RunString` / `SourceFile` / `ExecScript` | Parse-and-run a string / file / `Script`. |
+| `RunString` / `SourceFile` / `ExecScript` | Parse-and-run a string / file / `Script`; `RunString` parses one top-level command, runs it, parses the next, and catches `CommandAbortException` (a bad `$( )`: status 1, next command). |
 | `RunStatement(Node)` | Per-statement `EvalException` isolation → `bash: …`, `$?`, continue. |
 
 **Pipelines & I/O** ([ARCHITECTURE §9](ARCHITECTURE.md#9-execution--io-model))

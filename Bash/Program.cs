@@ -27,9 +27,7 @@ const string BashVersionLong = "bash, version 5.1.0-koliada(1)-release (x86_64-p
 // time (+ = uncommitted tree). Printed by --version and exposed to scripts as CSHARPBASH_BUILD
 // (the whole string) and CSHARPBASH_REV (the integer revision, comparable with (( ))), so a
 // check can bind to a VALUE rather than to an output line position (web-d6, 2026-09-08).
-static string BuildStamp() => System.Reflection.Assembly.GetEntryAssembly()
-	?.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-	.OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "unknown";
+static string BuildStamp() => BuildInfo.Stamp;
 static int BuildRev()
 	{
 	var last = BuildStamp().Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
@@ -46,6 +44,12 @@ var pendingSetFlags = new List<(char flag, bool enable)>();
 var pendingLongOpts = new List<(string name, bool enable)>();
 var pendingShopts   = new List<(string name, bool enable)>();
 
+// Restricted mode (`-r`, `--restricted`, started as `rbash`) is not implemented, and running
+// unrestricted would remove the protection the caller asked for, so the shell refuses to start
+// (DECISIONS 2026-10-11). Until then `-r` and `--restricted` were accepted and silently ignored.
+if (string.Equals(Path.GetFileNameWithoutExtension(Environment.ProcessPath), "rbash", StringComparison.OrdinalIgnoreCase))
+	return RefuseRestricted("started as rbash");
+
 int ai = 0;
 for (; ai < args.Length; ai++)
 	{
@@ -61,7 +65,9 @@ for (; ai < args.Length; ai++)
 			case "--login":     login = true; break;
 			case "--norc":      norc = true; break;
 			case "--noprofile": noprofile = true; break;
-			case "--noediting": case "--posix": case "--restricted": case "--verbose": case "--debugger": break;
+			case "--noediting": case "--verbose": case "--debugger": break;
+			case "--posix": NotAvailable.PosixMode("bash: ", "--posix"); break;   // said nothing until 2026-10-11
+			case "--restricted": return RefuseRestricted("--restricted");
 			case "--rcfile": case "--init-file":
 				if (ai + 1 < args.Length) rcFile = args[++ai]; break;
 			case "--version":
@@ -96,7 +102,7 @@ for (; ai < args.Length; ai++)
 			case 'l': login = true; break;
 			case 'i': forceInteractive = true; break;
 			case 's': readStdin = true; break;
-			case 'r': break;                                        // restricted: not implemented
+			case 'r': if (enable) return RefuseRestricted("-r"); break;   // restricted: not implemented, refused
 			case 'D': break;
 			case 'o':
 				{
@@ -142,7 +148,10 @@ evaluator.Options.LoginShell    = login;
 foreach (var (f, en) in pendingSetFlags)
 	if (!evaluator.Options.Apply(f, en)) { Console.Error.WriteLine($"bash: -{f}: invalid option"); return 2; }
 foreach (var (n, en) in pendingLongOpts)
+	{
 	if (!evaluator.Options.ApplyLong(n, en)) { Console.Error.WriteLine($"bash: {n}: invalid option name"); return 2; }
+	if (en && n == "posix") NotAvailable.PosixMode("bash: ", "-o posix");
+	}
 foreach (var (n, en) in pendingShopts)
 	{
 	var errMsg = evaluator.Options.SetShopt(n, en);
@@ -156,6 +165,12 @@ evaluator.Env.Set("CSHARPBASH_BUILD", BuildStamp());          // "1.0.0+hg.<hash
 evaluator.Env.Set("CSHARPBASH_REV", BuildRev().ToString());   // integer, 0 if unstamped
 if (evaluator.Env.Get("PS1").Length == 0) evaluator.Env.Set("PS1", @"\s-\v\$ ");
 if (evaluator.Env.Get("PS2").Length == 0) evaluator.Env.Set("PS2", "> ");
+// Python writes a pipe or file in the ANSI codepage (cp1252) on Windows, so `py x.py | cat` printed
+// mojibake and crashed on a character cp1252 lacks (UnicodeEncodeError); on Linux it writes UTF-8, the
+// encoding this shell reads. UTF-8 for its pipes and files, unless the environment already says
+// otherwise; a console ignores it (Python 3.6+). NOT HGENCODING: measured 2026-10-10, it makes
+// `hg commit -m 'café'` abort on Windows (DECISIONS "UTF-8 for external programs").
+if (!evaluator.Env.IsSet("PYTHONIOENCODING")) { evaluator.Env.Set("PYTHONIOENCODING", "utf-8"); evaluator.Env.Export("PYTHONIOENCODING"); }
 
 // ── -c "command" : run a single command string, non-interactive ──────────────────
 // bash -c 'cmd' [name [arg ...]] : name becomes $0, the rest $1.. .
@@ -289,6 +304,7 @@ while (true)
 	try { evaluator.Execute(ast); }
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }
 	catch (InterruptException) { Console.WriteLine(); evaluator.Env.LastExitCode = 130; }
+	catch (CommandAbortException) { evaluator.Env.LastExitCode = 1; }   // a bad `$( )`: this line is abandoned
 	catch (EvalException ex) { Console.Error.WriteLine($"bash: {ex.Message}"); }
 	// An interactive shell must survive any filesystem failure: report it and keep the prompt.
 	catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
@@ -301,6 +317,13 @@ return 0;
 // ── startup-file sourcing ────────────────────────────────────────────────────────
 
 // Login shell: /etc/profile, then the first of ~/.bash_profile, ~/.bash_login, ~/.profile.
+// Restricted mode is refused, with a link to ask for it (NotAvailable); status 2, as an invalid option.
+static int RefuseRestricted(string how)
+	{
+	foreach (var line in NotAvailable.Lines("bash: ", $"restricted mode ({how})")) Console.Error.WriteLine(line);
+	return 2;
+	}
+
 static void SourceLogin(Evaluator eval, bool noprofile)
 	{
 	if (noprofile) return;

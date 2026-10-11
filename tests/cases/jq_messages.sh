@@ -70,3 +70,14 @@ p 'parse ok then bad' "$BASH" -c "printf '1 2 x' | jq -c ."
 p 'error str nl' jq 'error("a\nb")' <<< null
 p 'big int'       jq -c '.' <<< '[12345678901234567890, 1.7976931348623157e308, 5e-324, 100000000000000000]'
 p 'div mod neg'   jq -c '[-7 % 2, 7 % -2, 5.9 % 2, (1 / 3)]' <<< null
+# 2026-10-11: short options after the filter or a file (jq takes them anywhere before --; they were read as
+# file names), and jq 1.6's words for a file it cannot open ("Could not open file nofile").
+echo '{"b":2}' > good.json
+p 'opt after filter'  jq . -c <<< '{"a":1}'
+p 'opt after file'    jq . good.json -c
+p 'opts mixed'        jq -c .b good.json -r
+p 'n after filter'    jq '1+1' -n
+p 'arg after filter'  jq -n '$x' --arg x v
+p 'dash-dash file'    jq -c . -- good.json
+p 'missing file'      jq . nofile
+p 'missing then good' jq -c . nofile good.json

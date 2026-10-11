@@ -1,0 +1,32 @@
+bash: restricted mode (-r) is not currently available in C#Bash
+bash: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20restricted%20mode%20%28-r%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+rc=2
+bash: restricted mode (--restricted) is not currently available in C#Bash
+bash: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20restricted%20mode%20%28--restricted%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+rc=2
+bash: restricted mode (-r) is not currently available in C#Bash
+bash: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20restricted%20mode%20%28-r%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+rc=2
+before
+t1: line 1: set: restricted mode (set -r) is not currently available in C#Bash
+t1: line 1: set: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20restricted%20mode%20%28set%20-r%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+rc=2
+t2: line 1: set: restricted mode (set -r) is not currently available in C#Bash
+t2: line 1: set: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20restricted%20mode%20%28set%20-r%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+parent goes on rc=2
+plus-r is harmless
+restricted_shell	off
+the command never reaches the link: 0
+bash: POSIX mode (--posix) is not currently available in C#Bash; going on in bash's default mode
+bash: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20POSIX%20mode%20%28--posix%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+posix-ran rc=0
+bash: POSIX mode (-o posix) is not currently available in C#Bash; going on in bash's default mode
+bash: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20POSIX%20mode%20%28-o%20posix%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+o-posix-ran
+t3: line 1: set: POSIX mode (set -o posix) is not currently available in C#Bash; going on in bash's default mode
+t3: line 1: set: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20POSIX%20mode%20%28set%20-o%20posix%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+set rc=0
+unset rc=0
+t3: line 1: shopt: POSIX mode (shopt -so posix) is not currently available in C#Bash; going on in bash's default mode
+t3: line 1: shopt: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20POSIX%20mode%20%28shopt%20-so%20posix%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+shopt rc=0

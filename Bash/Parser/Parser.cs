@@ -33,30 +33,71 @@ public sealed class Parser
 		_pos = 0;
 		}
 
+	/// <summary>A parser that has the lexer produce tokens as it asks for them (item 6, phase 2): with
+	/// <see cref="ParseNext"/>, text after a top-level `exit` is never even lexed (bash: an installer's
+	/// payload). A lexing error is the lexer's <c>DeferredError</c>, raised where it is reached.</summary>
+	public Parser(Lexer.Lexer lexer, string? source = null) : this(new List<Token>(), source)
+		{
+		_lexer = lexer;
+		}
+
+	private readonly Lexer.Lexer? _lexer;
+
+	/// <summary>Lex on demand until token <paramref name="i"/> exists or the lexer is done.</summary>
+	private void Fill(int i)
+		{
+		while (i >= _tokens.Count && _lexer is { Done: false }) _lexer.Step(_tokens);
+		}
+
 	// ── public entry point ────────────────────────────────────────────────────
 
 	public Script Parse()
 		{
 		var nodes = new List<Node>();
-		SkipNewlines();
-		while (!IsEof())
+		for (Node? node; (node = ParseNext()) is not null;) nodes.Add(node);
+		return new Script(nodes);
+		}
+
+	/// <summary>A lexing error the lexer held back (<c>Tokenize(deferErrors: true)</c>): raised when the
+	/// parser reaches the end of the tokens that came before it.</summary>
+	public Exception? DeferredError { get; init; }
+
+	/// <summary>True when only newlines are left before the end of the tokens (looked at without raising
+	/// a deferred error).</summary>
+	public bool AtEnd
+		{
+		get
 			{
+			int i = _pos;
+			Fill(i);
+			while (_tokens[i].Type == TokenType.Newline) Fill(++i);
+			return _tokens[i].Type == TokenType.Eof;
+			}
+		}
+
+	/// <summary>The next top-level command, or null at the end: bash reads, parses and runs one at a
+	/// time, so the commands before a syntax error run (DECISIONS 2026-10-11). Newlines are skipped
+	/// BEFORE a command, never after: looking past a finished command could reach an error that bash
+	/// would only meet after running it.</summary>
+	public Node? ParseNext()
+		{
+		while (true)
+			{
+			SkipNewlines();
+			if (IsEof()) return null;
 			// a word that only closes a construct (`fi`, `done`, `esac`, `then`, `do`, `else`, `elif`),
 			// with none open, is a syntax error (bash, status 2), not a command: it ran as one, status
 			// 127, until 2026-10-08, and `bash -n` passed it. Unquoted only: `'fi'` is an ordinary word.
 			if (Peek().Type == TokenType.Word && IsListTerminator())
 				throw Error($"syntax error near unexpected token '{Peek().Value}'");
 			int before = _pos;
-			var node = ParseList();
-			if (node is not null)
-				nodes.Add(node);
-			SkipNewlines();
+			var node = ParseList(topLevel: true);
 			// A token nothing could consume (a stray ')' or '}') must be an error, never
 			// a silent spin: without this the loop never advances.
-			if (_pos == before && !IsEof())
+			if (_pos == before)
 				throw Error($"syntax error near unexpected token '{Peek().Value}'");
+			if (node is not null) return node;
 			}
-		return new Script(nodes);
 		}
 
 	/// <summary>Lex and parse a string as a sequence of words (used by `declare -a x=(…)`
@@ -86,9 +127,36 @@ public sealed class Parser
 			for (int i = 0; i < _src.Length; i++) if (_src[i] == '\n') starts.Add(i + 1);
 			_lineStarts = [.. starts];
 			}
-		if (t.Line < 1 || t.Line > _lineStarts.Length) return -1;
-		int off = _lineStarts[t.Line - 1] + t.Column - 1;
+		int line = t.Line + LineShift;   // a substitution body's tokens count their lines from the body's first
+		if (line < 1 || line > _lineStarts.Length) return -1;
+		int off = _lineStarts[line - 1] + t.Column - 1;
 		return off <= _src.Length ? off : -1;
+		}
+
+	/// <summary>For a substitution body's parser: the lines its tokens were moved back by (Rebased), so
+	/// <see cref="OffsetOf"/> finds them in the file's text.</summary>
+	public int LineShift { get; init; }
+
+	/// <summary>A substitution whose body does not parse: the error waits for the substitution to run,
+	/// where bash meets it. It is the error of parsing <paramref name="shown"/> alone (lines from the
+	/// body's first), the text bash parses and quotes back.</summary>
+	private static CommandSubstitutionPart DeferredSubstitution(string shown, bool backquoted, Exception fallback)
+		{
+		Exception error = fallback;
+		// lexed on demand, as bash reads it: in `"a $(if then) b"` the text parsed is `if then) b"`, and
+		// `then` is met before the closing quote could end the text in a lexing error
+		try { new Parser(new Lexer.Lexer(shown), shown).Parse(); }
+		catch (Exception e) when (e is ParseException or Lexer.LexException) { error = e; }
+		return new CommandSubstitutionPart(new SubstitutionSyntaxError(error, shown, backquoted));
+		}
+
+	/// <summary>The file's text between two tokens of this parser (after <paramref name="from"/>'s
+	/// <paramref name="skip"/> characters, up to <paramref name="to"/>), or null when it cannot be found.</summary>
+	private string? TextBetween(Token from, int skip, Token? to)
+		{
+		if (_src is null || to is null) return null;
+		int s = OffsetOf(from), e = OffsetOf(to);
+		return s >= 0 && e >= s + skip ? _src[(s + skip)..e] : null;
 		}
 
 	/// <summary>Source text from <paramref name="from"/> up to (not including) the current token.</summary>
@@ -104,7 +172,10 @@ public sealed class Parser
 
 	// ── list ─────────────────────────────────────────────────────────────────
 
-	private Node? ParseList()
+	/// <param name="topLevel">A top-level command (bash's simple_list) ends at a newline, after `;` or `&`
+	/// too: the next line is the next command, run after this one. Inside a compound command a newline
+	/// separates the commands of one list. Only `&&` / `||` carry a top-level command over newlines.</param>
+	private Node? ParseList(bool topLevel = false)
 		{
 		var items = new List<(Node, ListOperator?)>();
 
@@ -116,7 +187,7 @@ public sealed class Parser
 		if (first is null)
 			return null;
 
-		ListOperator? op = TryConsumeListOp();
+		ListOperator? op = topLevel && Peek().Type == TokenType.Newline ? null : TryConsumeListOp();
 		items.Add((first, op));
 
 		while (op is not null)
@@ -124,13 +195,31 @@ public sealed class Parser
 			// after && or || a command must follow, newlines allowed (bash: `a &&` at the end is an
 			// unexpected end of file, it ran `a` until 2026-10-10); after ; & or a newline it may
 			bool required = op is ListOperator.And or ListOperator.Or;
+			if (topLevel && !required && Peek().Type is TokenType.Newline or TokenType.Eof) break;   // `a;` then a newline
 			SkipNewlines();
-			if (IsListTerminator()) { if (required) throw Error("a command must follow && or ||"); break; }
+			if (IsListTerminator())
+				{
+				if (required) throw Error("a command must follow && or ||");
+				// at the top level nothing is open for it to close, and bash rejects the whole line
+				// before running any of it (`echo a; fi` prints nothing)
+				if (topLevel) throw Error($"syntax error near unexpected token '{Peek().Value}'");
+				break;
+				}
 			var next = ParsePipeline();
-			if (next is null) { if (required) throw Error("a command must follow && or ||"); break; }
-			op = TryConsumeListOp();
+			if (next is null)
+				{
+				if (required) throw Error("a command must follow && or ||");
+				if (topLevel) throw Error($"syntax error near unexpected token '{Peek().Value}'");   // `echo a; )`
+				break;
+				}
+			op = topLevel && Peek().Type == TokenType.Newline ? null : TryConsumeListOp();
 			items.Add((next, op));
 			}
+
+		// at the top level the line must end here: any other token is an error found before anything on
+		// the line runs (`(echo a) fi`, `echo a )`), as bash parses the whole line first
+		if (topLevel && op is null && Peek().Type is not (TokenType.Newline or TokenType.Eof))
+			throw Error($"syntax error near unexpected token '{Peek().Value}'");
 
 		// bash: a command is followed by a list operator, a newline, or a token that closes the
 		// enclosing construct. `echo x (y) z` is "syntax error near unexpected token `('" — not
@@ -973,7 +1062,10 @@ public sealed class Parser
 			// out of the stream. A quoted delimiter suppresses expansion in the body.
 			var delim = ParseWord() ?? throw Error("Expected here-document delimiter");
 			bool quoted = delim.Parts.Any(p => p is SingleQuotedPart or DoubleQuotedPart or AnsiCQuotedPart);
-			int bodyIdx = _tokens.FindIndex(_pos, t => t.Type == TokenType.HeredocBody);
+			// the body comes after this line's newline: lexing on demand, read on until it is there
+			int bodyIdx;
+			while ((bodyIdx = _tokens.FindIndex(_pos, t => t.Type == TokenType.HeredocBody)) < 0 && _lexer is { Done: false })
+				_lexer.Step(_tokens);
 			string body = "";
 			if (bodyIdx >= 0) { body = _tokens[bodyIdx].Value; _tokens.RemoveAt(bodyIdx); }
 			Word target = quoted
@@ -1196,8 +1288,12 @@ public sealed class Parser
 					else
 						{
 						var inner = raw[(i + 1)..Math.Min(end - 1, raw.Length)];
-						var innerParser = new Parser(new Lexer.Lexer(inner).Tokenize(), inner);
-						parts.Add(new CommandSubstitutionPart(innerParser.Parse()));
+						try { parts.Add(new CommandSubstitutionPart(new Parser(new Lexer.Lexer(inner).Tokenize(), inner).Parse())); }
+						catch (Exception e) when (e is ParseException or Lexer.LexException)
+							{
+							// bash parses from the body to the end of the string when it runs (phase 3)
+							parts.Add(DeferredSubstitution(raw[(i + 1)..] + (heredoc ? "" : "\""), backquoted: false, e));
+							}
 						}
 					i = Math.Min(end, raw.Length);
 					}
@@ -1224,9 +1320,11 @@ public sealed class Parser
 				if (end < 0) end = raw.Length + 1;
 				var inner = raw[(i + 1)..Math.Min(end - 1, raw.Length)];
 				i = Math.Min(end, raw.Length);
-				var innerLex = new Lexer.Lexer(inner);
-				var innerParser = new Parser(innerLex.Tokenize(), inner);
-				parts.Add(new CommandSubstitutionPart(innerParser.Parse()));
+				try { parts.Add(new CommandSubstitutionPart(new Parser(new Lexer.Lexer(inner).Tokenize(), inner).Parse())); }
+				catch (Exception e) when (e is ParseException or Lexer.LexException)
+					{
+					parts.Add(DeferredSubstitution(inner, backquoted: true, e));   // run-time, in its own process (phase 3)
+					}
 				}
 			else
 				{
@@ -1349,7 +1447,8 @@ public sealed class Parser
 		{
 		// Collect tokens until the matching ). Every opener that the lexer emits as a
 		// distinct token counts: "(", "$(", and "$((" (two levels).
-		int rebase = _tokens[_pos - 1].Line - 1;   // the body counts its lines from the $( (Evaluator._lineBase)
+		var open = _tokens[_pos - 1];
+		int rebase = open.Line - 1;   // the body counts its lines from the $( (Evaluator._lineBase)
 		Token? closer = null;
 		var inner = new List<Token>();
 		int depth = 1;
@@ -1364,8 +1463,14 @@ public sealed class Parser
 		// unclosed: bash reports the line of the `$(` ("looking for matching `)'"), then the end of file
 		if (depth > 0) throw new ParseException("Unterminated command substitution", rebase + 1, 1) { Incomplete = true, Missing = ')' };
 		inner.Add(Token.Eof(0, 0));
-		var subParser = new Parser(inner, _src);
-		return new CommandSubstitutionPart(ParseBody(subParser, rebase, closer));
+		var subParser = new Parser(inner, _src) { LineShift = LineShift + rebase };
+		try { return new CommandSubstitutionPart(ParseBody(subParser, rebase, closer)); }
+		catch (ParseException e)
+			{
+			// bash parses the body (with its `)`) when it runs: the error comes then (phase 3)
+			var body = TextBetween(open, 2, closer) ?? string.Join(" ", inner.Where(t => t.Type != TokenType.Eof).Select(t => t.Value));
+			return DeferredSubstitution(body + ")", backquoted: false, e);
+			}
 		}
 
 	private ArithmeticExpansionPart ParseArithmeticExpansion()
@@ -1413,7 +1518,8 @@ public sealed class Parser
 	private CommandSubstitutionPart ParseBacktickSubstitution()
 		{
 		// Collect tokens until next backtick
-		int rebase = _tokens[_pos - 1].Line - 1;   // as for $( )
+		var open = _tokens[_pos - 1];
+		int rebase = open.Line - 1;   // as for $( )
 		Token? closer = null;
 		var inner = new List<Token>();
 		while (!IsEof() && Peek().Type != TokenType.Backtick)
@@ -1421,21 +1527,39 @@ public sealed class Parser
 		if (Peek().Type == TokenType.Backtick) closer = Advance();
 		else throw new ParseException("Unterminated backquote", rebase + 1, 1) { Incomplete = true, Missing = '`' };   // was accepted silently
 		inner.Add(Token.Eof(0, 0));
-		var subParser = new Parser(inner, _src);
-		return new CommandSubstitutionPart(ParseBody(subParser, rebase, closer));
+		var subParser = new Parser(inner, _src) { LineShift = LineShift + rebase };
+		try { return new CommandSubstitutionPart(ParseBody(subParser, rebase, closer)); }
+		catch (ParseException e)
+			{
+			// bash parses a backquote body in the substitution's own process, when it runs (phase 3)
+			var body = TextBetween(open, 1, closer) ?? string.Join(" ", inner.Where(t => t.Type != TokenType.Eof).Select(t => t.Value));
+			return DeferredSubstitution(body, backquoted: true, e);
+			}
 		}
 
 	// ── helpers ───────────────────────────────────────────────────────────────
 
-	private Token Peek() => _tokens[_pos];
+	private Token Peek()
+		{
+		Fill(_pos);
+		var t = _tokens[_pos];
+		// the text ends in a lexing error here
+		if (t.Type == TokenType.Eof && (_lexer?.DeferredError ?? DeferredError) is { } err) throw err;
+		return t;
+		}
 
 	private Token PeekAhead(int offset)
 		{
 		int idx = _pos + offset;
+		Fill(idx);
 		return idx < _tokens.Count ? _tokens[idx] : Token.Eof(0, 0);
 		}
 
-	private Token Advance() => _tokens[_pos++];
+	private Token Advance()
+		{
+		Fill(_pos);
+		return _tokens[_pos++];
+		}
 
 	private bool IsEof() => Peek().Type == TokenType.Eof;
 

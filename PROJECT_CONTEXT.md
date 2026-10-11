@@ -6,35 +6,65 @@
 > old text is in hg rev 140's `PROJECT_CONTEXT.md`; every resolved item in it has a DECISIONS entry.
 > Checked against the session transcripts of 2026-09-03 to 2026-10-07 on 2026-10-08.
 >
+> **NEXT SESSION, START HERE (updated 2026-10-10, the session after the third compaction):** the
+> architect's steer, "1, 2, 3 go": all three BUILT (awk rev 193, `umask`/`times`/`fc` rev 196,
+> `jq -R` rev 197; awk escape defects found on the way, revs 194-195). The architect: "did we loose
+> track of [one command at a time]? We should discuss after 1, 2, 3" and, mid-work, "are you
+> converging on outcomes?" (answer: stop collecting found-on-the-way fixes). 2026-10-11: item 6
+> DECIDED (match bash; see AWAITING 6); "go for both jq bugs": fixed, rev 198. Then DECIDED: a
+> missing feature prints a prefilled GitHub issue link, never an automatic post; `bash -r` /
+> `--restricted` refuse to start (they are silently ignored today) — GREENLIT, after the plan
+> (DECISIONS "a feature C#Bash lacks says so …"). The architect: "I don't think [of] everything;
+> that is explicitly, your job!" — push back unasked. Item 6 (ratified plan) BUILT revs 201-207; its
+> eval line numbers DECIDED "physical line" (the architect). Restricted mode BUILT rev 208 (`set -r`
+> ends the shell: Claude's call, stated). `--posix` a notice, rev 209. The architect: "fix --posix, then
+> deploy, notify and publish": rev 209 DEPLOYED and the six sessions told (2026-10-11); **IN FLIGHT:
+> the GitHub publish (benchmark, doc review, history files, git commit, push)**. After it, nothing
+> is greenlit: ask the architect (OPEN DEFECTS below; silently-ignored options `-t -k -T -P -p`).
+> Deploy only on "deploy and notify". The cold-resume briefing still comes first.
+>
 > **TRUE STATE (verified 2026-10-10):**
-> - hg: rev 179 (deployed), branch `default`. GitHub `main` = git `738ec92` = hg rev 140; a push is
->   in progress (the architect, 2026-10-10: "Let's also push at this time ... Push means another
->   benchmark and a doc review first").
-> - **DEPLOYED 2026-10-10: `dist/Bash.exe` is rev 179** (`--version`: `1.0.0+hg.e6a9a866b65a+ 179+`):
->   everything below, revs 158-179 (22 fixes). Suite 101/101 on that exact AOT binary, with a console
->   and `-Detached`; live-verified in a Claude Code Bash call: the notice's 19 examples matched GNU
->   bash (the shell's own path aside). Rev 179 was found BY that check: a syntax error at the end of a
->   text with no final newline was a line early; rev 178 was installed for minutes, never announced.
->   Rollbacks: `dist/Bash.exe.rev156` (the previous deploy), `.rev178`, `.rev150`, `.rev143`, back to `.rev80`.
+> - hg: branch `default`; the CODE is at rev 209 (revs 189-192 were anchor-only commits); working
+>   tree clean apart from the `.url` below. **GitHub `main` = git `694da54` = hg rev 182** (pushed 2026-10-10; the
+>   architect: "Let's also push at this time ... Push means another benchmark and a doc review
+>   first"). History files regenerated (183 changesets, bundle verified). Before: git `738ec92` = rev 140.
+>   `git status` lists files as modified: that is hg revs 183 on, not yet pushed, not stray work.
+> - **DEPLOYED 2026-10-11: `dist/Bash.exe` is rev 209** (`--version`: `1.0.0+hg.4fa037d780c8 209`,
+>   a clean tree): revs 180-209 (the architect: "fix --posix, then deploy, notify and publish"). Suite
+>   111/111 on that exact AOT binary, with a console and `-Detached`; battery 226/237 against 225;
+>   live-verified in a Claude Code Bash call (rev, awk functions, umask, jq -R, the lines before a
+>   syntax error run, -r refused, eval status 2, `git -C /f/...`). Rollbacks: `dist/Bash.exe.rev179`
+>   (the previous deploy), `.rev156`, `.rev178`, `.rev150`, `.rev143`, back to `.rev80`.
+>   Notice sent 2026-10-11 to daq-d1, adc-framework-d8, msp430-a2 (+ jq -Rs is in), nupkg-28 (+ awk
+>   getline < file), errorlogs-42, koliada-net-6a (+ `strings` deferred), leading with six behaviour
+>   changes (one line at a time; eval 2; MSYS path args; PYTHONIOENCODING; carried bytes are
+>   characters; -r refused / --posix notice). Delivered, unread at the time of writing.
+>   Previously DEPLOYED 2026-10-10: rev 179 (revs 158-179).
 > - Running sessions told: 2026-10-08 `df`; 2026-10-09 revs 146-150; 2026-10-10 revs 152-156 (to
 >   daq-d1, adc-framework-d8, msp430-a2, nupkg-28, koliada-net-f7); 2026-10-10 revs 158-179 to daq-d1,
 >   adc-framework-d8, msp430-a2, nupkg-28, errorlogs-42 and koliada-net-6a, leading with three
 >   behaviour changes (`while read` loops, the error prefix, the stricter parser). nupkg-28 confirmed
 >   its awk report fixed on rev 179; adc-framework-d8 re-tested clean (loops, stderr capture); neither
 >   had a workaround to drop. The architect, 2026-10-10: "koliada-net
->   is a new session" (koliada-net-6a; whether it needs koliada-net-f7's items is asked, not assumed).
+>   is a new session" (koliada-net-6a, koliada-net's successor; the architect: "why would they not?"):
+>   koliada-net-f7's items handed over 2026-10-10 (the `env` fix, deployed; `strings`, awaiting).
 > - Benchmark: `tests/bench/compare3.sh`, method frozen, every launch made and timed by
 >   `tools/benchtimer` (DECISIONS 2026-10-06, both entries). 2026-10-10, quiet machine, rev 179: startup
 >   C#Bash 0.0160 s / Git Bash 0.0157 / WSL 0.1098. A "+1.2 ms vs rev 156" from two single runs was
 >   NOISE: an interleaved diagnostic put rev 179 0.44 ms faster (DECISIONS "the +1.2 ms startup …
->   was the benchmark's own noise"). The startup row is one sample, +-1.5 ms between runs. Before:
+>   was the benchmark's own noise"). That run's startup row was one sample, +-1.5 ms between runs.
+>   **Since rev 184 the startup row is the median of 5 samples** (ratified by the architect;
+>   DECISIONS "METHOD CHANGE: the benchmark's startup row is the median of 5 samples"; logic checked
+>   with a fake timer, NOT yet run for real). The next push re-measures README with it. Before:
 >   rev 140, C#Bash 0.0152 s /
->   Git Bash 0.0162 / WSL 0.1036. The README table is that run.
+>   Git Bash 0.0162 / WSL 0.1036. The README table is now the 2026-10-10 rev 179 run (pushed).
 > - Other installs, not checked since: GUY-WINDOWS11 `C:/tools/bin/Bash.exe` was rev 60 (2026-09-08);
 >   a copy went to the share at rev 76 (2026-09-12).
 > - Untracked `The Windows Shell Tax.url` (a claude.ai artifact link, there since 2026-09-14): in
 >   neither VCS, not ours, leave it.
-> - Nothing in flight. Revs 158-179 are deployed; the push (benchmark, doc review) follows.
+> - In flight: see START HERE. Rev 209 is DEPLOYED (2026-10-11); hg rev 182 pushed to GitHub (git `694da54`). daq-d1 and koliada-net-6a
+>   never replied to the rev 179 deploy notice; the architect, 2026-10-10: both sessions show
+>   "nothing needs action from me". Closed: do not chase them.
 >
 > **GREENLIT (2026-10-04: "Yes, then 2, 3 and 5 (commit between stop for ambiguities/forks). then
 > we will discuss 4?"):**
@@ -49,21 +79,9 @@
 > - Serial I/O (item 4: COMn as a device file plus `stty`; 55 calls, all MSP430): to discuss.
 >
 > **AWAITING THE ARCHITECT (do NOT derive; Claude's positions are proposals, not rulings):**
-> 1. **MSYS paths in arguments to native programs** (raised 2026-09-11 in rev 67, called the highest
->    priority since). `/tmp` means two places in one session: builtins and redirects map `/tmp` to
->    `%TEMP%`, while a native program gets `/tmp/x` or `/c/x` verbatim and resolves it against the
->    current drive. Re-verified on rev 136: `cmd.exe /c echo /tmp/x /c/Users/guy ~/y` prints
->    `/tmp/x /c/Users/guy C:\Users\guy/y`. Already on disk: `E:\c\Users\guy\`, `/tmp` content on C: and E:.
->    - **Question first:** on 2026-09-12, replying to a list that included this item, the architect
->      wrote "...backslash to forwardslash should be symetric across read/write operations. This
->      should include MSYS form mapping assuming /<d>/... as D:/...". Claude read that as the shell's
->      own paths only and built rev 71; native arguments stayed verbatim and went back on the open
->      list (2026-09-14, 2026-09-15, no reply). Did it cover native arguments too? If yes, this item
->      is ratified and half built.
->    - Claude's position (DECISIONS 2026-09-11, "Sharpened"): convert by shape, at the start of an
->      argument only, `//host/share/…`, `/<letter>/…`, `/tmp…`, `~…`; never a bare `/c` (`cmd.exe /c`);
->      an environment switch to turn it off. About half a day [estimate, not measured].
-> 2. **UTF-8 for external programs** (koliada-net-dd, 2026-10-06). Piped `hg` and `python` write
+> 1. (MSYS paths in arguments: DECIDED 2026-10-10 and built, rev 186.)
+> 2. (UTF-8 for external programs: DECIDED 2026-10-10, rev 187: PYTHONIOENCODING only; HGENCODING
+>    measured harmful, dropped. The old text follows for the record.) Piped `hg` and `python` write
 >    cp1252; python crashes on `✓`.
 >    - Claude's position: export `PYTHONIOENCODING=utf-8` and `HGENCODING=utf-8` at startup when
 >      unset; not `PYTHONUTF8`, which also changes `open()`'s default for user scripts.
@@ -73,32 +91,40 @@
 >      variables stdio-only. `HGENCODING` probably also decodes commit messages, usernames and branch
 >      names, including `hg commit -l` files. Test before building: a non-ASCII message via `-l` and a
 >      non-ASCII filename, under both settings, in a scratch repo.
-> 3. **awk scope requests** (installer-79, 2026-09-08): `print > file` and `close()`, 3-argument
->    `match()`, user functions, `awk --version`. (`df`, from the same list, is greenlit above.)
-> 4. **Missing builtins `umask`, `times`, `fc`** (found 2026-10-10, measured): each is "command not
->    found" (status 127), and `fc` reaches Windows' `C:/Windows/System32/fc.exe` instead ("FC:
->    Insufficient number of file specifications"). `umask 077` before creating files is a common
->    script line, so a script that uses it stops working.
->    - Claude's position [proposal]: `umask` as a builtin that stores and prints the mask (`umask`,
->      `umask -S`, `umask -p`, octal and symbolic modes) with NO effect on file creation, since
->      Windows has no permission bits for it to clear, and that limit stated in the README. `times`
->      prints the shell's and its children's user and system times (the process times are available).
->      `fc` reports "not supported" instead of running fc.exe. Falsifier: if the architect wants
->      `umask` to deny writes through ACLs, it is a bigger, separate design.
-> 5. **`strings`** (koliada-net-f7, 2026-10-10, one hit, not blocking): a scope request. Also
->    **`jq -R`** (msp430-a2, 2026-10-10: `jq -Rs '{text: .}' file` wraps a text file as a JSON string;
->    it used a C# path instead, not blocked): raw input is outside the jq subset.
-> 6. **Parse-and-run one command at a time, as bash does?** (measured 2026-10-10, DECISIONS "syntax
->    errors in C#Bash's own words", Not done). bash reads, parses and runs each top-level command
->    in turn. So the lines before a syntax error RUN, and a syntax error inside `$( )` is reported at
->    run time (`name: command substitution: line N+1:`), fails only that command (1), and the script
->    goes on. C#Bash parses the whole text first and runs nothing when any of it is wrong.
->    - Claude's position [proposal, provisional]: match bash, since scripts with a late error
->      behave differently today. It is an architectural change to the script runner (parse a
->      command, run it, continue), and it also decides when an `alias` defined in a script takes
->      effect. Falsifier: if the architect values "a script with a syntax error runs nothing" as a
->      safety property, keep the current model and document it.
->    - Do NOT derive: this is the architect's call.
+> 3. (awk scope requests: DECIDED 2026-10-10 and built, rev 193, with `getline [var] < file` added
+>    on the architect's word; DECISIONS "SUBSET EXTENDED: awk user functions …". Recursion limit
+>    ~900 deep on AOT, kept by #7's rule; revisit when a session hits it.)
+> 4. (`umask`, `times`, `fc`: DECIDED 2026-10-10 as Claude proposed and built, rev 196; DECISIONS
+>    "BUILT: `umask`, `times` and `fc` are builtins".)
+> 5. (`jq -R` / `-Rs`: DECIDED 2026-10-10 as Claude proposed and built, rev 197; DECISIONS "BUILT:
+>    `jq -R`". `strings` NOT built: revisit when a second session needs it.)
+> 6. **One command at a time: DECIDED 2026-10-11, match bash** (DECISIONS "DECIDED: C#Bash runs
+>    scripts one command at a time"; the architect: C#Bash must match Claude's expectations of bash; a
+>    "safe" parse-first mode only ever opt-in: not now, `bash -n f && bash f` does it).
+>    **PLAN, written 2026-10-11, RATIFIED by the architect 2026-10-11 ("ratified"); build P1-P5 in order, commit between, stop for forks:**
+>    - Measured 2026-10-11: 20 MB after `exit 0` = bash 4 ms; C#Bash 1.3 s (base64) or FAILS (binary:
+>      a here-doc warning, then a syntax error, nothing runs). `source` / `eval` also run nothing before
+>      an error. Aliases expand at run time (`Evaluator.cs` ~1283): no parse dependency.
+>    - Reframe tested: "parse all, run the parsed prefix on error" fails the payload cases.
+>    - Recommended: tokens on demand + `Parser.ParseNext()` per top-level command (bash's model);
+>      built as phase 1 then 2, so phase 1 alone is a usable fallback. Falsifier: the lazy lexer needs
+>      parser state (heredocs, lookahead) — then stop after phase 1, payload cost documented.
+>    - P1 DONE rev 201 (DECISIONS "BUILT (item 6, phase 1 of 5)"; the unit is the LINE). `ParseNext` + run each command as parsed (scripts, `-c`, stdin, `source`, `eval`); lexer
+>      errors and warnings raised where reached. ACCEPT: new case vs bash: lines before an error run (the
+>      rm/touch one too), multi-line `-c`, `source`, `eval` prefixes, a text payload after `exit`;
+>      suite green both modes; `bash -n` still rejects the whole file.
+>    - P2 DONE rev 202 (268 ms / 520 ms vs bash 4 ms: the whole-file read is left, out of scope). Lazy lexer. ACCEPT: the 20 MB base64 AND binary installers print `installing`, exit 0.
+>    - P3 DONE rev 203 (multi-line body at top level: message line 1-2 early, measured, kept). `$( )` syntax error at run time: `name: command substitution: line N:`, that top-level
+>      command stops (1), the next runs. ACCEPT: script and `-c` forms match bash.
+>    - P4 STATUSES DONE rev 204: every eval syntax error is 2 (only `x=(` is 1; 14 of 15 kinds were 1).
+>      P4 LINES DECIDED 2026-10-11: physical line (the architect). Was: the plan's "counts from where the eval
+>      ENDS" was falsified (bash: line 7 → 5, line 13 → 11 inside one script; C#Bash prints the
+>      physical line). Claude's position: keep the physical lines, document bash's drift; falsifier:
+>      the architect wants bash's numbers, then read bash's source (evalstring.c) before building.
+>    - P5 DONE rev 205 (rev 200 vs 204 AOT: every row within noise). `tests/bench/compare3.sh` unmodified before/after: no regression beyond its noise; battery
+>      no regression.
+>    - DO NOT DERIVE (out of scope): a script editing itself while it runs (bash re-reads the file);
+>      reading the file in chunks; aliases that expand to syntax; the REPL (already per line).
 >
 > **FIXED AND DEPLOYED (2026-10-09, in rev 150; suite 76/76 both modes on the Release and the AOT
 > build, battery 227/237 with no regression):**
@@ -131,7 +157,7 @@
 >   (and `-u` programs too); `-uNAME`, `--unset=`, `-`, `-0` refused or ignored. DECISIONS "`env`'s
 >   options did not reach the command"; case `env_options`. koliada-net-f7 told 2026-10-10.
 >
-> **FIXED AND DEPLOYED (2026-10-10, in rev 179; suite 101/101 both modes on the Release and the AOT build, battery 227/237 against baseline 226 (199 left it, rev 167; 187 joined, rev 168), no regression):**
+> **FIXED AND DEPLOYED (2026-10-10, in rev 179; suite 101/101 both modes on the Release and the AOT build, battery 227/237 against baseline 226 (199 left it, rev 167; 187 joined, rev 168); 145 left it 2026-10-11 (eval status, Git Bash 4.4), no regression):**
 > - rev 158: an unquoted `\\` in a `case` / `[[ == ]]` / `[[ =~ ]]` pattern did not stand for a
 >   backslash (`*\\*` matched `a*`). DECISIONS "an unquoted `\\` in a pattern did not stand for a
 >   backslash"; case `backslash_pattern`.
@@ -214,14 +240,60 @@
 >   format, and listed nothing in a pipeline stage. DECISIONS "`jobs` ignored its options"; case
 >   `jobs_list`.
 >
+> **AFTER THE REV 179 DEPLOY, NOT DEPLOYED (the architect, 2026-10-10: "your recommendation is good; go
+> up to but not including the scrip question, explain that one to me when you get there" -- the
+> AWAITING items 1-5 by Claude's recommendations, then STOP at 6 and explain it):**
+> - rev 186: a Windows program's MSYS-form path arguments are converted (`/c/x` → `C:/x`, `/tmp/x`;
+>   start of an argument, existing drive, not for MSYS programs; off with MSYS_NO_PATHCONV /
+>   MSYS2_ARG_CONV_EXCL). DECISIONS "a Windows program's MSYS-form path arguments are converted";
+>   case `native_args`. Suite 102/102 both modes, battery 227/237.
+> - rev 187: PYTHONIOENCODING=utf-8 exported unless set (piped py crashed on `✓`); HGENCODING NOT set:
+>   it makes `hg commit -m 'café'` abort on Windows. DECISIONS "UTF-8 for external programs = PYTHONIOENCODING
+>   only"; case `python_utf8`.
+> - rev 188: carried bytes that spell a UTF-8 character are that character (`$'\xc3\xa9'` had length 2,
+>   failed `== é`, named files `caf??.txt` for hg). DECISIONS "carried bytes that spell a UTF-8 character
+>   stayed bytes"; case `utf8_bytes`.
+> - rev 193: awk user functions, `print`/`printf > file` / `>> file`, `getline [var] < file`, `close`,
+>   `fflush`, 3-argument `match`, `--version`, as gawk 5.1. DECISIONS "SUBSET EXTENDED: awk user
+>   functions …"; case `awk_extended`. Suite 105/105 both modes, Release and AOT; battery 227/237.
+> - rev 194: awk `"\xNN"` / `"\NNN"` above 0x7F are bytes (`"\xc3\xa9"` wrote 4 bytes, `"\377"` wrote
+>   `c3 bf`); bytes spelling a UTF-8 character are that character, across a concatenation too.
+>   DECISIONS "awk string escapes above 0x7F made characters"; case `awk_escapes`. Suite 106/106.
+> - rev 195: awk `-v name=value` and `name=value` operands take octal and `\x` escapes; an operand
+>   with a backslash in its value is an assignment, not a file. DECISIONS "awk `-v name=value`
+>   ignored octal …"; case `awk_escapes`. Suite 106/106.
+> - rev 196: `umask` (stored and printed, no effect on files), `times`, `fc` (not supported) are
+>   builtins; they were 127 and `fc` ran fc.exe. DECISIONS "BUILT: `umask`, `times` and `fc` …"; case
+>   `umask_times_fc`. Suite 107/107 both modes; battery 227/237.
+> - rev 197: `jq -R` / `--raw-input` and `-Rs`, as jq 1.6. DECISIONS "BUILT: `jq -R`"; case
+>   `jq_raw_input`. Suite 108/108 both modes.
+> - rev 198: jq short options after the filter (`jq . f -c`) were read as files; the open error now
+>   says `Could not open file x` as jq 1.6. DECISIONS "jq read a short option after the filter …";
+>   case `jq_messages`. Suite 108/108 both modes; battery 227/237.
+>
 > **OPEN DEFECTS (the architect, 2026-10-10: "go meant 'still open' gogogo": work through them in turn, commit between, stop for ambiguities/forks):**
-> - Found 2026-10-10 while fixing the error prefix, verified against GNU (DECISIONS "every error
->   said `bash:`", Not done):
+> - (The three found 2026-10-10 while fixing the error prefix are all fixed: `trap BADSIG` rev 170,
+>   `read -z`'s usage line rev 171 (re-checked against GNU 2026-10-10), syntax-error text rev 172.)
+> - (The two jq slips found at rev 197 are fixed, rev 198.) A question, not a defect until ruled:
+>   invalid UTF-8 passes through jq as bytes where jq 1.6 writes U+FFFD (shell byte transparency vs
+>   jq fidelity). Claude's position: keep the bytes; falsifier: a session needing jq's exact output.
+> - Seen 2026-10-10 in the hand-off sweep, NOT analysed (verify before fixing; do not infer the
+>   cause): started BY NAME through PATH from C#Bash, `Bash.exe -c 'echo $0'` prints the full
+>   backslash path `F:\Koliada\Tools\bash\dist\Bash.exe`, and `-c` error prefixes use it; GNU bash
+>   prints the name as typed (`bash`). Started by a path (`dist/Bash.exe -c …`) it prints the path as
+>   typed, as bash does. Open question: does C#Bash hand children the resolved path as argv[0]
+>   (.NET's ProcessStartInfo makes FileName argv[0]), so every child program sees it? (The JIT
+>   Release build's `$0` is its `Bash.dll` path, an apphost artefact; the AOT build does not show it.)
 > - Found 2026-10-10 by the `builtin_options` work (DECISIONS "builtins took bad options …", Not
 >   done): accepted options whose effect is not implemented: `jobs -x` (reported as unsupported), the
 >   directory stack's `+N`/`-N` rotation (reported as not supported), `kill -l`/`trap -l`'s
 >   numbered table (a short list of nine names is printed).
 > - Inferred, not traced (2026-09-15): git's credential prompt runs through C#Bash and fails on `/dev/tty`.
+> - **FOUND 2026-10-11, SEVERE, NOT analysed (do not infer the cause):** `BASH_COREUTILS=external awk
+>   'BEGIN{print 1}'` (and `grep`, so any in-process tool with a PATH twin) ends the shell process:
+>   "Process is terminating due to StackOverflowException", rc 139/253. Rev 209, rev 179 and rev 156
+>   alike: not from this deploy. The README advertises `=external`. Found answering msp430-a2's
+>   deploy reply; msp430-a2 told to avoid it. Raise with the architect after the publish.
 >
 > **KNOWN LIMITATIONS (documented, not raised for action):**
 > - Glob and brace quoting is tracked per field, not per character: `{x\,y,z}`, `"*"*` and `\**`
@@ -253,7 +325,8 @@
 > - hg is the development VCS. git and GitHub sync ONLY on a push; until then git shows the docs as
 >   modified and build stamps show `+`. Regenerate `MERCURIAL_HISTORY.md` and `mercurial-history.hg`
 >   before each push.
-> - The benchmark is `tests/bench/compare3.sh [--cs <exe>]`, run unmodified from Git Bash. Method
+> - The benchmark is `tests/bench/compare3.sh [--cs <exe>]`, run unmodified from Git Bash; its startup
+>   row is the median of 5 samples since 2026-10-10 (ratified: "Median of 5 sounds fair"). Method
 >   changes are the architect's call.
 > - Path form: forward-slash Windows form in both directions (DECISIONS 2026-09-11/12).
 > - Steroids: not active, no ruling; do not ask.
@@ -275,8 +348,9 @@
 >
 > **For the architect's own files (suggested only):** the global CLAUDE.md's launcher line is
 > obsolete since the rename (2026-10-04 scan), and its "Known limits of C#Bash" says UNC globs do
-> not expand, fixed in rev 58 [recorded, not re-verified]. Its awk 3-argument `match()` line is still
-> true. Its `df` line was corrected on 2026-10-08 at the architect's request ("You should fix it").
+> not expand, fixed in rev 58 [recorded, not re-verified]. Its awk 3-argument `match()` line is true
+> of the deployed rev 179 and stale from rev 193 on: tell the architect when rev 193+ is deployed. Its
+> `df` line was corrected on 2026-10-08 at the architect's request ("You should fix it").
 
 ## Purpose
 A standalone Windows bash interpreter written in C#. Targets a bash subset: full POSIX core plus the most-used bashisms (`[[ ]]`, arrays, `local`, arithmetic expansion, brace expansion).
@@ -503,7 +577,10 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   through to a PATH awk). gawk-verified deviations from POSIX kept on purpose: `substr` truncates
   positions and clamps a start below 1 without shortening the length; a single-character `FS` is
   literal even if it is a regex metacharacter; integral numbers print as integers at any
-  magnitude.
+  magnitude. Extended 2026-10-10 (rev 193, DECISIONS "SUBSET EXTENDED: awk user functions …"):
+  user functions, `print`/`printf > file` / `>> file`, `getline [var] < file`, `close`, `fflush`,
+  3-argument `match`, `--version`; checked against gawk 5.1 by `tests/cases/awk_extended.sh`.
+  Recursion stops with a fatal error at about 900 calls deep on AOT (300 on JIT), never a crash.
 - **Processes (`Builtins.Proc.cs`, ratified 2026-09-04):** `pgrep pkill ps` — Toolhelp32 list plus
   `NtQueryInformationProcess` command lines; `-f -x -l -a -c -n -o -v -P -d`, signals accepted
   (all forceful), `ps -e/-ef/aux/-p/-o pid,ppid,comm,args`. Names match case-insensitively; the

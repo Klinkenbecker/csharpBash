@@ -84,6 +84,7 @@ public sealed partial class Builtins
 	/// <summary>Assign `name` or `name[subscript]` (used by printf -v, read, getopts).</summary>
 	private void AssignVar(string spec, string value)
 		{
+		value = ShellEncoding.Canonical(value);   // `printf -v x '\xc3\xa9'` is é, as an assignment is
 		int lb = spec.IndexOf('[');
 		if (lb > 0 && spec.EndsWith(']'))
 			{
@@ -306,6 +307,7 @@ public sealed partial class Builtins
 					var optName = args[++i];
 					if (!_eval.Options.ApplyLong(optName, enable))
 						{ Console.Error.WriteLine($"{Err}set: {optName}: invalid option name"); return 2; }
+					if (enable && optName == "posix") NotAvailable.PosixMode($"{Err}set: ", "set -o posix");
 					i++;
 					_env.AutoExport = _eval.Options.AllExport;
 					continue;
@@ -328,7 +330,17 @@ public sealed partial class Builtins
 							}
 						if (!_eval.Options.ApplyLong(optName, enable))
 							{ Console.Error.WriteLine($"{Err}set: {optName}: invalid option name"); return 2; }
+						if (enable && optName == "posix") NotAvailable.PosixMode($"{Err}set: ", "set -o posix");
 						break;
+						}
+					if (f == 'r' && enable)
+						{
+						// `set -r` is bash's restricted mode, which C#Bash does not have. Going on unrestricted
+						// would remove what the script asked for, so the shell (a subshell: that one) ends
+						// here, status 2: the run-time form of refusing to start (DECISIONS 2026-10-11).
+						// It said "invalid option" and the script went on unrestricted.
+						foreach (var line in NotAvailable.Lines($"{Err}set: ", "restricted mode (set -r)")) Console.Error.WriteLine(line);
+						throw new ExitException(2);
 						}
 					if (!_eval.Options.Apply(f, enable))
 						{ return BadOption($"-{f}"); }
@@ -380,7 +392,12 @@ public sealed partial class Builtins
 			int rc0 = 0;
 			foreach (var n in names)
 				{
-				if (set || unset) { if (!_eval.Options.ApplyLong(n, set)) { Console.Error.WriteLine($"{Err}shopt: {n}: invalid option name"); rc0 = 1; } continue; }
+				if (set || unset)
+					{
+					if (!_eval.Options.ApplyLong(n, set)) { Console.Error.WriteLine($"{Err}shopt: {n}: invalid option name"); rc0 = 1; }
+					else if (set && n == "posix") NotAvailable.PosixMode($"{Err}shopt: ", "shopt -so posix");
+					continue;
+					}
 				bool on = _eval.Options.LongOptions().Any(o => o.Name == n && o.On);
 				if (!quiet) Console.WriteLine(print ? $"set {(on ? "-o" : "+o")} {n}" : $"{n,-15}\t{(on ? "on" : "off")}");
 				if (!on) rc0 = 1;
