@@ -18,18 +18,24 @@
 > that is explicitly, your job!" — push back unasked. Item 6 (ratified plan) BUILT revs 201-207; its
 > eval line numbers DECIDED "physical line" (the architect). Restricted mode BUILT rev 208 (`set -r`
 > ends the shell: Claude's call, stated). `--posix` a notice, rev 209. The architect: "fix --posix, then
-> deploy, notify and publish": rev 209 DEPLOYED and the six sessions told (2026-10-11); **IN FLIGHT:
-> the GitHub publish (benchmark, doc review, history files, git commit, push)**. After it, nothing
-> is greenlit: ask the architect (OPEN DEFECTS below; silently-ignored options `-t -k -T -P -p`).
-> Deploy only on "deploy and notify". The cold-resume briefing still comes first.
+> deploy, notify and publish": ALL DONE 2026-10-11 (rev 209 deployed, six sessions told, GitHub at hg
+> rev 211). Then "yes": the `BASH_COREUTILS=external` crash FIXED rev 213; "deploy, notify and push":
+> rev 213 DEPLOYED and the six sessions told (2026-10-11); the push follows (see GitHub below).
+> **Nothing is greenlit next: ask the architect** (the silently-ignored options `-t -k -T -P -p`;
+> OPEN DEFECTS). Deploy only on "deploy and notify". The cold-resume briefing still comes first.
 >
-> **TRUE STATE (verified 2026-10-10):**
-> - hg: branch `default`; the CODE is at rev 209 (revs 189-192 were anchor-only commits); working
->   tree clean apart from the `.url` below. **GitHub `main` = git `694da54` = hg rev 182** (pushed 2026-10-10; the
->   architect: "Let's also push at this time ... Push means another benchmark and a doc review
->   first"). History files regenerated (183 changesets, bundle verified). Before: git `738ec92` = rev 140.
->   `git status` lists files as modified: that is hg revs 183 on, not yet pushed, not stray work.
-> - **DEPLOYED 2026-10-11: `dist/Bash.exe` is rev 209** (`--version`: `1.0.0+hg.4fa037d780c8 209`,
+> **TRUE STATE (verified 2026-10-11):**
+> - **DEPLOYED 2026-10-11: `dist/Bash.exe` is rev 213** (`1.0.0+hg.40a4296afbd6 213`): the
+>   `BASH_COREUTILS=external` fix over rev 209. Suite 112/112 on that AOT binary, both modes; live
+>   check (rev 213, `=external awk` is Git's GNU Awk, the shell survives). Rollback
+>   `dist/Bash.exe.rev209`. One-fix notice to the six sessions (msp430-a2: its caution lifted).
+> - hg: branch `default`; the CODE is at rev 213 (deployed); working tree clean apart from the
+>   `.url` below. **GitHub `main` = git `e8c2d39` = hg rev 211** (pushed 2026-10-11 after the
+>   benchmark on deployed rev 209 and a doc review; `git ls-remote` confirmed). History files
+>   regenerated (212 changesets; the bundle unbundled into an empty repo to rev 211 `9743f191506c`).
+>   Before: git `694da54` = rev 182, `738ec92` = rev 140. `git status` lists files as modified after a
+>   push only for hg revs after 211: not stray work.
+> - Previously DEPLOYED 2026-10-11: `dist/Bash.exe` was rev 209 (`--version`: `1.0.0+hg.4fa037d780c8 209`,
 >   a clean tree): revs 180-209 (the architect: "fix --posix, then deploy, notify and publish"). Suite
 >   111/111 on that exact AOT binary, with a console and `-Detached`; battery 226/237 against 225;
 >   live-verified in a Claude Code Bash call (rev, awk functions, umask, jq -R, the lines before a
@@ -62,7 +68,7 @@
 >   a copy went to the share at rev 76 (2026-09-12).
 > - Untracked `The Windows Shell Tax.url` (a claude.ai artifact link, there since 2026-09-14): in
 >   neither VCS, not ours, leave it.
-> - In flight: see START HERE. Rev 209 is DEPLOYED (2026-10-11); hg rev 182 pushed to GitHub (git `694da54`). daq-d1 and koliada-net-6a
+> - In flight: see START HERE. Rev 209 is DEPLOYED (2026-10-11); hg rev 211 pushed to GitHub (git `e8c2d39`, 2026-10-11). daq-d1 and koliada-net-6a
 >   never replied to the rev 179 deploy notice; the architect, 2026-10-10: both sessions show
 >   "nothing needs action from me". Closed: do not chase them.
 >
@@ -289,11 +295,9 @@
 >   directory stack's `+N`/`-N` rotation (reported as not supported), `kill -l`/`trap -l`'s
 >   numbered table (a short list of nine names is printed).
 > - Inferred, not traced (2026-09-15): git's credential prompt runs through C#Bash and fails on `/dev/tty`.
-> - **FOUND 2026-10-11, SEVERE, NOT analysed (do not infer the cause):** `BASH_COREUTILS=external awk
->   'BEGIN{print 1}'` (and `grep`, so any in-process tool with a PATH twin) ends the shell process:
->   "Process is terminating due to StackOverflowException", rc 139/253. Rev 209, rev 179 and rev 156
->   alike: not from this deploy. The README advertises `=external`. Found answering msp430-a2's
->   deploy reply; msp430-a2 told to avoid it. Raise with the architect after the publish.
+> - (FIXED rev 213, NOT deployed: `BASH_COREUTILS=external` killed the shell with a stack overflow,
+>   every build to rev 209; TryExecute → RunCommand → TryExecute. DECISIONS "`BASH_COREUTILS=external`
+>   killed the shell". msp430-a2 was told to avoid the mode: tell it at the next deploy.)
 >
 > **KNOWN LIMITATIONS (documented, not raised for action):**
 > - Glob and brace quoting is tracked per field, not per character: `{x\,y,z}`, `"*"*` and `\**`

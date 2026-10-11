@@ -67,7 +67,10 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		var policy = _env.Get("BASH_COREUTILS");
 		if (policy == "external" && CoreutilNames.Contains(name) && _eval.ResolveOnPath(name) is not null)
 			{
-			exitCode = _eval.RunCommand(name, args, true, [], false);
+			// the PATH program only: RunCommand dispatched the builtin of the same name, which came
+			// straight back here, until the stack overflowed and the shell died (every build to rev
+			// 209; DECISIONS 2026-10-11)
+			exitCode = _eval.RunExternal(name, args);
 			return true;
 			}
 		try

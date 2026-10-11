@@ -5229,3 +5229,50 @@ rev 179 was renamed to `dist/Bash.exe.rev179` (Windows renames a running image; 
 and rev 209 copied in. Live check in a Claude Code Bash call: rev 209, awk functions, umask, jq -R, the
 lines before a syntax error run, -r refused, eval status 2, `git -C /f/...` (MSYS path conversion).
 Notice to the six running sessions, leading with the six behaviour changes.
+
+## 2026-10-11 -- PUBLISHED: GitHub main = git e8c2d39 = hg rev 211
+**Status:** Active. The architect: "deploy, notify and publish"; the push rule of 2026-10-10 ("another
+benchmark and a doc review first") followed.
+
+Benchmark: `compare3.sh` on the deployed rev 209 (README table). Doc review: README (table, startup
+method, reading model, restricted/POSIX notices, awk and jq additions, 111 cases, and the
+`BASH_COREUTILS=external` crash stated as a known defect rather than left advertised as working),
+ARCHITECTURE, IMPLEMENTATION. History: the table generator was first checked to reproduce the 183
+published rows byte for byte (a `|` in a summary is `\|`), then run for revs 211-0; the bundle (212
+changesets) unbundled into an empty repository to rev 211. git: the same 47 files hg changed in revs
+183-211, plus the two history files (the `.url` left out); pushed with a one-off auth header from the
+token file (no token in config afterwards); `git ls-remote` shows `e8c2d39`.
+
+## 2026-10-11 -- DEFECT FIXED: `BASH_COREUTILS=external` killed the shell (stack overflow)
+**Status:** Active. Found 2026-10-11 checking msp430-a2's deploy reply; the architect: "yes" (fix it
+next).
+
+**Defect (every build checked: revs 156, 179, 209):** `BASH_COREUTILS=external awk …` (any in-process
+tool with a PATH twin: grep, sort, cat …) ended the shell process, "Process is terminating due to
+StackOverflowException", rc 139, losing everything after it. The README documents the mode.
+
+**Cause (read in the code, not inferred):** `Builtins.TryExecute`'s external branch called
+`_eval.RunCommand(name, …, skipFunctions: true, …)`. `RunCommand` runs a builtin when the name is one,
+through `_builtins.TryExecute`, which took the external branch again: unbounded recursion. The
+unsupported-option fallback a few lines down already called `RunExternal`, the PATH program only.
+
+**Fix:** the external branch calls `_eval.RunExternal(name, args)`. A tool with no PATH twin, and
+anything that is not a coreutil, stays in-process, as before.
+
+**Verified:** new case `coreutils_external` (authored; needs Git for Windows: GNU Awk and GNU cat answer
+`--version`, grep/sort/jq work, the shell survives); deployed rev 209 dies on its first line. Suite
+112/112 with a console and `-Detached`; compat battery 226/237 against 225. README: the "known
+defect" note pushed with rev 211 is removed here; GitHub keeps it until the next push.
+
+**Implemented by:** rev 213. Files: `Bash/Evaluator/Builtins.cs`, `README.md`,
+`tests/cases/coreutils_external.sh`, `tests/expected/coreutils_external.out`, `tests/run-tests.ps1`.
+
+## 2026-10-11 -- DEPLOYED: rev 213 (the `BASH_COREUTILS=external` fix), notice sent; pushed with it
+**Status:** Active. The architect: "deploy, notify and push".
+
+AOT build `1.0.0+hg.40a4296afbd6 213` (committed tree), suite 112/112 on it with a console and
+`-Detached`; rev 209 renamed to `dist/Bash.exe.rev209`, rev 213 copied in; live check in a Claude Code
+Bash call (rev 213, `BASH_COREUTILS=external awk --version` is Git's GNU Awk 5.0, the shell survives).
+One-fix notice to the six sessions. Push rule followed: `compare3.sh` on deployed rev 213 (every row
+within noise of the rev 209 run; the README table is now this run, build rev 213), doc review (the
+README's known-defect note gone; nothing else changed since rev 211).

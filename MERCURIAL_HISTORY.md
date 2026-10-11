@@ -12,11 +12,14 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 212 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 215 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 214 | 2026-10-11 | GitHub sync at rev 214: DEPLOYED rev 213 (BASH_COREUTILS=external fix; rollback dist/Bash.exe.rev209), notice sent; README table from compare3 on deployed rev 213; anchor |
+| 213 | 2026-10-11 | BASH_COREUTILS=external runs the PATH program (it called RunCommand, which ran the builtin, which came back: a stack overflow killed the shell, every build to rev 209); README's known-defect note removed; suite 112/112 both modes; battery 226/237; not deployed |
+| 212 | 2026-10-11 | RESUME anchor: published, GitHub main = git e8c2d39 = hg rev 211 (212 changesets, bundle verified); deploy, notify and publish all done; nothing greenlit; raise BASH_COREUTILS=external first |
 | 211 | 2026-10-11 | GitHub sync at rev 211: doc review for the push: README (2026-10-11 table from compare3 on deployed rev 209, startup median of 5, one line at a time, restricted/POSIX notices, awk and jq additions, 111 cases, BASH_COREUTILS=external known crash), ARCHITECTURE (reading model, awk extension), IMPLEMENTATION (Step, ParseNext, DeferredSubstitution, RunString, NotAvailable.cs); benchmark results; anchor: BASH_COREUTILS=external stack overflow found (rev 156-209), not analysed |
 | 210 | 2026-10-11 | DEPLOYED rev 209 (revs 180-209; rollback dist/Bash.exe.rev179); suite 111/111 on the AOT binary both modes; live-verified; notice sent to the six sessions; RESUME anchor: publish in flight |
 | 209 | 2026-10-11 | POSIX mode (--posix, -o posix, set -o posix, shopt -so posix) says it is not available, with the prefilled-issue link, and goes on in bash's default mode (it was silently ignored); suite 111/111 both modes; not deployed |
