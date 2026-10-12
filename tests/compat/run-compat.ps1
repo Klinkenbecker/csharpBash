@@ -14,8 +14,14 @@
   end of probes.txt only - numbers are positional.
 
   The reference bash is found from -Reference, else $env:CLAUDE_CODE_GIT_BASH_PATH,
-  else C:\Program Files\Git\bin\bash.exe, else the first bash.exe on PATH that is
-  not our own build. Without one the battery cannot run (exit 2).
+  else the bash of the Git that owns git.exe (bin\bash.exe, usr\bin\bash.exe, or
+  usr\bin\_bash.exe where bash.exe was renamed so Claude Code finds C#Bash), else
+  C:\Program Files\Git, else the first bash.exe on PATH. Each candidate is RUN to
+  identify it: one that is C#Bash (any build: its BASH_VERSION says koliada) or that
+  does not start is skipped, and an explicit -Reference that is C#Bash is an error.
+  Until 2026-10-12 only the Release build was skipped, so with CLAUDE_CODE_GIT_BASH_PATH
+  naming the deployed C#Bash the battery compared C#Bash with itself and could not
+  fail. Without a reference the battery cannot run (exit 2).
 
 .PARAMETER Reference
   Path to the reference bash.exe.
@@ -66,9 +72,13 @@ function Find-ReferenceBash {
     # Git's own bash, wherever Git lives (portable installs are not under Program Files)
     $git = Get-Command git.exe -ErrorAction SilentlyContinue
     if ($git) {
-        $gitRoot = Split-Path (Split-Path $git.Source -Parent) -Parent
+        # git.exe lives in cmd\, bin\ or mingw64\bin\: the root is the first ancestor with usr\bin
+        # (two levels up from mingw64\bin\git.exe is mingw64, which found nothing until 2026-10-12)
+        $gitRoot = Split-Path $git.Source -Parent
+        for ($k = 0; $k -lt 3 -and $gitRoot -and -not (Test-Path (Join-Path $gitRoot 'usr\bin')); $k++) { $gitRoot = Split-Path $gitRoot -Parent }
         $cands += (Join-Path $gitRoot 'bin\bash.exe')
         $cands += (Join-Path $gitRoot 'usr\bin\bash.exe')
+        $cands += (Join-Path $gitRoot 'usr\bin\_bash.exe')
     }
     $cands += 'C:\Program Files\Git\bin\bash.exe'
     $cands += 'C:\Program Files\Git\usr\bin\bash.exe'
@@ -82,13 +92,26 @@ function Find-ReferenceBash {
         $full = (Resolve-Path $c).Path
         if ($full -eq $ours) { continue }
         if ($sysRoot -and $full.StartsWith($sysRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $ver = Get-BashVersion $full
+        if (-not $ver) { continue }                          # does not start (a broken launcher stub)
+        if ($ver -match 'koliada') {                         # C#Bash, deployed or not: never its own reference
+            if ($c -eq $explicit) { Write-Error "-Reference $c is C#Bash ($ver), not a reference bash"; exit 2 }
+            continue
+        }
         return $full
     }
     return $null
 }
+
+# What a bash says $BASH_VERSION is, or $null when it does not run.
+function Get-BashVersion([string]$path) {
+    try { $v = & $path -c 'echo "$BASH_VERSION"' 2>$null } catch { return $null }
+    if ($LASTEXITCODE -ne 0 -or -not $v) { return $null }
+    return ([string]$v).Trim()
+}
 $ref = Find-ReferenceBash $Reference $exe
 if (-not $ref) { Write-Error "no reference bash found; pass -Reference <path to bash.exe>"; exit 2 }
-Write-Host ("reference : {0}" -f $ref) -ForegroundColor DarkGray
+Write-Host ("reference : {0}   (bash {1})" -f $ref, (Get-BashVersion $ref)) -ForegroundColor DarkGray
 Write-Host ("candidate : {0}" -f $exe) -ForegroundColor DarkGray
 
 # ---- split probes ---------------------------------------------------------------

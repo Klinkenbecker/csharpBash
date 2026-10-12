@@ -44,7 +44,33 @@ public sealed class ShellEnvironment
 	private HashSet<string> _readonly  = new(StringComparer.Ordinal);
 	private HashSet<string> _integers  = new(StringComparer.Ordinal);
 	private readonly Stack<string[]> _positionals = new();
-	private string _arg0 = System.Environment.GetCommandLineArgs()[0];
+	private string _arg0 = ToShellPath(LaunchedAs());
+
+	/// <summary>argv[0] as the launcher passed it: the command line's first token (Windows' rules), in
+	/// the shell's forward-slash form above. A launcher passes the resolved native path, so `$0` (and so
+	/// every `-c` error prefix) read `F:\…\bash.exe:` under Claude Code and `bash.EXE` under C#Bash until
+	/// 2026-10-11; and GetCommandLineArgs()[0] is `Bash.dll` on the JIT build (an apphost artefact).</summary>
+	private static string LaunchedAs()
+		{
+		try
+			{
+			var line = Marshal.PtrToStringUni(GetCommandLineW()) ?? "";
+			int i = 0;
+			while (i < line.Length && line[i] is ' ' or '\t') i++;
+			if (i < line.Length && line[i] == '"')
+				{
+				int close = line.IndexOf('"', i + 1);
+				return close > i ? line[(i + 1)..close] : line[(i + 1)..];
+				}
+			int end = i;
+			while (end < line.Length && line[end] is not (' ' or '\t')) end++;
+			if (end > i) return line[i..end];
+			}
+		catch (Exception) { }
+		return System.Environment.GetCommandLineArgs()[0];
+		}
+
+	[DllImport("kernel32.dll")] private static extern IntPtr GetCommandLineW();
 	private readonly Random _random = new();
 	private readonly DateTime _start = DateTime.UtcNow;
 
@@ -57,6 +83,9 @@ public sealed class ShellEnvironment
 	public int CurrentLine { get; set; }
 	/// <summary>`$-` — the current option flags.</summary>
 	public Func<string>? FlagsProvider { get; set; }
+	/// <summary>`$BASH_COMMAND` — the command running or about to run (in a trap: the one the trap
+	/// is for), rendered when read. Empty until 2026-10-11.</summary>
+	public Func<string>? CommandTextProvider { get; set; }
 	/// <summary>Arithmetic evaluator used for `declare -i` assignments.</summary>
 	public Func<string, long>? ArithEval { get; set; }
 	/// <summary>`set -a`: export every variable on assignment.</summary>
@@ -284,6 +313,14 @@ public sealed class ShellEnvironment
 	/// thread starts running shell code (RunString, pipeline stages, background jobs, `timeout`).</summary>
 	public static ShellEnvironment? Active { get => t_active; set => t_active = value; }
 
+	/// <summary>The PATH command lookups search: the running shell's own PATH variable (a subshell's or a
+	/// stage's is its own). They read the process environment until 2026-10-11, which a temporary
+	/// `PATH=… cmd` never reaches and a `( export PATH=… )` changed for the parent too.</summary>
+	public static string CurrentPath => t_active?.Get("PATH") ?? System.Environment.GetEnvironmentVariable("PATH") ?? "";
+
+	/// <summary>Called on every assignment to PATH: bash resets its command hash table then.</summary>
+	public Action? PathChanged { get; set; }
+
 	/// <summary>`cd`: <paramref name="dest"/> is a translated path (absolute when this shell is
 	/// detached from the process cwd).</summary>
 	public void ChangeCwd(string dest)
@@ -327,12 +364,13 @@ public sealed class ShellEnvironment
 			case "-":  return FlagsProvider?.Invoke() ?? "hB";
 			case "#":  return (_positionals.TryPeek(out var p) ? p.Length : 0).ToString();
 			case "@":  return string.Join(" ", _positionals.TryPeek(out var pa) ? pa : []);
-			case "*":  return string.Join(" ", _positionals.TryPeek(out var ps) ? ps : []);
+			case "*":  return string.Join(StarSeparator, _positionals.TryPeek(out var ps) ? ps : []);
 			case "0":  return _arg0;
 			case "RANDOM":  return _random.Next(0, 32768).ToString();
 			case "SRANDOM": return ((uint)_random.NextInt64()).ToString();
 			case "SECONDS": return ((long)(DateTime.UtcNow - _start).TotalSeconds).ToString();
 			case "LINENO":  return CurrentLine.ToString();
+			case "BASH_COMMAND": return CommandTextProvider?.Invoke() ?? "";
 			case "BASHPID": return Environment.ProcessId.ToString();
 			case "EPOCHSECONDS":  return DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
 			case "EPOCHREALTIME": return (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0).ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
@@ -357,12 +395,17 @@ public sealed class ShellEnvironment
 	/// Until 2026-10-08 `local x` stored "", so x read as set.</summary>
 	private static readonly string DeclaredUnset = new('﷐', 1);
 
+	/// <summary>What joins `$*` and `${a[*]}` where they make one string ("$*", an assignment, `[[ ]]`,
+	/// a here-string, `case`): IFS's first character, nothing when IFS is empty, a space when it is
+	/// unset (bash). A space whatever IFS held until 2026-10-12.</summary>
+	public string StarSeparator => !IsSet("IFS") ? " " : Get("IFS") is { Length: > 0 } ifs ? ifs[..1] : "";
+
 	/// <summary>True if the scalar is set (for `[[ -v x ]]` / `${x+y}`). A name declared with no value
 	/// is unset; an array or associative array is set when its element 0 / "0" is, as in bash.</summary>
 	public bool IsSet(string name)
 		{
 		if (name.Length == 1 && "?$!-#@*0".IndexOf(name[0]) >= 0) return true;
-		if (name is "RANDOM" or "SECONDS" or "LINENO" or "BASHPID" or "EPOCHSECONDS" or "EPOCHREALTIME" or "SRANDOM") return true;
+		if (name is "RANDOM" or "SECONDS" or "LINENO" or "BASHPID" or "EPOCHSECONDS" or "EPOCHREALTIME" or "SRANDOM" or "BASH_COMMAND") return true;
 		if (int.TryParse(name, out int idx))
 			{
 			var pos = _positionals.TryPeek(out var pp) ? pp : [];
@@ -409,7 +452,7 @@ public sealed class ShellEnvironment
 	/// <summary>A PATH written in MSYS form (`/c/x:/usr/bin:…`, colon-separated, entries
 	/// rooted at `/`) — as a Git Bash snapshot or `export PATH=/c/foo:$PATH` produces — is
 	/// converted to the native `C:\x;…` form so lookups and child processes keep working.</summary>
-	private static string NormalizePath(string value)
+	internal static string NormalizePath(string value)
 		{
 		if (value.Contains(';') || !value.Contains(':')) return value;
 		var parts = value.Split(':');
@@ -431,6 +474,7 @@ public sealed class ShellEnvironment
 			// the shell's own command lookup (ResolveOnPath/FindInPath) reads the process
 			// environment, so `export PATH=…` must reach it or new directories are invisible
 			try { Environment.SetEnvironmentVariable("PATH", value); } catch { }
+			PathChanged?.Invoke();   // the hash table is reset, as bash's
 			}
 		for (int i = _frames.Count - 1; i >= 0; i--)
 			if (_frames[i].ContainsKey(name))

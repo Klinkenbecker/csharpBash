@@ -384,3 +384,215 @@ output agreement:
   pipeline    = Git Bash, = WSL
   find        = Git Bash, = WSL
 ```
+
+## 2026-10-11 17:11
+
+```
+date     : 2026-10-11 17:05:43
+C#Bash   : /f/TEMP/claude/F--Koliada-Tools-bash/e37e3586-0995-41b9-b101-9058f7fb5189/scratchpad/aottraps/Bash.exe   [--cs (NOT the deployed build)]
+           C#Bash build 1.0.0+hg.3b0898199c10+ 216+
+Git Bash : F:/Tools/PortableGit/usr/bin/_bash.exe
+           bash 4.4.23(1)-release
+WSL bash : C:\WINDOWS/System32/wsl.exe -e bash
+           bash 5.1.16(1)-release on Linux 6.18.40.1-microsoft-standard-WSL2
+method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)
+           rows = best of 9 (C#Bash) / best of 3 (Git Bash, WSL); startup = median of 5 samples, each total of 100 launches / 100
+
+benchmark       C#Bash   Git Bash        WSL     vs Git   vs WSL
+----------------------------------------------------------------------
+loop             0.163      1.500      0.427       9.2x     2.6x
+arith            0.248      2.069      0.619       8.3x     2.5x
+func             0.218      2.330      0.587      10.7x     2.7x
+loop_big         1.421     15.275      3.419      10.7x     2.4x
+coreutils        0.058     15.704      0.830     270.8x    14.3x *
+pipeline         0.248      0.270      0.134       1.1x     0.5x *
+find             0.022      0.125      0.208       5.7x     9.5x *
+startup         0.0161     0.0161     0.1122       1.0x     7.0x
+  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost.
+  startup = bash -c 'exit 0', median of 5 samples, each the total of 100 consecutive launches / 100.
+
+output agreement:
+  loop        = Git Bash, = WSL
+  arith       = Git Bash, = WSL
+  func        = Git Bash, = WSL
+  coreutils   = Git Bash, = WSL
+  pipeline    = Git Bash, = WSL
+  find        = Git Bash, = WSL
+```
+
+## 2026-10-11 17:16
+
+```
+date     : 2026-10-11 17:11:06
+C#Bash   : /f/Koliada/Tools/bash/dist/Bash.exe   [--cs (NOT the deployed build)]
+           C#Bash build 1.0.0+hg.40a4296afbd6 213
+Git Bash : F:/Tools/PortableGit/usr/bin/_bash.exe
+           bash 4.4.23(1)-release
+WSL bash : C:\WINDOWS/System32/wsl.exe -e bash
+           bash 5.1.16(1)-release on Linux 6.18.40.1-microsoft-standard-WSL2
+method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)
+           rows = best of 9 (C#Bash) / best of 3 (Git Bash, WSL); startup = median of 5 samples, each total of 100 launches / 100
+
+benchmark       C#Bash   Git Bash        WSL     vs Git   vs WSL
+----------------------------------------------------------------------
+loop             0.164      1.489      0.427       9.1x     2.6x
+arith            0.246      2.058      0.614       8.4x     2.5x
+func             0.212      2.319      0.575      10.9x     2.7x
+loop_big         1.434     14.997      3.387      10.5x     2.4x
+coreutils        0.056     15.851      0.823     283.1x    14.7x *
+pipeline         0.246      0.280      0.115       1.1x     0.5x *
+find             0.021      0.126      0.225       6.0x    10.7x *
+startup         0.0158     0.0165     0.1120       1.0x     7.1x
+  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost.
+  startup = bash -c 'exit 0', median of 5 samples, each the total of 100 consecutive launches / 100.
+
+output agreement:
+  loop        = Git Bash, = WSL
+  arith       = Git Bash, = WSL
+  func        = Git Bash, = WSL
+  coreutils   = Git Bash, = WSL
+  pipeline    = Git Bash, = WSL
+  find        = Git Bash, = WSL
+```
+
+## 2026-10-12 07:00
+
+```
+date     : 2026-10-12 06:54:48
+C#Bash   : /f/TEMP/claude/F--Koliada-Tools-bash/e37e3586-0995-41b9-b101-9058f7fb5189/scratchpad/aot229/Bash.exe   [--cs (NOT the deployed build)]
+           C#Bash build 1.0.0+hg.1eb31ba5124d 229
+Git Bash : F:/Tools/PortableGit/usr/bin/_bash.exe
+           bash 4.4.23(1)-release
+WSL bash : C:\WINDOWS/System32/wsl.exe -e bash
+           bash 5.1.16(1)-release on Linux 6.18.40.1-microsoft-standard-WSL2
+method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)
+           rows = best of 9 (C#Bash) / best of 3 (Git Bash, WSL); startup = median of 5 samples, each total of 100 launches / 100
+
+benchmark       C#Bash   Git Bash        WSL     vs Git   vs WSL
+----------------------------------------------------------------------
+loop             0.166      1.517      0.427       9.1x     2.6x
+arith            0.255      2.080      0.645       8.2x     2.5x
+func             0.230      2.334      0.587      10.1x     2.6x
+loop_big         1.459     19.193      3.447      13.2x     2.4x
+coreutils        0.063     16.426      0.850     260.7x    13.5x *
+pipeline         0.248      0.286      0.117       1.2x     0.5x *
+find             0.023      0.131      0.221       5.7x     9.6x *
+startup         0.0161     0.0166     0.1151       1.0x     7.1x
+  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost.
+  startup = bash -c 'exit 0', median of 5 samples, each the total of 100 consecutive launches / 100.
+
+output agreement:
+  loop        = Git Bash, = WSL
+  arith       = Git Bash, = WSL
+  func        = Git Bash, = WSL
+  coreutils   = Git Bash, = WSL
+  pipeline    = Git Bash, = WSL
+  find        = Git Bash, = WSL
+```
+
+## 2026-10-12 07:06
+
+```
+date     : 2026-10-12 07:00:37
+C#Bash   : /f/Koliada/Tools/bash/dist/Bash.exe   [--cs (NOT the deployed build)]
+           C#Bash build 1.0.0+hg.64cd033c7de6 217
+Git Bash : F:/Tools/PortableGit/usr/bin/_bash.exe
+           bash 4.4.23(1)-release
+WSL bash : C:\WINDOWS/System32/wsl.exe -e bash
+           bash 5.1.16(1)-release on Linux 6.18.40.1-microsoft-standard-WSL2
+method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)
+           rows = best of 9 (C#Bash) / best of 3 (Git Bash, WSL); startup = median of 5 samples, each total of 100 launches / 100
+
+benchmark       C#Bash   Git Bash        WSL     vs Git   vs WSL
+----------------------------------------------------------------------
+loop             0.167      1.490      0.442       8.9x     2.6x
+arith            0.244      2.056      0.629       8.4x     2.6x
+func             0.213      2.287      0.590      10.7x     2.8x
+loop_big         1.420     18.918      3.439      13.3x     2.4x
+coreutils        0.060     16.341      0.827     272.4x    13.8x *
+pipeline         0.251      0.292      0.130       1.2x     0.5x *
+find             0.022      0.127      0.227       5.8x    10.3x *
+startup         0.0163     0.0167     0.1160       1.0x     7.1x
+  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost.
+  startup = bash -c 'exit 0', median of 5 samples, each the total of 100 consecutive launches / 100.
+
+output agreement:
+  loop        = Git Bash, = WSL
+  arith       = Git Bash, = WSL
+  func        = Git Bash, = WSL
+  coreutils   = Git Bash, = WSL
+  pipeline    = Git Bash, = WSL
+  find        = Git Bash, = WSL
+```
+
+## 2026-10-12 07:30
+
+```
+date     : 2026-10-12 07:23:00
+C#Bash   : /f/Koliada/Tools/bash/tests/bench/aot/Bash.exe   [--build: rev 231, NOT deployed]
+           C#Bash build 1.0.0+hg.2b6bfa4df96c 231
+deployed : /f/Koliada/Tools/bash/dist/Bash.exe   [timed in alternating rounds with the build]
+           C#Bash build 1.0.0+hg.64cd033c7de6 217
+Git Bash : F:/Tools/PortableGit/usr/bin/_bash.exe
+           bash 4.4.23(1)-release
+WSL bash : C:\WINDOWS/System32/wsl.exe -e bash
+           bash 5.1.16(1)-release on Linux 6.18.40.1-microsoft-standard-WSL2
+method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)
+           rows = best of 9 (C#Bash) / best of 3 (Git Bash, WSL); startup = median of 5 samples, each total of 100 launches / 100
+
+benchmark        build   deployed   change   Git Bash        WSL     vs Git   vs WSL
+----------------------------------------------------------------------------------------
+loop             0.159      0.163    -2.5%      1.510      0.432       9.5x     2.7x
+arith            0.248      0.245    +1.2%      2.119      0.696       8.5x     2.8x
+func             0.229      0.230    -0.4%      2.331      0.609      10.2x     2.7x
+loop_big         1.404      1.437    -2.3%     15.129      3.398      10.8x     2.4x
+coreutils        0.058      0.059    -1.7%     16.727      0.873     288.4x    15.1x *
+pipeline         0.253      0.251    +0.8%      0.280      0.124       1.1x     0.5x *
+find             0.023      0.022    +4.5%      0.128      0.225       5.6x     9.8x *
+startup         0.0163     0.0165    -1.2%     0.0171     0.1335       1.0x     8.2x
+  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost.
+  startup = bash -c 'exit 0', median of 5 samples, each the total of 100 consecutive launches / 100.
+
+output agreement:
+  loop        = Git Bash, = deployed, = WSL
+  arith       = Git Bash, = deployed, = WSL
+  func        = Git Bash, = deployed, = WSL
+  coreutils   = Git Bash, = deployed, = WSL
+  pipeline    = Git Bash, = deployed, = WSL
+  find        = Git Bash, = deployed, = WSL
+```
+
+## 2026-10-12 07:46
+
+```
+date     : 2026-10-12 07:41:07
+C#Bash   : /f/Koliada/Tools/bash/dist/Bash.exe   [dist (deployed)]
+           C#Bash build 1.0.0+hg.2a0678c462c5 233
+Git Bash : F:/Tools/PortableGit/usr/bin/_bash.exe
+           bash 4.4.23(1)-release
+WSL bash : C:\WINDOWS/System32/wsl.exe -e bash
+           bash 5.1.16(1)-release on Linux 6.18.40.1-microsoft-standard-WSL2
+method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)
+           rows = best of 9 (C#Bash) / best of 3 (Git Bash, WSL); startup = median of 5 samples, each total of 100 launches / 100
+
+benchmark       C#Bash   Git Bash        WSL     vs Git   vs WSL
+----------------------------------------------------------------------
+loop             0.169      1.537      0.426       9.1x     2.5x
+arith            0.254      2.082      0.642       8.2x     2.5x
+func             0.221      2.393      0.588      10.8x     2.7x
+loop_big         1.425     15.165      3.469      10.6x     2.4x
+coreutils        0.058     15.962      0.821     275.2x    14.2x *
+pipeline         0.254      0.274      0.125       1.1x     0.5x *
+find             0.023      0.126      0.209       5.5x     9.1x *
+startup         0.0158     0.0165     0.1150       1.0x     7.3x
+  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost.
+  startup = bash -c 'exit 0', median of 5 samples, each the total of 100 consecutive launches / 100.
+
+output agreement:
+  loop        = Git Bash, = WSL
+  arith       = Git Bash, = WSL
+  func        = Git Bash, = WSL
+  coreutils   = Git Bash, = WSL
+  pipeline    = Git Bash, = WSL
+  find        = Git Bash, = WSL
+```

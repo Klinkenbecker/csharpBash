@@ -300,16 +300,84 @@ public sealed class Evaluator
 	private bool _inTrap;       // guard against trap handlers re-triggering traps
 	private bool _exitTrapRan;
 
-	public void SetTrap(string sig, string command) { SaveTrapsForSubshell(sig); _traps[sig] = command; }
+	public void SetTrap(string sig, string command)
+		{
+		SaveTrapsForSubshell(sig);
+		_traps[sig] = command;
+		if (sig == "RETURN") _returnTrapCall = _callId;   // a function that sets it has it fire at its own return
+		}
+
+	// ── DEBUG and RETURN traps, $BASH_COMMAND (DECISIONS 2026-10-11; all three were silent before) ──
+	// bash 5.1, measured: DEBUG runs before each simple command, `[[ ]]`, `(( ))`, each `for` turn, an
+	// arithmetic `for`'s parts, a `case` and each pipeline element (in the parent, before the stage);
+	// not inside functions, `( )`, `$( )`, `<( )` or pipeline stages unless -T (functrace), with which
+	// it also runs once at a function's entry. RETURN runs after `source` and after a function that set
+	// it, or after every function with -T. A trap never traces itself, and `$?` survives it.
+
+	private Node? _commandNode;     // `$BASH_COMMAND`: the command running or about to run ...
+	private string? _commandText;   // ... or a head bash renders itself (`for i in a b`, `((i<2))`)
+	private int _debugOff;          // > 0 inside a function, `( )`, `$( )` or a stage that does not inherit DEBUG
+	private Node? _debugSkip;       // a pipeline stage's own command, already traced by the parent shell
+	private int _callSeq, _callId;  // the function call running (0: none), for RETURN
+	private int _returnTrapCall = -1;
+
+	private void SetCommand(Node node) { if (!_inTrap) { _commandNode = node; _commandText = null; } }
+	private void SetCommand(string text) { if (!_inTrap) { _commandText = text; _commandNode = null; } }
+	private string CommandText() => _commandText ?? (_commandNode is { } n ? Bash.Parser.CommandText.Render(n.Span) : "");
+
+	/// <summary>The DEBUG trap, if set and in force here, before the current command.</summary>
+	private void DebugTrap(Node? node)
+		{
+		if (_inTrap || _debugOff > 0 || (node is not null && ReferenceEquals(node, _debugSkip))) return;
+		if (!_traps.TryGetValue("DEBUG", out var cmd) || cmd.Length == 0) return;
+		int status = _env.LastExitCode;
+		RunTrap(cmd, _env.CurrentLine);
+		_env.LastExitCode = status;   // the command still sees the `$?` before it
+		}
+
+	/// <summary>The RETURN trap after a function or `source` that ended with <paramref name="status"/>,
+	/// read as at <paramref name="line"/>; that status is kept, whatever the trap does.</summary>
+	private int ReturnTrap(int status, int line)
+		{
+		if (_inTrap || !_traps.TryGetValue("RETURN", out var cmd) || cmd.Length == 0) return status;
+		_env.LastExitCode = status;
+		RunTrap(cmd, line);
+		_env.LastExitCode = status;
+		return status;
+		}
+
+	/// <summary>Functions with the trace attribute (`declare -ft`): they inherit DEBUG and RETURN as with -T.</summary>
+	private readonly HashSet<string> _tracedFunctions = new(StringComparer.Ordinal);
+
+	/// <summary>`declare -ft NAME` / `+t`; false when there is no such function.</summary>
+	internal bool SetFunctionTrace(string name, bool on)
+		{
+		if (!_functions.ContainsKey(name)) return false;
+		if (on) _tracedFunctions.Add(name); else _tracedFunctions.Remove(name);
+		return true;
+		}
+
+	/// <summary>Entering `$( )`, `<( )` (WordExpander): DEBUG stays outside unless -T.</summary>
+	internal bool SuspendDebug() { if (Options.FuncTrace) return false; _debugOff++; return true; }
+	internal void ResumeDebug(bool suspended) { if (suspended) _debugOff--; }
 	public void RemoveTrap(string sig) { SaveTrapsForSubshell(sig); _traps.Remove(sig); }
 	public IReadOnlyDictionary<string, string> Traps => _traps;
 
-	private void RunTrap(string command)
+	/// <param name="atLine">When &gt; 0, the trap's text is read as at that line, as bash's `$LINENO`
+	/// shows in it: the command's line for DEBUG and ERR (an ERR trap said line 1 until 2026-10-11), a
+	/// function's definition line or the `source` line for RETURN. EXIT stays at 1, as in bash.</param>
+	private void RunTrap(string command, int atLine = 0)
 		{
 		if (_inTrap) return;
 		_inTrap = true;
+		int savedBase = _lineBase, savedLine = _env.CurrentLine;
+		if (atLine > 0) _lineBase = atLine - 1;
 		try { RunString(command, reportErrors: true); }
-		finally { _inTrap = false; }
+		finally
+			{
+			_inTrap = false;
+			if (atLine > 0) { _lineBase = savedBase; _env.CurrentLine = savedLine; }
+			}
 		}
 
 	/// <summary>Run the EXIT trap exactly once (called at every shell-exit path).</summary>
@@ -328,6 +396,8 @@ public sealed class Evaluator
 		_builtins = new Builtins(_env, this);
 		_expander = new WordExpander(_env, this);
 		_env.FlagsProvider = () => Options.FlagString();
+		_env.CommandTextProvider = CommandText;
+		_env.PathChanged = HashClear;
 		_env.ArithEval     = e => _expander.EvalArithmetic(e);
 		_env.RefreshCallStack = PublishFrames;
 		_env.ErrorPrefixProvider = () => ErrorPrefix;
@@ -354,14 +424,21 @@ public sealed class Evaluator
 		_builtins = new Builtins(_env, this);
 		_expander = new WordExpander(_env, this);
 		_env.FlagsProvider = () => Options.FlagString();
+		_env.CommandTextProvider = CommandText;
+		_env.PathChanged = HashClear;
 		_env.ArithEval     = e => _expander.EvalArithmetic(e);
 		_env.RefreshCallStack = PublishFrames;
 		_env.ErrorPrefixProvider = () => ErrorPrefix;
 		_env.FdStream = n => n switch { 1 => ConsoleMux.Raw ?? Console.OpenStandardOutput(), 2 => Console.OpenStandardError(), _ => GetFd(n) };
+		// a subshell (a pipeline stage, a background job) inherits DEBUG and RETURN only with -T
+		_debugOff = parent._debugOff + (parent.Options.FuncTrace ? 0 : 1);
+		_callSeq = parent._callSeq; _callId = parent._callId; _returnTrapCall = parent._returnTrapCall;
+		_commandNode = parent._commandNode; _commandText = parent._commandText;
 		_builtins.InheritFrom(parent._builtins);
 		foreach (var kv in parent._functions) _functions[kv.Key] = kv.Value;
 		foreach (var kv in parent.Aliases)    Aliases[kv.Key]    = kv.Value;
 		foreach (var kv in parent._traps)     _traps[kv.Key]     = kv.Value;
+		_tracedFunctions.UnionWith(parent._tracedFunctions);
 		foreach (var kv in parent._fds)       _fds[kv.Key]       = kv.Value;
 		foreach (var kv in parent._pathHash)  _pathHash[kv.Key]  = kv.Value;
 		foreach (var kv in parent._pathHits)  _pathHits[kv.Key]  = kv.Value;
@@ -392,6 +469,11 @@ public sealed class Evaluator
 		{
 		if (Options.NoExec) return 0;
 		if (node.Line > 0) _env.CurrentLine = node.Line + _lineBase;
+		if (node is SimpleCommand or ConditionalExpression or ArithmeticCommand)
+			{
+			SetCommand(node);                       // $BASH_COMMAND
+			if (_traps.Count != 0) DebugTrap(node);   // no trap set: one count test per command
+			}
 
 		int code;
 		try
@@ -436,7 +518,7 @@ public sealed class Evaluator
 		    && _traps.TryGetValue("ERR", out var errCmd) && errCmd.Length > 0)
 			{
 			_inErrTrap = true;
-			try { RunTrap(errCmd); }
+			try { RunTrap(errCmd, _env.CurrentLine); }   // $LINENO: the failed command's line
 			finally { _inErrTrap = false; _env.LastExitCode = code; }
 			}
 
@@ -452,7 +534,9 @@ public sealed class Evaluator
 	/// callers can honour `exit`; a syntax error is reported as
 	/// `bash: origin: line N: message` and yields exit code 2 (bash's convention); a
 	/// runtime error yields 1.</summary>
-	public int RunString(string source, bool reportErrors = true, string origin = "bash", int syntaxErrorCode = 2)
+	/// <param name="mainLoop">The shell's own input (a script, `-c`, stdin), where `set -t` (onecmd)
+	/// ends the shell after one command; not `source`, `eval` or a trap, as in bash's reader loop.</param>
+	public int RunString(string source, bool reportErrors = true, string origin = "bash", int syntaxErrorCode = 2, bool mainLoop = false)
 		{
 		var callerEnv = ShellEnvironment.Active;   // this thread runs THIS shell's code (its cwd) from here
 		ShellEnvironment.Active = _env;
@@ -482,6 +566,9 @@ public sealed class Evaluator
 				CheckInterrupt();
 				try { code = RunStatement(node); }
 				catch (CommandAbortException) { code = 1; _env.LastExitCode = 1; }   // a bad `$( )` abandons this command only
+				// -t / onecmd: one command (a line), then the shell ends with its status, as bash; it was
+				// accepted and ignored until 2026-10-11. `set -t` itself is that one command.
+				if (mainLoop && Options.OneCmd) break;
 				}
 			_env.LastExitCode = code;
 			return code;
@@ -536,10 +623,11 @@ public sealed class Evaluator
 		if (positionals is not null) { savedPos = _env.GetPositionals(); _env.SetPositionals(positionals); }
 		int savedLine = _env.CurrentLine, savedBase = _lineBase;
 		_lineBase = 0;   // a file numbers its own lines
+		int rc;
 		try
 			{
-			try { return RunString(ShellEncoding.ReadAllText(translated), origin: path); }
-			catch (ReturnException r) { return r.Code; }      // `return` at file level ends the source
+			try { rc = RunString(ShellEncoding.ReadAllText(translated), origin: path); }
+			catch (ReturnException r) { rc = r.Code; }      // `return` at file level ends the source
 			// a locked/blocked/vanished source file is an error, not a dead shell (2026-09-12)
 			catch (Exception ex) when (ex is IOException and not BrokenPipeException
 			                            or UnauthorizedAccessException or NotSupportedException
@@ -553,6 +641,10 @@ public sealed class Evaluator
 			if (savedPos is not null) _env.SetPositionals(savedPos);
 			PopFrame(function: false);
 			}
+		// RETURN after the file, out of its frame (bash: `${FUNCNAME[0]}` is the caller's), where the
+		// trap is in force: the top level, -T, or a function that set it
+		if (_traps.Count != 0 && (_debugOff == 0 || _returnTrapCall == _callId)) rc = ReturnTrap(rc, _env.CurrentLine);   // the `source` line
+		return rc;
 		}
 
 	// ── script / list ─────────────────────────────────────────────────────────
@@ -599,8 +691,27 @@ public sealed class Evaluator
 		var items = l.Items;
 		int code = 0;
 		ListOperator? prev = null;
-		foreach (var (node, op) in items)
+		for (int i = 0; i < items.Count; i++)
 			{
+			var (node, op) = items[i];
+			// `a && b || c &` backgrounds the whole and-or list, as bash: one job runs it. Only the last
+			// pipeline went to the background until 2026-10-12 (`make && run &` made in the foreground).
+			if (prev is not (ListOperator.And or ListOperator.Or) && op is ListOperator.And or ListOperator.Or)
+				{
+				int end = i;
+				while (end < items.Count - 1 && items[end].Op is ListOperator.And or ListOperator.Or) end++;
+				if (items[end].Op == ListOperator.Background)
+					{
+					var chain = items.GetRange(i, end - i + 1);
+					chain[^1] = (chain[^1].Pipeline, null);
+					StartBackgroundJob(l with { Items = chain });
+					code = 0;
+					_env.LastExitCode = code;
+					prev = ListOperator.Background;
+					i = end;
+					continue;
+					}
+				}
 			bool run = prev switch
 				{
 				ListOperator.And => code == 0,
@@ -636,7 +747,8 @@ public sealed class Evaluator
 
 	private void StartBackgroundJob(Node node)
 		{
-		var job = new BackgroundJob { Id = NextJobId(), Command = DescribeNode(node), Background = true, Finished = _jobFinished };
+		var job = new BackgroundJob { Id = NextJobId(), Command = DescribeNode(node), Background = true, Finished = _jobFinished,
+			Stages = node is Pipeline p ? p.Commands.Select(s => DescribeNode(s.Command)).ToList() : [] };
 		var stdio = ConsoleMux.Capture();   // the job writes wherever its parent was writing
 		// Its own copy of the shell, taken NOW, as bash forks one at `&`. Jobs ran on this shell's own
 		// state: `for f in *; do gzip "$f" & done` read $f after the loop had moved on (the last file,
@@ -757,7 +869,7 @@ public sealed class Evaluator
 		int rc = 0;
 		foreach (var s in specs)
 			{
-			var j = FindJob(s);
+			var j = FindJob(s, "disown");
 			if (j is null) { Console.Error.WriteLine($"{ErrorPrefix}disown: {s}: no such job"); rc = 1; }
 			else _jobs.Remove(j);
 			}
@@ -780,24 +892,65 @@ public sealed class Evaluator
 			AwaitSpawn(j, (int)Math.Max(0, 1000 - sw.ElapsedMilliseconds));
 		}
 
-	/// <summary>Find a job by `%n` spec, job number, or synthetic pid.</summary>
-	private BackgroundJob? FindJob(string spec) => FindJobIn(_jobs, spec);
+	/// <summary>Find a job by jobspec, job number or synthetic pid (<see cref="FindJobIn"/>).</summary>
+	private BackgroundJob? FindJob(string spec, string who) => FindJobIn(_jobs, spec, who);
 
-	private static BackgroundJob? FindJobIn(List<BackgroundJob> jobs, string spec)
+	/// <summary>A job as bash 5.1's get_job_spec finds it: `%N` (or N, or a synthetic pid) by number; `%`,
+	/// `%%`, `%+` the current job; `%-` the previous; `%name` the job one of whose commands starts with
+	/// name; `%?text` one whose command contains text, case ignored. Two jobs matching is "ambiguous job
+	/// spec" (said here, as <paramref name="who"/>) and no job, like no match. A match on a pipeline's later
+	/// command is always ambiguous: bash's get_job_by_name meets it twice (measured, `%?cat` against
+	/// `sleep 4 | cat`). `%name`, `%?text` and a bare `%` found nothing until 2026-10-12.</summary>
+	private BackgroundJob? FindJobIn(List<BackgroundJob> jobs, string spec, string who)
 		{
-		if (spec.StartsWith('%')) spec = spec[1..];
-		if (spec is "%" or "+") return jobs.LastOrDefault();
+		bool percent = spec.StartsWith('%');
+		if (percent) spec = spec[1..];
+		if ((percent && spec.Length == 0) || spec is "%" or "+") return jobs.LastOrDefault();
 		if (spec == "-") return jobs.Count >= 2 ? jobs[^2] : null;
-		if (!int.TryParse(spec, out var n)) return null;
-		if (BackgroundJob.IsSyntheticPid(n)) n = BackgroundJob.JobIdFromPid(n);
-		return jobs.FirstOrDefault(j => j.Id == n);
+		if (int.TryParse(spec, out var n))
+			{
+			if (BackgroundJob.IsSyntheticPid(n)) n = BackgroundJob.JobIdFromPid(n);
+			return jobs.FirstOrDefault(j => j.Id == n);
+			}
+		if (!percent) return null;
+		bool substring = spec.StartsWith('?');
+		var name = substring ? spec[1..] : spec;
+		BackgroundJob? found = null;
+		foreach (var j in jobs.OrderByDescending(j => j.Id))
+			{
+			var stages = j.Stages.Count > 0 ? j.Stages : [j.Command];
+			for (int k = 0; k < stages.Count; k++)
+				{
+				if (!(substring ? stages[k].Contains(name, StringComparison.OrdinalIgnoreCase) : stages[k].StartsWith(name, StringComparison.Ordinal)))
+					continue;
+				if (found is not null || k > 0) { Console.Error.WriteLine($"{ErrorPrefix}{who}: {name}: ambiguous job spec"); return null; }
+				found = j;
+				break;
+				}
+			}
+		return found;
+		}
+
+	/// <summary>`jobs -x command [args]` (bash's execute_list_with_replacements): each word starting with `%`
+	/// that names a job becomes the job's process group, and the words run as one simple command with no
+	/// further expansion; a word naming no job passes through unchanged. bash's process group is the job's
+	/// leader under job control (`set -m`, on when interactive) and the shell's own group otherwise, which
+	/// is `$$` when the shell leads its group. Windows has no process groups, so C#Bash gives the job's pid
+	/// when interactive (as `jobs -p`) and `$$` in a script, as bash 5.1 does there (DECISIONS 2026-10-12).</summary>
+	public int RunWithJobGroups(List<string> words)
+		{
+		var table = _jobs.Count == 0 && _parentJobs is not null ? _parentJobs : _jobs;
+		for (int i = 0; i < words.Count; i++)
+			if (words[i].StartsWith('%') && FindJobIn(table, words[i], "jobs") is { } job)
+				words[i] = (Options.Interactive ? job.Pid : Environment.ProcessId).ToString();
+		return words.Count == 0 ? 0 : RunCommand(words[0], words.GetRange(1, words.Count - 1));
 		}
 
 	/// <summary>`kill` on a job: kills the external child it is running, if any.</summary>
 	public int KillJob(string spec, out string? error)
 		{
 		error = null;
-		var job = FindJob(spec);
+		var job = FindJob(spec, "kill");
 		if (job is null) { error = $"{spec}: no such job"; return 1; }
 		// the job's own shell first, so its loop does not go on to the next command; then the program
 		// it is running, if any
@@ -835,7 +988,7 @@ public sealed class Evaluator
 		if (specs.Count == 0) shown.AddRange(table);
 		else foreach (var s in specs)
 			{
-			if (FindJobIn(table, s) is { } j) shown.Add(j);
+			if (FindJobIn(table, s, "jobs") is { } j) shown.Add(j);
 			else { Console.Error.WriteLine($"{ErrorPrefix}jobs: {s}: no such job"); rc = 1; }
 			}
 		foreach (var j in shown)
@@ -888,7 +1041,7 @@ public sealed class Evaluator
 	private int WaitNext(List<string> specs, string? pVar)
 		{
 		var candidates = specs.Count == 0 ? _jobs.ToList()
-		               : specs.Select(FindJob).OfType<BackgroundJob>().ToList();
+		               : specs.Select(s => FindJob(s, "wait")).OfType<BackgroundJob>().ToList();
 		if (candidates.Count == 0) return 127;
 		var wakers = new List<WaitHandle> { _jobFinished };
 		wakers.AddRange(InterruptHandles());
@@ -920,7 +1073,7 @@ public sealed class Evaluator
 			foreach (var spec in specs)
 				{
 				if (spec.StartsWith('-') && !int.TryParse(spec, out _)) continue;   // -f: no job control, nothing to do
-				var j = FindJob(spec);
+				var j = FindJob(spec, "wait");
 				if (j is null)
 					{
 					if (int.TryParse(spec.TrimStart('%'), out var pid) && !BackgroundJob.IsSyntheticPid(pid))
@@ -950,7 +1103,10 @@ public sealed class Evaluator
 		SimpleCommand c => string.Join(" ",
 			(c.Name is null ? [] : new[] { LiteralWord(c.Name) }).Concat(c.Args.Select(LiteralWord))),
 		Pipeline p      => string.Join(" | ", p.Commands.Select(s => DescribeNode(s.Command))),
-		List l          => string.Join(" ; ", l.Items.Select(it => DescribeNode(it.Pipeline))),
+		List l          => string.Concat(l.Items.Select(it => DescribeNode(it.Pipeline) + it.Op switch
+			{
+			ListOperator.And => " && ", ListOperator.Or => " || ", ListOperator.Background => " & ", ListOperator.Sequential => "; ", _ => "",
+			})).TrimEnd(),
 		_               => n.GetType().Name
 		};
 
@@ -1128,7 +1284,19 @@ public sealed class Evaluator
 		var pipes = new PipeBuffer[n - 1];
 		for (int i = 0; i < n - 1; i++) pipes[i] = new PipeBuffer();
 		var shells = new Evaluator[n];   // built here, before any stage runs: the parent is idle
-		for (int i = 0; i < n; i++) shells[i] = new Evaluator(this);
+		for (int i = 0; i < n; i++)
+			{
+			// DEBUG for a stage's own simple command runs here, in this shell, before the stage starts
+			// (bash runs it in the parent before forking); the stage's shell then skips it
+			var top = stages[i].Item1;
+			if (top is SimpleCommand or ConditionalExpression or ArithmeticCommand)
+				{
+				SetCommand(top);
+				if (top.Line > 0) _env.CurrentLine = top.Line + _lineBase;
+				if (_traps.Count != 0) DebugTrap(top);
+				}
+			shells[i] = new Evaluator(this) { _debugSkip = top };
+			}
 
 		var exitCodes = new int[n];
 		var threads   = new Thread[n];
@@ -1266,6 +1434,22 @@ public sealed class Evaluator
 		return _expander.LastSubstStatus ?? 0;
 		}
 
+	/// <summary>An argument word that is an assignment under -k: an unquoted `NAME=` or `NAME+=` at its
+	/// start; the value is the rest of the word.</summary>
+	private static (string Name, bool Append, Word Value)? KeywordAssignment(Word w)
+		{
+		// a declaration builtin's `NAME=value` argument arrives parsed (AssignmentArgPart, rev 147)
+		if (w.Parts is [AssignmentArgPart { Index: null } ap])
+			return ap.Name.EndsWith('+') ? (ap.Name[..^1], true, ap.Value) : (ap.Name, false, ap.Value);
+		if (w.Parts is not [LiteralPart first, ..]) return null;
+		var m = System.Text.RegularExpressions.Regex.Match(first.Value, @"^([A-Za-z_][A-Za-z0-9_]*)(\+?)=");
+		if (!m.Success) return null;
+		var rest = new List<WordPart>(w.Parts.Count);
+		if (m.Length < first.Value.Length) rest.Add(new LiteralPart(first.Value[m.Length..]));
+		rest.AddRange(w.Parts.Skip(1));
+		return (m.Groups[1].Value, m.Groups[2].Length > 0, new Word(rest));
+		}
+
 	private int ExecSimpleCommand(SimpleCommand cmd)
 		{
 		// Assignments: a bare assignment statement reports the status of the last
@@ -1336,6 +1520,15 @@ public sealed class Evaluator
 
 		foreach (var argWord in cmd.Args)
 			{
+			// -k / keyword: a `NAME=value` word anywhere after the command name is an assignment for
+			// this command, as a prefix one is, not an argument (bash; even `declare D=1` loses it).
+			// Accepted and ignored until 2026-10-11.
+			if (Options.Keyword && KeywordAssignment(argWord) is var (kwName, kwAppend, kwValue))
+				{
+				var kv = _expander.ExpandToString(kwValue);
+				tempAssign.Add((kwName, kwAppend ? _env.Get(kwName) + kv : kv));
+				continue;
+				}
 			// A word almost always expands to one field — Add directly rather than
 			// AddRange (avoids the IEnumerable/ICollection/CopyTo path). Marginal win
 			// in practice; the real per-iteration cost is allocation in ExpandToFields.
@@ -1438,6 +1631,7 @@ public sealed class Evaluator
 	private readonly Dictionary<string, int> _pathHits = [];
 
 	public void HashClear() { _pathHash.Clear(); _pathHits.Clear(); }
+	private string? _pathHashFor;   // the PATH value the hash table was built for
 	public void HashSetPath(string name, string path) { _pathHash[name] = path; _pathHits[name] = 0; }
 	public bool HashDelete(string name) { _pathHits.Remove(name); return _pathHash.Remove(name); }
 	public IReadOnlyDictionary<string, string> HashTable => _pathHash;
@@ -1447,26 +1641,37 @@ public sealed class Evaluator
 	/// <summary>Resolve a bare command name against PATH (+PATHEXT on Windows). Returns the
 	/// full path (cached on success), or null if it already contains a path separator or
 	/// isn't found — callers then fall back to the OS launcher's own PATH search.</summary>
-	public string? ResolveOnPath(string name)
+	/// <param name="pathOverride">A temporary `PATH=… cmd`: searched for this command only and not hashed,
+	/// as bash does. Otherwise the shell's own PATH (ShellEnvironment.CurrentPath), whose hash is reset
+	/// whenever that value is not the one it was built for (a subshell's PATH, restored).</param>
+	public string? ResolveOnPath(string name, string? pathOverride = null)
 		{
 		if (name.Length == 0 || name.Contains('/') || name.Contains('\\')) return null;
-		if (_pathHash.TryGetValue(name, out var hit)) return hit;
+		string pathValue;
+		if (pathOverride is null)
+			{
+			pathValue = _env.Get("PATH");
+			if (!ReferenceEquals(pathValue, _pathHashFor) && pathValue != _pathHashFor) { HashClear(); _pathHashFor = pathValue; }
+			if (_pathHash.TryGetValue(name, out var hit)) return hit;
+			}
+		else pathValue = pathOverride;
 		var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
 			.Split(';', StringSplitOptions.RemoveEmptyEntries);
-		var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "")
-			.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+		var dirs = pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
 		bool hasExt = Path.HasExtension(name);
 		foreach (var d in dirs)
 			{
 			try
 				{
 				var bare = Path.Combine(d, name);
-				if (File.Exists(bare)) { _pathHash[name] = bare; return bare; }
+				if (File.Exists(bare)) { if (pathOverride is null) _pathHash[name] = bare; return bare; }
 				if (!hasExt)
 					foreach (var ext in pathExt)
 						{
 						var p = Path.Combine(d, name + ext);
-						if (File.Exists(p)) { _pathHash[name] = p; return p; }
+						// the on-disk name: it is the child's argv[0] (`bash.EXE` until 2026-10-11; Git
+						// Bash passes `Bash.exe`), once per name (cached)
+						if (File.Exists(p)) { p = ShellFile.OnDiskName(p); if (pathOverride is null) _pathHash[name] = p; return p; }
 						}
 				}
 			catch { }
@@ -1590,7 +1795,7 @@ public sealed class Evaluator
 		child.EnterScriptFile(arg0);
 		child._env.AdoptCwd(_env);   // starts where we are; its `cd` must not move us (it did, 2026-10-03)
 		child._env.Set("PWD", child._env.Cwd);
-		try   { return child.RunString(ShellEncoding.ReadAllText(path), origin: arg0); }
+		try   { return child.RunString(ShellEncoding.ReadAllText(path), origin: arg0, mainLoop: true); }
 		catch (ExitException ex) { return ex.Code; }
 		finally { _env.ReassertProcessCwd(); }   // the child may have moved the process cwd we own
 		}
@@ -1621,10 +1826,13 @@ public sealed class Evaluator
 			return ExecExternal(Path.GetFileName(interp), spawn, tempAssign, redirects, clearEnv, unsetEnv);
 			}
 
+		// `PATH=… cmd`: bash finds cmd on that PATH (it was looked up on the shell's own until 2026-10-11)
+		string? tempPath = null;
+		foreach (var (n, v) in tempAssign) if (n == "PATH") tempPath = ShellEnvironment.NormalizePath(v);
 		var fileName = name.Contains('/') || name.Contains('\\')
 			? ShellEnvironment.TranslatePath(name)
-			: ResolveOnPath(name) ?? name;   // cached full path, else OS resolves
-		if (!name.Contains('/') && !name.Contains('\\')) HashHit(name);
+			: ResolveOnPath(name, tempPath) ?? name;   // cached full path, else OS resolves
+		if (!name.Contains('/') && !name.Contains('\\') && tempPath is null) HashHit(name);
 		// `>>` and the shell's own redirects hand a child an append-only handle, so concurrent appenders
 		// interleave (DECISIONS 2026-10-04). An MSYS program (Git's usr/bin tools) takes that handle as
 		// read-only and every write failed (Bad file descriptor): it gets a write handle at the end.
@@ -2311,11 +2519,12 @@ public sealed class Evaluator
 		// An EXIT trap it set fires as it ends, inside its own redirects.
 		var snap = _env.TakeSnapshot();
 		var mark = EnterSubshell();
+		bool debugOff = SuspendDebug();   // `( )` inherits DEBUG only with -T
 		try
 			{
 			using var scope = ss.Redirects.Count > 0 ? ApplyRedirects(ss.Redirects) : null;
 			try   { return Execute(ss.Body); }
-			finally { SubshellExitTrap(mark); }
+			finally { SubshellExitTrap(mark); ResumeDebug(debugOff); }
 			}
 		catch (ExitException ex) { return ex.Code; }
 		catch (FatalShellException ex) { Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); return ex.Code; }   // fatal to the subshell only
@@ -2339,14 +2548,26 @@ public sealed class Evaluator
 		_lineBase = fd.LineBase;   // its lines are numbered as where it was defined
 		_env.PushScope(args.ToArray());
 		PushFrame(new Frame(fd.Name, fd.DefinedIn ?? TopLevelSource, callLine), function: true);
+		int savedCall = _callId;
+		_callId = ++_callSeq;
+		// a function inherits DEBUG and RETURN only with -T or its own trace attribute (`declare -ft`)
+		bool debugOff = !Options.FuncTrace && (_tracedFunctions.Count == 0 || !_tracedFunctions.Contains(fd.Name));
+		if (debugOff) _debugOff++;
+		else if (_traps.Count != 0) DebugTrap(null);   // -T: once more at its entry, `$BASH_COMMAND` the call
 		try
 			{
-			if (fd.Redirects.Count > 0) return ExecWithRedirects(fd.Body, fd.Redirects);
-			return Execute(fd.Body);
+			int rc;
+			try { rc = fd.Redirects.Count > 0 ? ExecWithRedirects(fd.Body, fd.Redirects) : Execute(fd.Body); }
+			catch (ReturnException r) { rc = r.Code; }
+			// RETURN, still in the function's frame (`${FUNCNAME[0]}` is it): with -T, or set by this call
+			if (_traps.Count != 0 && ((!debugOff && _debugOff == 0) || _returnTrapCall == _callId))
+				rc = ReturnTrap(rc, fd.Line > 0 ? fd.Line + fd.LineBase : _env.CurrentLine);   // bash: the definition's line
+			return rc;
 			}
-		catch (ReturnException r) { return r.Code; }
 		finally
 			{
+			if (debugOff) _debugOff--;
+			_callId = savedCall;
 			_env.PopScope();
 			_lineBase = savedBase;
 			PopFrame(function: true);
@@ -2356,15 +2577,20 @@ public sealed class Evaluator
 	private int ExecArithFor(ArithForCommand af)
 		{
 		using var scope = af.Redirects.Count > 0 ? ApplyRedirects(af.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
+		// DEBUG before the init, each test and each step, as `((part))` (bash)
+		void Head(int part) { if (_traps.Count != 0) { SetCommand(af.Heads[part]); DebugTrap(null); } }
+		Head(0);
 		if (af.Init.Length > 0) _expander.EvalArithmetic(af.Init);
 		int code = 0;
 		while (true)
 			{
 			CheckInterrupt();
+			Head(1);
 			if (af.Condition.Length > 0 && _expander.EvalArithmetic(af.Condition) == 0) break;
 			try   { code = Execute(af.Body); }
 			catch (BreakException b)    { if (b.Levels <= 1) break;    throw new BreakException(b.Levels - 1); }
 			catch (ContinueException c) { if (c.Levels > 1) throw new ContinueException(c.Levels - 1); }
+			Head(2);
 			if (af.Step.Length > 0) _expander.EvalArithmetic(af.Step);
 			}
 		return code;
@@ -2414,9 +2640,15 @@ public sealed class Evaluator
 			: _env.GetPositionals();
 
 		int code = 0;
+		string? head = null;   // `for i in a b`, rendered once, for each turn's DEBUG trap
 		foreach (var word in words)
 			{
 			CheckInterrupt();
+			if (_traps.Count != 0)
+				{
+				SetCommand(head ??= Bash.Parser.CommandText.Render(fc.Span));
+				DebugTrap(null);
+				}
 			_env.Set(fc.Variable, word);
 			try   { code = Execute(fc.Body); }
 			catch (BreakException b)    { if (b.Levels <= 1) break;    throw new BreakException(b.Levels - 1); }
@@ -2428,6 +2660,11 @@ public sealed class Evaluator
 	private int ExecCase(CaseCommand cc)
 		{
 		using var scope = cc.Redirects.Count > 0 ? ApplyRedirects(cc.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
+		if (_traps.Count != 0)
+			{
+			SetCommand($"case {Bash.Parser.CommandText.Render(cc.Span)} in ");   // bash's own text, trailing space and all
+			DebugTrap(null);
+			}
 		var subject = _expander.ExpandToString(cc.Subject);
 		foreach (var item in cc.Items)
 			{

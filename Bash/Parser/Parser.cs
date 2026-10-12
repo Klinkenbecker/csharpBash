@@ -339,8 +339,9 @@ public sealed class Parser
 		if (t.Type == TokenType.ArithCommand)
 			{
 			Advance();
+			var span = SpanFrom(t);
 			var redirects = ParseRedirects();
-			return new ArithmeticCommand(t.Value, redirects) { Line = t.Line };
+			return new ArithmeticCommand(t.Value, redirects) { Line = t.Line, Span = span };
 			}
 
 		if (t.Type == TokenType.AmpersandAmpersand
@@ -393,7 +394,9 @@ public sealed class Parser
 		var args = new List<Word>();
 		var redirects = new List<Redirect>();
 		Word? name = null;
-		int line = Peek().Line;
+		var firstTok = Peek();
+		int line = firstTok.Line;
+		_heredocEnd = -1;
 
 		while (true)
 			{
@@ -495,8 +498,19 @@ public sealed class Parser
 		if (name is null && assignments.Count == 0 && redirects.Count == 0)
 			return null;
 
-		return new SimpleCommand(assignments, name, args, redirects) { Line = line };
+		return new SimpleCommand(assignments, name, args, redirects) { Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
 		}
+
+	/// <summary>The text from <paramref name="first"/> to the last token consumed (or to the end of a
+	/// here-document body read for this command, which bash's `$BASH_COMMAND` includes).</summary>
+	private SourceSpan SpanFrom(Token first, int atLeastEnd = -1)
+		{
+		if (_src is null || first.Start < 0 || _pos == 0) return default;
+		int end = Math.Max(_tokens[_pos - 1].End, atLeastEnd);
+		return end >= first.Start ? new SourceSpan(_src, first.Start, end) : default;
+		}
+
+	private int _heredocEnd = -1;   // the end of a here-document body bound to the command being parsed
 
 	private static bool IsDeclarationBuiltin(string name) =>
 		name is "declare" or "typeset" or "local" or "export" or "readonly";
@@ -757,7 +771,8 @@ public sealed class Parser
 			{
 			// for (( init; cond; step )); do body; done
 			var spec = Advance().Value;
-			var parts = SplitArithFor(spec);
+			var raw = SplitArithFor(spec, trim: false);
+			var parts = raw.Select(p => p.Trim()).ToArray();
 			SkipSeparators();
 			ExpectWord("do");
 			SkipNewlines();
@@ -765,9 +780,12 @@ public sealed class Parser
 			SkipSeparators();
 			ExpectWord("done");
 			var aredirects = ParseRedirects();
-			return new ArithForCommand(parts[0], parts[1], parts[2], abody, aredirects) { Line = forTok.Line };
+			// `$BASH_COMMAND` for each part is bash's `((part))`, the part with its front trimmed
+			return new ArithForCommand(parts[0], parts[1], parts[2], abody, aredirects)
+				{ Line = forTok.Line, Heads = [.. raw.Select(p => $"(({p.TrimStart()}))")] };
 			}
 		var varName = ExpectWordToken().Value;
+		var headSpan = SpanFrom(forTok);
 		SkipNewlines();
 
 		var words = new List<Word>();
@@ -776,6 +794,7 @@ public sealed class Parser
 			Advance(); // consume 'in'
 			while (IsWordToken())
 				words.Add(ParseWord()!);
+			headSpan = SpanFrom(forTok);   // `for i in a b`: bash's `$BASH_COMMAND` for each turn
 			SkipSeparators();
 			}
 		else
@@ -790,11 +809,11 @@ public sealed class Parser
 		SkipSeparators();
 		ExpectWord("done");
 		var redirects = ParseRedirects();
-		return new ForCommand(varName, words, body, redirects) { Line = forTok.Line };
+		return new ForCommand(varName, words, body, redirects) { Line = forTok.Line, Span = headSpan };
 		}
 
 	/// <summary>Split "init; cond; step" at top-level semicolons (parens/quotes respected).</summary>
-	private static string[] SplitArithFor(string spec)
+	private static string[] SplitArithFor(string spec, bool trim = true)
 		{
 		var parts = new List<string>();
 		var sb = new System.Text.StringBuilder();
@@ -809,15 +828,18 @@ public sealed class Parser
 			}
 		parts.Add(sb.ToString());
 		while (parts.Count < 3) parts.Add("");
-		return [parts[0].Trim(), parts[1].Trim(), parts[2].Trim()];
+		return trim ? [parts[0].Trim(), parts[1].Trim(), parts[2].Trim()] : [parts[0], parts[1], parts[2]];
 		}
 
 	// ── case ──────────────────────────────────────────────────────────────────
 
 	private CaseCommand ParseCase()
 		{
+		int caseLine = Peek().Line;
 		ExpectWord("case");
+		var subjectTok = Peek();
 		var subject = ParseWord() ?? throw Error("Expected word after 'case'");
+		var subjectSpan = SpanFrom(subjectTok);   // bash's `$BASH_COMMAND`: `case WORD in `
 		SkipNewlines();
 		ExpectWord("in");
 		SkipNewlines();
@@ -830,7 +852,7 @@ public sealed class Parser
 			}
 		ExpectWord("esac");
 		var redirects = ParseRedirects();
-		return new CaseCommand(subject, items, redirects);
+		return new CaseCommand(subject, items, redirects) { Line = caseLine, Span = subjectSpan };
 		}
 
 	private CaseItem ParseCaseItem()
@@ -864,12 +886,13 @@ public sealed class Parser
 	private ConditionalExpression ParseConditionalExpression()
 		{
 		_condLine = Peek().Line;   // where bash says it was "looking for `]]'" from
+		var openTok = Peek();
 		ExpectWord("[[");
 		var expr = ParseCondExpr();
 		SkipNewlines();   // bash reads on for the `]]` (at the end of the text: "looking for `]]'")
 		if (!PeekWord("]]")) throw CondError($"syntax error in conditional expression: unexpected token `{SyntaxMessage.Shown(Peek())}'");
 		Advance();
-		return new ConditionalExpression(expr);
+		return new ConditionalExpression(expr) { Line = openTok.Line, Span = SpanFrom(openTok) };
 		}
 
 	/// <summary>A `[[ ]]` syntax error, reported as bash's cond_error does (measured against bash 5.1,
@@ -1067,7 +1090,7 @@ public sealed class Parser
 			while ((bodyIdx = _tokens.FindIndex(_pos, t => t.Type == TokenType.HeredocBody)) < 0 && _lexer is { Done: false })
 				_lexer.Step(_tokens);
 			string body = "";
-			if (bodyIdx >= 0) { body = _tokens[bodyIdx].Value; _tokens.RemoveAt(bodyIdx); }
+			if (bodyIdx >= 0) { body = _tokens[bodyIdx].Value; _heredocEnd = Math.Max(_heredocEnd, _tokens[bodyIdx].End); _tokens.RemoveAt(bodyIdx); }
 			Word target = quoted
 				? new Word([new SingleQuotedPart(body)])
 				: new Word([new DoubleQuotedPart(ParseDoubleQuotedInterior(body, heredoc: true))]);
@@ -1452,10 +1475,24 @@ public sealed class Parser
 		Token? closer = null;
 		var inner = new List<Token>();
 		int depth = 1;
+		var cases = new Lexer.Lexer.CaseTracker();   // a `case` inside: its patterns' `)` are not ours (bash)
 		while (!IsEof() && depth > 0)
 			{
 			var t = Peek();
-			if (t.Type is TokenType.LParen or TokenType.DollarLParen or TokenType.LessLParen or TokenType.GreaterLParen) depth++;
+			if (t.Type == TokenType.Word && !t.HasLeadingSpace && inner.Count > 0 && inner[^1].Type is not (TokenType.Newline or TokenType.Semicolon))
+				cases.OtherWord();   // glued to the token before: part of that word
+			else if (t.Type == TokenType.Word) cases.Word(t.Value, depth);
+			else if (t.Type == TokenType.SemicolonSemicolon) cases.EndOfBranch(depth);
+			else if (t.Type is TokenType.Semicolon or TokenType.Newline or TokenType.Pipe or TokenType.PipeAmpersand
+			         or TokenType.Ampersand or TokenType.AmpersandAmpersand or TokenType.PipePipe or TokenType.LParen
+			         or TokenType.LBrace or TokenType.DollarLParen) cases.Separator();
+			else if (t.Type is TokenType.SingleQuoted or TokenType.DoubleQuoted or TokenType.Dollar or TokenType.DollarLBrace
+			         or TokenType.DollarSingleQuote or TokenType.Backtick or TokenType.Digit) cases.OtherWord();
+			if (t.Type is TokenType.LParen or TokenType.RParen && cases.InPattern(depth))
+				{
+				if (t.Type == TokenType.RParen) cases.PatternClosed(depth);
+				}
+			else if (t.Type is TokenType.LParen or TokenType.DollarLParen or TokenType.LessLParen or TokenType.GreaterLParen) depth++;
 			else if (t.Type == TokenType.DollarDollarLParen) depth += 2;
 			else if (t.Type == TokenType.RParen) { depth--; if (depth == 0) { closer = Advance(); break; } }
 			inner.Add(Rebased(Advance(), rebase));

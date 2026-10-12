@@ -1,0 +1,132 @@
+===== d1
+D[2] x=1
+D[3] echo "x is $x"
+x is 1
+D[4] [[ $x == 1 ]]
+D[4] echo yes
+yes
+D[5] (( x++ ))
+D[6] for i in a b
+D[6] echo "i=$i"
+i=a
+D[6] for i in a b
+D[6] echo "i=$i"
+i=b
+D[7] case $x in 
+D[7] echo two
+two
+D[9] f
+in-f
+D[10] echo a
+D[10] cat
+a
+D[11] y=$(echo sub)
+paren
+D[13] true
+D[13] echo if-body
+if-body
+D[14] false
+D[15] trap - DEBUG
+untraced
+===== d2
+D set -T
+D f
+D f
+D echo in-f
+in-f
+D g
+D g
+D echo in-g
+in-g
+D y=$(echo sub)
+D echo paren
+paren
+D echo a
+D cat
+a
+===== d3
+D echo one
+one
+D echo "two rc=$?"
+two rc=0
+D declare -t f
+D f
+in-f
+D trap 'echo trap-cmd' DEBUG
+trap-cmd
+three
+trap-cmd
+trap -- 'echo trap-cmd' DEBUG
+===== d4
+D<((i=0))>
+D<((i<2))>
+D<:>
+D<((i++ ))>
+D<((i<2))>
+D<:>
+D<((i++ ))>
+D<((i<2))>
+D<echo spaced out>
+spaced out
+D<echo a > /dev/null>
+D<echo b 2>&1 > /dev/null>
+D<true>
+D<cat <<EOT
+hd
+EOT
+>
+hd
+D<x=1 y=2>
+D<echo "q" 'r' 's'>
+q r s
+D<true>
+
+real	0m0.000s
+user	0m0.000s
+sys	0m0.000s
+D<echo $((1+2)) ${x:-d}>
+3 1
+===== r1
+in-f
+after f 3
+in-sourced
+RET from top rc=0
+after source
+in-g
+RET-g
+after-g
+in-h
+===== r2
+in-f
+RET f
+===== e1
+ok
+ERR at 3: false
+last
+EXIT at 1
+===== rl
+in-f
+RET at 3
+s
+RET at 9
+===== ft
+D declare -ft f
+D echo "rc=$?"
+rc=0
+D f
+D f
+D echo in-f
+in-f
+D g
+in-g
+D declare +ft f
+D f
+D f
+D echo in-f
+in-f
+D declare -f +t f
+D f
+in-f
+D declare -ft nosuch
+D echo "missing rc=$?"
+missing rc=1

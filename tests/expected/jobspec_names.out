@@ -1,0 +1,30 @@
+jobs: sleep: ambiguous job spec
+jobs: %sleep: no such job
+rc=1
+[2]-  Running                 sleep 31 | cat &
+rc=0
+[3]+  Running                 sleep 32 &
+rc=0
+[2]-  Running                 sleep 31 | cat &
+rc=0
+jobs: CAT: ambiguous job spec
+jobs: %?CAT: no such job
+rc=1
+jobs: %SLEEP: no such job
+rc=1
+[3]+  Running                 sleep 32 &
+rc=0
+[3]+  Running                 sleep 32 &
+[3]+  Running                 sleep 32 &
+[2]-  Running                 sleep 31 | cat &
+rc=0
+jobs: %nosuch: no such job
+rc=1
+jobs: cat: ambiguous job spec
+SHELL SHELL %?cat
+rc=0
+rc=0
+[2]-  Running                 sleep 31 | cat &
+[3]+  Running                 sleep 32 &
+rc=0
+rc=0

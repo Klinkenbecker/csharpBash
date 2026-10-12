@@ -135,6 +135,17 @@ public abstract record Node
 	{
 	/// <summary>1-based source line of the node's first token (drives $LINENO). 0 = unknown.</summary>
 	public int Line { get; init; }
+
+	/// <summary>Where the command's text is in its source, for `$BASH_COMMAND` (rendered only when it
+	/// is read); set on simple commands, `[[ ]]`, `(( ))`, a `for` head and a `case` word.</summary>
+	public SourceSpan Span { get; init; }
+	}
+
+/// <summary>A stretch of source text, kept by reference and sliced only when wanted.</summary>
+public readonly record struct SourceSpan(string? Source, int Start, int End)
+	{
+	public bool IsKnown => Source is not null && Start >= 0 && End >= Start && End <= Source.Length;
+	public string Text => IsKnown ? Source![Start..End] : "";
 	}
 
 /// <summary>The body of a `$( )` or backquote substitution that does not parse. bash parses a body when
@@ -237,7 +248,11 @@ public sealed record ArithForCommand(
 	string Condition,
 	string Step,
 	Node Body,
-	List<Redirect> Redirects) : Node;
+	List<Redirect> Redirects) : Node
+	{
+	/// <summary>`$BASH_COMMAND` before the init, each test and each step: bash's `((part))`.</summary>
+	public string[] Heads { get; init; } = ["", "", ""];
+	}
 
 /// <summary>case word in pattern) list;; esac</summary>
 public sealed record CaseCommand(

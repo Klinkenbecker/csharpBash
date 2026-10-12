@@ -184,7 +184,7 @@ if (cFlagCmd is not null)
 	evaluator.TopLevelSource = "environment";
 	if (login) SourceLogin(evaluator, noprofile);
 	else SourceBashEnv(evaluator);
-	try { var code = evaluator.RunString(cFlagCmd, origin: "-c"); evaluator.RunExitTrap(); return code; }
+	try { var code = evaluator.RunString(cFlagCmd, origin: "-c", mainLoop: true); evaluator.RunExitTrap(); return code; }
 	// bash ends a -c shell on an expansion error (set -u, ${x:?}) with 127, or 1 where set -e is in
 	// force (on, and not suspended by && / || / if, as inside Claude Code's `eval '…' && pwd`); a
 	// script file ends with 1 (measured against bash 5.1, 2026-10-08)
@@ -204,7 +204,7 @@ if (scriptPath is not null)
 	else SourceBashEnv(evaluator);
 	// The read is inside the try: a locked, blocked (AV) or vanished script must be an error
 	// message and a status, never an unhandled exception (2026-09-12).
-	try { var code = evaluator.RunString(ShellEncoding.ReadAllText(resolved), origin: scriptPath); evaluator.RunExitTrap(); return code; }
+	try { var code = evaluator.RunString(ShellEncoding.ReadAllText(resolved), origin: scriptPath, mainLoop: true); evaluator.RunExitTrap(); return code; }
 	catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or System.Security.SecurityException)
 		{ Console.Error.WriteLine($"bash: {scriptPath}: {ex.Message}"); return 126; }
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }
@@ -217,7 +217,7 @@ if (!interactive)
 	if (login) SourceLogin(evaluator, noprofile);
 	else SourceBashEnv(evaluator);
 	var src = Console.In.ReadToEnd();
-	try { var code = evaluator.RunString(src, origin: evaluator.Env.Get("0")); evaluator.RunExitTrap(); return code; }   // its input name is $0 (bash: `/bin/bash: line 2: ...`)
+	try { var code = evaluator.RunString(src, origin: evaluator.Env.Get("0"), mainLoop: true); evaluator.RunExitTrap(); return code; }   // its input name is $0 (bash: `/bin/bash: line 2: ...`)
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }
 	}
 
@@ -310,6 +310,7 @@ while (true)
 	catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
 	                            or NotSupportedException or System.Security.SecurityException)
 		{ Console.Error.WriteLine($"bash: {ex.Message}"); evaluator.Env.LastExitCode = 1; }
+	if (evaluator.Options.OneCmd) { evaluator.RunExitTrap(); return evaluator.Env.LastExitCode; }   // -t: one command, then exit
 	}
 
 return 0;
@@ -345,7 +346,8 @@ static void SourceInteractiveRc(Evaluator eval, string? rcFile)
 static void SourceBashEnv(Evaluator eval)
 	{
 	var bashEnv = eval.Env.Get("BASH_ENV");
-	if (bashEnv.Length > 0) eval.SourceFile(bashEnv, silentIfMissing: true);
+	// -p (privileged): bash does not read BASH_ENV; it was read anyway until 2026-10-11
+	if (bashEnv.Length > 0 && !eval.Options.Privileged) eval.SourceFile(bashEnv, silentIfMissing: true);
 	}
 
 // An odd number of trailing backslashes means the final one escapes the newline.

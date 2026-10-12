@@ -15,6 +15,10 @@ public sealed class BackgroundJob
 	public int Id { get; init; }
 	public string Command { get; init; } = "";
 
+	/// <summary>Each pipeline stage's command, as bash keeps one per process: `%name` and `%?text` match
+	/// these (empty: <see cref="Command"/> is the only one).</summary>
+	public IReadOnlyList<string> Stages { get; init; } = [];
+
 	/// <summary>A `cmd &` job: its external children outlive the shell, as in bash. False for the
 	/// job object `timeout` runs its command under, whose child must still die with the shell.</summary>
 	public bool Background { get; init; }

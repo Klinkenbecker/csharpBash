@@ -1,0 +1,15 @@
+[1]-  Running                 sleep 1 && echo A &
+[2]+  Running                 sleep 2 | cat && echo B &
+A
+B
+1 cd stayed in the job
+2 [unset]
+3 [unset]
+4 [unset]
+5 ran in the job
+6 [0]
+7 status after starting it: 0
+first
+8 [unset]
+9 [9] (a foreground chain after a job)
+done

@@ -46,9 +46,12 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		if (word.Parts is [LiteralPart lit] && !HasBraceOrGlob(lit.Value))
 			return [lit.Value];
 
+		// IFS unset splits on space, tab and newline; IFS set to "" does not split at all (it was
+		// taken as unset until 2026-10-12, so `IFS=; for f in $p` still split a path at its spaces)
 		var ifs = _env.Get("IFS");
-		if (ifs.Length == 0) ifs = " \t\n";
-		char ifsFirst = ifs.Length > 0 ? ifs[0] : ' ';
+		bool ifsSet = ifs.Length > 0 || _env.IsSet("IFS");   // one lookup unless IFS is empty or unset
+		if (!ifsSet) ifs = " \t\n";
+		string StarSep() => ifsSet ? (ifs.Length > 0 ? ifs[..1] : "") : " ";   // $*'s joiner, only when needed
 
 		// Fast path: a single bare $var / ${simple} (not $@/$*) under default IFS that
 		// needs neither word-splitting nor glob/brace expansion → its value as one
@@ -67,46 +70,61 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		bool open     = false;   // current holds pending content to be flushed as a field
 		bool curGlob  = false;   // current field has an unquoted metachar
 
+		bool wsEnded = false;    // the last delimiter was IFS white space that ended a field
 		void Flush() { fields.Add(current.ToString()); fieldGlob.Add(curGlob); current.Clear(); open = false; curGlob = false; }
 
 		// split: false for LITERAL text, which bash never field-splits (only expansion results);
 		// it stays glob/brace-eligible. Until 2026-10-08 literal text was split like an expansion
 		// whenever the word missed the single-literal fast path, so `a\ b/x*` became `a` + `b/x*`.
+		// Field splitting is POSIX's (2.6.5), as bash: IFS white space (space, tab, newline in IFS)
+		// runs together and is dropped at the ends; any other IFS character ends a field, an empty one
+		// too, taking adjacent IFS white space with it: IFS=, makes `a,,b` three fields and `,a,` two
+		// (`` and `a`). Until 2026-10-12 every IFS character acted as white space, losing those.
 		void AppendText(string text, bool quoted, bool split = true)
 			{
 			if (quoted)
-				{ current.Append(text); open = true; }   // quoted: never glob/brace-eligible
+				{ current.Append(text); open = true; wsEnded = false; }   // quoted: never glob/brace-eligible
 			else
 				{
 				foreach (char c in text)
 					{
 					if (split && ifs.Contains(c))
-						{ if (open) Flush(); }
+						{
+						if (c is ' ' or '\t' or '\n') { if (open) { Flush(); wsEnded = true; } }
+						else if (wsEnded) wsEnded = false;   // `a , b`: the white space already ended `a`
+						else Flush();                        // ends the field, an empty one too
+						}
 					else
 						{
-						current.Append(c); open = true;
+						current.Append(c); open = true; wsEnded = false;
 						if (c is '{' or '}' or '*' or '?' or '[') curGlob = true;
 						}
 					}
 				}
 			}
 
-		// Append an array @/* expansion. Quoted @ yields one field per element
-		// (first joins the pending field, last stays open for trailing text);
-		// quoted * joins all elements with the first IFS char; unquoted forms are
-		// space-joined and then word-split like any other unquoted expansion.
+		// Append an array @/* expansion. Quoted @ yields one field per element (first joins the
+		// pending field, last stays open for trailing text); quoted * joins the elements with IFS's
+		// first character (nothing when IFS is empty). Unquoted, both are joined with that character
+		// and split like any other unquoted expansion (bash: IFS=, makes `"a,b" "" c` four fields);
+		// with IFS empty there is no splitting and each non-empty element is a field of its own.
+		// Until 2026-10-12 unquoted forms were joined with a space whatever IFS held.
 		void AppendArray(List<string> elems, bool star, bool quoted)
 			{
 			if (elems.Count == 0) return;
 			if (quoted && star)
-				{ AppendText(string.Join(ifsFirst.ToString(), elems), true); return; }
+				{ AppendText(string.Join(StarSep(), elems), true); return; }
 			if (!quoted)
 				{
+				if (ifs.Length > 0) { AppendText(string.Join(StarSep(), elems), false); return; }
 				for (int i = 0; i < elems.Count; i++)
-					{ if (i > 0) AppendText(" ", false); AppendText(elems[i], false); }
+					{
+					if (i > 0 && open) Flush();
+					AppendText(elems[i], false, split: false);
+					}
 				return;
 				}
-			current.Append(elems[0]); open = true;
+			current.Append(elems[0]); open = true; wsEnded = false;
 			for (int i = 1; i < elems.Count; i++)
 				{
 				Flush();
@@ -296,7 +314,12 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		if (at > 0 && at + 3 < body.Length && !keys)
 			{
 			star = body[at + 1] == '*';
-			var joined = ExpandBraceParam(raw);
+			// joined with spaces whatever IFS holds: the elements are split back on them here, and
+			// AppendArray then applies `*`'s own joining (_starJoin)
+			var saved = _starJoin;
+			_starJoin = " ";
+			string joined;
+			try { joined = ExpandBraceParam(raw); } finally { _starJoin = saved; }
 			elems = joined.Length == 0 ? [] : joined.Split(' ').ToList();
 			return true;
 			}
@@ -366,6 +389,11 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	/// <summary>True while a part inside "…" is being expanded: a ${x:-word} there reads its word
 	/// as double-quoted text (ExpandOperatorWord).</summary>
 	private bool _inDoubleQuotes;
+
+	/// <summary>When set, what `*` forms join with instead of <see cref="ShellEnvironment.StarSeparator"/>
+	/// (TryArrayExpansion's element-wise operators, which split their result on spaces).</summary>
+	private string? _starJoin;
+	private string StarJoin => _starJoin ?? _env.StarSeparator;
 
 	private string ExpandInDoubleQuotes(DoubleQuotedPart d)
 		{
@@ -455,15 +483,16 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			if (body.EndsWith("[@]") || body.EndsWith("[*]"))
 				{
 				var n = body[..^3];
-				if (_env.IsArray(n)) return string.Join(" ", _env.GetArrayKeys(n));
-				if (_env.IsAssoc(n)) return string.Join(" ", _env.GetAssocKeys(n));
+				var keySep = body.EndsWith("[*]") ? StarJoin : " ";   // ${!a[*]} joins as ${a[*]} does
+				if (_env.IsArray(n)) return string.Join(keySep, _env.GetArrayKeys(n));
+				if (_env.IsAssoc(n)) return string.Join(keySep, _env.GetAssocKeys(n));
 				return "";
 				}
 			if (body.EndsWith('@') || body.EndsWith('*'))
 				{
 				var prefix = body[..^1];
 				if (IsIdentifier(prefix))
-					return string.Join(" ", _env.VariableNames().Where(v => v.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(v => v, StringComparer.Ordinal));
+					return string.Join(body.EndsWith('*') ? StarJoin : " ", _env.VariableNames().Where(v => v.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(v => v, StringComparer.Ordinal));
 				}
 			// ${!name} / ${!name<op>…}: resolve the name, then re-expand with the operator
 			int opAt = FindOperatorStart(body);
@@ -489,8 +518,10 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			if (sub is null) return _env.Get(name);
 			if (isArrayAll)
 				{
-				if (_env.IsArray(name)) return string.Join(" ", _env.GetArrayValues(name));
-				if (_env.IsAssoc(name)) return string.Join(" ", _env.GetAssocValues(name));
+				// ${a[*]} as one string joins with IFS's first character, ${a[@]} with a space (bash)
+				var sep = sub == "*" ? StarJoin : " ";
+				if (_env.IsArray(name)) return string.Join(sep, _env.GetArrayValues(name));
+				if (_env.IsAssoc(name)) return string.Join(sep, _env.GetAssocValues(name));
 				return "";
 				}
 			return ElementValue(name, sub);
@@ -566,7 +597,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				if (name == "@" ) list = _env.GetPositionals();
 				int start = off < 0 ? Math.Max(0, list.Count + (int)off) : (int)Math.Min(off, list.Count);
 				int count = len is null ? list.Count - start : len < 0 ? Math.Max(0, list.Count + (int)len - start) : (int)Math.Min(len.Value, list.Count - start);
-				return string.Join(" ", list.Skip(start).Take(Math.Max(0, count)));
+				return string.Join(sub == "*" ? StarJoin : " ", list.Skip(start).Take(Math.Max(0, count)));   // ${a[*]:1} joins as ${a[*]}
 				}
 			if (name is "@" or "*")
 				{
@@ -574,7 +605,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				var list = new List<string> { _env.Get("0") }; list.AddRange(pos);
 				int start = off < 0 ? Math.Max(0, list.Count + (int)off) : (int)Math.Min(off, list.Count);
 				int count = len is null ? list.Count - start : (int)Math.Min(len.Value, list.Count - start);
-				return string.Join(" ", list.Skip(start).Take(Math.Max(0, count)));
+				return string.Join(name == "*" ? StarJoin : " ", list.Skip(start).Take(Math.Max(0, count)));   // ${*:2} joins as $*
 				}
 			var s = ValueOf();
 			int n = CharCount(s);   // offsets count characters, not UTF-16 units (an emoji is one)
@@ -1103,6 +1134,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		using var sw = new System.IO.StringWriter(captured) { NewLine = "\n" };
 		var snap = _env.TakeSnapshot();
 		var mark = _eval.EnterSubshell();   // functions, options, traps, aliases it sets vanish with it
+		bool debugOff = _eval.SuspendDebug();   // DEBUG and RETURN stay outside unless -T
 		int callerLine = _env.CurrentLine;
 		int lineBase = _eval.EnterLineBase();   // its lines count from the line of the command it is in
 		int status = 0;   // read by the finally if Execute throws past the catches
@@ -1119,6 +1151,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 			_env.RestoreSnapshot(snap);
 			_eval.LeaveSubshell(mark);
+			_eval.ResumeDebug(debugOff);
 			_eval.LeaveLineBase(lineBase);
 			_env.CurrentLine = callerLine;   // the caller's $LINENO, which the body's commands moved
 			}
@@ -1186,6 +1219,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		bool oldCap = ConsoleMux.Capturing;
 		var snap = _env.TakeSnapshot();
 		var mark = _eval.EnterSubshell();
+		bool debugOff = _eval.SuspendDebug();   // as for $( )
 		int callerLine = _env.CurrentLine;
 		int lineBase = _eval.EnterLineBase();   // as for $( )
 		int status = 0;
@@ -1206,6 +1240,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 				_env.RestoreSnapshot(snap);
 				_eval.LeaveSubshell(mark);
+				_eval.ResumeDebug(debugOff);
 				_eval.LeaveLineBase(lineBase);
 				_env.CurrentLine = callerLine;
 				}

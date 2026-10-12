@@ -101,6 +101,8 @@ public sealed partial class Builtins
 
 	// ── cd / pwd ──────────────────────────────────────────────────────────────
 
+	/// <summary>`cd`; its messages carry the name it ran under: pushd and popd change directory through it, and
+	/// bash says `pushd: x: No such file or directory` (it said `cd:` until 2026-10-12).</summary>
 	private int Cd(List<string> args)
 		{
 		// options only before the first operand, and only bash's (-L -P -e -@; -P's physical walk is
@@ -108,7 +110,7 @@ public sealed partial class Builtins
 		// anywhere was skipped and extra operands ignored.
 		int first = FlagOptions(args, "LPe@", []);
 		if (first < 0) return 2;
-		if (args.Count - first > 1) { Console.Error.WriteLine(Err + "cd: too many arguments"); return 1; }
+		if (args.Count - first > 1) { Console.Error.WriteLine($"{Err}{_called}: too many arguments"); return 1; }
 		string? target = first < args.Count ? args[first] : null;
 		bool printDir = false;
 		string dest;
@@ -120,7 +122,7 @@ public sealed partial class Builtins
 		else if (target == "-")
 			{
 			dest = _env.Get("OLDPWD");
-			if (dest.Length == 0) { Console.Error.WriteLine(Err + "cd: OLDPWD not set"); return 1; }
+			if (dest.Length == 0) { Console.Error.WriteLine($"{Err}{_called}: OLDPWD not set"); return 1; }
 			printDir = true;
 			}
 		else if (target.Length == 0) return 0;
@@ -129,13 +131,13 @@ public sealed partial class Builtins
 		if (!Directory.Exists(dest))
 			{
 			Console.Error.WriteLine(File.Exists(dest)
-				? $"{Err}cd: {target}: Not a directory"
-				: $"{Err}cd: {target}: No such file or directory");
+				? $"{Err}{_called}: {target}: Not a directory"
+				: $"{Err}{_called}: {target}: No such file or directory");
 			return 1;
 			}
 		var old = _env.Cwd;
 		try { _env.ChangeCwd(dest); }   // this shell's own cwd; the process cwd only if this shell owns it
-		catch (Exception ex) { Console.Error.WriteLine($"{Err}cd: {target}: {ex.Message}"); return 1; }
+		catch (Exception ex) { Console.Error.WriteLine($"{Err}{_called}: {target}: {ex.Message}"); return 1; }
 		_env.Set("OLDPWD", old); _env.Export("OLDPWD");
 		_env.Set("PWD", _env.Cwd); _env.Export("PWD");
 		if (printDir) Console.WriteLine(_env.Cwd);
@@ -764,7 +766,7 @@ public sealed partial class Builtins
 		if (!File.Exists(path) && !file.Contains('/') && !file.Contains('\\') && _eval.Options.Shopt("sourcepath"))
 			{
 			// bash searches PATH for a bare filename
-			foreach (var d in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+			foreach (var d in ShellEnvironment.CurrentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
 				{
 				var cand = Path.Combine(ShellEnvironment.TranslatePath(d), file);
 				if (File.Exists(cand)) { path = cand; file = cand; break; }
@@ -859,7 +861,8 @@ public sealed partial class Builtins
 	private int Declare(List<string> args, bool local)
 		{
 		bool export = false, unexport = false, array = false, assoc = false, integer = false, unInteger = false,
-		     ro = false, global = false, funcs = false, funcNames = false, print = false, nameref = false;
+		     ro = false, global = false, funcs = false, funcNames = false, print = false, nameref = false,
+		     traceOn = false, traceOff = false, funcOn = false;
 		var specs = new List<string>();
 		foreach (var arg in args)
 			{
@@ -877,11 +880,12 @@ public sealed partial class Builtins
 						case 'i': if (on) integer = true; else unInteger = true; break;
 						case 'r': ro = true; break;
 						case 'g': global = true; break;
-						case 'f': funcs = true; break;
+						case 'f': funcs = true; if (on) funcOn = true; break;
 						case 'F': funcNames = true; break;
 						case 'p': print = true; break;
 						case 'n': nameref = true; break;
-						case 'l': case 'u': case 't': case 'I': case 'c': break;   // accepted, no effect
+						case 't': if (on) traceOn = true; else traceOff = true; break;   // a function's trace attribute; nothing for a variable
+						case 'l': case 'u': case 'I': case 'c': break;   // accepted, no effect
 						default: return BadOption($"-{c}");
 						}
 					}
@@ -890,6 +894,19 @@ public sealed partial class Builtins
 			specs.Add(arg);
 			}
 		if (nameref) { Console.Error.WriteLine(Err + "declare: -n (nameref) is not supported by this interpreter"); return 2; }
+
+		// `declare -ft NAME` / `declare -f +t NAME`: the function inherits (or no longer) the DEBUG and
+		// RETURN traps, as under -T, and nothing is printed. It printed the function and ignored -t until
+		// 2026-10-11. Function mode needs -f ON: in `declare +ft f` the t is a VARIABLE's, which means
+		// nothing (bash: no output, no change; measured).
+		if ((traceOn || traceOff) && specs.Count > 0 && !print)
+			{
+			if (!funcOn) return 0;
+			int trc = 0;
+			foreach (var n in specs)
+				if (!_eval.SetFunctionTrace(n, traceOn)) trc = 1;
+			return trc;
+			}
 
 		// ── function listing ──
 		if (funcs || funcNames)
@@ -1294,95 +1311,178 @@ public sealed partial class Builtins
 	/// subshell inherits it). getopts position and fd readers start fresh.</summary>
 	internal void InheritFrom(Builtins parent) => _dirStack.AddRange(parent._dirStack);
 
+	/// <summary>An entry as `dirs` shows it: HOME at its start becomes `~` when `/` or the end follows and
+	/// HOME is longer than `/` (bash's polite_directory_format; the case is ignored, as Windows ignores it).
+	/// Until 2026-10-12 HOME=/home/u turned /home/ux into `~x`.</summary>
 	private string DisplayDir(string d)
 		{
 		var home = _env.Get("HOME");
-		if (home.Length > 0 && d.StartsWith(home, StringComparison.OrdinalIgnoreCase))
+		if (home.Length > 1 && d.StartsWith(home, StringComparison.OrdinalIgnoreCase) && (d.Length == home.Length || d[home.Length] == '/'))
 			return "~" + d[home.Length..];
 		return d;
 		}
 
-	private void PrintDirs(bool numbered)
+	/// <summary>The stack as bash numbers it: 0 is the current directory, 1… the saved ones (`_dirStack`).</summary>
+	private List<string> FullStack() => [_env.Cwd, .. _dirStack];
+
+	/// <summary>What pushd and popd print after a change: `dirs`.</summary>
+	private void PrintDirs() => Console.WriteLine(string.Join(" ", FullStack().Select(DisplayDir)));
+
+	/// <summary>A `+N` / `-N` operand of pushd, popd or dirs: its N, or null when it is not of that form or
+	/// N is not a number (then bash's "invalid number" and the usage line, status 2 in <paramref name="rc"/>;
+	/// `-x` and `dirs -lv` are such). One option letter is the caller's to match first.</summary>
+	private long? StackOperand(string a, out int rc)
 		{
-		var all = new List<string> { ShellEnvironment.ShellCwd() };
-		all.AddRange(_dirStack);
-		if (numbered) for (int i = 0; i < all.Count; i++) Console.WriteLine($" {i}  {DisplayDir(all[i])}");
-		else Console.WriteLine(string.Join(" ", all.Select(DisplayDir)));
+		rc = 0;
+		if (a.Length == 0 || a[0] is not ('+' or '-')) return null;
+		if (long.TryParse(a.AsSpan(1), out long n)) return n;
+		rc = BadOption(a, "invalid number");
+		return null;
 		}
 
-	/// <summary>pushd / popd / dirs operands of the form +N / -N (bash's stack rotation and index):
-	/// a bad one is bash's "invalid number"; a good one is reported as not supported, since the
-	/// rotation is not implemented. Until 2026-10-10 `pushd +3` ran `cd +3`. Returns -1 when the
-	/// operand is not of that form, else the status to return.</summary>
-	private int StackIndexOperand(string a, string letters)
+	/// <summary>bash's pushd_error: an empty stack says so; otherwise the operand is out of range.</summary>
+	private int StackError(string word)
 		{
-		if (a.Length < 2 || a[0] is not ('+' or '-')) return -1;
-		if (a[0] == '-' && a.Length == 2 && letters.Contains(a[1])) return -1;   // one option letter (bash: `dirs -cv` is an invalid number)
-		if (!a.AsSpan(1).ToString().All(char.IsAsciiDigit)) return BadOption(a, "invalid number");
-		if (_called is "pushd" or "popd" && _dirStack.Count == 0)   // bash says this first
-			{ Console.Error.WriteLine($"{Err}{_called}: directory stack empty"); return 1; }
-		Console.Error.WriteLine($"{Err}{_called}: {a}: the directory stack's +N / -N is not supported by this interpreter");
-		return 2;
+		Console.Error.WriteLine(_dirStack.Count == 0 ? $"{Err}{_called}: directory stack empty" : $"{Err}{_called}: {word}: directory stack index out of range");
+		return 1;
 		}
 
+	/// <summary>bash 5.1's pushd.def. No operand: exchange the current directory and entry 1. `+N` / `-N`:
+	/// rotate the stack so that entry N, counted from the left / the right of `dirs`, is the current
+	/// directory. A directory: cd to it and save the old one as entry 1. `-n` does no cd: a directory is
+	/// saved as entry 1 as written, and a rotation drops the entry it would have changed to (bash does).
+	/// The stack is printed after a change, with `-n` too, but not after a `-n` rotation. Until 2026-10-12
+	/// `+N` / `-N` were refused and `-n` meant only "print nothing".</summary>
 	private int Pushd(List<string> args)
 		{
-		bool quiet = false; string? target = null;
-		foreach (var a in args)
-			{
-			if (a == "-n") { quiet = true; continue; }
-			if (a == "--") continue;
-			if (StackIndexOperand(a, "n") is var r and >= 0) return r;
-			if (target is not null) { Console.Error.WriteLine(Err + "pushd: too many arguments"); return 1; }
-			target = a;
-			}
-		var cur = _env.Cwd;
-		if (target is null)
+		int i = args.Count > 0 && args[0] == "--" ? 1 : 0;
+		bool skipopt = i == 1;
+		if (i == args.Count)
 			{
 			if (_dirStack.Count == 0) { Console.Error.WriteLine(Err + "pushd: no other directory"); return 1; }
-			var top = _dirStack[0];
-			if (Cd([top]) != 0) return 1;
+			var cur = _env.Cwd;
+			if (Cd([_dirStack[0]]) != 0) return 1;
 			_dirStack[0] = cur;
+			PrintDirs();
+			return 0;
 			}
+		bool nocd = false;
+		long? rotate = null;
+		for (; !skipopt && i < args.Count; i++)
+			{
+			var a = args[i];
+			if (a == "-n") { nocd = true; continue; }
+			if (a == "--") { i++; break; }
+			if (a == "-") break;   // `pushd -` is `cd -`
+			if (StackOperand(a, out int rc) is { } n)
+				{
+				long num = a[0] == '-' ? _dirStack.Count - n : n;
+				if (num < 0 || num > _dirStack.Count) return StackError(a);
+				rotate = num;
+				continue;
+				}
+			if (rc != 0) return rc;
+			break;
+			}
+		if (rotate is { } k)
+			{
+			if (k == 0)
+				{
+				if (nocd) return 0;
+				if (Cd([_env.Cwd]) != 0) return 1;
+				PrintDirs();
+				return 0;
+				}
+			// the whole stack turns left k places; entry k becomes the current directory, and with -n it is
+			// dropped, the current directory staying (bash rotates first and changes directory after)
+			var all = FullStack();
+			var turned = all.Skip((int)k).Concat(all.Take((int)k)).ToList();
+			_dirStack.Clear();
+			_dirStack.AddRange(turned.Skip(1));
+			if (nocd) return 0;
+			if (Cd([turned[0]]) != 0) return 1;
+			PrintDirs();
+			return 0;
+			}
+		if (i >= args.Count) return 0;   // `pushd -n`
+		if (args.Count - i > 1) { Console.Error.WriteLine(Err + "pushd: too many arguments"); return 1; }
+		var dir = args[i];
+		if (nocd) _dirStack.Insert(0, dir);
 		else
 			{
-			if (Cd([target]) != 0) return 1;
-			_dirStack.Insert(0, cur);
+			var old = _env.Cwd;
+			if (Cd([dir]) != 0) return 1;
+			_dirStack.Insert(0, old);
 			}
-		if (!quiet) PrintDirs(false);
+		PrintDirs();
 		return 0;
 		}
 
+	/// <summary>bash 5.1's popd.def. No operand or `+0`: cd to entry 1 and remove it. `+N` / `-N`: remove
+	/// entry N, counted from the left / the right of `dirs`, without changing directory. `-n`: remove
+	/// entry 1 without the cd. The stack is printed after. Until 2026-10-12 `+N` / `-N` were refused
+	/// and `-n` meant only "print nothing".</summary>
 	private int Popd(List<string> args)
 		{
-		bool quiet = false;
+		bool nocd = false, fromRight = false;
+		long which = 0;
+		string word = "";
 		foreach (var a in args)
 			{
-			if (a == "-n") { quiet = true; continue; }
-			if (a == "--") continue;
-			if (StackIndexOperand(a, "n") is var r and >= 0) return r;
-			Console.Error.WriteLine($"{Err}popd: {a}: invalid argument"); PrintUsage("popd"); return 2;
+			if (a == "-n") { nocd = true; continue; }
+			if (a == "--") break;
+			if (StackOperand(a, out int rc) is { } n) { which = n; fromRight = a[0] == '-'; word = a; continue; }
+			if (rc != 0) return rc;
+			if (a.Length > 0) { Console.Error.WriteLine($"{Err}popd: {a}: invalid argument"); PrintUsage("popd"); return 2; }
+			break;
 			}
-		if (_dirStack.Count == 0) { Console.Error.WriteLine(Err + "popd: directory stack empty"); return 1; }
-		var top = _dirStack[0];
-		_dirStack.RemoveAt(0);
-		if (Cd([top]) != 0) return 1;
-		if (!quiet) PrintDirs(false);
+		int count = _dirStack.Count;
+		if (which > count || which < -count || (count == 0 && which == 0)) return StackError(word);
+		long k = fromRight ? count - which : which;
+		if (k == 0)
+			{
+			if (!nocd && Cd([_dirStack[0]]) != 0) return 1;
+			_dirStack.RemoveAt(0);
+			}
+		else if (k < 0 || k > count) return StackError(word);
+		else _dirStack.RemoveAt((int)k - 1);
+		PrintDirs();
 		return 0;
 		}
 
+	/// <summary>bash 5.1's dirs: `-c` clears; `+N` / `-N` prints entry N from the left / the right
+	/// (out of range: "N: directory stack index out of range", without the sign); `-v` numbers one per
+	/// line, `-p` one per line, `-l` without `~`. Each option is its own word (`dirs -lv` is an invalid
+	/// number). Until 2026-10-12 `+N` / `-N` were refused and `-p` and `-l` did nothing.</summary>
 	private int Dirs(List<string> args)
 		{
-		var flags = new HashSet<char>();
+		bool longForm = false, clear = false, perLine = false, numbered = false, fromRight = false;
+		long? index = null;
+		string digits = "";
 		foreach (var a in args)
 			{
-			if (a == "--") continue;
-			if (StackIndexOperand(a, "clpv") is var r and >= 0) return r;
-			if (a.Length == 2 && a[0] == '-') { flags.Add(a[1]); continue; }
-			return BadOption(a);   // bash: `dirs foo` is an invalid option
+			if (a == "-l") longForm = true;
+			else if (a == "-c") clear = true;
+			else if (a == "-v") numbered = true;
+			else if (a == "-p") perLine = true;
+			else if (a == "--") break;
+			else if (StackOperand(a, out int rc) is { } n) { index = n; fromRight = a[0] == '-'; digits = a[1..]; }
+			else if (rc != 0) return rc;
+			else return BadOption(a);   // bash: `dirs foo` is an invalid option
 			}
-		if (flags.Contains('c')) { _dirStack.Clear(); return 0; }
-		PrintDirs(flags.Contains('v'));
+		if (clear) { _dirStack.Clear(); return 0; }
+		var all = FullStack();
+		string Entry(int e) => longForm ? all[e] : DisplayDir(all[e]);
+		if (index is { } want)
+			{
+			long k = fromRight ? all.Count - 1 - want : want;
+			if (want < 0 || k < 0 || k >= all.Count) { Console.Error.WriteLine($"{Err}dirs: {digits}: directory stack index out of range"); return 1; }
+			Console.WriteLine(numbered ? $"{k,2}  {Entry((int)k)}" : Entry((int)k));
+			return 0;
+			}
+		if (numbered) for (int e = 0; e < all.Count; e++) Console.WriteLine($"{e,2}  {Entry(e)}");
+		else if (perLine) for (int e = 0; e < all.Count; e++) Console.WriteLine(Entry(e));
+		else Console.WriteLine(string.Join(" ", Enumerable.Range(0, all.Count).Select(Entry)));
 		return 0;
 		}
 
@@ -1395,46 +1495,52 @@ public sealed partial class Builtins
 		int? Signal(string spec) =>
 			CanonSignal(spec) is { } c && c is not ("DEBUG" or "ERR" or "RETURN") ? (c == "EXIT" ? 0 : Array.IndexOf(LinuxSignals, c)) : null;
 		int BadSignal(string spec) { Console.Error.WriteLine($"{Err}kill: {spec}: invalid signal specification"); return 1; }
-		bool sigZero = false, list = false;
-		var targets = new List<string>();
-		for (int i = 0; i < args.Count; i++)
+		// bash's kill.def: `-l`/`-L`; `-s SIG`, `-n NUM`, `-sSIG`, `-nNUM`; `--`; the first other `-WORD`
+		// is the signal (a later one is an operand: a process group). The signal is checked only when
+		// killing, so `kill -l -9` lists. Until 2026-10-12 every word after `-l` was an operand.
+		bool list = false;
+		string? sigspec = null;
+		int i = 0;
+		for (; i < args.Count; i++)
 			{
 			var a = args[i];
-			if (a == "-l" || a == "-L") { list = true; continue; }
-			if (a == "--") { targets.AddRange(args.Skip(i + 1)); break; }
-			if (list || a.Length < 2 || a[0] != '-') { targets.Add(a); continue; }
+			if (a is "-l" or "-L") { list = true; continue; }
 			if (a is "-s" or "-n")
 				{
 				if (i + 1 >= args.Count) { Console.Error.WriteLine($"{Err}kill: {a}: option requires an argument"); return 1; }   // bash: no usage line, 1
-				var s = args[++i];
-				if (Signal(s) is not { } n) return BadSignal(s);
-				sigZero = n == 0;
+				sigspec = args[++i];
 				continue;
 				}
-			if (Signal(a[1..]) is not { } sig) return BadSignal(a[1..]);   // -TERM, -9, -SIGKILL
-			sigZero = sig == 0;
+			if (a.Length > 2 && a[0] == '-' && ((a[1] == 's' && char.IsAsciiLetter(a[2])) || (a[1] == 'n' && char.IsAsciiDigit(a[2]))))
+				{ sigspec = a[2..]; continue; }
+			if (a == "--") { i++; break; }
+			if (a.Length > 0 && a[0] == '-' && sigspec is null) { sigspec = a[1..]; continue; }   // -TERM, -9, -SIGKILL
+			break;
 			}
+		var targets = args.Skip(i).ToList();
 		if (list)
 			{
-			if (targets.Count == 0)
-				{
-				Console.WriteLine(string.Join("  ", SignalNames.Where(s => s != "EXIT" && s != "DEBUG" && s != "ERR" && s != "RETURN")));
-				return 0;
-				}
-			// kill -l N names a signal (N may be an exit status, 128+N); kill -l NAME numbers it
+			if (targets.Count == 0) { PrintSignalTable(); return 0; }
+			// kill -l N names a signal (N may be an exit status, 128+N; 0 is EXIT; 32 and 33 have no name and
+			// print nothing); kill -l NAME numbers it (EXIT 0, DEBUG 65, ERR 66, RETURN 67, as bash numbers them)
 			int lrc = 0;
 			foreach (var t in targets)
 				{
 				if (int.TryParse(t, out int n))
 					{
 					if (n > 128) n -= 128;
-					if (n is >= 1 and <= 64) Console.WriteLine(LinuxSignals[n]); else lrc = BadSignal(t);
+					if (n is < 0 or > 64) lrc = BadSignal(t);
+					else if (n == 0) Console.WriteLine("EXIT");
+					else if (n is not (32 or 33)) Console.WriteLine(LinuxSignals[n]);
 					}
-				else if (Signal(t) is { } num and > 0) Console.WriteLine(num);
+				else if (CanonSignal(t) is { } c)
+					Console.WriteLine(c switch { "EXIT" => 0, "DEBUG" => 65, "ERR" => 66, "RETURN" => 67, _ => Array.IndexOf(LinuxSignals, c) });
 				else lrc = BadSignal(t);
 				}
 			return lrc;
 			}
+		if (sigspec is not null && Signal(sigspec) is null) return BadSignal(sigspec);
+		bool sigZero = sigspec is not null && Signal(sigspec) == 0;
 		if (targets.Count == 0) { PrintUsage("kill"); return 2; }
 		int rc = 0;
 		foreach (var t in targets)
@@ -1568,26 +1674,14 @@ public sealed partial class Builtins
 		{
 		if (path is null) return null;
 		// the file's name as it is on disk: a PATHEXT match spells it git.EXE, the file is git.exe
-		try
-			{
-			var dir = Path.GetDirectoryName(path);
-			var file = Path.GetFileName(path);
-			if (!string.IsNullOrEmpty(dir) && file.Length > 0 && file.IndexOfAny(['*', '?']) < 0)
-				{
-				var onDisk = new DirectoryInfo(dir).EnumerateFiles(file).FirstOrDefault()?.Name;
-				if (onDisk is not null && onDisk != file && string.Equals(onDisk, file, StringComparison.OrdinalIgnoreCase))
-					path = Path.Combine(dir, onDisk);
-				}
-			}
-		catch (Exception) { }   // display only: an unreadable directory prints the path as found
-		return ShellEnvironment.ToShellPath(path);
+		return ShellEnvironment.ToShellPath(ShellFile.OnDiskName(path));
 		}
 
 	// ── PATH lookup (used by which-style helpers elsewhere in this class) ──────
 
 	private static string? FindInPath(string name)
 		{
-		var path = System.Environment.GetEnvironmentVariable("PATH") ?? "";
+		var path = ShellEnvironment.CurrentPath;   // the shell's own PATH (2026-10-11)
 		var exts = System.Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
 		foreach (var dir in path.Split(Path.PathSeparator))
 			{

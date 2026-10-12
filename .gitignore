@@ -31,3 +31,11 @@ tests/bench/.findtree/
 
 # Published single-file build (see README: dotnet publish ... -o dist)
 dist/
+
+# Contract tools: their build and fetched inputs (2026-10-12)
+tests/bench/aot/
+tests/bench/aot.log
+tests/corpus/files/
+tests/corpus/last-run.txt
+dist.staging/
+dist.staging.log

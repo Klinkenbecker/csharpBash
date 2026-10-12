@@ -1,0 +1,16 @@
+1 [yes]
+2 has-b
+3 [paren-form]
+4 [bq]
+5 multi
+6 [nested-subshell]
+7 [inner]
+8 [case in
+x]
+9 [in-loop]
+10 [after-then]
+11 [case in x
+dq]
+12 [quoted-pat]
+13 [abc]
+14 abc-dq

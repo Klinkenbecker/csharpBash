@@ -20,21 +20,24 @@
 > ends the shell: Claude's call, stated). `--posix` a notice, rev 209. The architect: "fix --posix, then
 > deploy, notify and publish": ALL DONE 2026-10-11 (rev 209 deployed, six sessions told, GitHub at hg
 > rev 211). Then "yes": the `BASH_COREUTILS=external` crash FIXED rev 213; "deploy, notify and push":
-> rev 213 DEPLOYED and the six sessions told (2026-10-11); the push follows (see GitHub below).
-> **Nothing is greenlit next: ask the architect** (the silently-ignored options `-t -k -T -P -p`;
-> OPEN DEFECTS). Deploy only on "deploy and notify". The cold-resume briefing still comes first.
+> rev 213 DEPLOYED, the six sessions told, and PUSHED (GitHub at hg rev 214), all 2026-10-11.
+> Then "go" (the open items): `-t -k -p` BUILT rev 216. "Build": DEBUG and RETURN traps, `$BASH_COMMAND`,
+> `-T`, `declare -ft`, trap `$LINENO` BUILT rev 217 (cost within noise, measured). "yup": rev 217
+> DEPLOYED and the six sessions told (2026-10-11). Then "go next": **IN FLIGHT: the OPEN DEFECTS, in
+> order** (`$0` FIXED rev 219; PATH lookup FIXED rev 220; a `case` inside `$( )` FIXED rev 221; `kill -l`/`trap -l` table FIXED rev 222; dir stack `+N`/`-N` FIXED rev 223; `jobs -x` FIXED rev 224; `%name`/`%?text` jobspecs FIXED rev 225; `a && b &` backgrounding only `b` FIXED rev 226 (in deployed rev 217 too); IFS splitting FIXED rev 228; open: `compgen` missing (daq-d1, scope to settle), compound job text (AWAITING item 0); then git's credential prompt on `/dev/tty` (inferred, untraced)). Revs 218-233 DEPLOYED 2026-10-12 (rev 233). Deploy only on "deploy and notify". The cold-resume briefing
+> still comes first.
 >
 > **TRUE STATE (verified 2026-10-11):**
-> - **DEPLOYED 2026-10-11: `dist/Bash.exe` is rev 213** (`1.0.0+hg.40a4296afbd6 213`): the
+> - **DEPLOYED 2026-10-12: `dist/Bash.exe` is rev 233** (`1.0.0+hg.2a0678c462c5 233`), by `tools/deploy.sh`: revs 218-233 (the open defects, IFS, `a && b &`, the contract tools); suite 123/123 on the AOT binary both modes; live-verified; rollback `dist/Bash.exe.rev217`; six sessions told. Before it, rev 217 (`1.0.0+hg.64cd033c7de6 217`): revs 214-217 (`-t -k -p`, DEBUG/RETURN traps, `$BASH_COMMAND`, `-T`, `declare -ft`); suite 114/114 on the AOT binary both modes; live check (ERR at 3: false, DEBUG, -t); rollback `dist/Bash.exe.rev213`; six sessions told. Before it, rev 213 (`1.0.0+hg.40a4296afbd6 213`): the
 >   `BASH_COREUTILS=external` fix over rev 209. Suite 112/112 on that AOT binary, both modes; live
 >   check (rev 213, `=external awk` is Git's GNU Awk, the shell survives). Rollback
 >   `dist/Bash.exe.rev209`. One-fix notice to the six sessions (msp430-a2: its caution lifted).
-> - hg: branch `default`; the CODE is at rev 213 (deployed); working tree clean apart from the
->   `.url` below. **GitHub `main` = git `e8c2d39` = hg rev 211** (pushed 2026-10-11 after the
+> - hg: branch `default`; the CODE is at rev 220 (rev 217 deployed); working tree clean apart from the
+>   `.url` below. **GitHub `main` = git `1ab0a25` = hg rev 214** (pushed 2026-10-11; before it `e8c2d39` = hg rev 211, after the
 >   benchmark on deployed rev 209 and a doc review; `git ls-remote` confirmed). History files
->   regenerated (212 changesets; the bundle unbundled into an empty repo to rev 211 `9743f191506c`).
+>   regenerated (215 changesets; the bundle unbundled into an empty repo to rev 214 `d86411e95a77`).
 >   Before: git `694da54` = rev 182, `738ec92` = rev 140. `git status` lists files as modified after a
->   push only for hg revs after 211: not stray work.
+>   push only for hg revs after 214: not stray work.
 > - Previously DEPLOYED 2026-10-11: `dist/Bash.exe` was rev 209 (`--version`: `1.0.0+hg.4fa037d780c8 209`,
 >   a clean tree): revs 180-209 (the architect: "fix --posix, then deploy, notify and publish"). Suite
 >   111/111 on that exact AOT binary, with a console and `-Detached`; battery 226/237 against 225;
@@ -68,7 +71,7 @@
 >   a copy went to the share at rev 76 (2026-09-12).
 > - Untracked `The Windows Shell Tax.url` (a claude.ai artifact link, there since 2026-09-14): in
 >   neither VCS, not ours, leave it.
-> - In flight: see START HERE. Rev 209 is DEPLOYED (2026-10-11); hg rev 211 pushed to GitHub (git `e8c2d39`, 2026-10-11). daq-d1 and koliada-net-6a
+> - In flight: see START HERE. Rev 209 is DEPLOYED (2026-10-11); hg rev 214 pushed to GitHub (git `1ab0a25`, 2026-10-11). daq-d1 and koliada-net-6a
 >   never replied to the rev 179 deploy notice; the architect, 2026-10-10: both sessions show
 >   "nothing needs action from me". Closed: do not chase them.
 >
@@ -85,6 +88,13 @@
 > - Serial I/O (item 4: COMn as a device file plus `stty`; 55 calls, all MSP430): to discuss.
 >
 > **AWAITING THE ARCHITECT (do NOT derive; Claude's positions are proposals, not rulings):**
+> 0. (2026-10-12) **Command re-printing (bash's print_cmd.c).** C#Bash has no re-printer: `jobs` shows a
+>    compound job as its node type (`BraceGroup`), and `declare -f` / `type` print a function as written
+>    where bash re-prints it (one command per line, 4-space indent; measured). Fork: (a) job text from
+>    the source span (a few lines; exact for one-line commands in bash's own style), or (b) port
+>    print_cmd.c once for all three. Claude's position: (b), with (a) only as a stopgap if (b) waits;
+>    falsifier: no session depends on `declare -f`'s exact text (Claude Code's snapshot re-sources it,
+>    and either form sources). Revs 219-226 are NOT deployed; rev 226 fixes `a && b &` in deployed 217.
 > 1. (MSYS paths in arguments: DECIDED 2026-10-10 and built, rev 186.)
 > 2. (UTF-8 for external programs: DECIDED 2026-10-10, rev 187: PYTHONIOENCODING only; HGENCODING
 >    measured harmful, dropped. The old text follows for the record.) Piped `hg` and `python` write
@@ -283,21 +293,35 @@
 > - (The two jq slips found at rev 197 are fixed, rev 198.) A question, not a defect until ruled:
 >   invalid UTF-8 passes through jq as bytes where jq 1.6 writes U+FFFD (shell byte transparency vs
 >   jq fidelity). Claude's position: keep the bytes; falsifier: a session needing jq's exact output.
-> - Seen 2026-10-10 in the hand-off sweep, NOT analysed (verify before fixing; do not infer the
->   cause): started BY NAME through PATH from C#Bash, `Bash.exe -c 'echo $0'` prints the full
->   backslash path `F:\Koliada\Tools\bash\dist\Bash.exe`, and `-c` error prefixes use it; GNU bash
->   prints the name as typed (`bash`). Started by a path (`dist/Bash.exe -c …`) it prints the path as
->   typed, as bash does. Open question: does C#Bash hand children the resolved path as argv[0]
->   (.NET's ProcessStartInfo makes FileName argv[0]), so every child program sees it? (The JIT
->   Release build's `$0` is its `Bash.dll` path, an apphost artefact; the AOT build does not show it.)
-> - Found 2026-10-10 by the `builtin_options` work (DECISIONS "builtins took bad options …", Not
->   done): accepted options whose effect is not implemented: `jobs -x` (reported as unsupported), the
->   directory stack's `+N`/`-N` rotation (reported as not supported), `kill -l`/`trap -l`'s
->   numbered table (a short list of nine names is printed).
+> - (FIXED rev 219, not deployed: `$0` was the launcher's backslash path; a PATHEXT match's argv[0] was
+>   `bash.EXE`. DECISIONS "`$0` was the launcher's backslash path".)
+> - (FIXED rev 220, not deployed: lookups follow the shell's PATH: hash reset on assignment, temporary
+>   `PATH=` searched, a subshell's PATH kept in it. DECISIONS "command lookup ignored the shell's PATH".)
+> - (FIXED rev 221, not deployed: a `case` inside `$( )`, `"$( )"` or backquotes ended the substitution at
+>   its first pattern's `)`. DECISIONS "a `case` inside `$( )` ended the substitution".)
+> - (The 2026-10-10 `builtin_options` "Not done" list is all FIXED, not deployed: `kill -l`/`trap -l`'s
+>   numbered table rev 222, with `kill`'s option loop and `SIG`-prefixed names (DECISIONS "`kill -l` /
+>   `trap -l` printed nine names"); the directory stack's `+N`/`-N` rev 223, with `-n` = no cd, `dirs
+>   -p`/`-l`, `~` boundary (DECISIONS "pushd / popd / dirs refused `+N` / `-N`"; found, not raised: no
+>   `DIRSTACK` variable); `jobs -x` rev 224, `$$` in a script as bash (DECISIONS "`jobs -x` was refused").)
+> - (FIXED rev 225, not deployed: jobspecs `%name`, `%?text`, bare `%`. DECISIONS "jobspecs `%name` …".)
+> - (FIXED rev 226, not deployed: `a && b &` backgrounded only `b`; in every build incl. deployed rev 217.
+>   DECISIONS "`a && b &` backgrounded only `b`".)
+> - (FIXED rev 228, not deployed: IFS='' still split; non-white IFS lost empty fields; `$*` joined with a
+>   space. Found verifying daq-d1's workaround. DECISIONS "field splitting and `$*` ignored what IFS held".)
+> - Reported 2026-10-12 by daq-d1 (verified): `compgen` is not a builtin (nor `complete`, `compopt`), in
+>   every build. daq-d1 runs on a verified workaround (`for f in "$1"/$2; do [ -e "$f" ] …`), needs
+>   nothing more. Scope to settle before building (AWAITING THE ARCHITECT): compgen's generating actions
+>   (-G -W -f -d -c -b -k -a -v -e -A …, -X -P -S, word prefix) vs programmable completion
+>   (complete/compopt, -F/-C). Claude's position: build compgen's generating actions now; `complete`,
+>   `compopt`, `-F`, `-C` answer with the NotAvailable notice (2026-10-11 pattern). Falsifier: a session
+>   that registers completions (`complete -F`), which only an interactive shell uses.
+> - Found 2026-10-12 (measured, not raised): bash keeps finished jobs in its table until it reports them
+>   (`jobs` lists them as Done, job numbers keep counting); C#Bash's `wait` removes them.
+> - Found 2026-10-12 (measured): a compound background job's text is its node type (`jobs` shows
+>   `BraceGroup`, `Subshell`, `ForCommand`; bash re-prints the command).
 > - Inferred, not traced (2026-09-15): git's credential prompt runs through C#Bash and fails on `/dev/tty`.
-> - (FIXED rev 213, NOT deployed: `BASH_COREUTILS=external` killed the shell with a stack overflow,
->   every build to rev 209; TryExecute → RunCommand → TryExecute. DECISIONS "`BASH_COREUTILS=external`
->   killed the shell". msp430-a2 was told to avoid the mode: tell it at the next deploy.)
+> - (FIXED and DEPLOYED rev 213: `BASH_COREUTILS=external` killed the shell with a stack overflow.)
 >
 > **KNOWN LIMITATIONS (documented, not raised for action):**
 > - Glob and brace quoting is tracked per field, not per character: `{x\,y,z}`, `"*"*` and `\**`
@@ -329,7 +353,17 @@
 > - hg is the development VCS. git and GitHub sync ONLY on a push; until then git shows the docs as
 >   modified and build stamps show `+`. Regenerate `MERCURIAL_HISTORY.md` and `mercurial-history.hg`
 >   before each push.
-> - The benchmark is `tests/bench/compare3.sh [--cs <exe>]`, run unmodified from Git Bash; its startup
+> - **Repetitive tools are CONTRACTS (the architect, 2026-10-12: "repetitive tools here need to be
+>   contracts, period").** A check that is run more than once lives in the repo, runs one way, and
+>   is invoked as written: never rebuilt from memory, a transcript, or a scratch directory. The three:
+>   `tests/bench/compare3.sh [--build | --cs <exe>]` (the benchmark; `--build` is THE way to measure
+>   an undeployed rev), `tests/corpus/run-n.sh` (the `-n` corpus), `tests/compat/run-compat.ps1`
+>   (the battery; no `-Reference` needed), `tools/deploy.sh` (on "deploy": publish to dist.staging,
+>   suite both modes + battery on it, rename-and-swap into dist, rollback `dist/Bash.exe.rev<old>`),
+>   `tools/publish.sh <msg> <token-file>` (on "push": needs a compare3 run on the deployed build and
+>   the committed doc review; regenerates the history files, stages exactly hg's files, pushes,
+>   verifies). All run from Git Bash or PowerShell as their headers say.
+> - The benchmark is `tests/bench/compare3.sh`, run unmodified from Git Bash; its startup
 >   row is the median of 5 samples since 2026-10-10 (ratified: "Median of 5 sounds fair"). Method
 >   changes are the architect's call.
 > - Path form: forward-slash Windows form in both directions (DECISIONS 2026-09-11/12).
@@ -682,9 +716,20 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   passes a probe only when stdout + exit code are byte-identical. `baseline.txt` is the ratchet:
   any listed probe that stops passing fails the run; newly passing probes are reported and
   folded in with `-UpdateBaseline`. Reference bash: `-Reference`, `CLAUDE_CODE_GIT_BASH_PATH`,
-  the Git that owns `git.exe` on PATH (portable installs included), Program Files, or PATH —
+  the Git that owns `git.exe` on PATH (portable installs included; its root is the first ancestor
+  with `usr\bin`, and `usr\bin\_bash.exe` counts), Program Files, or PATH —
   never `System32\bash.exe` (WSL, a different OS; it silently became the reference once when
-  the battery was launched from PowerShell). `work/` is scratch (ignored). Seeded 2026-09-04
+  the battery was launched from PowerShell). Each candidate is RUN: C#Bash (any build) or one that
+  does not start is skipped, and `-Reference` naming C#Bash is an error (2026-10-12: with
+  `CLAUDE_CODE_GIT_BASH_PATH` naming the deployed C#Bash the battery had compared C#Bash with itself).
+- **`tests/corpus/run-n.sh`** (from Git Bash) — the `-n` corpus: C#Bash's `bash -n` verdict against GNU's
+  on WSL's 912 bash-completion scripts (fetched each run into `tests/corpus/files`, ignored: third-party
+  files are not committed). `manifest.txt` pins each file's sha256 and GNU's verdict (drift stops the run,
+  exit 2); `baseline.txt` is the ratchet (844 at rev 230; a lost agreement is exit 1). Builds Release
+  first unless `--no-build` / `--cs`.
+- **`tests/bench/compare3.sh --build`** — the benchmark of the committed tree: refuses a dirty tree,
+  publishes AOT with `tools/publish-aot.cmd` to `tests/bench/aot` (ignored), checks the stamp, and times
+  it against `dist/Bash.exe` in alternating rounds (columns `deployed` and `change`). `work/` is scratch (ignored). Seeded 2026-09-04
   at 86/228; 217/228 after P4. Probe 172 (`export -p | grep -c PATH`) is deliberately NOT in
   the baseline: its count depends on the launching environment (Git Bash adds `ORIGINAL_PATH`).
   **Probe authoring (web-d6's observation, 2026-09-08):** a parse-time defect is invisible to a

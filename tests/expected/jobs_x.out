@@ -1,0 +1,26 @@
+SHELL SHELL
+rc=0
+SHELL SHELL SHELL x
+rc=0
+pre%1 SHELL
+rc=0
+%9
+rc=0
+rc=0
+SHELL
+rc=0
+<a>
+<SHELL>
+<-l>
+rc=0
+nosuchcmd: command not found
+rc=127
+rc=1
+-xl rc=0 SHELL
+-xn rc=0 SHELL
+-lx rc=1 jobs: no other options allowed with `-x'
+-nx rc=1 jobs: no other options allowed with `-x'
+-px rc=1 jobs: no other options allowed with `-x'
+%1
+rc=0
+interactive: the job pid

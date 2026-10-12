@@ -190,6 +190,15 @@ shapes (a lone literal with no metacharacters; a lone `$var`/`${simple}` under d
 to avoid allocation. *(DECISIONS: 2026-06-13 — empty expansions yield zero fields; quoting
 fixes; and the quoted-glob fix of 2026-06-14.)*
 
+Field splitting is POSIX's, as bash does it: IFS unset means space, tab and newline; IFS set to
+`""` means no splitting at all; IFS white space runs together and is dropped at the ends, while
+any other IFS character ends a field (an empty one too), so with `IFS=,` the value `a,,b` is three
+fields. Unquoted `$@`/`$*`/`${a[@]}` are joined with IFS's first character and then split; where
+`$*` or `${a[*]}` makes one string (`"$*"`, an assignment, `[[ ]]`, a here-string, `case`) it joins
+with IFS's first character, nothing when IFS is empty, a space when unset
+(`ShellEnvironment.StarSeparator`). *(DECISIONS: 2026-10-12 — field splitting and `$*` ignored what
+IFS held.)*
+
 > **Divergence:** canonical bash performs brace expansion **first**, before all other
 > expansions; this implementation performs it **after** word-splitting. The common cases
 > agree; pathological mixes of braces and unquoted expansions can differ.
@@ -423,11 +432,17 @@ There is no Unix signal delivery on Windows, so:
   `InterruptException`; the REPL catches it, prints a newline, and sets `$?` to 130. During
   line editing the editor takes Ctrl-C as input instead. *(DECISIONS: 2026-06-13 — SIGINT via
   polled interrupt flag.)*
-- **Traps** support `EXIT` and `INT`; other signals are stored but inert. `RunExitTrap` fires
-  on every exit path. *(DECISIONS: 2026-06-13 — Traps: EXIT and INT only.)*
+- **Traps** fire for `EXIT`, `INT`, `ERR`, `DEBUG` (before each simple command, with
+  `$BASH_COMMAND`) and `RETURN`; `-T` / `declare -ft` carry DEBUG and RETURN into functions. Other
+  signals are stored but inert; `trap -l` / `kill -l` print bash's Linux table. `RunExitTrap` fires
+  on every exit path. *(DECISIONS: 2026-06-13 — Traps: EXIT and INT only; 2026-10-11 — DEBUG and
+  RETURN traps.)*
 - **Background jobs** (`&`) run as in-process threads (`BackgroundJob`, `StartBackgroundJob`),
   not child process groups; `fg` hands the terminal over where possible, `bg` reports
-  unsupported. *(DECISIONS: 2026-06-13 — Background jobs as in-process threads.)*
+  unsupported. An and-or list ending in `&` (`a && b &`) is one job. Jobspecs are bash's: `%N`,
+  `%%`/`%+`/`%`, `%-`, `%name`, `%?text` (each pipeline stage's command is kept for the match).
+  *(DECISIONS: 2026-06-13 — Background jobs as in-process threads; 2026-10-12 — `a && b &`,
+  jobspecs.)*
 
 ---
 

@@ -367,7 +367,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		var names = new List<string>();
 		foreach (var a in args) { if (a == "-a") all = true; else if (!a.StartsWith('-') || a == "-") names.Add(a); }
 		var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(';', StringSplitOptions.RemoveEmptyEntries);
-		var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+		var dirs = ShellEnvironment.CurrentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
 		int rc = 0;
 		foreach (var name in names)
 			{
@@ -584,12 +584,27 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 
 	// ── job control ─────────────────────────────────────────────────────────────
 
-	// the option letters are checked (bash's -l -n -p -r -s -x); what they select is not implemented
+	/// <summary>`jobs [-lnprs] [jobspec …]` lists (<see cref="Evaluator.ListJobs"/>); `jobs -x command [args]`
+	/// runs the command with each jobspec replaced (<see cref="Evaluator.RunWithJobGroups"/>). As bash's
+	/// jobs.def, `-x` must come before `-l`, `-p` and `-n` (`jobs -lx` is an error, `jobs -xl` is not).
+	/// `-x` was refused until 2026-10-12.</summary>
 	private int Jobs(List<string> args)
 		{
-		if (FlagOptions(args, "lnprsx", []) < 0) return 2;
-		if (args.Any(a => a.Length > 1 && a[0] == '-' && a.Contains('x'))) { Console.Error.WriteLine($"{Err}jobs: -x is not supported by this interpreter"); return 2; }
-		return _eval.ListJobs(args);
+		int first = FlagOptions(args, "lnprsx", []);
+		if (first < 0) return 2;
+		bool execute = false, form = false;
+		foreach (var a in args.Take(first))
+			if (a != "--")
+				foreach (char c in a.AsSpan(1))
+					{
+					if (c is 'l' or 'p' or 'n') form = true;
+					else if (c == 'x')
+						{
+						if (form) { Console.Error.WriteLine($"{Err}jobs: no other options allowed with `-x'"); return 1; }
+						execute = true;
+						}
+					}
+		return execute ? _eval.RunWithJobGroups(args.Skip(first).ToList()) : _eval.ListJobs(args);
 		}
 
 	/// <summary>`wait`: bash's -f, -n and -p VAR are checked here (what they do is not implemented: -n
@@ -623,8 +638,21 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 
 	// ── trap ────────────────────────────────────────────────────────────────────
 
-	private static readonly string[] SignalNames =
-		["EXIT", "HUP", "INT", "QUIT", "KILL", "TERM", "DEBUG", "ERR", "RETURN"];
+	/// <summary>`kill -l` and `trap -l`: bash's numbered table of <see cref="LinuxSignals"/>, five to a row,
+	/// `%2d) SIGNAME` joined by tabs (the last row keeps its tab); 32 and 33 have no name and are left out.
+	/// Until 2026-10-12 both printed a short line of nine names.</summary>
+	private static void PrintSignalTable()
+		{
+		var sb = new System.Text.StringBuilder();
+		int col = 0;
+		for (int n = 1; n < LinuxSignals.Length; n++)
+			{
+			if (n is 32 or 33) continue;
+			sb.Append($"{n,2}) SIG{LinuxSignals[n]}").Append(++col % 5 == 0 ? '\n' : '\t');
+			}
+		if (col % 5 != 0) sb.Append('\n');
+		Console.Write(sb.ToString());
+		}
 
 	/// <summary>Linux's signal numbers (x86_64, as bash 5.1 there names them): 1-31 by name, 32 and
 	/// 33 unnamed, 34-64 the real-time range RTMIN, RTMIN+1 … RTMIN+15, RTMAX-14 … RTMAX. Windows
@@ -663,11 +691,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			}
 		var ops = args.Skip(first).ToList();
 
-		if (listSigs)
-			{
-			Console.WriteLine(string.Join("  ", SignalNames));
-			return 0;
-			}
+		if (listSigs) { PrintSignalTable(); return 0; }   // operands and -p are ignored (bash)
 
 		// trap / trap -p [SIG...] : print the traps (the named ones only, when given), in bash's order
 		// and spelling; until 2026-10-10 `-p` ignored its operands and printed INT, not SIGINT
@@ -718,11 +742,13 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 	/// <summary>Normalise a sigspec to its canonical name (INT, RTMIN+3, EXIT …), or null when bash would
 	/// say "invalid signal specification": a name of <see cref="LinuxSignals"/> in any case with or
 	/// without SIG, RTMIN+n / RTMAX-n, a number 0-64, EXIT, DEBUG, ERR, RETURN. Until 2026-10-10 any
-	/// alphanumeric word was accepted (`trap x BADSIG`, `trap x 65`).</summary>
+	/// alphanumeric word was accepted (`trap x BADSIG`, `trap x 65`). `SIG` goes only before a signal's
+	/// name, as bash's decode_signal: `SIGEXIT`, `SIGERR`, `SIG2` are invalid (accepted until 2026-10-12).</summary>
 	private static string? CanonSignal(string s)
 		{
 		var u = s.ToUpperInvariant();
-		if (u.StartsWith("SIG")) u = u[3..];
+		if (u.StartsWith("SIG"))
+			return u[3..] is var name && !(name is "EXIT" or "DEBUG" or "ERR" or "RETURN" || name.StartsWith("SIG") || name.All(char.IsAsciiDigit)) ? CanonSignal(name) : null;
 		if (u is "EXIT" or "0") return "EXIT";
 		if (u is "DEBUG" or "ERR" or "RETURN") return u;
 		if (u.Length > 0 && u.All(char.IsAsciiDigit))

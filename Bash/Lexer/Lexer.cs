@@ -99,6 +99,7 @@ public sealed class Lexer
 			return false;
 			}
 
+		_tokStart = _pos;
 		var tok = NextToken(tokens.Count);
 		if (tok is null) return true;
 
@@ -292,6 +293,7 @@ public sealed class Lexer
 
 	private Token ConsumeHeredocBody(string delimiter, bool stripTabs, int opLine)
 		{
+		_tokStart = _pos;   // the body's own text, after its line's newline
 		int startLine = _line, startCol = _col;
 		var sb = new System.Text.StringBuilder();
 		bool delimited = false;
@@ -557,6 +559,7 @@ public sealed class Lexer
 			{
 			char close = n == '{' ? '}' : ')';
 			int depth = 1;
+			var cases = n == '(' ? new CaseTracker() : null;
 			for (int j = i + 2; j < s.Length; )
 				{
 				char ch = s[j];
@@ -565,7 +568,30 @@ public sealed class Lexer
 					{
 					j = ConstructEnd(s, j);
 					if (j < 0) return -1;
+					cases?.OtherWord();
 					continue;
+					}
+				// a `case` in `$( )`: its patterns' parentheses are not the substitution's (bash's
+				// parse_comsub); `$(case a in a) echo y;; esac)` ended at `a)` until 2026-10-11
+				if (cases is not null)
+					{
+					if (!IsWordBreak(ch) && (j == i + 2 || IsWordBreak(s[j - 1])))
+						{
+						int e = j;
+						while (e < s.Length && !IsWordBreak(s[e]) && s[e] is not ('\'' or '"' or '`' or '$' or '\\')) e++;
+						if (e < s.Length && s[e] is '\'' or '"' or '`' or '$' or '\\') cases.OtherWord();   // a word with quotes or `$`
+						else cases.Word(s[j..e], depth);
+						if (e > j) { j = e; continue; }
+						// a bare `$name` is empty here; step over its `$` below or the scan never moves
+						}
+					if (ch == ';' && j + 1 < s.Length && s[j + 1] is ';' or '&') { cases.EndOfBranch(depth); j += 2; continue; }
+					if ((ch == '(' || ch == ')') && cases.InPattern(depth))
+						{
+						if (ch == ')') cases.PatternClosed(depth);
+						j++;
+						continue;
+						}
+					if (ch is ';' or '\n' or '|' or '&' or '(') cases.Separator();
 					}
 				if (n == '(' && ch == '(') depth++;
 				else if (ch == close && --depth == 0) return j + 1;
@@ -580,6 +606,55 @@ public sealed class Lexer
 			return j;
 			}
 		return i + 2;   // $1 $@ $* $# $? $$ $! $- $0
+		}
+
+	private static bool IsWordBreak(char c) => c is ' ' or '\t' or '\r' or '\n' or ';' or '|' or '&' or '(' or ')' or '<' or '>';
+
+	/// <summary>
+	/// Where the `case` statements inside a `$( )` are, so their patterns' parentheses do not count as
+	/// the substitution's (bash 5.1's parse_comsub does the same). After `case WORD in`, a pattern runs to
+	/// its `)` (an opening `(` is optional); then the branch body, where parentheses count as usual, to
+	/// `;;` / `;&` / `;;&`, which starts the next pattern; `esac` ends the case. Used by
+	/// <see cref="ConstructEnd"/> on text and by the parser on tokens (DECISIONS 2026-10-11).
+	/// </summary>
+	public sealed class CaseTracker
+		{
+		private enum State { Subject, Pattern, Body }
+		private readonly Stack<(int Depth, State State)> _open = new();
+		private bool _cmdPos = true;   // `case` is a keyword only where a command starts: `echo case in` is not one
+
+		/// <summary>Reserved words after which a command still starts.</summary>
+		private static readonly HashSet<string> Leading = ["then", "do", "else", "elif", "if", "while", "until", "!", "{", "time"];
+
+		/// <summary>`;` `|` `&amp;` a newline `(` `{` or an opening `$(`: a command starts next.</summary>
+		public void Separator() => _cmdPos = true;
+
+		/// <summary>A quoted or `$` word: an argument, or a command name.</summary>
+		public void OtherWord() => _cmdPos = false;
+
+		/// <summary>A whole plain word at paren depth <paramref name="depth"/>.</summary>
+		public void Word(string w, int depth)
+			{
+			bool atCommand = _cmdPos;
+			_cmdPos = Leading.Contains(w);
+			if (w == "case" && atCommand) { _open.Push((depth, State.Subject)); return; }
+			if (_open.Count == 0 || _open.Peek().Depth != depth) return;
+			var top = _open.Peek();
+			if (w == "in" && top.State == State.Subject) { _open.Pop(); _open.Push((depth, State.Pattern)); }
+			else if (w == "esac" && (top.State == State.Pattern || (top.State == State.Body && atCommand))) _open.Pop();
+			}
+
+		public bool InPattern(int depth) => _open.Count > 0 && _open.Peek() is { State: State.Pattern } t && t.Depth == depth;
+
+		public void PatternClosed(int depth)
+			{
+			if (InPattern(depth)) { _open.Pop(); _open.Push((depth, State.Body)); _cmdPos = true; }
+			}
+
+		public void EndOfBranch(int depth)
+			{
+			if (_open.Count > 0 && _open.Peek() is { State: State.Body } t && t.Depth == depth) { _open.Pop(); _open.Push((depth, State.Pattern)); }
+			}
 		}
 
 	// ── words ─────────────────────────────────────────────────────────────────
@@ -641,8 +716,11 @@ public sealed class Lexer
 		return Make(type, v, l, col);
 		}
 
-	private static Token Make(TokenType type, string value, int line, int col) =>
-		new(type, value, line, col);
+	/// <summary>A token whose text runs from where this step began (<see cref="_tokStart"/>) to here.</summary>
+	private Token Make(TokenType type, string value, int line, int col) =>
+		new(type, value, line, col) { Start = _tokStart, End = _pos };
+
+	private int _tokStart;
 
 	private void SkipWhitespace()
 		{

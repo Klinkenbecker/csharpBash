@@ -1,0 +1,209 @@
+== pushd a
+~/a ~
+  rc=0
+  pwd=~/a stack:  0 ~/a| 1 ~|
+== pushd ../b
+~/b ~/a ~
+  rc=0
+  pwd=~/b stack:  0 ~/b| 1 ~/a| 2 ~|
+== pushd ../c
+~/c ~/b ~/a ~
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -p
+~/c
+~/b
+~/a
+~
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -lv
+dirs: -lv: invalid number
+dirs: usage: dirs [-clpv] [+N] [-N]
+  rc=2
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -pv
+dirs: -pv: invalid number
+dirs: usage: dirs [-clpv] [+N] [-N]
+  rc=2
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -x
+dirs: -x: invalid number
+dirs: usage: dirs [-clpv] [+N] [-N]
+  rc=2
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs foo
+dirs: foo: invalid option
+dirs: usage: dirs [-clpv] [+N] [-N]
+  rc=2
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+D/c D/b D/a D
+ 0  D/c
+ 1  D/b
+ 2  D/a
+ 3  D
+D
+== dirs +0
+~/c
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs +2
+~/a
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -0
+~
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -1
+~/a
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -v +1
+ 1  ~/b
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -v -1
+ 2  ~/a
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -v -0
+ 3  ~
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs +9
+dirs: 9: directory stack index out of range
+  rc=1
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs -9
+dirs: 9: directory stack index out of range
+  rc=1
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== dirs +1 +2
+~/a
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== pushd +1
+~/b ~/a ~ ~/c
+  rc=0
+  pwd=~/b stack:  0 ~/b| 1 ~/a| 2 ~| 3 ~/c|
+== pushd -0
+~/c ~/b ~/a ~
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/b| 2 ~/a| 3 ~|
+== pushd -n D/x
+~/c ~/x ~/b ~/a ~
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/x| 2 ~/b| 3 ~/a| 4 ~|
+== pushd -n +2
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/a| 2 ~| 3 ~/c| 4 ~/x|
+== pushd -n -1
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/x| 2 ~/c| 3 ~/a| 4 ~|
+== pushd +9
+pushd: +9: directory stack index out of range
+  rc=1
+  pwd=~/c stack:  0 ~/c| 1 ~/x| 2 ~/c| 3 ~/a| 4 ~|
+== pushd +x
+pushd: +x: invalid number
+pushd: usage: pushd [-n] [+N | -N | dir]
+  rc=2
+  pwd=~/c stack:  0 ~/c| 1 ~/x| 2 ~/c| 3 ~/a| 4 ~|
+== pushd -x
+pushd: -x: invalid number
+pushd: usage: pushd [-n] [+N | -N | dir]
+  rc=2
+  pwd=~/c stack:  0 ~/c| 1 ~/x| 2 ~/c| 3 ~/a| 4 ~|
+== pushd -n
+  rc=0
+  pwd=~/c stack:  0 ~/c| 1 ~/x| 2 ~/c| 3 ~/a| 4 ~|
+== pushd
+~/x ~/c ~/c ~/a ~
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 ~/c| 2 ~/c| 3 ~/a| 4 ~|
+== pushd +0
+~/x ~/c ~/c ~/a ~
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 ~/c| 2 ~/c| 3 ~/a| 4 ~|
+== pushd -n +0
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 ~/c| 2 ~/c| 3 ~/a| 4 ~|
+== pushd nonexist
+pushd: nonexist: No such file or directory
+  rc=1
+  pwd=~/x stack:  0 ~/x| 1 ~/c| 2 ~/c| 3 ~/a| 4 ~|
+== pushd a b
+pushd: too many arguments
+  rc=1
+  pwd=~/x stack:  0 ~/x| 1 ~/c| 2 ~/c| 3 ~/a| 4 ~|
+== popd +1
+~/x ~/c ~/a ~
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 ~/c| 2 ~/a| 3 ~|
+== popd -0
+~/x ~/c ~/a
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 ~/c| 2 ~/a|
+== popd -n
+~/x ~/a
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 ~/a|
+== popd -n +1
+~/x
+  rc=0
+  pwd=~/x stack:  0 ~/x|
+== popd +0
+popd: directory stack empty
+  rc=1
+  pwd=~/x stack:  0 ~/x|
+== popd +9
+popd: directory stack empty
+  rc=1
+  pwd=~/x stack:  0 ~/x|
+== popd x
+popd: x: invalid argument
+popd: usage: popd [-n] [+N | -N]
+  rc=2
+  pwd=~/x stack:  0 ~/x|
+== popd -x
+popd: -x: invalid number
+popd: usage: popd [-n] [+N | -N]
+  rc=2
+  pwd=~/x stack:  0 ~/x|
+== popd
+popd: directory stack empty
+  rc=1
+  pwd=~/x stack:  0 ~/x|
+== pushd -n
+  rc=0
+  pwd=~/x stack:  0 ~/x|
+== pushd
+pushd: no other directory
+  rc=1
+  pwd=~/x stack:  0 ~/x|
+== pushd +0
+~/x
+  rc=0
+  pwd=~/x stack:  0 ~/x|
+== pushd +1
+pushd: directory stack empty
+  rc=1
+  pwd=~/x stack:  0 ~/x|
+== pushd -n b
+~/x b
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 b|
+== dirs
+~/x b
+  rc=0
+  pwd=~/x stack:  0 ~/x| 1 b|
+== popd +1
+~/x
+  rc=0
+  pwd=~/x stack:  0 ~/x|
+0000000   ~   /   x  \n
+0000000       0           ~   /   x  \n
+D/x
+~/T/x
+D/x

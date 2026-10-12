@@ -42,6 +42,22 @@ public sealed class ShellOptions
 	/// <summary>-B: brace expansion (always on; listed for `set -o`).</summary>
 	public bool BraceExpand { get; set; } = true;
 
+	/// <summary>-t / -o onecmd: exit after reading and running one command (a line). Accepted and
+	/// ignored until 2026-10-11.</summary>
+	public bool OneCmd { get; set; } = false;
+
+	/// <summary>-k / -o keyword: a `NAME=value` word anywhere in a command is an assignment for that
+	/// command, not an argument. Accepted and ignored until 2026-10-11.</summary>
+	public bool Keyword { get; set; } = false;
+
+	/// <summary>-p / -o privileged: `BASH_ENV` is not sourced (the setuid effects mean nothing on
+	/// Windows). Accepted and ignored until 2026-10-11.</summary>
+	public bool Privileged { get; set; } = false;
+
+	/// <summary>-T / -o functrace: functions, `( )`, `$( )` and pipeline stages inherit the DEBUG and
+	/// RETURN traps (DECISIONS 2026-10-11).</summary>
+	public bool FuncTrace { get; set; } = false;
+
 	// ── invocation facts (not settable via `set`) ───────────────────────────────
 	public bool Interactive   { get; set; } = false;   // -i or REPL
 	public bool CommandString { get; set; } = false;   // -c
@@ -64,7 +80,13 @@ public sealed class ShellOptions
 			case 'h': HashAll     = enable; return true;
 			case 'B': BraceExpand = enable; return true;
 			case 'E': ErrTrace    = enable; return true;
-			case 'b': case 'k': case 'm': case 'p': case 't': case 'H': case 'P': case 'T':
+			case 't': OneCmd      = enable; return true;
+			case 'k': Keyword     = enable; return true;
+			case 'p': Privileged  = enable; return true;
+			case 'T': FuncTrace   = enable; return true;
+			// interactive job notices, job control and `!` history do nothing in a script in bash
+			// either; -P is `cd -P`, moot without symlinked cwds (DECISIONS)
+			case 'b': case 'm': case 'H': case 'P':
 				return true;    // accepted, no effect here
 			}
 		return false;
@@ -78,13 +100,13 @@ public sealed class ShellOptions
 		yield return ("emacs",       Interactive);
 		yield return ("errexit",     ExitOnError);
 		yield return ("errtrace",    ErrTrace);
-		yield return ("functrace",   false);
+		yield return ("functrace",   FuncTrace);
 		yield return ("hashall",     HashAll);
 		yield return ("histexpand",  Interactive);
 		yield return ("history",     Interactive);
 		yield return ("ignoreeof",   false);
 		yield return ("interactive-comments", true);
-		yield return ("keyword",     false);
+		yield return ("keyword",     Keyword);
 		yield return ("monitor",     Interactive);
 		yield return ("noclobber",   NoClobber);
 		yield return ("noexec",      NoExec);
@@ -92,11 +114,11 @@ public sealed class ShellOptions
 		yield return ("nolog",       false);
 		yield return ("notify",      false);
 		yield return ("nounset",     UnsetError);
-		yield return ("onecmd",      false);
+		yield return ("onecmd",      OneCmd);
 		yield return ("physical",    false);
 		yield return ("pipefail",    PipeFail);
 		yield return ("posix",       false);
-		yield return ("privileged",  false);
+		yield return ("privileged",  Privileged);
 		yield return ("verbose",     Verbose);
 		yield return ("vi",          false);
 		yield return ("xtrace",      XTrace);
@@ -119,11 +141,15 @@ public sealed class ShellOptions
 			case "hashall":     HashAll     = enable; return true;
 			case "braceexpand": BraceExpand = enable; return true;
 			case "errtrace":    ErrTrace    = enable; return true;
-			case "emacs": case "vi": case "functrace": case "histexpand":
-			case "history": case "ignoreeof": case "interactive-comments": case "keyword":
-			case "monitor": case "nolog": case "notify": case "onecmd": case "physical":
-			case "posix": case "privileged":
-				return true;    // accepted, no effect here
+			case "onecmd":      OneCmd      = enable; return true;
+			case "keyword":     Keyword     = enable; return true;
+			case "privileged":  Privileged  = enable; return true;
+			case "functrace":   FuncTrace   = enable; return true;
+			case "emacs": case "vi": case "histexpand":
+			case "history": case "ignoreeof": case "interactive-comments":
+			case "monitor": case "nolog": case "notify": case "physical":
+			case "posix":
+				return true;    // accepted, no effect here (posix: a notice, NotAvailable)
 			}
 		return false;
 		}
@@ -137,9 +163,11 @@ public sealed class ShellOptions
 		if (NoGlob)      sb.Append('f');
 		if (HashAll)     sb.Append('h');
 		if (Interactive) sb.Append('i');
+		if (Keyword)     sb.Append('k');
 		if (Interactive) sb.Append('m');
 		if (NoExec)      sb.Append('n');
-		if (ReadStdin)   sb.Append('s');
+		if (Privileged)  sb.Append('p');
+		if (OneCmd)      sb.Append('t');
 		if (UnsetError)  sb.Append('u');
 		if (Verbose)     sb.Append('v');
 		if (XTrace)      sb.Append('x');
@@ -147,6 +175,9 @@ public sealed class ShellOptions
 		if (NoClobber)   sb.Append('C');
 		if (ErrTrace)    sb.Append('E');
 		if (Interactive) sb.Append('H');
+		if (FuncTrace)   sb.Append('T');
+		// `s` and `c` come last, as in bash (`hBs`, measured 2026-10-11; `s` stood before `u` here)
+		if (ReadStdin)   sb.Append('s');
 		if (CommandString) sb.Append('c');
 		return sb.ToString();
 		}
@@ -224,13 +255,15 @@ public sealed class ShellOptions
 	private int PackFlags() =>
 		(ExitOnError ? 1 : 0)      | (UnsetError ? 1 << 1 : 0) | (XTrace ? 1 << 2 : 0)    | (NoExec ? 1 << 3 : 0)
 		| (NoGlob ? 1 << 4 : 0)    | (Verbose ? 1 << 5 : 0)    | (NoClobber ? 1 << 6 : 0) | (AllExport ? 1 << 7 : 0)
-		| (PipeFail ? 1 << 8 : 0)  | (ErrTrace ? 1 << 9 : 0)   | (HashAll ? 1 << 10 : 0)  | (BraceExpand ? 1 << 11 : 0);
+		| (PipeFail ? 1 << 8 : 0)  | (ErrTrace ? 1 << 9 : 0)   | (HashAll ? 1 << 10 : 0)  | (BraceExpand ? 1 << 11 : 0)
+		| (OneCmd ? 1 << 12 : 0)   | (Keyword ? 1 << 13 : 0)   | (Privileged ? 1 << 14 : 0) | (FuncTrace ? 1 << 15 : 0);
 
 	private void UnpackFlags(int f)
 		{
 		ExitOnError = (f & 1) != 0;       UnsetError = (f & 1 << 1) != 0; XTrace    = (f & 1 << 2) != 0; NoExec    = (f & 1 << 3) != 0;
 		NoGlob      = (f & 1 << 4) != 0;  Verbose    = (f & 1 << 5) != 0; NoClobber = (f & 1 << 6) != 0; AllExport = (f & 1 << 7) != 0;
 		PipeFail    = (f & 1 << 8) != 0;  ErrTrace   = (f & 1 << 9) != 0; HashAll   = (f & 1 << 10) != 0; BraceExpand = (f & 1 << 11) != 0;
+		OneCmd      = (f & 1 << 12) != 0; Keyword    = (f & 1 << 13) != 0; Privileged = (f & 1 << 14) != 0; FuncTrace = (f & 1 << 15) != 0;
 		}
 
 	public bool Shopt(string name) => _shopt.Contains(name);

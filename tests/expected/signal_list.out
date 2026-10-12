@@ -1,0 +1,82 @@
+ 1) SIGHUP	 2) SIGINT	 3) SIGQUIT	 4) SIGILL	 5) SIGTRAP
+ 6) SIGABRT	 7) SIGBUS	 8) SIGFPE	 9) SIGKILL	10) SIGUSR1
+11) SIGSEGV	12) SIGUSR2	13) SIGPIPE	14) SIGALRM	15) SIGTERM
+16) SIGSTKFLT	17) SIGCHLD	18) SIGCONT	19) SIGSTOP	20) SIGTSTP
+21) SIGTTIN	22) SIGTTOU	23) SIGURG	24) SIGXCPU	25) SIGXFSZ
+26) SIGVTALRM	27) SIGPROF	28) SIGWINCH	29) SIGIO	30) SIGPWR
+31) SIGSYS	34) SIGRTMIN	35) SIGRTMIN+1	36) SIGRTMIN+2	37) SIGRTMIN+3
+38) SIGRTMIN+4	39) SIGRTMIN+5	40) SIGRTMIN+6	41) SIGRTMIN+7	42) SIGRTMIN+8
+43) SIGRTMIN+9	44) SIGRTMIN+10	45) SIGRTMIN+11	46) SIGRTMIN+12	47) SIGRTMIN+13
+48) SIGRTMIN+14	49) SIGRTMIN+15	50) SIGRTMAX-14	51) SIGRTMAX-13	52) SIGRTMAX-12
+53) SIGRTMAX-11	54) SIGRTMAX-10	55) SIGRTMAX-9	56) SIGRTMAX-8	57) SIGRTMAX-7
+58) SIGRTMAX-6	59) SIGRTMAX-5	60) SIGRTMAX-4	61) SIGRTMAX-3	62) SIGRTMAX-2
+63) SIGRTMAX-1	64) SIGRTMAX	
+ 1) SIGHUP	 2) SIGINT	 3) SIGQUIT	 4) SIGILL	 5) SIGTRAP
+ 6) SIGABRT	 7) SIGBUS	 8) SIGFPE	 9) SIGKILL	10) SIGUSR1
+0000000   6   3   )       S   I   G   R   T   M   A   X   -   1  \t   6
+0000020   4   )       S   I   G   R   T   M   A   X  \t  \n
+INT
+EXIT
+INT
+RTMAX
+15
+2
+36
+63
+0
+0
+65
+66
+67
+rc=0
+[128] kill: 128: invalid signal specification rc=1
+[193] kill: 193: invalid signal specification rc=1
+[65] kill: 65: invalid signal specification rc=1
+[-1]  1) SIGHUP	 2) SIGINT	 3) SIGQUIT	 4) SIGILL	 5) SIGTRAP
+ 6) SIGABRT	 7) SIGBUS	 8) SIGFPE	 9) SIGKILL	10) SIGUSR1
+11) SIGSEGV	12) SIGUSR2	13) SIGPIPE	14) SIGALRM	15) SIGTERM
+16) SIGSTKFLT	17) SIGCHLD	18) SIGCONT	19) SIGSTOP	20) SIGTSTP
+21) SIGTTIN	22) SIGTTOU	23) SIGURG	24) SIGXCPU	25) SIGXFSZ
+26) SIGVTALRM	27) SIGPROF	28) SIGWINCH	29) SIGIO	30) SIGPWR
+31) SIGSYS	34) SIGRTMIN	35) SIGRTMIN+1	36) SIGRTMIN+2	37) SIGRTMIN+3
+38) SIGRTMIN+4	39) SIGRTMIN+5	40) SIGRTMIN+6	41) SIGRTMIN+7	42) SIGRTMIN+8
+43) SIGRTMIN+9	44) SIGRTMIN+10	45) SIGRTMIN+11	46) SIGRTMIN+12	47) SIGRTMIN+13
+48) SIGRTMIN+14	49) SIGRTMIN+15	50) SIGRTMAX-14	51) SIGRTMAX-13	52) SIGRTMAX-12
+53) SIGRTMAX-11	54) SIGRTMAX-10	55) SIGRTMAX-9	56) SIGRTMAX-8	57) SIGRTMAX-7
+58) SIGRTMAX-6	59) SIGRTMAX-5	60) SIGRTMAX-4	61) SIGRTMAX-3	62) SIGRTMAX-2
+63) SIGRTMAX-1	64) SIGRTMAX	 rc=0
+[x] kill: x: invalid signal specification rc=1
+[2x] kill: 2x: invalid signal specification rc=1
+[SIGEXIT] kill: SIGEXIT: invalid signal specification rc=1
+[SIG2] kill: SIG2: invalid signal specification rc=1
+[SIGSIGINT] kill: SIGSIGINT: invalid signal specification rc=1
+[SIG] kill: SIG: invalid signal specification rc=1
+13
+INT
+13
+TERM
+kill: ll: invalid signal specification
+kill: -s: option requires an argument
+rc=1
+kill: usage: kill [-s sigspec | -n signum | -sigspec] pid | jobspec ... or kill -l [sigspec]
+kill: : invalid signal specification
+kill -s EXIT rc=0
+trap: SIGEXIT: invalid signal specification
+trap SIGEXIT rc=1
+trap: sigexit: invalid signal specification
+trap sigexit rc=1
+trap: SIGDEBUG: invalid signal specification
+trap SIGDEBUG rc=1
+trap: SIGERR: invalid signal specification
+trap SIGERR rc=1
+trap: SIGRETURN: invalid signal specification
+trap SIGRETURN rc=1
+trap: SIG2: invalid signal specification
+trap SIG2 rc=1
+trap SIGINT rc=0
+trap sigrtmin+2 rc=0
+trap USR1 rc=0
+trap 2 rc=0
+trap -- ':' SIGINT
+trap -- ':' SIGUSR1
+trap -- ':' SIGRTMIN+2

@@ -5276,3 +5276,423 @@ Bash call (rev 213, `BASH_COREUTILS=external awk --version` is Git's GNU Awk 5.0
 One-fix notice to the six sessions. Push rule followed: `compare3.sh` on deployed rev 213 (every row
 within noise of the rev 209 run; the README table is now this run, build rev 213), doc review (the
 README's known-defect note gone; nothing else changed since rev 211).
+
+**Pushed:** GitHub `main` = git `1ab0a25` = hg rev 214 (`e8c2d39..1ab0a25`; history 215 changesets, bundle verified; no token left in config; `git ls-remote` confirmed).
+
+## 2026-10-11 -- BUILT: `-t` (onecmd), `-k` (keyword), `-p` (privileged) act as in bash; they were accepted and ignored
+**Status:** Active. The architect: "go" on the open items; implement-or-notice decided by the ratified rule
+(the default is bash as its users expect it): implemented where it is sound, the notice where the
+machinery is missing.
+
+**Measured in bash 5.1 (WSL) and built:**
+- `-t` / `set -t` / `-o onecmd`: the shell's own input (a script, `-c`, stdin; not `source`, `eval` or a
+  trap, as bash's reader loop) runs ONE command, a whole line or compound command, then the shell exits
+  with its status; `set -t` is itself that command. `RunString(…, mainLoop: true)` from Program.cs and the
+  in-process child script; the REPL exits after one command too.
+- `-k` / `-o keyword`: a `NAME=value` / `NAME+=value` word anywhere after the command name is a
+  temporary assignment for the command, as a prefix one is, not an argument; `declare D=1` and
+  `export E=2` lose theirs too (their arguments arrive as `AssignmentArgPart`). `KeywordAssignment`.
+- `-p` / `-o privileged`: `BASH_ENV` is not read; `p` is in `$-`. bash's setuid effects mean nothing
+  on Windows.
+- `$-` now lists `k p t` in bash's places and `s` LAST (`hBs`; it stood before `u`: an older mismatch,
+  measured while here). The three join the subshell pack/unpack lists.
+
+**Still accepted with no effect, by reason:** `-b -m -H` (job notices, job control, `!` history: nothing
+in a script in bash either); `-P` (`cd -P`, which an older decision treats as moot without symlinked
+cwds); `-T` (it extends DEBUG and RETURN traps into functions, and those traps NEVER run here: `trap …
+DEBUG` / `trap … RETURN` are accepted and silent, found 2026-10-11, OPEN with the architect).
+
+**Verified:** new case `options_tkp` (expected = GNU bash via WSL); deployed rev 213 misses 12 of its
+lines. Suite 113/113 with a console and `-Detached`; compat battery 226/237 against 225.
+
+**Implemented by:** rev 216. Files: `Bash/Evaluator/ShellOptions.cs`, `Bash/Evaluator/Evaluator.cs`,
+`Bash/Program.cs`, `tests/cases/options_tkp.sh`, `tests/expected/options_tkp.out`, `tests/run-tests.ps1`.
+
+## 2026-10-11 -- BUILT: DEBUG and RETURN traps run, `$BASH_COMMAND` exists, `-T` and `declare -ft`; trap `$LINENO`
+**Status:** Active. The architect: "Build" (Claude's position: build them, a check per command when no
+trap is set; falsifier: a measured per-command cost above noise, then a notice instead).
+
+**Before:** `trap … DEBUG` and `trap … RETURN` were accepted and never ran; `$BASH_COMMAND` was empty
+everywhere (an ERR trap's `error in: $BASH_COMMAND` printed nothing); `-T` / `-o functrace` were ignored;
+`declare -ft f` printed f and ignored -t; a trap's `$LINENO` was 1 (an ERR trap said line 1).
+
+**bash 5.1, measured via WSL, and now matched:** DEBUG runs before each simple command (assignments
+too), `[[ ]]`, `(( ))`, each `for` turn (`for i in a b`), an arithmetic for's init, each test and each
+step (`((i<2))`), a `case` (`case $x in `), each pipeline element (in the parent, before the stage);
+NOT inside functions, `( )`, `$( )`, `<( )`, pipeline stages or background jobs, unless -T or the
+function's trace attribute (`declare -ft`, cleared by `declare -f +t`; in `declare +ft` the t is a
+variable's: nothing), with which it also runs once at a function's entry. RETURN runs after `source`
+(out of its frame) and after a function that set it, or after every function with -T (in its frame).
+A trap never traces itself; `$?` survives DEBUG; RETURN keeps the function's status. `$LINENO` in DEBUG
+and ERR is the command's line, in RETURN the function's definition line or the `source` line; EXIT
+stays 1, as bash. `$BASH_COMMAND` is bash's rendering: words as written one space apart, `> target`
+but `2>&1` and `<<EOT`, a here-document's body after it, `$'s'` as `'s'`, no `!` or `time`.
+
+**Design:** tokens carry their source offsets (`Lexer.Make` stamps `Start`/`End`); the traced nodes
+keep a `SourceSpan` (a reference and two ints, no text); `CommandText.Render` re-lexes a span only when
+`$BASH_COMMAND` is read. The evaluator keeps the current command (`SetCommand`, one field store per
+command; not changed inside a trap, so a trap sees the command it is for), a `_debugOff` count for the
+non-inheriting scopes, a `_debugSkip` for a stage's own command (already traced by the parent), and
+call ids so RETURN fires for the function that set it. `RunTrap(…, atLine)` reads a trap's text as at
+the line it fires for. `shopt -s extdebug` (DEBUG's status skipping a command) stays refused, loudly.
+
+**Not matched, known:** text inside `$( )` in `$BASH_COMMAND` has its spaces collapsed to one (bash
+keeps them as written; unmeasured beyond the probes). Whether DEBUG runs inside other traps (EXIT, ERR):
+here never; bash not measured.
+
+**Cost (the falsifier, not triggered):** `compare3.sh` back to back, AOT, this build vs deployed rev
+213 (seconds): loop 0.163/0.164, arith 0.248/0.246, func 0.218/0.212, loop_big 1.421/1.434, coreutils
+0.058/0.056, pipeline 0.248/0.246, find 0.022/0.021, startup 0.0161/0.0158: within the run-to-run
+spread (func ranged 0.210-0.217 across today's runs). `declare -ft` came after, adding one count test
+per function call.
+
+**Verified:** new case `traps_debug_return` (9 probe scripts; expected = GNU bash via WSL); deployed rev
+213 misses 63+ of its lines. Suite 114/114 with a console and `-Detached`; compat battery 226/237
+against 225; `-n` corpus 844/912, unchanged.
+
+**Implemented by:** rev 217. Files: `Bash/Lexer/Token.cs`, `Bash/Lexer/Lexer.cs`, `Bash/Parser/Nodes.cs`,
+`Bash/Parser/Parser.cs`, `Bash/Parser/CommandText.cs` (new), `Bash/Evaluator/Evaluator.cs`,
+`Bash/Evaluator/ShellEnvironment.cs`, `Bash/Evaluator/ShellOptions.cs`, `Bash/Evaluator/Builtins.Shell.cs`,
+`Bash/Evaluator/WordExpander.cs`, `tests/cases/traps_debug_return.sh`,
+`tests/expected/traps_debug_return.out`, `tests/run-tests.ps1`, `tests/bench/results.md`.
+
+**Deployed 2026-10-11 ("yup"):** rev 217 (`1.0.0+hg.64cd033c7de6 217`), revs 214-217 with this entry and the `-t -k -p` one; suite 114/114 on the AOT binary with a console and `-Detached`; live check in a Claude Code Bash call (`ERR at 3: false`, a DEBUG trace, `-t`); rollback `dist/Bash.exe.rev213`; notice to the six sessions.
+
+## 2026-10-11 -- DEFECT FIXED: `$0` was the launcher's backslash path (every `-c` error prefix under Claude Code); a PATHEXT match's argv[0] was spelt `bash.EXE`
+**Status:** Active. OPEN DEFECTS item "`$0` under -c is a full backslash path" (seen 2026-10-10, not
+analysed); the architect: "go next".
+
+**Measured (the cause, not inferred):** a launcher passes the resolved native path as argv[0]: Claude
+Code `F:\…\dist\bash.exe`, Git Bash `F:\…\Bash.exe`, C#Bash itself `F:\…\bash.EXE` (the typed name plus
+PATHEXT's spelling). C#Bash took `$0` from `GetCommandLineArgs()[0]` verbatim, so `$0` and every `-c` error
+prefix carried backslashes (`F:\…\bash.exe: -c: line 1: …`); on the JIT build it was `Bash.dll` (the
+apphost's). Git Bash shows its own path in its POSIX form (`/usr/bin/bash`).
+
+**Decision, from the record (the shell's path form is forward slashes, 2026-09-12; `$BASH` since rev
+154):** `$0` from argv[0] is the command line's first token as the launcher passed it, in the shell's
+forward-slash form (`ShellEnvironment.LaunchedAs`, GetCommandLineW: right on the JIT build too). A `-c`
+name argument and a script path stay as typed. A program found through PATHEXT is launched with its
+on-disk name (`ShellFile.OnDiskName`, cached per name), so a child's argv[0] is `…\Bash.exe`, as Git Bash
+passes; the launch keeps the native path (rev 160's decision).
+
+**Found while testing, OPEN (next):** a temporary `PATH=…;… cmd` is not used to find `cmd` (bash
+searches it); exported, it is. PATH here holds Windows entries split by `;` (documented), so a test must
+use `;`.
+
+**Verified:** new case `arg0_path` (authored: the interpreter under test launched by name through PATH;
+no backslash in `$0` or the error prefix; its child's argv[0] is `Bash.exe`; a `-c` name kept); rev 217
+fails 3 of its 4 lines. Suite 115/115 with a console and `-Detached`; compat battery 226/237 against 225.
+
+**Implemented by:** rev 219. Files: `Bash/Evaluator/ShellEnvironment.cs`, `Bash/Evaluator/ShellFile.cs`,
+`Bash/Evaluator/Builtins.Shell.cs`, `Bash/Evaluator/Evaluator.cs`, `tests/cases/arg0_path.sh`,
+`tests/expected/arg0_path.out`, `tests/run-tests.ps1`.
+
+## 2026-10-11 -- DEFECTS FIXED: command lookup ignored the shell's PATH (stale hash after a PATH change; temporary `PATH=` not searched; a subshell's PATH leaked to the parent)
+**Status:** Active. Found 2026-10-11 testing `$0`; the architect: "go next".
+
+**Measured (bash 5.1 with scripts; C#Bash rev 217 with .cmd files, PATH entries split by `;`):** after
+`export PATH=B;…` put B before A, C#Bash still ran A's program (bash: B: "any assignment to PATH resets the
+hash table"); `PATH=A;… cmd` was not searched for cmd (bash searches it, and does not hash it);
+`( export PATH=C;… )` let the parent then find C's program (bash: not found).
+
+**Cause (read in the code):** `ResolveOnPath` (and `type -a`, `which`, `source`'s sourcepath) read the
+PROCESS environment's PATH, which `Set("PATH")` writes and nothing restores after a subshell; a temporary
+assignment never reaches it; and its hash table was cleared only by `hash -r`.
+
+**Fix:** lookups read the running shell's own PATH (`ShellEnvironment.CurrentPath`; a subshell's or a
+stage's is its own); the hash is reset on every PATH assignment (`PathChanged`) and whenever the value is
+not the one it was built for (a restored subshell); a temporary `PATH=` is searched for that command only,
+not hashed. Child programs were already fine: their environment comes from the shell's exported variables
+(checked: the leaked PATH never reached a child).
+
+**Verified:** new case `path_lookup` (authored; the bash-measured sequence from-A, from-B, from-A, from-B,
+not found; `hash` empty after `PATH=$PATH`); rev 217 fails 5 of its lines. Suite 116/116 with a console and
+`-Detached`; compat battery 226/237 against 225.
+
+**Implemented by:** rev 220. Files: `Bash/Evaluator/ShellEnvironment.cs`, `Bash/Evaluator/Evaluator.cs`,
+`Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/Builtins.Shell.cs`, `tests/cases/path_lookup.sh`,
+`tests/expected/path_lookup.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED: a `case` inside `$( )` ended the substitution at its first pattern's `)`
+**Status:** Active. The next OPEN DEFECT after the PATH lookup; the architect: "go next".
+
+**Measured (GNU bash 5.1 via WSL; C#Bash rev 217):** `x=$(case a in a) echo yes;; esac)` is a syntax error in
+C#Bash (`near unexpected token ';;'`) that loses the whole line; bash runs it. The same in `"$( )"` and in
+backquotes, with `(pat)` patterns, nested in loops, `if`, a subshell in a branch, and a `case` in a `case`'s
+branch. `$(echo case in; …)` is only words in both.
+
+**Cause:** both readers of `$( )` (the lexer's text scan `ConstructEnd`, used for `"$( )"` and backquotes,
+and the parser's token scan `ParseCommandSubstitution`) counted every `(` and `)`. bash's `parse_comsub`
+knows where a `case` is and does not count its patterns' parentheses.
+
+**Fix:** `Lexer.CaseTracker`, shared by both scans: `case` is a keyword only at a command start (after a
+separator or `then`/`do`/`else`/`elif`/`if`/`while`/`until`/`!`/`{`/`time`); after `case WORD in` each
+pattern runs to its `)` (an opening `(` optional) and its parentheses do not change the depth; the branch body
+counts as usual up to `;;`/`;&`/`;;&`; `esac` closes it. Quoted or `$`-bearing words are never keywords.
+
+**Found in testing, never shipped:** the first text-scan version did not move past a bare `$name`
+(`"$(echo $HOME)"` hung the shell; the suite stopped on `array_index_assign`). A zero-length word now falls
+through to the ordinary character step; case lines 13-14 cover it.
+
+**Verified:** new case `case_in_substitution` (14 lines, expected = GNU bash via WSL; rev 217 fails all of
+them on its line-5 syntax error). Suite 117/117 with a console and `-Detached`; compat battery 226/237
+against 225 (Git Bash reference; 172 environment-dependent, left out); `-n` corpus 844/912, unchanged.
+Cost not measured (the tracker runs only while scanning a `$( )` body) [unmeasured estimate: within noise].
+
+**Implemented by:** rev 221. Files: `Bash/Lexer/Lexer.cs`, `Bash/Parser/Parser.cs`,
+`tests/cases/case_in_substitution.sh`, `tests/expected/case_in_substitution.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED: `kill -l` / `trap -l` printed nine names, not bash's numbered table; `kill`'s options and `SIG` names drifted from bash
+**Status:** Active. The next OPEN DEFECT (found by the `builtin_options` work, 2026-10-10 entry "Not done");
+the architect: "go next". Closes that entry's `kill -l`/`trap -l` item.
+
+**Measured (GNU bash 5.1 via WSL; C#Bash rev 217):** `kill -l`, `kill -L` and `trap -l` print the 62-signal
+Linux table, `%2d) SIGNAME` five to a row joined by tabs, the last row keeping its tab; C#Bash printed one
+line of nine names. `trap -l INT -p` ignores its operands and `-p`. `kill -l 0` is `EXIT`; `kill -l 32`/`33`
+print nothing (status 0); `kill -l EXIT|DEBUG|ERR|RETURN` give 0/65/66/67. bash's kill.def takes the FIRST
+`-WORD` as the signal and checks it only when killing: `kill -l -9` lists, `kill -l -1 2` prints `INT`;
+`kill -sINT` / `kill -n9` are attached forms; `kill -sINT` with no pid is the usage line; `kill -` is
+`: invalid signal specification`. `SIGEXIT`, `SIGDEBUG`, `SIGERR`, `SIGRETURN`, `SIG2`, `SIGSIGINT` are
+invalid in `kill -l` and in `trap` (C#Bash accepted every one in `trap`).
+
+**Fix:** one `PrintSignalTable` (from the existing `LinuxSignals`) for both builtins; `kill`'s option loop
+follows kill.def; `CanonSignal` takes `SIG` only before a real signal's name (bash's decode_signal).
+`SignalNames` (the nine) is gone.
+
+**Not done:** POSIX mode's `kill -l` (measured: `bash --posix -c 'kill -l'` prints `HUP INT QUIT …` on one
+line, space-separated; `trap -l` keeps the table): C#Bash's `--posix` is a notice only (2026-10-11), so
+there is nothing to switch on.
+
+**Verified:** new case `signal_list` (82 lines, expected = GNU bash via WSL; rev 217 misses 91 diff lines).
+Suite 118/118 with a console and `-Detached`; compat battery 226/237 against 225 (Git Bash reference).
+
+**Implemented by:** rev 222. Files: `Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/Builtins.Shell.cs`,
+`tests/cases/signal_list.sh`, `tests/expected/signal_list.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED: pushd / popd / dirs refused `+N` / `-N`, and took `-n` to mean "print nothing"
+**Status:** Active. The next OPEN DEFECT (the 2026-10-10 `builtin_options` entry, "Not done"); the architect:
+"go next". Measuring the rotation showed the rest of the stack drifting too.
+
+**Measured (GNU bash 5.1 via WSL; C#Bash rev 217):** `+N` / `-N` rotate (pushd), remove (popd) and show
+(dirs) entry N counted from the left / the right of `dirs`; C#Bash refused them. `-n` means "no cd", not
+"quiet": `pushd -n DIR` saves DIR, as written, as entry 1 and prints the stack; `popd -n` removes entry 1 and
+prints. `pushd -n +N` rotates without changing directory and DROPS the entry it would have changed to (bash
+rotates first, then would cd), printing nothing; `pushd +0` cds to `.` and prints, even on an empty stack.
+`dirs -p` (one per line) and `-l` (no `~`) did nothing in C#Bash; `-v -l` combine; `dirs -lv` is an invalid
+number. Out of range: `dirs: 9: …` (no sign), `pushd: +9: …`; an empty stack says `directory stack empty`
+first. `~` replaces HOME only at a `/` boundary and only when HOME is longer than `/` (C#Bash turned
+`/home/ux` into `~x` under HOME=/home/u). cd's errors under pushd say `pushd:`; C#Bash said `cd:`.
+
+**Fix:** Pushd, Popd and Dirs rewritten from bash's pushd.def logic over C#Bash's stack (entry 0 is the
+current directory, `_dirStack` holds 1…); `Cd`'s messages carry the calling builtin's name.
+
+**Not done (found, not raised for action):** `DIRSTACK`, bash's array view of the stack (assignable by
+index); C#Bash has no such variable. No script in the suite or the battery reads it.
+
+**Verified:** new case `dir_stack` (209 lines, expected = GNU bash via WSL; rev 217 misses 293 diff lines).
+Suite 119/119 with a console and `-Detached`; compat battery 226/237 against 225 (Git Bash reference).
+
+**Implemented by:** rev 223. Files: `Bash/Evaluator/Builtins.Shell.cs`, `tests/cases/dir_stack.sh`,
+`tests/expected/dir_stack.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED: `jobs -x` was refused; it runs a command with jobspecs replaced, as bash
+**Status:** Active. The last item of the 2026-10-10 `builtin_options` "Not done" list; the architect: "go next".
+
+**Measured (GNU bash 5.1 via WSL; C#Bash rev 217 refused `-x`, status 2):** `jobs -x cmd args` replaces each
+word that STARTS with `%` and names a job by the job's process group (`pre%1` stays; `%9`, no such job, stays
+silently) and runs the words as one simple command with no further expansion (builtin, function or program;
+`nosuchcmd` is 127; no words is status 0). `-x` must come before `-l`/`-p`/`-n` (`jobs -lx`: "no other
+options allowed with `-x'", 1; `jobs -xl` runs). The group in a script is the shell's own (568 = `$$` in
+the measurement), not `$!`; under job control (`bash -i`, `set -m`) it is the job's leader (`$!`; a
+pipeline's first process).
+
+**Decision (Claude's call, stated):** Windows has no process groups. C#Bash substitutes the job's pid when
+interactive (what `jobs -p` prints) and `$$` in a script, following bash's rule with the shell's own group
+read as `$$` (true when the shell leads its group, as a script run from a terminal does). Falsifier: a
+session needing `jobs -x` in a script to name the job, which bash itself does not do there. C#Bash ties job
+control to `Interactive` as its `$-` already does (`set -m` in a script changes nothing).
+
+**Found, recorded as an OPEN DEFECT:** C#Bash's job lookup has no `%name`, `%?text` or bare `%` (bash
+resolves all three, or says "ambiguous job spec"); `jobs`, `kill`, `wait`, `fg`, `disown` and `jobs -x` share
+it. Measured: bash's `kill %?4` kills the job; C#Bash's says "no such job".
+
+**Verified:** new case `jobs_x` (expected = GNU bash via WSL, `$$` normalised; the interactive line checked to
+vanish without `-i`; rev 217 misses 53 diff lines). Suite 120/120 with a console and `-Detached`; compat
+battery 226/237 against 225 (Git Bash reference).
+
+**Implemented by:** rev 224. Files: `Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/Evaluator.cs`,
+`tests/cases/jobs_x.sh`, `tests/expected/jobs_x.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED: jobspecs `%name`, `%?text` and a bare `%` found no job
+**Status:** Active. Found 2026-10-12 making `jobs -x` (entry above); fixed next, as the PATH lookup was.
+
+**Measured (GNU bash 5.1 via WSL; C#Bash rev 224):** bash's get_job_spec takes `%name` (a job one of whose
+commands STARTS with name, case kept), `%?text` (CONTAINS text, case ignored: strcasestr) and `%` alone (the
+current job). Two matching jobs: "NAME: ambiguous job spec" from the builtin, then its usual "no such job".
+A match on a pipeline's later command (`%?cat` against `sleep 4 | cat`) is ALWAYS ambiguous: get_job_by_name
+does not step past a match there and meets it again (read in bash 5.1's jobs.c, agreeing with both measured
+cases). C#Bash found none of the three.
+
+**Fix:** `FindJobIn` follows get_job_spec; a job keeps each pipeline stage's command (`BackgroundJob.Stages`)
+to match per process as bash does; the ambiguous message names the calling builtin (`fg` reports as `wait`,
+as its other messages already did).
+
+**Found, recorded as OPEN DEFECTS (measured):** (1) `a && b &` / `a || b &` background only the LAST pipeline:
+`sleep 1 && echo A &` sleeps in the foreground (bash backgrounds the whole and-or list); rev 217, deployed, does
+it too. (2) A compound job's text is its node type: `jobs` shows `BraceGroup`, `Subshell`, `ForCommand`
+where bash shows `{ sleep 1; echo hi; } > /dev/null`, `( sleep 1 )`, its re-printed `for`.
+
+**Verified:** new case `jobspec_names` (expected = GNU bash via WSL, identical on two runs; rev 217 misses 39
+diff lines; a `wait` after `kill` left out: whether bash has reaped the job by then is a race). Suite 121/121
+with a console and `-Detached`; compat battery 226/237 against 225 (Git Bash reference).
+
+**Implemented by:** rev 225. Files: `Bash/Evaluator/Evaluator.cs`, `Bash/Evaluator/BackgroundJob.cs`,
+`tests/cases/jobspec_names.sh`, `tests/expected/jobspec_names.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED: `a && b &` backgrounded only `b`; the and-or list ran its head in the foreground
+**Status:** Active. Found 2026-10-12 testing jobspecs (entry above); fixed next. In every build to rev 225,
+the deployed rev 217 included.
+
+**Measured (GNU bash 5.1 via WSL):** `sleep 1 && echo A &` returns at once and `jobs` shows `sleep 1 &&
+echo A &`; C#Bash slept 1 s in the foreground and listed `echo A`. As one job, the list's `cd` and
+assignments stay in it: `cd / && true &` leaves the shell where it was, `v=1 && true &` leaves v unset;
+C#Bash moved the shell and set v. Same for `||` and mixed chains (`true && u=3 || true &`).
+
+**Cause:** `ExecList` applied each item's `&` to that item alone; `&&` / `||` bind tighter than `&` in the
+grammar, so the job is the whole chain back to the previous `;`, `&` or newline.
+
+**Fix:** at the start of an and-or chain whose last item ends in `&`, the chain becomes one sub-list
+(`l with { Items = … }`, keeping its line and span) and one background job; `$?` is 0 after starting it.
+`DescribeNode` renders a list with its own operators (` && `, ` || `), not ` ; `.
+
+**Verified:** new case `and_or_background` (expected = GNU bash via WSL, identical on two runs; rev 217 misses
+15 diff lines; `jobs` is shown first, while bash's table holds no finished jobs: bash keeps those until it
+reports them, so later job numbers differ, a separate behaviour). Suite 122/122 with a console and
+`-Detached`; compat battery 226/237 against 225 (Git Bash reference).
+
+**Implemented by:** rev 226. Files: `Bash/Evaluator/Evaluator.cs`, `tests/cases/and_or_background.sh`,
+`tests/expected/and_or_background.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED: field splitting and `$*` ignored what IFS held (IFS='' split anyway; IFS=, lost empty fields)
+**Status:** Active. Found 2026-10-12 verifying a workaround for daq-d1 (who reported `compgen` missing):
+`local IFS= f; for f in $1` split a path at its space in C#Bash, so the workaround failed there.
+
+**Measured (GNU bash 5.1 via WSL; C#Bash rev 217; 64 cases):** IFS set to "" means no splitting at all; C#Bash
+took it as unset. Splitting is POSIX 2.6.5: IFS white space (space, tab, newline in IFS) runs together and is
+dropped at the ends; any other IFS character ends a field, an empty one too, with adjacent IFS white space:
+IFS=, makes `a,,b` three fields and `,a,` two (`` and `a`); IFS=' ,' makes ` a , b ,, c ` four. C#Bash
+treated every IFS character as white space. Unquoted `$@`, `$*`, `${a[@]}`, `${a[*]}` are joined with IFS's
+first character and then split (IFS=, makes `"a,b" "" c` four fields, `"a b" c` two); with IFS empty each
+non-empty element is its own field; C#Bash joined with a space. Where `$*` / `${a[*]}` make one string
+("$*", an assignment, `[[ ]]`, a here-string, `case`, `${*:2}`, `${a[*]:1}`, `${!a[*]}`, `${!p*}`) they join
+with IFS's first character, nothing when IFS is empty, a space when unset; C#Bash always used a space.
+`$@` there joins with a space in both.
+
+**Fix:** `WordExpander.ExpandToFields` reads IFS as set-or-unset and splits by the POSIX rule (one state bit:
+white space just ended a field, so a following `,` is the same delimiter); `AppendArray` joins with IFS's
+first character and splits, or keeps elements apart when IFS is empty; `ShellEnvironment.StarSeparator`
+joins `$*` everywhere it makes one string. The element-wise operator path (`${a[*]/x/y}`) still joins with
+spaces internally to split back into elements (its documented approximation), then applies `*`'s joining.
+Cost: IFS is still one lookup per word when it is non-empty [unmeasured estimate: within noise; compare3
+runs before the next push].
+
+**Verified:** new case `ifs_splitting` (64 lines, expected = GNU bash via WSL; rev 217 misses 95 diff lines).
+Suite 123/123 with a console and `-Detached`; compat battery 226/237 against 225 (Git Bash reference).
+
+**Implemented by:** rev 228. Files: `Bash/Evaluator/WordExpander.cs`, `Bash/Evaluator/ShellEnvironment.cs`,
+`tests/cases/ifs_splitting.sh`, `tests/expected/ifs_splitting.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- METHOD: repetitive tools are contracts; the benchmark builds what it measures, the `-n` corpus and the battery's reference are fixed
+**Status:** Active. The architect, 2026-10-12: "yes, do that - repetitive tools here need to be contracts,
+period." (Asked why running the benchmark had needed anything "recovered" from a transcript.)
+
+**Context:** `compare3.sh` itself ran unmodified, but around it three things were improvised: (1) the
+build under test for an undeployed rev was published by hand into a scratch directory (revs 200, 204, the
+traps build, rev 229), against the benchmark's own rule ("never copy builds into scratch roots"); (2) the
+`-n` corpus check lived only in a scratch directory and was re-run from a command found in the transcript;
+(3) the battery, run without `-Reference`, took `CLAUDE_CODE_GIT_BASH_PATH`, which on this machine names
+the deployed C#Bash, so it compared C#Bash with itself and could not fail.
+
+**Decision:** a check run more than once lives in the repository, runs one way, and is invoked as its
+header says.
+- `tests/bench/compare3.sh --build` makes the build it measures: a dirty tree is refused, the tree is
+  published with `tools/publish-aot.cmd` (as shipped) to `tests/bench/aot` (ignored), the stamp must carry
+  the tree's node, and each C#Bash row times the build and `dist/Bash.exe` in alternating single launches
+  (best of 9 each; startup samples alternate, median of 5 each), adding `deployed` and `change` columns.
+  Alternating answers the 2026-10-12 run, where Git Bash itself drifted 1-2% between two back-to-back
+  runs, as much as the differences read. The default and `--cs` modes are unchanged.
+- `tests/corpus/run-n.sh`: the corpus is WSL's `/usr/share/bash-completion/completions` (bash-completion
+  1:2.11-5ubuntu1, 912 files), fetched each run (GPL files are not committed to this MIT repository);
+  `manifest.txt` pins sha256 and GNU bash 5.1.16's verdict per file, and any drift stops the run;
+  `baseline.txt` is a ratchet like the battery's. It runs in Git Bash, never in the candidate.
+- `tests/compat/run-compat.ps1` runs each reference candidate and skips C#Bash (BASH_VERSION has
+  "koliada") and anything that does not start; an explicit `-Reference` naming C#Bash is an error. It
+  also finds the Git root from `mingw64\bin\git.exe` (two levels up was `mingw64`) and accepts the renamed
+  `usr\bin\_bash.exe`.
+
+**Alternatives considered:** keeping the scratch habits with better notes (rejected: a note is not a
+contract, and this is the third time the method was rebuilt by hand); committing the corpus files
+(rejected: third-party GPL files in an MIT repository mirrored to GitHub); configuring the battery's
+reference as compare3 configures Git Bash (rejected for now: the battery is published and its search
+keeps it portable; identifying the candidate by running it closes the hole).
+
+**Verified:** `--build` refuses a dirty tree and `--build --cs` (exit 2). `run-n.sh`: 844 of 912 agree,
+the same 68 disagreements as the scratch harness on the same bytes (identical hash multiset); a tampered
+manifest line stops it as DRIFT (exit 2); a disagreeing file put in the baseline fails it as a
+REGRESSION (exit 1). The battery without `-Reference` now picks `F:\Tools\PortableGit\usr\bin\_bash.exe`
+(bash 4.4.23) and gives 226/237 against 225; `-Reference dist/Bash.exe` is refused (exit 2). The first
+`--build` run is the next commit's measurement.
+
+**Implemented by:** rev 231. Files: `tests/bench/compare3.sh`, `tests/corpus/run-n.sh`,
+`tests/corpus/manifest.txt`, `tests/corpus/baseline.txt`, `tests/compat/run-compat.ps1`, `.hgignore`,
+`.gitignore`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-12 -- VERIFIED: revs 218-231 cost nothing measurable (the first `compare3.sh --build`)
+**Status:** Active. Push-gate evidence for revs 218-231.
+
+**Result (`compare3.sh --build`, rev 231 AOT against deployed rev 217, alternating rounds; seconds):**
+loop 0.159 / 0.163 (-2.5%), arith 0.248 / 0.245 (+1.2%), func 0.229 / 0.230 (-0.4%), loop_big 1.404 /
+1.437 (-2.3%), coreutils 0.058 / 0.059, pipeline 0.253 / 0.251 (+0.8%), find 0.023 / 0.022 (1 ms on a
+1 ms clock), startup 0.0163 / 0.0165. Outputs agree with Git Bash, WSL and the deployed build in every row.
+The "+8% func" of the morning's two separate runs (rev 229 then rev 217) was drift between runs, not a
+cost: alternated, the two builds are level. The table is in `tests/bench/results.md`.
+
+## 2026-10-12 -- METHOD: deploy and push are contract tools too (`tools/deploy.sh`, `tools/publish.sh`)
+**Status:** Active. The architect: "deploy, notify and push", the same day as "repetitive tools here need
+to be contracts, period". Deploys and pushes had been done by hand from DECISIONS' notes six times; doing a
+seventh by hand would break the rule just made.
+
+**Decision:** `tools/deploy.sh` (from Git Bash) refuses a dirty tree or an already-deployed rev, publishes
+with `tools/publish-aot.cmd` to `dist.staging` (never `dist/`, which the publish would empty), checks the
+stamp, runs the suite on that exact binary with a console and `-Detached` and the battery (any failure or
+regression stops it), renames the running `dist/Bash.exe` to `dist/Bash.exe.rev<old>` (Windows renames a
+running image and cannot overwrite it), copies the build in, re-checks the stamp, and prints the revisions
+now deployed. The live check, the notice (every live local session, behaviour changes first) and the
+records stay Claude's, each the same way every time. `tools/publish.sh <message-file> <token-file>`
+requires a clean tree, a message whose first line is `C#Bash at hg rev <tip>: …`, and a compare3 table of
+the DEPLOYED build carrying `dist/Bash.exe`'s stamp (the push rule of 2026-10-10); it regenerates
+`MERCURIAL_HISTORY.md` and `mercurial-history.hg` (verified by unbundling into a fresh repository),
+stages exactly hg's tracked files (a blanket `git add -A` would have published `The Windows Shell
+Tax.url`, which is not the project's), commits, pushes with the token as a command-line extraHeader
+(masked), and verifies the header is not in git config and the remote main is HEAD. The doc review stays a
+judgment, committed in hg before the script runs.
+
+**Alternatives considered:** a checklist in PROJECT_CONTEXT (rejected: that is what existed, and steps
+were still reconstructed each time); one combined deploy-and-push script (rejected: they happen on
+different words from the architect, and a push needs a benchmark of what was deployed).
+
+**Implemented by:** rev 233. Files: `tools/deploy.sh`, `tools/publish.sh`, `.hgignore`, `.gitignore`,
+`PROJECT_CONTEXT.md`.
+
+## 2026-10-12 -- DEPLOYED: rev 233 (revs 218-233), notice sent; the first deploy by `tools/deploy.sh`
+**Status:** Active. The architect: "deploy, notify and push".
+
+`tools/deploy.sh`, as written: rev 233 (`1.0.0+hg.2a0678c462c5 233`) published to `dist.staging`; suite
+123/123 on that exact binary with a console and `-Detached`; battery 228/237 against 225, no regression
+(run from Git Bash's environment, probes 55 and 196 pass as well as 172: environment-dependent, the same
+reference `F:\Tools\PortableGit\usr\bin\_bash.exe`, bash 4.4.23; 226 from Claude Code's environment);
+rev 217 renamed to `dist/Bash.exe.rev217`, rev 233 copied in, stamp re-checked. Live check in a Claude
+Code Bash call: stamp rev 233, `sleep 1 && echo x &` returns at once, `IFS=` keeps `a b` whole, `case`
+inside `$( )`, `kill -l`'s table, `dirs +0`. Notice to the six live sessions (daq-d1, adc-framework-d8,
+msp430-a2, nupkg-28, errorlogs-42, koliada-net-6a), leading with the seven behaviour changes; daq-d1 told
+its `compgen` workaround stands.

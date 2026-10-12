@@ -91,6 +91,7 @@ constructor.
 | `ConsumeSingleQuoted` / `ConsumeDoubleQuoted` / `ConsumeAnsiEscape` / `ConsumeHexEscape` | Quoting + `$'…'` decoding. | §4 quoting |
 | `ConsumeWord` | Plain word runs; context-sensitive `{`/`}`. | §4 `{`/`}` |
 | `SkipWhitespace` / `SkipComment` / `Peek` / `Advance` | Scanner primitives. | — |
+| `ConstructEnd` / `CaseTracker` | Where a `$( )` (inside `"…"` or backquotes: on text) ends; `CaseTracker` follows `case WORD in` so a pattern's `)` does not count (bash's parse_comsub). The parser's `ParseCommandSubstitution` uses the same tracker on tokens. | §4 substitutions |
 
 Raises `LexException(Incomplete)` at EOF mid-construct.
 
@@ -169,9 +170,12 @@ looping.
 (+ `EvalCondExpr`/`EvalCondUnary`/`EvalCondBinary`, and `GlobMatch` for `[[ ==` / `case`).
 
 **Jobs, traps, signals** ([ARCHITECTURE §14](ARCHITECTURE.md#14-signals--jobs)):
-`StartBackgroundJob`, `ListJobs`, `WaitJobs`, `FindJob`, `KillJob`, `SetTrap`/`RemoveTrap`/`RunTrap`/`RunExitTrap`,
+`StartBackgroundJob`, `ListJobs`, `WaitJobs`, `FindJob`/`FindJobIn` (bash's get_job_spec: `%N`, `%%`,
+`%-`, `%name`, `%?text`, matched against `BackgroundJob.Stages`), `KillJob`, `RunWithJobGroups` (`jobs -x`),
+`SetTrap`/`RemoveTrap`/`RunTrap`/`RunExitTrap`,
 `RequestInterrupt`/`ClearInterrupt`/`CheckInterrupt`. A job's `$!` is a synthetic pid
 (`BackgroundJob.PidBase + Id`); `ChildPid` tracks the external it is running so `kill $!` works.
+`ExecList` makes an and-or list that ends in `&` one job.
 
 **P1 surface** (see DECISIONS 2026-09-04): `Aliases`, `GetFunction`/`RemoveFunction`/`HasFunction`,
 `Keywords`, `Classify` (alias/keyword/function/builtin/file — backs `type`/`command -v`),
@@ -225,7 +229,7 @@ evaluator.
 | System (`Builtins.Sys.cs`) | `Date`/`Strftime` `Uname` `Arch` `Hostname` `Nproc` `Tty` `Whoami` `Id` `Printenv` `Timeout` `Df` → `DfProbe`/`DfRemoteName`/`DfPcent`/`DfBlockSpec`/`DfBlockHeader`/`GnuHuman` |
 | awk (`Builtins.Awk.cs`) | `Awk` → `AwkLex`/`AwkParser`/`AwkInterp`, `AwkVal`, `AwkFormat`/`FormatG`; `print`/`printf` may target `"/dev/stderr"`/`"/dev/stdout"` (ratified 2026-09-04), nothing else |
 | Processes (`Builtins.Proc.cs`) | `Pgrep`/`Pkill` → `PgrepImpl`, `Ps`, `ListProcesses`/`ReadCommandLine`/`AncestorsOf` |
-| Still in `Builtins.cs` | `Factor` `Cal` `Expr` ladder `Which` `Hash` `Exec` `Kill` `Trap`/`CanonSignal` `Jobs`/`Fg`/`Bg` `HistoryCmd` |
+| Still in `Builtins.cs` | `Factor` `Cal` `Expr` ladder `Which` `Hash` `Exec` `Trap`/`CanonSignal`/`PrintSignalTable` `Jobs`/`Fg`/`Bg` `HistoryCmd` (`Kill` and the directory stack are in `Builtins.Shell.cs`) |
 | Shared helpers | `OpenText`/`ReadLines`/`ReadBytes`/`FilesOrStdin`/`IoError`/`ParseCount` (Text) · `P` path helper (Files) · `ExpandTrSet`/`TrClass` `InterpretEscapes`/`UnescapeDelims` `CopyDir` `FindInPath` |
 
 **Option policy (DECISIONS 2026-09-04 #2):** every tool parses with `Opts.Parse` and throws

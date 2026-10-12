@@ -19,3 +19,9 @@ moosh-all-the-way-down.md
 glob:tests/compat/work/*
 glob:dist/*
 glob:tests/bench/.findtree/**
+glob:tests/bench/aot/**
+tests/bench/aot.log
+glob:tests/corpus/files/**
+tests/corpus/last-run.txt
+glob:dist.staging/**
+dist.staging.log

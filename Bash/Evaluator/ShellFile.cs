@@ -52,6 +52,25 @@ public static class ShellFile
 	/// <summary>The descriptor number of a /dev/fd/N, /dev/stdin, /dev/stdout or /dev/stderr, else -1.</summary>
 	public static int DeviceFd(string path) => Device(path) is { } d && d.StartsWith("fd:") ? int.Parse(d.AsSpan(3)) : -1;
 
+	/// <summary>The path with its file name as it is on disk: a PATHEXT match spells it `git.EXE`, the file
+	/// is `git.exe`. The directory part is kept as given; an unreadable directory leaves the path as it is.</summary>
+	public static string OnDiskName(string path)
+		{
+		try
+			{
+			var dir = Path.GetDirectoryName(path);
+			var file = Path.GetFileName(path);
+			if (!string.IsNullOrEmpty(dir) && file.Length > 0 && file.IndexOfAny(['*', '?']) < 0)
+				{
+				var onDisk = new DirectoryInfo(dir).EnumerateFiles(file).FirstOrDefault()?.Name;
+				if (onDisk is not null && onDisk != file && string.Equals(onDisk, file, StringComparison.OrdinalIgnoreCase))
+					return Path.Combine(dir, onDisk);
+				}
+			}
+		catch (Exception) { }
+		return path;
+		}
+
 	/// <summary>A file, a directory or a device exists at the path.</summary>
 	public static bool Exists(string path) => Device(path) is not null || File.Exists(path);
 
