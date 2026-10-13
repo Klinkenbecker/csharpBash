@@ -467,7 +467,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				var n = body[..^3];
 				if (_env.IsArray(n)) return _env.GetArrayLength(n).ToString();
 				if (_env.IsAssoc(n)) return _env.GetAssocLength(n).ToString();
-				return "0";
+				return _env.IsSet(n) ? "1" : "0";   // a set scalar is one element (bash); it was 0 until 2026-10-12
 				}
 			int lb0 = body.IndexOf('[');
 			if (lb0 > 0 && body.EndsWith(']'))

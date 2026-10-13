@@ -38,7 +38,8 @@ public static class ChildLauncher
 		if (!quoted) cmd.Append('"');
 		cmd.Append(file);
 		if (!quoted) cmd.Append('"');
-		foreach (var arg in psi.ArgumentList) { cmd.Append(' '); AppendArgument(cmd, arg); }
+		bool msys = IsMsysProgram(file.Trim('"'));
+		foreach (var arg in psi.ArgumentList) { cmd.Append(' '); AppendArgument(cmd, arg, msys); }
 
 		var keys = new List<string>(psi.Environment.Keys);
 		keys.Sort(StringComparer.OrdinalIgnoreCase);
@@ -207,12 +208,33 @@ public static class ChildLauncher
 		};
 
 	/// <summary>One argument, quoted the way .NET's own command-line builder (PasteArguments)
-	/// quotes it, so the child parses exactly what Process.Start would have given it.</summary>
-	private static void AppendArgument(StringBuilder sb, string arg)
+	/// quotes it, so the child parses exactly what Process.Start would have given it. An MSYS program
+	/// (Git's usr/bin tools) re-parses an UNQUOTED word like a shell: it globs `* ? [`, brace-expands
+	/// `{…}`, takes `'` as a quote and `\` as an escape (measured with Git's printf.exe: `'{print}'`
+	/// arrived as `print`, `'*.txt'` as the matching files, `"it's"` swallowed the arguments after it); so
+	/// for it any argument with more than letters, digits and `-_./:=@%+,` is double-quoted, which it
+	/// takes literally (msp430-a2, 2026-10-12; quoting only on white space or `"` until then).</summary>
+	private static void AppendArgument(StringBuilder sb, string arg, bool msys = false)
 		{
 		bool plain = arg.Length != 0;
-		foreach (var c in arg) if (char.IsWhiteSpace(c) || c == '"') { plain = false; break; }
+		foreach (var c in arg)
+			if (char.IsWhiteSpace(c) || c == '"' || (msys && !(char.IsAsciiLetterOrDigit(c) || "-_./:=@%+,".IndexOf(c) >= 0)))
+				{ plain = false; break; }
 		if (plain) { sb.Append(arg); return; }
+		if (msys)
+			{
+			// inside double quotes the MSYS parser takes `\\` as one backslash and `\"` as a quote, a lone
+			// `\` literally: so every backslash goes doubled (`\\srv`, `a\\b` arrived halved otherwise)
+			sb.Append('"');
+			foreach (var c in arg)
+				{
+				if (c == '\\') sb.Append(@"\\");
+				else if (c == '"') sb.Append("\\\"");
+				else sb.Append(c);
+				}
+			sb.Append('"');
+			return;
+			}
 		sb.Append('"');
 		for (int i = 0; i < arg.Length; )
 			{

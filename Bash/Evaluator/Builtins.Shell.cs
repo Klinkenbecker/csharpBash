@@ -192,7 +192,9 @@ public sealed partial class Builtins
 			if (eq >= 0)
 				{
 				var val = spec[(eq + 1)..];
-				if (append) _env.Append(name, val); else _env.Set(name, val);
+				// `export v=(a b)` assigns an array, as `declare` does (it stored the text `(a b)` until 2026-10-12)
+				if (ArrayLiteralValue(val, false, out var lit)) AssignArrayLiteral(name, lit, _env.IsAssoc(name), append);
+				else if (append) _env.Append(name, val); else _env.Set(name, val);
 				}
 			if (unexport) _env.Unexport(name); else _env.Export(name);
 			}
@@ -252,7 +254,8 @@ public sealed partial class Builtins
 			if (eq >= 0)
 				{
 				var val = spec[(eq + 1)..];
-				if ((array || assoc) && val.StartsWith('(') && val.EndsWith(')')) AssignArrayLiteral(name, val, assoc, false);
+				// `readonly r=(x y)` is an array without -a too, as in bash (it set nothing until 2026-10-12)
+				if (ArrayLiteralValue(val, array || assoc, out var lit)) AssignArrayLiteral(name, lit, assoc, false);
 				else _env.Set(name, val);
 				}
 			_env.MarkReadonly(name);
@@ -813,49 +816,59 @@ public sealed partial class Builtins
 		return $"declare {f} {name}=\"{EscapeDq(_env.Get(name))}\"";
 		}
 
-	/// <summary>Print a function definition in bash's canonical shape.</summary>
-	private static string FunctionText(Parser.FunctionDef fd)
+	/// <summary>A function as bash prints it (`declare -f`, `type`): bash's command printer
+	/// (<see cref="Parser.CommandPrinter"/>). Until 2026-10-12 its source text as written.</summary>
+	private static string FunctionText(Parser.FunctionDef fd) => Parser.CommandPrinter.Function(fd);
+
+	/// <summary>Whether a declaration builtin's value is an array literal (bash 5.1, measured 2026-10-12): the
+	/// one the parser folded from an unquoted `name=(…)` (marked, see Lexer.ArrayLiteralMark), or, under
+	/// `-a` / `-A`, any value in parentheses, quoted or expanded too (`declare -a x='(a b)'`). Otherwise a
+	/// value that looks like `(…)` is a string (`local s="(x y)"`); it became an array until then.</summary>
+	private static bool ArrayLiteralValue(string val, bool arrayFlag, out string literal)
 		{
-		if (fd.Source is null) return $"{fd.Name} () {{ :; }}";
-		var src = fd.Source;
-		// normalise "function name" / "name()" headers to "name () " + body on its own line
-		var body = src;
-		if (body.StartsWith("function ")) body = body["function ".Length..].TrimStart();
-		if (body.StartsWith(fd.Name)) body = body[fd.Name.Length..].TrimStart();
-		if (body.StartsWith("()")) body = body[2..].TrimStart();
-		return $"{fd.Name} () \n{body}";
+		if (val.Length > 0 && val[0] == Lexer.Lexer.ArrayLiteralMark) { literal = val[1..]; return true; }
+		literal = val;
+		return arrayFlag && val.StartsWith('(') && val.EndsWith(')');
 		}
 
 	/// <summary>Assign `name=(…)` from its literal text: values are lexed and expanded as words.</summary>
-	private void AssignArrayLiteral(string name, string literal, bool assoc, bool append)
+	private void AssignArrayLiteral(string name, string literal, bool assoc, bool append) =>
+		PrepareArrayLiteral(name, literal, assoc, append)();
+
+	/// <summary>Expand `name=(…)`'s words NOW and return what assigns them: `local a=("${a[@]}" x)` reads the
+	/// outer `a` before the local one exists (bash; measured 2026-10-12).</summary>
+	private Action PrepareArrayLiteral(string name, string literal, bool assoc, bool append)
 		{
 		var inner = literal[1..^1];
 		var words = Parser.Parser.ParseWords(inner);
 		bool keyed = words.Count > 0 && words.All(w => w.Parts.Count > 0 && w.Parts[0] is Parser.LiteralPart lp && lp.Value.StartsWith('[') && lp.Value.Contains("]="));
-		if (assoc || _env.IsAssoc(name) || (keyed && !_env.IsArray(name) && assoc))
+		var texts = keyed || assoc || _env.IsAssoc(name) ? words.Select(w => _eval.Expander.ExpandToString(w)).ToList() : null;
+		var fields = keyed ? null : words.SelectMany(_eval.Expander.ExpandToFields).ToList();
+		return () =>
 			{
-			if (!append) _env.DeclareAssoc(name);
-			foreach (var w in words)
+			if ((assoc || _env.IsAssoc(name)) && texts is not null)
 				{
-				var text = _eval.Expander.ExpandToString(w);
-				int close = text.IndexOf("]=", StringComparison.Ordinal);
-				if (text.StartsWith('[') && close > 0) _env.SetAssocElement(name, text[1..close], text[(close + 2)..]);
+				if (!append) _env.DeclareAssoc(name);
+				foreach (var text in texts)
+					{
+					int close = text.IndexOf("]=", StringComparison.Ordinal);
+					if (text.StartsWith('[') && close > 0) _env.SetAssocElement(name, text[1..close], text[(close + 2)..]);
+					}
+				return;
 				}
-			return;
-			}
-		if (keyed)
-			{
-			if (!append) _env.SetArrayFromList(name, []);
-			foreach (var w in words)
+			if (keyed && texts is not null)
 				{
-				var text = _eval.Expander.ExpandToString(w);
-				int close = text.IndexOf("]=", StringComparison.Ordinal);
-				_env.SetArrayElement(name, (int)_eval.Expander.EvalArithmetic(text[1..close]), text[(close + 2)..]);
+				if (!append) _env.SetArrayFromList(name, []);
+				foreach (var text in texts)
+					{
+					int close = text.IndexOf("]=", StringComparison.Ordinal);
+					_env.SetArrayElement(name, (int)_eval.Expander.EvalArithmetic(text[1..close]), text[(close + 2)..]);
+					}
+				return;
 				}
-			return;
-			}
-		var values = words.SelectMany(_eval.Expander.ExpandToFields).ToList();
-		if (append) _env.AppendArrayFromList(name, values); else _env.SetArrayFromList(name, values);
+			var values = fields ?? [];
+			if (append) _env.AppendArrayFromList(name, values); else _env.SetArrayFromList(name, values);
+			};
 		}
 
 	private int Declare(List<string> args, bool local)
@@ -947,6 +960,10 @@ public sealed partial class Builtins
 			}
 
 		// ── declare / assign ──
+		// `local`, and `declare` / `typeset` inside a function, make the variable local to the call, with its
+		// arrays and attributes; `-g` and the top level make it global (bash). Until 2026-10-12 only `local`'s
+		// scalars were local: arrays and attributes went shell-wide (DECISIONS "VARIABLE SCOPE").
+		bool scopeLocal = (local || _env.ScopeDepth > 1) && !global;
 		int rc = 0;
 		foreach (var spec in specs)
 			{
@@ -960,6 +977,15 @@ public sealed partial class Builtins
 			if (lb > 0 && name.EndsWith(']')) { sub = name[(lb + 1)..^1]; name = name[..lb]; }
 			if (!IsIdentifier(name)) { Console.Error.WriteLine($"{Err}declare: `{spec}': not a valid identifier"); rc = 1; continue; }
 
+			// an array literal's words are expanded before the variable is declared (the right side sees the
+			// outer value: `local a=("${a[@]}" x)`); then the local exists before its attributes and value
+			Action? assignLiteral = val is not null && sub is null && ArrayLiteralValue(val, array || assoc, out var lit)
+				? PrepareArrayLiteral(name, lit, assoc, append) : null;
+			// `local x`: declared here, UNSET, hiding the outer x. A plain `local x=v` is declared by SetLocal
+			// itself (one lookup on the path every function call takes)
+			bool plainValue = val is not null && sub is null && assignLiteral is null && !append && !array && !assoc && !integer && !unInteger;
+			if (scopeLocal && !plainValue) _env.DeclareLocal(name);
+
 			if (assoc) _env.DeclareAssoc(name);
 			else if (array) _env.DeclareArray(name);
 			if (integer) _env.MarkInteger(name, true);
@@ -968,17 +994,11 @@ public sealed partial class Builtins
 			if (val is not null)
 				{
 				if (sub is not null) AssignVar($"{name}[{sub}]", val);
-				else if (val.StartsWith('(') && val.EndsWith(')')) AssignArrayLiteral(name, val, assoc, append);
+				else if (assignLiteral is not null) assignLiteral();
 				else if (append) _env.Append(name, val);
-				else if (local && !global) _env.SetLocal(name, val);
+				else if (scopeLocal) _env.SetLocal(name, val);
 				else if (global) _env.SetGlobal(name, val);
 				else _env.Set(name, val);
-				}
-			else if (local && !global && !_env.IsArray(name) && !_env.IsAssoc(name))
-				{
-				// `local x` declares x in this scope, UNSET, hiding the outer value (bash); it stored
-				// "" until 2026-10-08, so ${x-dflt} and [[ -v x ]] saw it as set
-				_env.DeclareLocal(name);
 				}
 
 			if (export) _env.Export(name);

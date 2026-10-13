@@ -57,6 +57,13 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 	/// before running anything.</summary>
 	public static bool Has(string name) => _nameSet.Contains(name);
 
+	/// <summary>The arguments for the PATH program a builtin hands over to. `awk` gets `-v BINMODE=3` first:
+	/// on Windows the PATH awk is Git's gawk, which strips every CR in text mode, and the reference (GNU bash
+	/// on Linux) never does (msp430-a2, measured 2026-10-12: `gawk '{print}'` 0 CR, `-v BINMODE=3` 3). A
+	/// `-v BINMODE` of the script's own comes later and wins.</summary>
+	private static List<string> ExternalArgs(string name, List<string> args) =>
+		name == "awk" ? ["-v", "BINMODE=3", .. args] : args;
+
 	public bool TryExecute(string name, List<string> args, out int exitCode)
 		{
 		// Unsupported-option policy for coreutils (DECISIONS 2026-09-04 #2):
@@ -70,7 +77,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			// the PATH program only: RunCommand dispatched the builtin of the same name, which came
 			// straight back here, until the stack overflowed and the shell died (every build to rev
 			// 209; DECISIONS 2026-10-11)
-			exitCode = _eval.RunExternal(name, args);
+			exitCode = _eval.RunExternal(name, ExternalArgs(name, args));
 			return true;
 			}
 		try
@@ -81,7 +88,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			{
 			if (policy != "builtin" && _eval.ResolveOnPath(name) is not null)
 				{
-				exitCode = _eval.RunExternal(name, args);
+				exitCode = _eval.RunExternal(name, ExternalArgs(name, args));
 				return true;
 				}
 			Console.Error.WriteLine(ex.Message);

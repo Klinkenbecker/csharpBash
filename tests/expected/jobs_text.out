@@ -1,0 +1,25 @@
+[1]   Running                 { sleep 5; echo hi; } > /dev/null &
+[2]   Running                 ( sleep 5; true ) &
+[3]   Running                 for i in 1;
+do
+    sleep 5;
+done &
+[4]   Running                 sleep 5 &
+[5]   Running                 if true; then
+    sleep 5;
+fi &
+[6]   Running                 case a in 
+    a)
+        sleep 5
+    ;;
+esac &
+[7]   Running                 { if true; then
+    sleep 5;
+fi; } &
+[8]   Running                 sleep 5 | cat && true &
+[9]   Running                 f &
+[10]   Running                 x=1 sleep 5 &
+[11]   Running                 sleep 5 1>&2 2> /dev/null &
+[12]   Running                 [[ -n x ]] && sleep 5 &
+[13]-  Running                 time sleep 5 &
+[14]+  Running                 sleep 5 &

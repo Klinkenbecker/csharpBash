@@ -39,3 +39,4 @@ tests/corpus/files/
 tests/corpus/last-run.txt
 dist.staging/
 dist.staging.log
+tests/corpus/printer/

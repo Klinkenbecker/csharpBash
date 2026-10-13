@@ -78,6 +78,8 @@ public sealed partial class Builtins
 	private sealed class AwkBreakException : Exception;
 	private sealed class AwkContinueException : Exception;
 	private sealed class AwkExitException(int code) : Exception { public int Code { get; } = code; }
+	/// <summary>A main-input file that cannot be opened: gawk's fatal, exit 2.</summary>
+	private sealed class AwkOpenException(string message) : Exception(message);
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// values
@@ -440,9 +442,9 @@ public sealed partial class Builtins
 	private sealed record AIn(List<AExpr> Keys, string Array) : AExpr;
 	private sealed record ACall(string Name, List<AExpr> Args, int Line = 0) : AExpr;
 	private sealed record AUserCall(string Name, List<AExpr> Args, int Line) : AExpr;
-	/// <summary>`getline [Target] &lt; File`; Target null sets $0 and NF. The main-input and `cmd |`
-	/// forms are not in the subset.</summary>
-	private sealed record AGetline(AExpr? Target, AExpr File) : AExpr;
+	/// <summary>`getline [Target] [&lt; File]`; Target null sets $0 and NF; File null reads the MAIN input (and counts NR,
+	/// FNR). `cmd | getline` is not in the subset.</summary>
+	private sealed record AGetline(AExpr? Target, AExpr? File) : AExpr;
 	private sealed record AGroupList(List<AExpr> Items) : AExpr;   // (a, b) — only valid as print's argument list
 
 	private abstract record AStmt;
@@ -973,8 +975,9 @@ public sealed partial class Builtins
 						target = ParsePrimary();
 						if (!IsLvalue(target)) throw new AwkSyntaxException($"getline: not a variable at line {t.Line}");
 						}
-					// the main-input form (`getline`, `getline var`) and `cmd | getline` are outside the subset
-					if (!IsOp("<")) throw new AwkUnsupportedException("getline from the main input");
+					// `getline` / `getline var` read the main input (until 2026-10-12 they were outside the subset, so
+					// the program went to the PATH awk: Git's gawk, which strips every CR in text mode; msp430-a2)
+					if (!IsOp("<")) return new AGetline(target, null);
 					_p++;
 					// gawk's simp_exp: arithmetic but no concatenation, so `getline < "a" "b"` reads "a"
 					return new AGetline(target, ParseAdditive());
@@ -1414,8 +1417,53 @@ public sealed partial class Builtins
 
 		/// <summary>1 with a line read, 0 at the end of the file, -1 when it cannot be opened. Sets
 		/// the variable, or $0 and NF; never NR or FNR (a file, not the main input).</summary>
+		/// <summary>The main input, read record by record by the rule loop and by a plain `getline`: the
+		/// operands in order (a `v=x` operand assigned as it is reached), standard input when there is no file.
+		/// One reader for both, so a `getline` takes the record the loop would have taken next, across files
+		/// too (FILENAME and FNR follow), as gawk.</summary>
+		private List<string> _mainOps = [];
+		private int _mainNext;
+		private bool _mainAnyFile, _mainStdinDone;
+		private TextReader? _mainReader;
+		private IEnumerator<string>? _mainLines;
+
+		private bool NextMainLine(out string line)
+			{
+			while (true)
+				{
+				if (_mainLines is not null)
+					{
+					if (_mainLines.MoveNext()) { line = _mainLines.Current; return true; }
+					_mainLines.Dispose(); _mainReader?.Dispose(); _mainLines = null; _mainReader = null;
+					}
+				string op;
+				if (_mainNext < _mainOps.Count) op = _mainOps[_mainNext++];
+				else if (!_mainAnyFile && !_mainStdinDone) { _mainStdinDone = true; op = "-"; }   // no file operand: stdin
+				else { line = ""; return false; }
+				// an identifier then `=` is an assignment whatever the value holds (`v='\303\251'`, `out=C:\x`)
+				if (op != "-" && !op.StartsWith('/') && Regex.IsMatch(op, @"^[A-Za-z_][A-Za-z0-9_]*=") && AssignOperand(op)) continue;
+				_mainAnyFile = true;
+				_vars["FILENAME"] = AwkVal.Str(op == "-" ? "" : op);
+				_fnr = 0;
+				try { _mainReader = OpenText(op); }
+				catch (Exception ex) { throw new AwkOpenException($"awk: fatal: cannot open file `{op}' for reading: {IoError(ex)}"); }
+				_mainLines = ReadLines(_mainReader).GetEnumerator();
+				}
+			}
+
+		private void CloseMainInput() { _mainLines?.Dispose(); _mainReader?.Dispose(); _mainLines = null; _mainReader = null; }
+
 		private AwkVal Getline(AGetline g)
 			{
+			if (g.File is null)
+				{
+				// the main input: the next record, counted in NR and FNR; 0 at its end (gawk)
+				if (!NextMainLine(out var mline)) return AwkVal.Zero;
+				_nr++; _fnr++;
+				if (g.Target is null) SetRecord(mline);
+				else Store(g.Target, AwkVal.StrNum(mline));
+				return AwkVal.One;
+				}
 			var name = S(Eval(g.File));
 			if (!_inputs.TryGetValue(name, out var input))
 				{
@@ -1769,6 +1817,7 @@ public sealed partial class Builtins
 			{
 			var prog = new AwkParser(AwkLex(program)).ParseProgram();
 			_funcs = prog.Funcs;
+			_mainOps = operands;   // BEGIN's `getline` reads it too
 			var rangeActive = new bool[prog.Rules.Count];
 			try
 				{
@@ -1778,47 +1827,26 @@ public sealed partial class Builtins
 				bool needInput = !_exiting && (prog.Rules.Count > 0 || prog.End.Count > 0);
 				if (needInput)
 					{
-					var inputs = operands.Count == 0 ? ["-"] : operands;
-					bool anyFile = false;
-					foreach (var op in inputs)
+					// the main input (shared with a plain `getline`; see NextMainLine)
+					while (!_exiting && NextMainLine(out var line))
 						{
-						// an identifier then `=` is an assignment whatever the value holds (`v='\303\251'`,
-						// `out=C:\x`); a backslash in the value used to make it a file name
-						if (op != "-" && !op.StartsWith('/') && Regex.IsMatch(op, @"^[A-Za-z_][A-Za-z0-9_]*=") && AssignOperand(op)) continue;
-						anyFile = true;
-						_vars["FILENAME"] = AwkVal.Str(op == "-" ? "" : op);
-						_fnr = 0;
-						TextReader reader;
-						try { reader = OpenText(op); }
-						catch (Exception ex) { Console.Error.WriteLine($"awk: fatal: cannot open file `{op}' for reading: {IoError(ex)}"); return 2; }
-						using (reader)
-							{
-							foreach (var line in ReadLines(reader))
-								{
-								_nr++; _fnr++;
-								SetRecord(line);
-								if (RunRules(prog, rangeActive)) { _exiting = true; break; }
-								}
-							}
-						if (_exiting) break;
-						}
-					if (!anyFile && !_exiting)
-						{
-						// only assignments were given: read stdin
-						using var reader = OpenText("-");
-						foreach (var line in ReadLines(reader))
-							{
-							_nr++; _fnr++;
-							SetRecord(line);
-							if (RunRules(prog, rangeActive)) { _exiting = true; break; }
-							}
+						_nr++; _fnr++;
+						SetRecord(line);
+						if (RunRules(prog, rangeActive)) { _exiting = true; break; }
 						}
 					}
 				try { foreach (var b in prog.End) Exec(b); }
 				catch (AwkExitException) { }
 				}
+			catch (AwkOpenException ex)
+				{
+				try { Console.Out.Flush(); } catch { }
+				Console.Error.WriteLine(ex.Message);
+				return 2;
+				}
 			finally
 				{
+				try { CloseMainInput(); } catch { }
 				try { CloseAll(); } catch { }   // every `print > file` flushed and closed, as gawk does at exit
 				try { Console.Out.Flush(); } catch { }
 				}

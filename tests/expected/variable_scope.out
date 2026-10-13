@@ -1,0 +1,59 @@
+1 g1=[1] ga1=[a b]
+2in [L1] n=1
+2out [G1 G2] n=2
+3 [] set=
+4 [] [] [] []
+5callee [c1 c2]
+5caller [c1 CH AP]
+5out [GLOBAL]
+6a set= n=0
+6b [x]
+6out [G]
+7in [o1 o2 new]
+7out [o1 o2]
+8 [gl] [] [t]
+9 depth=3 a=[3]
+9 depth=2 a=[2]
+9 depth=1 a=[1]
+10in [l1 l2] [w1 w2]
+10out [] []
+11in 5 ro ex
+11out i=[] r=[rw] x=[] 0
+12in set= []
+12out [G]
+declare -a a13=([0]="l1" [1]="l2")
+declare -a a13=([0]="g")
+14sub [s t]
+14in [s] [s]
+14out set=
+15 [1 2 6] n=3
+16 2 [y z]
+16out set=
+20 read=[rv] for=[b] printf=[pv] getopts=[a] arith=[7] let=[8] default=[dv] append=[ap]
+21 existing global updated [1]
+22caller [fromcallee]
+22out l22=[unset] n22=[new]
+23 [6]
+23out [unset]
+24in [ro]
+24out [rw]
+25in children see: 1
+25out [unset] children: 0
+26in set= []
+26out [G]
+27caller after callee unset: [G]
+27out [G]
+28in [set]
+28out [G]
+29 [unset] [unset]
+30in l
+30out g
+35 n=1 [x]
+36 [v] children: 1
+37 [v]
+37 assignment refused: rc=1
+38 [7]
+39in 2
+39out IFS is the default again
+local: can only be used in a function
+40 rc=1

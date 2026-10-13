@@ -136,7 +136,7 @@ pf|7
 alice
 bob
 awk: unsupported: getline
-awk: unsupported: getline from the main input
+
 awk: unsupported: print piped to a command
 awk: unsupported: printf %e
 rc=2

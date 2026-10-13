@@ -1097,37 +1097,10 @@ public sealed class Evaluator
 
 	public bool HasJobs => _jobs.Count > 0;
 
-	/// <summary>Best-effort one-line label for a job/AST node (no expansion, no side effects).</summary>
-	private static string DescribeNode(Node n) => n switch
-		{
-		SimpleCommand c => string.Join(" ",
-			(c.Name is null ? [] : new[] { LiteralWord(c.Name) }).Concat(c.Args.Select(LiteralWord))),
-		Pipeline p      => string.Join(" | ", p.Commands.Select(s => DescribeNode(s.Command))),
-		List l          => string.Concat(l.Items.Select(it => DescribeNode(it.Pipeline) + it.Op switch
-			{
-			ListOperator.And => " && ", ListOperator.Or => " || ", ListOperator.Background => " & ", ListOperator.Sequential => "; ", _ => "",
-			})).TrimEnd(),
-		_               => n.GetType().Name
-		};
-
-	private static string LiteralWord(Word w) => string.Concat(w.Parts.Select(p => p switch
-		{
-		LiteralPart l         => l.Value,
-		SingleQuotedPart s    => $"'{s.Value}'",
-		DoubleQuotedPart d    => $"\"{string.Concat(d.Parts.Select(LiteralPartText))}\"",
-		VarExpansionPart v    => "$" + v.Name,
-		BraceExpansionPart b  => "${" + b.Raw + "}",
-		ArithmeticExpansionPart a => "$((" + a.Expression + "))",
-		_                     => ""
-		}));
-
-	private static string LiteralPartText(WordPart p) => p switch
-		{
-		LiteralPart l      => l.Value,
-		VarExpansionPart v => "$" + v.Name,
-		BraceExpansionPart b => "${" + b.Raw + "}",
-		_                  => ""
-		};
+	/// <summary>A job's text as `jobs` shows it: bash's command printer in its job mode
+	/// (<see cref="Bash.Parser.CommandPrinter.Command"/>). Until 2026-10-12 a reconstruction that named a
+	/// compound command by its node type (`BraceGroup`) and dropped assignments and redirections.</summary>
+	private static string DescribeNode(Node n) => Bash.Parser.CommandPrinter.Command(n);
 
 	/// <summary>
 	/// The raw byte stream a byte-oriented builtin should write stdout to, or null when
@@ -1545,7 +1518,7 @@ public sealed class Evaluator
 
 		// -x: xtrace
 		if (Options.XTrace)
-			Console.Error.WriteLine($"{_env.Get("PS4")}{namStr} {string.Join(" ", args)}".TrimEnd());
+			Console.Error.WriteLine($"{_env.Get("PS4")}{namStr} {string.Join(" ", args)}".TrimEnd().Replace(Bash.Lexer.Lexer.ArrayLiteralMark.ToString(), ""));   // never show the parser's array mark
 
 		// `exec` with only redirects makes them permanent for the rest of the shell;
 		// `exec cmd` replaces the shell: run it and exit with its status.
@@ -2524,10 +2497,13 @@ public sealed class Evaluator
 			{
 			using var scope = ss.Redirects.Count > 0 ? ApplyRedirects(ss.Redirects) : null;
 			try   { return Execute(ss.Body); }
+			// fatal to the subshell only, and reported inside its own redirects: `( r=2 ) 2>/dev/null` with r
+			// readonly is silent in bash (C#Bash printed it after the redirects were gone, until 2026-10-12)
+			catch (FatalShellException ex) { Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); return ex.Code; }
 			finally { SubshellExitTrap(mark); ResumeDebug(debugOff); }
 			}
 		catch (ExitException ex) { return ex.Code; }
-		catch (FatalShellException ex) { Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); return ex.Code; }   // fatal to the subshell only
+		catch (FatalShellException ex) { Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); return ex.Code; }   // a redirect of the subshell's own that failed
 		catch (CommandAbortException) { return 1; }   // a bad `$( )` ends the subshell only (phase 3)
 		finally { _env.RestoreSnapshot(snap); LeaveSubshell(mark); }
 		}
@@ -2666,16 +2642,23 @@ public sealed class Evaluator
 			DebugTrap(null);
 			}
 		var subject = _expander.ExpandToString(cc.Subject);
-		foreach (var item in cc.Items)
+		// a matched branch runs, then its terminator decides: `;;` stops, `;&` runs the next branch's
+		// commands without testing it, `;;&` goes on testing the branches after it (bash)
+		int code = 0;
+		bool fall = false;
+		for (int i = 0; i < cc.Items.Count; i++)
 			{
-			foreach (var pat in item.Patterns)
-				{
-				var patStr = _expander.ExpandToPattern(pat);
-				if (Glob.Match(patStr, subject, Options.NoCaseMatch))
-					return item.Body is not null ? Execute(item.Body) : 0;
-				}
+			var item = cc.Items[i];
+			bool hit = fall;
+			if (!hit)
+				foreach (var pat in item.Patterns)   // patterns expand lazily, up to the first match, as before
+					if (Glob.Match(_expander.ExpandToPattern(pat), subject, Options.NoCaseMatch)) { hit = true; break; }
+			if (!hit) continue;
+			code = item.Body is not null ? Execute(item.Body) : 0;
+			if (item.Terminator == CaseTerminator.Break) return code;
+			fall = item.Terminator == CaseTerminator.FallThrough;
 			}
-		return 0;
+		return code;
 		}
 
 	// ── [[ ]] ─────────────────────────────────────────────────────────────────
@@ -2695,6 +2678,7 @@ public sealed class Evaluator
 		CondUnary u  => EvalCondUnary(u.Op, _expander.ExpandToString(u.Operand)),
 		CondBinary b => EvalCondBinary(b),
 		CondWord w   => _expander.ExpandToString(w.Value).Length > 0,
+		CondGroup g  => EvalCondExpr(g.Inner),
 		_ => false
 		};
 

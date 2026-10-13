@@ -10,22 +10,59 @@ namespace Bash.Evaluator;
 /// </summary>
 public sealed class ShellEnvironment
 	{
-	// Scalar variable frames (innermost = last)
-	private readonly List<Dictionary<string, string>> _frames = [new()];
-
-	// Arrays live at global scope only (bash arrays are not local by default
-	// unless explicitly declared local — we keep it simple for now).
-	// Key = array name, Value = index→value map.
-	private Dictionary<string, SortedDictionary<int, string>>    _arrayStore = new(StringComparer.Ordinal);
-
-	/// <summary>Every array read goes through here, so the evaluator's call stack (FUNCNAME,
-	/// BASH_SOURCE, BASH_LINENO) is written only when an array is next read: a function call or
-	/// return just marks it stale (<see cref="CallStackStale"/>). Rebuilding the three arrays on
-	/// every call and return cost ~0.9 µs a call, +34% on a bare call (measured 2026-10-10).</summary>
-	private Dictionary<string, SortedDictionary<int, string>> _arrays
+	/// <summary>One variable in one scope, as bash keeps it: a scalar, an indexed array or an associative
+	/// array, with its attributes. Declared with no value (`local x`) is a scalar whose Value is null.</summary>
+	internal sealed class Var
 		{
-		get { if (CallStackStale) { CallStackStale = false; RefreshCallStack?.Invoke(); } return _arrayStore; }
-		set => _arrayStore = value;
+		public string? Value;
+		public SortedDictionary<int, string>? Indexed;
+		public Dictionary<string, string>? Assoc;
+		public bool Exported, Readonly, Integer;
+
+		public bool IsUnset => Value is null && Indexed is null && Assoc is null;
+
+		public Var Clone() => new()
+			{
+			Value = Value,
+			Indexed = Indexed is null ? null : new SortedDictionary<int, string>(Indexed),
+			Assoc = Assoc is null ? null : new Dictionary<string, string>(Assoc, StringComparer.Ordinal),
+			Exported = Exported, Readonly = Readonly, Integer = Integer,
+			};
+		}
+
+	/// <summary>The scopes, global first, the innermost function call last. Each holds its variables
+	/// whole, arrays and attributes included, and a name is looked up innermost-out (bash's dynamic scope).
+	/// An assignment to a name no scope holds goes to the GLOBAL scope; `local` (and `declare` in a function)
+	/// to the innermost. Until 2026-10-12 only scalars had scopes, a new name went to the innermost one (so a
+	/// function's `x=1` vanished on return) and arrays and attributes were shell-wide (DECISIONS 2026-10-12,
+	/// "VARIABLE SCOPE").</summary>
+	private readonly List<Dictionary<string, Var>> _frames = [new(StringComparer.Ordinal)];
+
+	/// <summary>The innermost variable of that name, or null. FUNCNAME, BASH_SOURCE and BASH_LINENO are
+	/// written only when one of them is next read: a function call or return just marks them stale
+	/// (<see cref="CallStackStale"/>; rebuilding them on every call and return cost ~0.9 µs a call, +34% on
+	/// a bare call, measured 2026-10-10).</summary>
+	private Var? Find(string name)
+		{
+		if (CallStackStale && name is "FUNCNAME" or "BASH_SOURCE" or "BASH_LINENO") RefreshCallStackNow();
+		for (int i = _frames.Count - 1; i >= 0; i--)
+			if (_frames[i].TryGetValue(name, out var v)) return v;
+		return null;
+		}
+
+	private void RefreshCallStackNow() { CallStackStale = false; RefreshCallStack?.Invoke(); }
+
+	/// <summary>The variable an assignment changes: the innermost of that name, else a new GLOBAL one.</summary>
+	private Var Target(string name)
+		{
+		var v = Find(name);
+		if (v is null) { v = new Var(); _frames[0][name] = v; }
+		return v;
+		}
+
+	private static void CheckWritable(Var v, string name)
+		{
+		if (v.Readonly) throw new FatalShellException($"{name}: readonly variable");
 		}
 
 	/// <summary>Set by the evaluator: writes its call stack into FUNCNAME / BASH_SOURCE / BASH_LINENO.</summary>
@@ -38,11 +75,6 @@ public sealed class ShellEnvironment
 
 	/// <summary>Set by the evaluator: its current error prefix (`script: line N: `).</summary>
 	public Func<string>? ErrorPrefixProvider { get; set; }
-	private Dictionary<string, Dictionary<string, string>>        _assocs = new(StringComparer.Ordinal);
-
-	private HashSet<string> _exports   = new(StringComparer.Ordinal);
-	private HashSet<string> _readonly  = new(StringComparer.Ordinal);
-	private HashSet<string> _integers  = new(StringComparer.Ordinal);
 	private readonly Stack<string[]> _positionals = new();
 	private string _arg0 = ToShellPath(LaunchedAs());
 
@@ -105,8 +137,7 @@ public sealed class ShellEnvironment
 			if (key.Equals("PATH", StringComparison.OrdinalIgnoreCase)) key = "PATH";
 			if (key.Length > 0)
 				{
-				_frames[0][key] = val;
-				_exports.Add(key);
+				_frames[0][key] = new Var { Value = val, Exported = true };
 				}
 			}
 
@@ -120,7 +151,7 @@ public sealed class ShellEnvironment
 			}
 		// the shell's paths are forward slash (DECISIONS 2026-09-11/12): HOME arrived as C:\Users\x,
 		// so $HOME, ~ and cd's default were backslash paths until 2026-10-08
-		if (Get("HOME").Contains('\\')) _frames[0]["HOME"] = ToShellPath(Get("HOME"));
+		if (Get("HOME").Contains('\\')) Target("HOME").Value = ToShellPath(Get("HOME"));
 
 		// bash-standard shell variables (not exported unless inherited)
 		var exe = ToShellPath(Environment.ProcessPath ?? "bash");
@@ -138,11 +169,11 @@ public sealed class ShellEnvironment
 		Set("SHLVL", shlvl.ToString()); Export("SHLVL");
 		var uid = WindowsUid();
 		Set("UID", uid.ToString()); Set("EUID", uid.ToString());
-		_readonly.Add("UID"); _readonly.Add("EUID");
-		Set("PPID", ParentPid().ToString()); _readonly.Add("PPID");
+		MarkReadonly("UID"); MarkReadonly("EUID");
+		Set("PPID", ParentPid().ToString()); MarkReadonly("PPID");
 		Set("PWD", Cwd); Export("PWD");
 		SetArrayFromList("BASH_VERSINFO", ["5", "1", "0", "0", "release", "x86_64-pc-msys"]);
-		_readonly.Add("BASH_VERSINFO");
+		MarkReadonly("BASH_VERSINFO");
 		}
 
 	private void SetIfUnset(string name, string value) { if (Get(name).Length == 0) Set(name, value); }
@@ -151,13 +182,9 @@ public sealed class ShellEnvironment
 	/// which cost ~1.4 ms (measured 2026-10-03): <see cref="CloneForSubshell"/> fills it.</summary>
 	private ShellEnvironment(ShellEnvironment src)
 		{
-		foreach (var f in src._frames) _frames.Add(new Dictionary<string, string>(f, StringComparer.Ordinal));
-		_frames.RemoveAt(0);   // the initializer's empty global frame
-		_arrays   = src._arrays.ToDictionary(kv => kv.Key, kv => new SortedDictionary<int, string>(kv.Value), StringComparer.Ordinal);
-		_assocs   = src._assocs.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value, StringComparer.Ordinal), StringComparer.Ordinal);
-		_exports  = new HashSet<string>(src._exports, StringComparer.Ordinal);
-		_readonly = new HashSet<string>(src._readonly, StringComparer.Ordinal);
-		_integers = new HashSet<string>(src._integers, StringComparer.Ordinal);
+		if (src.CallStackStale) src.RefreshCallStackNow();   // the copy gets the call stack as it stands
+		_frames.Clear();
+		_frames.AddRange(CopyFrames(src._frames));
 		foreach (var p in src._positionals.Reverse()) _positionals.Push(p);   // enumerates top first
 		_arg0 = src._arg0;
 		_start = src._start;
@@ -383,17 +410,14 @@ public sealed class ShellEnvironment
 			}
 
 		frames:
-		for (int i = _frames.Count - 1; i >= 0; i--)
-			if (_frames[i].TryGetValue(name, out var val))
-				return ReferenceEquals(val, DeclaredUnset) ? "" : val;
-
-		return "";
+		var v = Find(name);
+		if (v is null) return "";
+		if (v.Value is not null) return v.Value;
+		// an array's `$a` is its element 0 / "0" (bash)
+		if (v.Indexed is not null) return v.Indexed.TryGetValue(0, out var e0) ? e0 : "";
+		if (v.Assoc is not null) return v.Assoc.TryGetValue("0", out var k0) ? k0 : "";
+		return "";   // declared with no value (`local x`): it hides an outer x but is unset
 		}
-
-	/// <summary>The frame value of a variable declared with no value (`local x`): it hides any outer
-	/// variable of that name but is unset, as in bash. Compared by reference, never by value.
-	/// Until 2026-10-08 `local x` stored "", so x read as set.</summary>
-	private static readonly string DeclaredUnset = new('﷐', 1);
 
 	/// <summary>What joins `$*` and `${a[*]}` where they make one string ("$*", an assignment, `[[ ]]`,
 	/// a here-string, `case`): IFS's first character, nothing when IFS is empty, a space when it is
@@ -411,42 +435,34 @@ public sealed class ShellEnvironment
 			var pos = _positionals.TryPeek(out var pp) ? pp : [];
 			return idx > 0 && idx <= pos.Length;
 			}
-		for (int i = _frames.Count - 1; i >= 0; i--)
-			if (_frames[i].TryGetValue(name, out var val)) return !ReferenceEquals(val, DeclaredUnset);
-		if (_arrays.TryGetValue(name, out var arr)) return arr.ContainsKey(0);
-		return _assocs.TryGetValue(name, out var map) && map.ContainsKey("0");
+		var v = Find(name);
+		if (v is null) return false;
+		if (v.Indexed is not null) return v.Indexed.ContainsKey(0);
+		if (v.Assoc is not null) return v.Assoc.ContainsKey("0");
+		return v.Value is not null;
 		}
 
-	/// <summary>Declared in some frame, with or without a value, or an array (`declare -p x`, `unset x`).</summary>
-	public bool IsDeclared(string name)
-		{
-		foreach (var f in _frames)
-			if (f.ContainsKey(name)) return true;
-		return _arrays.ContainsKey(name) || _assocs.ContainsKey(name);
-		}
+	/// <summary>Declared in some scope, with or without a value (`declare -p x`, `unset x`).</summary>
+	public bool IsDeclared(string name) => Find(name) is not null;
 
-	/// <summary>`local x` with no value: x is declared in the innermost frame and unset, hiding an
-	/// outer x. An x already declared in that frame keeps its value, as in bash.</summary>
+	/// <summary>`local x` with no value: x is declared in the innermost scope and unset, hiding an
+	/// outer x. An x already declared in that scope keeps its value, as in bash; a readonly outer x
+	/// cannot be shadowed.</summary>
 	public void DeclareLocal(string name)
 		{
-		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
-		_frames[^1].TryAdd(name, DeclaredUnset);
+		if (_frames[^1].ContainsKey(name)) return;
+		if (Find(name) is { Readonly: true }) throw new FatalShellException($"{name}: readonly variable");
+		_frames[^1][name] = new Var();
 		}
 
-	/// <summary>The innermost frame that declares name has it with no value (`local x`).</summary>
-	public bool IsDeclaredUnset(string name)
-		{
-		for (int i = _frames.Count - 1; i >= 0; i--)
-			if (_frames[i].TryGetValue(name, out var val)) return ReferenceEquals(val, DeclaredUnset);
-		return false;
-		}
+	/// <summary>True when the innermost variable of that name is declared with no value (`local x`).</summary>
+	public bool IsDeclaredUnset(string name) => Find(name) is { IsUnset: true };
 
-	/// <summary>Make name declared-with-no-value again in the innermost frame that declares it
-	/// (restoring `x=v cmd` on a `local x`, where an unset would also delete an outer x).</summary>
+	/// <summary>Make the innermost variable of that name declared-with-no-value again (restoring `x=v cmd`
+	/// on a `local x`, where an unset would also remove it).</summary>
 	public void RestoreDeclaredUnset(string name)
 		{
-		for (int i = _frames.Count - 1; i >= 0; i--)
-			if (_frames[i].ContainsKey(name)) { _frames[i][name] = DeclaredUnset; return; }
+		if (Find(name) is { } v) { v.Value = null; v.Indexed = null; v.Assoc = null; }
 		}
 
 	/// <summary>A PATH written in MSYS form (`/c/x:/usr/bin:…`, colon-separated, entries
@@ -460,47 +476,58 @@ public sealed class ShellEnvironment
 		return string.Join(";", parts.Where(p => p.Length > 0 && !p.Contains('\n')).Select(TranslatePath));
 		}
 
-	public void Set(string name, string value)
+	/// <summary>An assignment: to the innermost variable of that name, or to a new GLOBAL one (bash: a
+	/// function's `x=1` outlives the call).</summary>
+	public void Set(string name, string value) => Assign(Target(name), name, value);
+
+	/// <summary>Give a variable a value: an integer variable evaluates it; an array takes it as its element
+	/// 0 / "0" (bash); PATH reaches the process environment and resets the hash.</summary>
+	private void Assign(Var v, string name, string value)
 		{
-		if (_readonly.Contains(name))
-			throw new FatalShellException($"{name}: readonly variable");
-		if (_integers.Contains(name) && ArithEval is not null)
+		CheckWritable(v, name);
+		if (v.Integer && ArithEval is not null)
 			{
 			try { value = ArithEval(value).ToString(); } catch (EvalException) { value = "0"; }
 			}
+		if (name == "PATH") value = NormalizePath(value);
+		if (v.Indexed is not null) v.Indexed[0] = value;
+		else if (v.Assoc is not null) v.Assoc["0"] = value;
+		else v.Value = value;
+		if (AutoExport) v.Exported = true;
 		if (name == "PATH")
 			{
-			value = NormalizePath(value);
 			// the shell's own command lookup (ResolveOnPath/FindInPath) reads the process
 			// environment, so `export PATH=…` must reach it or new directories are invisible
 			try { Environment.SetEnvironmentVariable("PATH", value); } catch { }
 			PathChanged?.Invoke();   // the hash table is reset, as bash's
 			}
-		for (int i = _frames.Count - 1; i >= 0; i--)
-			if (_frames[i].ContainsKey(name))
-				{ _frames[i][name] = value; if (AutoExport) _exports.Add(name); return; }
-		_frames[^1][name] = value;
-		if (AutoExport) _exports.Add(name);
 		}
 
-	/// <summary>Set in the innermost frame only (implements 'local').</summary>
+	/// <summary>`local x=v`: x in the innermost scope, declared there first if it is not yet (one lookup:
+	/// this is every function call's `local`).</summary>
 	public void SetLocal(string name, string value)
 		{
-		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
-		_frames[^1][name] = value;
+		var f = _frames[^1];
+		if (!f.TryGetValue(name, out var v))
+			{
+			if (_frames.Count > 1 && Find(name) is { Readonly: true }) throw new FatalShellException($"{name}: readonly variable");
+			v = new Var();
+			f[name] = v;
+			}
+		Assign(v, name, value);
 		}
 
-	/// <summary>Set in the outermost (global) frame (implements 'declare -g').</summary>
+	/// <summary>In the global scope (`declare -g`).</summary>
 	public void SetGlobal(string name, string value)
 		{
-		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
-		_frames[0][name] = value;
+		if (!_frames[0].TryGetValue(name, out var v)) { v = new Var(); _frames[0][name] = v; }
+		Assign(v, name, value);
 		}
 
 	/// <summary>Append to a scalar (var+=value); integers add arithmetically.</summary>
 	public void Append(string name, string value)
 		{
-		if (_integers.Contains(name) && ArithEval is not null)
+		if (IsInteger(name) && ArithEval is not null)
 			{
 			long cur = long.TryParse(Get(name), out var c) ? c : 0;
 			long add; try { add = ArithEval(value); } catch (EvalException) { add = 0; }
@@ -510,70 +537,102 @@ public sealed class ShellEnvironment
 		Set(name, Get(name) + value);
 		}
 
-	/// <summary>Unset a variable or array. Returns false (and does nothing) for a readonly name.</summary>
+	/// <summary>Unset a variable or array; false (and nothing done) for a readonly one. In the function scope
+	/// that declared it, it stays declared and unset, still hiding an outer one; anywhere else (a caller's
+	/// local unset by a callee, a global, the top level) it goes, uncovering the next one out (bash 5.1,
+	/// measured 2026-10-12).</summary>
 	public bool Unset(string name)
 		{
-		if (_readonly.Contains(name)) return false;
-		foreach (var f in _frames)
-			f.Remove(name);
-		_arrays.Remove(name);
-		_assocs.Remove(name);
-		_integers.Remove(name);
-		_exports.Remove(name);
+		for (int i = _frames.Count - 1; i >= 0; i--)
+			{
+			if (!_frames[i].TryGetValue(name, out var v)) continue;
+			if (v.Readonly) return false;
+			if (i == _frames.Count - 1 && i > 0) { v.Value = null; v.Indexed = null; v.Assoc = null; v.Exported = false; v.Integer = false; }
+			else _frames[i].Remove(name);
+			return true;
+			}
 		return true;
 		}
 
-	public void Export(string name) => _exports.Add(name);
-	/// <summary>Every exported name, set or not (`export -p` lists `declare -x x` for an unset x).</summary>
-	public IEnumerable<string> ExportedNames => _exports;
-	public void Unexport(string name) => _exports.Remove(name);
-	public bool IsExported(string name) => _exports.Contains(name);
+	public void Export(string name) => Target(name).Exported = true;
+	/// <summary>Every visible exported name, set or not (`export -p` lists `declare -x x` for an unset x).</summary>
+	public IEnumerable<string> ExportedNames => [.. Visible().Where(p => p.V.Exported).Select(p => p.Name)];
+	public void Unexport(string name) { if (Find(name) is { } v) v.Exported = false; }
+	public bool IsExported(string name) => Find(name) is { Exported: true };
 
-	public void MarkReadonly(string name) => _readonly.Add(name);
-	public bool IsReadonly(string name) => _readonly.Contains(name);
-	public IEnumerable<string> ReadonlyNames => _readonly;
+	public void MarkReadonly(string name) => Target(name).Readonly = true;
+	public bool IsReadonly(string name) => Find(name) is { Readonly: true };
+	public IEnumerable<string> ReadonlyNames => [.. Visible().Where(p => p.V.Readonly).Select(p => p.Name)];
 
-	public void MarkInteger(string name, bool on) { if (on) _integers.Add(name); else _integers.Remove(name); }
-	public bool IsInteger(string name) => _integers.Contains(name);
-
-	/// <summary>All scalar variable names across scopes plus array names (for tab completion / `set`).</summary>
-	public IEnumerable<string> VariableNames()
+	public void MarkInteger(string name, bool on)
 		{
-		var names = new HashSet<string>(StringComparer.Ordinal);
-		foreach (var frame in _frames)
-			foreach (var k in frame.Keys) names.Add(k);
-		foreach (var k in _arrays.Keys) names.Add(k);
-		foreach (var k in _assocs.Keys) names.Add(k);
-		return names;
+		if (on) Target(name).Integer = true;
+		else if (Find(name) is { } v) v.Integer = false;
 		}
+	public bool IsInteger(string name) => Find(name) is { Integer: true };
+
+	/// <summary>Each visible variable once: the innermost of its name.</summary>
+	private List<(string Name, Var V)> Visible()
+		{
+		if (CallStackStale) RefreshCallStackNow();
+		var seen = new HashSet<string>(StringComparer.Ordinal);
+		var list = new List<(string, Var)>();
+		for (int i = _frames.Count - 1; i >= 0; i--)
+			foreach (var kv in _frames[i])
+				if (seen.Add(kv.Key)) list.Add((kv.Key, kv.Value));
+		return list;
+		}
+
+	/// <summary>Every visible variable's name, scalars and arrays (tab completion, `set`, `${!prefix*}`).</summary>
+	public IEnumerable<string> VariableNames() => [.. Visible().Select(p => p.Name)];
 
 	// ── indexed arrays ────────────────────────────────────────────────────────
 
-	public bool IsArray(string name) => _arrays.ContainsKey(name);
+	private SortedDictionary<int, string>? IndexedOf(string name) => Find(name)?.Indexed;
+	private Dictionary<string, string>? AssocOf(string name) => Find(name)?.Assoc;
+
+	/// <summary>The variable an array assignment changes, made an indexed array: a scalar's value becomes
+	/// element 0 (bash: `x=a; x[1]=b` is `(a b)`).</summary>
+	private SortedDictionary<int, string> IndexedTarget(string name)
+		{
+		var v = Target(name);
+		CheckWritable(v, name);
+		if (v.Indexed is null)
+			{
+			v.Indexed = new SortedDictionary<int, string>();
+			if (v.Value is not null) v.Indexed[0] = v.Value;
+			v.Value = null; v.Assoc = null;
+			}
+		return v.Indexed;
+		}
+
+	public bool IsArray(string name) => IndexedOf(name) is not null;
 
 	public void DeclareArray(string name)
 		{
-		if (!_arrays.ContainsKey(name))
-			_arrays[name] = new SortedDictionary<int, string>();
+		var v = Target(name);
+		if (v.Indexed is null && v.Assoc is null) IndexedTarget(name);
 		}
 
 	public void SetArrayElement(string name, int index, string value)
 		{
-		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
-		if (!_arrays.ContainsKey(name))
-			_arrays[name] = new SortedDictionary<int, string>();
+		var arr = IndexedTarget(name);
 		if (index < 0)
 			{
-			int max = _arrays[name].Count > 0 ? _arrays[name].Keys.Max() : -1;
+			int max = arr.Count > 0 ? arr.Keys.Max() : -1;
 			index = max + 1 + index;
 			if (index < 0) throw new EvalException($"{name}[{index}]: bad array subscript");
 			}
-		_arrays[name][index] = value;
+		if (Find(name) is { Integer: true } && ArithEval is not null)
+			{
+			try { value = ArithEval(value).ToString(); } catch (EvalException) { value = "0"; }
+			}
+		arr[index] = value;
 		}
 
 	public string GetArrayElement(string name, int index)
 		{
-		if (_arrays.TryGetValue(name, out var arr))
+		if (IndexedOf(name) is { } arr)
 			{
 			if (index < 0 && arr.Count > 0) index = arr.Keys.Max() + 1 + index;
 			if (arr.TryGetValue(index, out var val)) return val;
@@ -583,14 +642,14 @@ public sealed class ShellEnvironment
 
 	public bool HasArrayElement(string name, int index)
 		{
-		if (!_arrays.TryGetValue(name, out var arr)) return false;
+		if (IndexedOf(name) is not { } arr) return false;
 		if (index < 0 && arr.Count > 0) index = arr.Keys.Max() + 1 + index;
 		return arr.ContainsKey(index);
 		}
 
 	public void UnsetArrayElement(string name, int index)
 		{
-		if (_arrays.TryGetValue(name, out var arr))
+		if (IndexedOf(name) is { } arr)
 			{
 			if (index < 0 && arr.Count > 0) index = arr.Keys.Max() + 1 + index;
 			arr.Remove(index);
@@ -598,94 +657,73 @@ public sealed class ShellEnvironment
 		}
 
 	/// <summary>All values in index order.</summary>
-	public List<string> GetArrayValues(string name) =>
-		_arrays.TryGetValue(name, out var arr) ? [.. arr.Values] : [];
+	public List<string> GetArrayValues(string name) => IndexedOf(name) is { } arr ? [.. arr.Values] : [];
 
 	/// <summary>All indices as strings.</summary>
-	public List<string> GetArrayKeys(string name) =>
-		_arrays.TryGetValue(name, out var arr) ? arr.Keys.Select(k => k.ToString()).ToList() : [];
+	public List<string> GetArrayKeys(string name) => IndexedOf(name) is { } arr ? arr.Keys.Select(k => k.ToString()).ToList() : [];
 
 	/// <summary>Index/value pairs in order (for `declare -p`).</summary>
-	public IEnumerable<KeyValuePair<int, string>> GetArrayPairs(string name) =>
-		_arrays.TryGetValue(name, out var arr) ? arr : [];
+	public IEnumerable<KeyValuePair<int, string>> GetArrayPairs(string name) => IndexedOf(name) is { } arr ? arr : [];
 
-	public int GetArrayLength(string name) =>
-		_arrays.TryGetValue(name, out var arr) ? arr.Count : 0;
+	public int GetArrayLength(string name) => IndexedOf(name)?.Count ?? 0;
 
-	/// <summary>
-	/// Assign from compound list: arr=(a b c).
-	/// Replaces any existing array.
-	/// </summary>
+	/// <summary>Assign from compound list: arr=(a b c). Replaces any existing value of the variable.</summary>
 	public void SetArrayFromList(string name, List<string> values)
 		{
-		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
+		var v = Target(name);
+		CheckWritable(v, name);
 		var arr = new SortedDictionary<int, string>();
 		for (int i = 0; i < values.Count; i++)
 			arr[i] = values[i];
-		_arrays[name] = arr;
-		_assocs.Remove(name);
+		v.Indexed = arr; v.Value = null; v.Assoc = null;
 		}
 
-	/// <summary>arr+=(x y): append after the highest index.</summary>
+	/// <summary>arr+=(x y): append after the highest index (a scalar's value becomes element 0 first).</summary>
 	public void AppendArrayFromList(string name, List<string> values)
 		{
-		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
-		if (_assocs.ContainsKey(name))
-			{
-			// bash: appending a list to an assoc array requires [key]=value pairs; treat as error-free no-op
-			return;
-			}
-		if (!_arrays.TryGetValue(name, out var arr)) { SetArrayFromList(name, values); return; }
+		var v = Target(name);
+		CheckWritable(v, name);
+		if (v.Assoc is not null) return;   // bash: appending a list to an assoc array requires [key]=value pairs
+		var arr = IndexedTarget(name);
 		int next = arr.Count > 0 ? arr.Keys.Max() + 1 : 0;
-		foreach (var v in values) arr[next++] = v;
+		foreach (var s in values) arr[next++] = s;
 		}
 
 	// ── associative arrays ────────────────────────────────────────────────────
 
-	public bool IsAssoc(string name) => _assocs.ContainsKey(name);
+	public bool IsAssoc(string name) => AssocOf(name) is not null;
 
 	public void DeclareAssoc(string name)
 		{
-		if (!_assocs.ContainsKey(name))
-			_assocs[name] = new Dictionary<string, string>(StringComparer.Ordinal);
-		_arrays.Remove(name);
+		var v = Target(name);
+		if (v.Assoc is not null) return;
+		v.Assoc = new Dictionary<string, string>(StringComparer.Ordinal);
+		if (v.Value is not null) v.Assoc["0"] = v.Value;
+		v.Value = null; v.Indexed = null;
 		}
 
 	public void SetAssocElement(string name, string key, string value)
 		{
-		if (_readonly.Contains(name)) throw new FatalShellException($"{name}: readonly variable");
-		if (!_assocs.ContainsKey(name))
-			_assocs[name] = new Dictionary<string, string>(StringComparer.Ordinal);
-		_assocs[name][key] = value;
+		var v = Target(name);
+		CheckWritable(v, name);
+		if (v.Assoc is null) DeclareAssoc(name);
+		v.Assoc![key] = value;
 		}
 
-	public string GetAssocElement(string name, string key)
-		{
-		if (_assocs.TryGetValue(name, out var map) && map.TryGetValue(key, out var val))
-			return val;
-		return "";
-		}
+	public string GetAssocElement(string name, string key) =>
+		AssocOf(name) is { } map && map.TryGetValue(key, out var val) ? val : "";
 
-	public bool HasAssocElement(string name, string key) =>
-		_assocs.TryGetValue(name, out var map) && map.ContainsKey(key);
+	public bool HasAssocElement(string name, string key) => AssocOf(name) is { } map && map.ContainsKey(key);
 
-	public void UnsetAssocElement(string name, string key)
-		{
-		if (_assocs.TryGetValue(name, out var map))
-			map.Remove(key);
-		}
+	public void UnsetAssocElement(string name, string key) => AssocOf(name)?.Remove(key);
 
-	public List<string> GetAssocValues(string name) =>
-		_assocs.TryGetValue(name, out var map) ? [.. map.Values] : [];
+	public List<string> GetAssocValues(string name) => AssocOf(name) is { } map ? [.. map.Values] : [];
 
-	public List<string> GetAssocKeys(string name) =>
-		_assocs.TryGetValue(name, out var map) ? [.. map.Keys] : [];
+	public List<string> GetAssocKeys(string name) => AssocOf(name) is { } map ? [.. map.Keys] : [];
 
-	public IEnumerable<KeyValuePair<string, string>> GetAssocPairs(string name) =>
-		_assocs.TryGetValue(name, out var map) ? map : [];
+	public IEnumerable<KeyValuePair<string, string>> GetAssocPairs(string name) => AssocOf(name) is { } map ? map : [];
 
-	public int GetAssocLength(string name) =>
-		_assocs.TryGetValue(name, out var map) ? map.Count : 0;
+	public int GetAssocLength(string name) => AssocOf(name)?.Count ?? 0;
 
 	// ── scopes ────────────────────────────────────────────────────────────────
 
@@ -704,7 +742,7 @@ public sealed class ShellEnvironment
 
 	public void PushScope(string[] positionals)
 		{
-		_frames.Add(new Dictionary<string, string>(StringComparer.Ordinal));
+		_frames.Add(new Dictionary<string, Var>(StringComparer.Ordinal));
 		_positionals.Push(positionals);
 		}
 
@@ -720,27 +758,33 @@ public sealed class ShellEnvironment
 
 	public sealed class Snapshot
 		{
-		internal List<Dictionary<string, string>> Frames = [];
-		internal Dictionary<string, SortedDictionary<int, string>> Arrays = new();
-		internal Dictionary<string, Dictionary<string, string>> Assocs = new();
-		internal HashSet<string> Exports = [], Readonly = [], Integers = [];
+		internal List<Dictionary<string, Var>> Frames = [];
 		internal string[][] Positionals = [];
 		internal string Arg0 = "";
 		internal string Cwd = "";
 		internal int Umask;
 		}
 
+	/// <summary>A deep copy of the scopes: every variable cloned, arrays and attributes with it.</summary>
+	private static List<Dictionary<string, Var>> CopyFrames(List<Dictionary<string, Var>> frames)
+		{
+		var copy = new List<Dictionary<string, Var>>(frames.Count);
+		foreach (var f in frames)
+			{
+			var d = new Dictionary<string, Var>(f.Count, StringComparer.Ordinal);
+			foreach (var kv in f) d[kv.Key] = kv.Value.Clone();
+			copy.Add(d);
+			}
+		return copy;
+		}
+
 	/// <summary>Deep-copy the variable state (for `( )` / `$( )` isolation).</summary>
 	public Snapshot TakeSnapshot()
 		{
+		if (CallStackStale) RefreshCallStackNow();
 		var s = new Snapshot
 			{
-			Frames    = _frames.Select(f => new Dictionary<string, string>(f, StringComparer.Ordinal)).ToList(),
-			Arrays    = _arrays.ToDictionary(kv => kv.Key, kv => new SortedDictionary<int, string>(kv.Value), StringComparer.Ordinal),
-			Assocs    = _assocs.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value, StringComparer.Ordinal), StringComparer.Ordinal),
-			Exports   = new HashSet<string>(_exports, StringComparer.Ordinal),
-			Readonly  = new HashSet<string>(_readonly, StringComparer.Ordinal),
-			Integers  = new HashSet<string>(_integers, StringComparer.Ordinal),
+			Frames    = CopyFrames(_frames),
 			Positionals = _positionals.ToArray(),
 			Arg0      = _arg0,
 			Cwd       = this.Cwd,
@@ -749,14 +793,12 @@ public sealed class ShellEnvironment
 		return s;
 		}
 
+	/// <summary>Put the state back. A snapshot is restored once (a subshell's or a substitution's `finally`), so
+	/// its own copy is taken over rather than copied again: one deep copy per `$( )`, not two.</summary>
 	public void RestoreSnapshot(Snapshot s)
 		{
-		_frames.Clear(); _frames.AddRange(s.Frames.Select(f => new Dictionary<string, string>(f, StringComparer.Ordinal)));
-		_arrays = s.Arrays.ToDictionary(kv => kv.Key, kv => new SortedDictionary<int, string>(kv.Value), StringComparer.Ordinal);
-		_assocs = s.Assocs.ToDictionary(kv => kv.Key, kv => new Dictionary<string, string>(kv.Value, StringComparer.Ordinal), StringComparer.Ordinal);
-		_exports  = new HashSet<string>(s.Exports, StringComparer.Ordinal);
-		_readonly = new HashSet<string>(s.Readonly, StringComparer.Ordinal);
-		_integers = new HashSet<string>(s.Integers, StringComparer.Ordinal);
+		_frames.Clear(); _frames.AddRange(s.Frames);
+		s.Frames = [];   // spent: restoring it twice would share variables between two states
 		_positionals.Clear();
 		foreach (var p in s.Positionals.Reverse()) _positionals.Push(p);
 		_arg0 = s.Arg0;
@@ -771,14 +813,11 @@ public sealed class ShellEnvironment
 		{
 		// only exported names with a value: `export x` on an unset x, or `local -x x`, puts nothing in a
 		// child's environment (bash); until 2026-10-08 the child got x set to ""
+		// the visible variable of each name; a local `-x` one while its function runs (bash); arrays are not
+		// exported
 		var result = new Dictionary<string, string>(StringComparer.Ordinal);
-		foreach (var name in _exports)
-			for (int i = _frames.Count - 1; i >= 0; i--)
-				if (_frames[i].TryGetValue(name, out var val))
-					{
-					if (!ReferenceEquals(val, DeclaredUnset)) result[name] = val;
-					break;
-					}
+		foreach (var (name, v) in Visible())
+			if (v.Exported && v.Value is not null) result[name] = v.Value;
 		return result;
 		}
 

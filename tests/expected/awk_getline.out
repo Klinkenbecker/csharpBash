@@ -1,0 +1,34 @@
+1 plain: 3
+2 if(0) getline: 3
+3 /b/{getline}: 2
+4
+0000000   a  \r  \n   c  \r  \n
+0000006
+5
+2 2 3 l2 y y
+3 3 1 l3
+6
+2 l1 x v=l2 y y
+3 l3 v=l2 y y
+7
+BEGIN read 3 3
+8
+first: l1 x 2 1
+9
+f1 2 2 1 l2 y y
+f2 1 4 1 m1
+f2 2 5 0 m2
+10
+END getline 0 l3
+11
+ l2 y y
+7 m1
+7 m2
+12
+x=s2
+2: s1
+3: s3
+13
+4 5
+14 fall-through keeps CR: 3
+15 BASH_COREUTILS=external keeps CR: 3

@@ -45,6 +45,12 @@ public sealed record HeredocBodyPart(string Body) : WordPart;
 /// <summary>A fully assembled word composed of one or more parts.</summary>
 public sealed record Word(List<WordPart> Parts)
 	{
+	/// <summary>Where the word is written in the source (quotes, escapes and all), for the command printer;
+	/// unknown for a word that did not come from source text (2026-10-12, printer P2). A span, not the text:
+	/// parsing every word must not allocate for the sake of `declare -f`.</summary>
+	public SourceSpan RawSpan { get; init; }
+	public string? Raw => RawSpan.IsKnown ? RawSpan.Text : null;
+
 	/// <summary>Convenience: single literal word.</summary>
 	public static Word Literal(string s) => new([new LiteralPart(s)]);
 
@@ -262,7 +268,14 @@ public sealed record CaseCommand(
 
 public sealed record CaseItem(
 	List<Word> Patterns,
-	Node? Body);            // null = empty body
+	Node? Body)             // null = empty body
+	{
+	/// <summary>How the branch ends: `;;` (stop), `;&amp;` (run the next branch's commands too) or `;;&amp;`
+	/// (go on testing the next branches). Only `;;` existed until 2026-10-12 (the others were syntax errors).</summary>
+	public CaseTerminator Terminator { get; init; }
+	}
+
+public enum CaseTerminator { Break, FallThrough, TestNext }
 
 /// <summary>[[ expression ]]</summary>
 public sealed record ConditionalExpression(CondExpr Expr) : Node;
@@ -276,6 +289,8 @@ public sealed record CondNot(CondExpr Operand) : CondExpr;
 public sealed record CondBinary(string Op, Word Left, Word Right) : CondExpr;
 public sealed record CondUnary(string Op, Word Operand) : CondExpr;
 public sealed record CondWord(Word Value) : CondExpr;   // bare word — true if non-empty
+/// <summary>`( expr )` as written, for the printer; evaluates as its inner expression (2026-10-12).</summary>
+public sealed record CondGroup(CondExpr Inner) : CondExpr;
 
 // ── Functions ─────────────────────────────────────────────────────────────────
 

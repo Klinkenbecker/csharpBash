@@ -177,34 +177,52 @@ public sealed partial class Builtins
 	private static bool TryParseDate(string s, out DateTime result) => GnuDate.TryParse(s, false, out result);
 	// ── rm / mv / cp ────────────────────────────────────────────────────────────
 
+	/// <summary>GNU rm. `-f`, `-i` and `-I` override each other, the last one given winning (`--interactive`
+	/// is `-i`). `-i` asks before each removal, `-I` once (more than three operands, or `-r`), and an answer is
+	/// a line of the shell's standard input, yes when it starts with `y`/`Y` (end of input is no). A write-
+	/// protected file (Windows' ReadOnly attribute) is asked about only when standard input is a terminal and
+	/// neither `-f` nor `-i` is given; otherwise it is removed. Until 2026-10-12 `-i` and `-I` removed without
+	/// asking, and a read-only file was refused without `-f` (adc-framework-d8; measured against GNU rm).</summary>
 	private static int Rm(List<string> args)
 		{
 		var o = Opts.Parse("rm", args, "rRfivdI", ["recursive:r", "force:f", "interactive", "verbose:v", "dir:d", "preserve-root", "no-preserve-root", "one-file-system"]);
-		bool recursive = o.Has('r') || o.Has('R'), force = o.Has('f'), verbose = o.Has('v'), emptyDir = o.Has('d');
+		char mode = o.HasLong("interactive") ? 'i' : '\0';
+		foreach (var (opt, _) in o.Sequence) if (opt is 'f' or 'i' or 'I') mode = opt;
+		bool recursive = o.Has('r') || o.Has('R'), force = mode == 'f', ask = mode == 'i', verbose = o.Has('v'), emptyDir = o.Has('d');
 		if (o.Operands.Count == 0) { if (!force) Console.Error.WriteLine("rm: missing operand"); return force ? 0 : 1; }
+		if (mode == 'I' && (o.Operands.Count > 3 || recursive))
+			{
+			int n = o.Operands.Count;
+			if (!RmAsk($"remove {n} argument{(n == 1 ? "" : "s")}{(recursive ? " recursively" : "")}")) return 0;
+			}
+		bool tty = StdinIsTerminal();
 		int rc = 0;
 		foreach (var f in o.Operands)
 			{
 			var p = P(f);
 			try
 				{
-				if (Directory.Exists(p))
+				if (Directory.Exists(p) && new DirectoryInfo(p).LinkTarget is null)
 					{
 					// Footgun guard: never remove a filesystem root (/, C:\, …).
 					if (IsRoot(p) && !o.HasLong("no-preserve-root"))
 						{ Console.Error.WriteLine($"rm: it is dangerous to operate recursively on '{f}'\nrm: use --no-preserve-root to override this failsafe"); rc = 1; continue; }
 					if (!recursive)
 						{
-						if (emptyDir && !Directory.EnumerateFileSystemEntries(p).Any()) { Directory.Delete(p); if (verbose) Console.WriteLine($"removed directory '{f}'"); continue; }
+						if (emptyDir && !Directory.EnumerateFileSystemEntries(p).Any())
+							{
+							if (ask && !RmAsk($"remove directory '{f}'")) continue;
+							Directory.Delete(p);
+							if (verbose) Console.WriteLine($"removed directory '{f}'");
+							continue;
+							}
 						Console.Error.WriteLine($"rm: cannot remove '{f}': Is a directory"); rc = 1; continue;
 						}
-					RmTree(p, f, verbose);
+					RmTree(p, f, verbose, ask, force, tty);
 					}
-				else if (File.Exists(p))
+				else if (File.Exists(p) || Directory.Exists(p))
 					{
-					var attrs = File.GetAttributes(p);
-					if ((attrs & FileAttributes.ReadOnly) != 0 && force) File.SetAttributes(p, attrs & ~FileAttributes.ReadOnly);
-					File.Delete(p);
+					if (!RmOne(p, f, ask, force, tty)) continue;
 					if (verbose) Console.WriteLine($"removed '{f}'");
 					}
 				else if (!force) { Console.Error.WriteLine($"rm: cannot remove '{f}': No such file or directory"); rc = 1; }
@@ -214,23 +232,71 @@ public sealed partial class Builtins
 		return rc;
 		}
 
-	private static void RmTree(string p, string display, bool verbose)
+	/// <summary>Remove one file or link, asking first when `-i` says so, or when it is write-protected and the
+	/// input is a terminal (no `-f`); false when the answer was no.</summary>
+	private static bool RmOne(string p, string shown, bool ask, bool force, bool tty)
 		{
+		var attrs = File.GetAttributes(p);
+		bool wp = (attrs & FileAttributes.ReadOnly) != 0;
+		if ((ask || (wp && !force && tty)) && !RmAsk($"remove {RmDescribe(p, shown)}")) return false;
+		if (wp) File.SetAttributes(p, attrs & ~FileAttributes.ReadOnly);
+		if ((attrs & FileAttributes.Directory) != 0) Directory.Delete(p);   // a directory link: the link only
+		else File.Delete(p);
+		return true;
+		}
+
+	/// <summary>How GNU rm names a file in its question: `regular file 'x'`, `regular empty file`,
+	/// `write-protected regular file`, `symbolic link`.</summary>
+	private static string RmDescribe(string p, string shown)
+		{
+		var fi = new FileInfo(p);
+		if (fi.LinkTarget is not null) return $"symbolic link '{shown}'";
+		bool wp = (fi.Attributes & FileAttributes.ReadOnly) != 0;
+		return $"{(wp ? "write-protected " : "")}regular {(fi.Length == 0 ? "empty " : "")}file '{shown}'";
+		}
+
+	/// <summary>GNU rm's question on standard error, answered by a line of standard input (yes: `y`/`Y`).</summary>
+	private static bool RmAsk(string question)
+		{
+		Console.Error.Write($"rm: {question}? ");
+		Console.Error.Flush();
+		var line = Console.In.ReadLine();
+		return line is { Length: > 0 } && line[0] is 'y' or 'Y';
+		}
+
+	/// <summary>Standard input is the terminal: not redirected in-process, not a pipe, not redirected for the
+	/// process.</summary>
+	private static bool StdinIsTerminal() =>
+		!ConsoleMux.InSwapped && ConsoleMux.PipeIn is null && ConsoleMux.RawIn is null && !Console.IsInputRedirected;
+
+	/// <summary>`rm -r`: with `-i` it asks to descend into a non-empty directory, about each entry, and to remove
+	/// the directory (GNU's order of questions); a write-protected file as in <see cref="RmOne"/>. Junctions and
+	/// directory symlinks are removed, never descended into. False when something was kept.</summary>
+	private static bool RmTree(string p, string display, bool verbose, bool ask, bool force, bool tty)
+		{
+		if (ask && Directory.EnumerateFileSystemEntries(p).Any() && !RmAsk($"descend into directory '{display}'")) return false;
+		bool all = true;
 		foreach (var f in Directory.GetFiles(p))
 			{
-			var attrs = File.GetAttributes(f);
-			if ((attrs & FileAttributes.ReadOnly) != 0) File.SetAttributes(f, attrs & ~FileAttributes.ReadOnly);
-			File.Delete(f);
-			if (verbose) Console.WriteLine($"removed '{display}/{Path.GetFileName(f)}'");
+			var shown = $"{display}/{Path.GetFileName(f)}";
+			if (!RmOne(f, shown, ask, force, tty)) { all = false; continue; }
+			if (verbose) Console.WriteLine($"removed '{shown}'");
 			}
 		foreach (var d in Directory.GetDirectories(p))
 			{
-			var info = new DirectoryInfo(d);
-			if (info.LinkTarget is not null) { Directory.Delete(d); continue; }   // don't descend into junctions/symlinks
-			RmTree(d, $"{display}/{Path.GetFileName(d)}", verbose);
+			var shown = $"{display}/{Path.GetFileName(d)}";
+			if (new DirectoryInfo(d).LinkTarget is not null)
+				{
+				if (!RmOne(d, shown, ask, force, tty)) all = false;
+				continue;
+				}
+			if (!RmTree(d, shown, verbose, ask, force, tty)) all = false;
 			}
+		if (ask && !RmAsk($"remove directory '{display}'")) return false;
+		if (!all) return false;   // an entry was kept: the directory stays (GNU: it is not empty)
 		Directory.Delete(p, false);
 		if (verbose) Console.WriteLine($"removed directory '{display}'");
+		return true;
 		}
 
 	private static int Mv(List<string> args)

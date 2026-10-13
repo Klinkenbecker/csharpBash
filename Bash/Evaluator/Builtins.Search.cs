@@ -499,12 +499,13 @@ public sealed partial class Builtins
 				{
 				var p = ShellEnvironment.TranslatePath(f);
 				List<string> lines;
-				try { lines = SedReadFile(p, nullData); }
+				bool mnl;
+				try { lines = SedReadFile(p, nullData, out mnl); }
 				catch (Exception ex) { Console.Error.WriteLine($"sed: can't read {f}: {IoError(ex)}"); rc = 2; continue; }
 				var outSb = new StringBuilder();
 				int code;
 				using (var w = new StringWriter(outSb) { NewLine = "\n" })
-					code = SedRun(prog, lines, w, noAuto, nullData, f);
+					code = SedRun(prog, lines, w, noAuto, nullData, f, mnl);
 				try
 					{
 					if (backupSuffix is not null) File.Copy(p, backupSuffix.Contains('*') ? Path.Combine(Path.GetDirectoryName(p)!, backupSuffix.Replace("*", Path.GetFileName(p))) : p + backupSuffix, true);
@@ -522,9 +523,10 @@ public sealed partial class Builtins
 			foreach (var f in files.Count == 0 ? ["-"] : files)
 				{
 				List<string> lines;
-				try { lines = f == "-" ? SedReadStdin(nullData) : SedReadFile(ShellEnvironment.TranslatePath(f), nullData); }
+				bool mnl;
+				try { lines = f == "-" ? SedReadStdin(nullData, out mnl) : SedReadFile(ShellEnvironment.TranslatePath(f), nullData, out mnl); }
 				catch (Exception ex) { Console.Error.WriteLine($"sed: can't read {f}: {IoError(ex)}"); rc = 2; continue; }
-				int code = SedRun(prog, lines, Console.Out, noAuto, nullData, f);
+				int code = SedRun(prog, lines, Console.Out, noAuto, nullData, f, mnl);
 				if (code != 0) return code;
 				}
 			return rc;
@@ -532,26 +534,29 @@ public sealed partial class Builtins
 		// all files form one stream
 		var all = new List<string>();
 		int frc = 0;
+		bool lastMissing = false;   // only the last file's missing newline shows (GNU)
 		foreach (var f in files)
 			{
-			try { all.AddRange(f == "-" ? SedReadStdin(nullData) : SedReadFile(ShellEnvironment.TranslatePath(f), nullData)); }
+			try { all.AddRange(f == "-" ? SedReadStdin(nullData, out lastMissing) : SedReadFile(ShellEnvironment.TranslatePath(f), nullData, out lastMissing)); }
 			catch (Exception ex) { Console.Error.WriteLine($"sed: can't read {f}: {IoError(ex)}"); frc = 2; }
 			}
-		int r2 = SedRun(prog, all, Console.Out, noAuto, nullData, files.Count > 0 ? files[0] : "-");
+		int r2 = SedRun(prog, all, Console.Out, noAuto, nullData, files.Count > 0 ? files[0] : "-", lastMissing);
 		return r2 != 0 ? r2 : frc;
 		}
 
-	private static List<string> SedReadFile(string p, bool nullData)
+	private static List<string> SedReadFile(string p, bool nullData, out bool missingNl)
 		{
 		var text = ShellEncoding.ReadAllText(p);
-		return SedSplit(text, nullData);
+		return SedSplit(text, nullData, out missingNl);
 		}
 
-	private static List<string> SedReadStdin(bool nullData) => SedSplit(Console.In.ReadToEnd(), nullData);
+	private static List<string> SedReadStdin(bool nullData, out bool missingNl) => SedSplit(Console.In.ReadToEnd(), nullData, out missingNl);
 
-	private static List<string> SedSplit(string text, bool nullData)
+	/// <summary>The input's lines, and whether its last one ended without the separator.</summary>
+	private static List<string> SedSplit(string text, bool nullData, out bool missingNl)
 		{
 		char sep = nullData ? '\0' : '\n';
+		missingNl = text.Length > 0 && text[^1] != sep;
 		var parts = text.Split(sep).ToList();
 		if (parts.Count > 0 && parts[^1].Length == 0) parts.RemoveAt(parts.Count - 1);
 		return parts;
@@ -761,9 +766,20 @@ public sealed partial class Builtins
 		return sb.ToString();
 		}
 
-	private int SedRun(SedProgram prog, List<string> lines, TextWriter output, bool noAuto, bool nullData, string fileName)
+	private int SedRun(SedProgram prog, List<string> lines, TextWriter output, bool noAuto, bool nullData, string fileName, bool missingNl = false)
 		{
 		string term = nullData ? "\0" : "\n";
+		// GNU sed: the last line's pattern space goes out without the newline the input lacked (`printf a | sed
+		// p` is `a\na`, `printf a | sed ''` is `a`); anything written after it gets that newline first. Until
+		// 2026-10-12 a newline was always added, so `sed -i` changed a file that ended without one.
+		bool pending = false;
+		void Out(string s) { if (pending) { output.Write(term); pending = false; } output.Write(s); }
+		int i = 0;                   // index of the current input line (0-based)
+		void PS(string s)
+			{
+			if (missingNl && i >= lines.Count) { Out(s); pending = true; }
+			else Out(s + term);
+			}
 		var writers = new Dictionary<string, TextWriter>(StringComparer.Ordinal);
 		TextWriter WriterFor(string file)
 			{
@@ -778,7 +794,6 @@ public sealed partial class Builtins
 			}
 		foreach (var c in prog.Cmds) { c.InRange = false; }
 		string hold = "";
-		int i = 0;                   // index of the current input line (0-based)
 		int lineNo = 0;
 		int exitCode = 0;
 		var appendQueue = new List<string>();
@@ -812,22 +827,23 @@ public sealed partial class Builtins
 							{
 							int nl = ps!.IndexOf('\n');
 							if (nl < 0) { deleted = true; break; }
+							// like d, no autoprint (the append queue is still flushed); the rest restarts the cycle
 							ps = ps[(nl + 1)..];
-							restartNoRead = true;
+							deleted = restartNoRead = true;
 							break;
 							}
-						case 'p': output.Write(ps + term); pc++; continue;
-						case 'P': { int nl = ps!.IndexOf('\n'); output.Write((nl < 0 ? ps : ps[..nl]) + term); pc++; continue; }
+						case 'p': PS(ps!); pc++; continue;
+						case 'P': { int nl = ps!.IndexOf('\n'); if (nl < 0) PS(ps); else Out(ps[..nl] + term); pc++; continue; }
 						case 'n':
 							{
-							if (!noAuto) output.Write(ps + term);
+							if (!noAuto) PS(ps!);
 							if (i >= lines.Count) { autoprint = false; deleted = true; break; }
 							ps = lines[i]; lineNo = i + 1; i++; isLast = i >= lines.Count;
 							pc++; continue;
 							}
 						case 'N':
 							{
-							if (i >= lines.Count) { if (!noAuto) output.Write(ps + term); autoprint = false; deleted = true; break; }
+							if (i >= lines.Count) { if (!noAuto) PS(ps!); autoprint = false; deleted = true; break; }
 							ps = ps + "\n" + lines[i]; lineNo = i + 1; i++; isLast = i >= lines.Count;
 							pc++; continue;
 							}
@@ -838,7 +854,7 @@ public sealed partial class Builtins
 							if (changed)
 								{
 								substituted = true;
-								if (cmd.SPrint) output.Write(ps + term);
+								if (cmd.SPrint) PS(ps);
 								if (cmd.SWriteFile is not null) WriterFor(cmd.SWriteFile).Write(ps + term);
 								}
 							pc++; continue;
@@ -850,23 +866,23 @@ public sealed partial class Builtins
 							ps = sb.ToString(); pc++; continue;
 							}
 						case 'a': appendQueue.Add(cmd.Text + "\n"); pc++; continue;
-						case 'i': output.Write(cmd.Text + "\n"); pc++; continue;
+						case 'i': Out(cmd.Text + "\n"); pc++; continue;
 						case 'c':
 							{
 							// with a range, print the text once at the end of the range
 							bool endOfRange = cmd.A2 is null || !cmd.InRange || cmd.Negate;
-							if (endOfRange) output.Write(cmd.Text + "\n");
+							if (endOfRange) Out(cmd.Text + "\n");
 							deleted = true; break;
 							}
-						case '=': output.Write(lineNo + "\n"); pc++; continue;
-						case 'l': output.Write(SedVisible(ps!) + "\n"); pc++; continue;
+						case '=': Out(lineNo + "\n"); pc++; continue;
+						case 'l': Out(SedVisible(ps!) + "\n"); pc++; continue;
 						case 'h': hold = ps!; pc++; continue;
 						case 'H': hold = hold + "\n" + ps; pc++; continue;
 						case 'g': ps = hold; pc++; continue;
 						case 'G': ps = ps + "\n" + hold; pc++; continue;
 						case 'x': (ps, hold) = (hold, ps!); pc++; continue;
 						case 'z': ps = ""; pc++; continue;
-						case 'F': output.Write((fileName == "-" ? "-" : fileName) + "\n"); pc++; continue;
+						case 'F': Out((fileName == "-" ? "-" : fileName) + "\n"); pc++; continue;
 						case 'r':
 							{
 							try { appendQueue.Add(ShellEncoding.ReadAllText(ShellEnvironment.TranslatePath(cmd.Text))); } catch { }
@@ -878,8 +894,8 @@ public sealed partial class Builtins
 						case 'T': if (!substituted) { pc = cmd.Text.Length == 0 ? prog.Cmds.Count : cmd.JumpTo; } else { substituted = false; pc++; } continue;
 						case 'q':
 							{
-							if (autoprint) output.Write(ps + term);
-							foreach (var a in appendQueue) output.Write(a);
+							if (autoprint) PS(ps!);
+							foreach (var a in appendQueue) Out(a);
 							return cmd.QCode;
 							}
 						case 'Q': return cmd.QCode;
@@ -887,8 +903,8 @@ public sealed partial class Builtins
 						}
 					break;   // reached only via d/D/c/n-at-eof
 					}
-				if (!deleted && autoprint) output.Write(ps + term);
-				foreach (var a in appendQueue) output.Write(a);
+				if (!deleted && autoprint) PS(ps!);
+				foreach (var a in appendQueue) Out(a);
 				if (restartNoRead)
 					{
 					// D with remaining text: restart the cycle without reading input

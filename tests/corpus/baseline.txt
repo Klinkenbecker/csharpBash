@@ -1,4 +1,4 @@
-# tests/corpus/baseline.txt: corpus files whose bash -n verdict agrees with GNU's. Written by --update-baseline.
+# tests/corpus/baseline.txt: corpus files that agree with GNU (-n corpus). Written by --update-baseline.
 _adb
 _cal
 _chfn
@@ -196,6 +196,7 @@ etherwake
 ether-wake
 evince
 explodepkg
+export
 f77
 f95
 faillog
@@ -254,6 +255,7 @@ gccgo-7
 gccgo-8
 gcj
 gcl
+gdb
 gdbus
 genaliases
 gendiff
@@ -515,6 +517,7 @@ nsupdate
 ntpdate
 oggdec
 op
+openssl
 opera
 optipng
 p4
@@ -645,6 +648,7 @@ radvdump
 ralsh
 rcs
 rcsdiff
+rdesktop
 rdict
 readprofile
 remove_members
@@ -694,6 +698,7 @@ sh
 shellcheck
 sidedoor
 sitecopy
+slackpkg
 slogin
 smartctl
 smbcacls
@@ -727,6 +732,7 @@ swapoff
 swapon
 sync_members
 synclient
+sysbench
 sysctl
 systemctl
 systemd-analyze

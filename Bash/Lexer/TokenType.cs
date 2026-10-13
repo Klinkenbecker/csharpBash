@@ -16,6 +16,8 @@ public enum TokenType
 	PipePipe,         // ||
 	Semicolon,        // ;
 	SemicolonSemicolon, // ;; (case terminator)
+	SemicolonAmpersand, // ;& (case: fall through to the next branch's commands)
+	SemicolonSemicolonAmpersand, // ;;& (case: go on testing the next branches' patterns)
 
 	// Redirects
 	Less,             // <

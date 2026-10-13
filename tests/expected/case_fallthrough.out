@@ -1,0 +1,21 @@
+1
+2
+rc=0
+x
+y
+rc=0
+nomatch rc=0
+fall into empty rc=0
+f1
+f2
+f3
+B
+C
+star
+[in-sub
+fell]
+fa
+fany
+fany
+syntax error near unexpected token `;&'
+`echo a ;& echo b'

@@ -26,6 +26,7 @@ public sealed class Opts
 	private readonly Dictionary<char, string> _values = [];
 	private readonly List<(char opt, string val)> _all = [];
 	private readonly Dictionary<string, string?> _longs = new(StringComparer.Ordinal);
+	private readonly List<(string name, string? val)> _longAll = [];   // every long option in order (a repeated one keeps each value)
 	private readonly List<(char opt, string? val)> _sequence = [];
 	public List<string> Operands { get; } = [];
 	/// <summary>Every short option (and long option aliased to one) in command-line order, with its
@@ -39,6 +40,8 @@ public sealed class Opts
 	public IEnumerable<string> All(char c) => _all.Where(p => p.opt == c).Select(p => p.val);
 	public bool HasLong(string name) => _longs.ContainsKey(name);
 	public string? GetLong(string name) => _longs.TryGetValue(name, out var v) ? v : null;
+	/// <summary>Every value of a repeated long option, in order (`diff --label A --label B`).</summary>
+	public IEnumerable<string> AllLong(string name) => _longAll.Where(p => p.name == name && p.val is not null).Select(p => p.val!);
 
 	public int GetInt(char c, int def)
 		{
@@ -108,6 +111,7 @@ public sealed class Opts
 					val = args[++i];
 					}
 				o._longs[name] = val;
+				o._longAll.Add((name, val));
 				if (spec.alias is char ac)
 					{
 					if (spec.value) { o._values[ac] = val!; o._all.Add((ac, val!)); }

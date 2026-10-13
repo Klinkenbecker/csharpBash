@@ -18,6 +18,11 @@ public sealed class Lexer
 	/// emit it as a QUOTED part. U+FDD0 is a Unicode noncharacter: it never occurs in text.</summary>
 	public const char EscapeMark = '﷐';
 
+	/// <summary>Precedes the `(` of an array literal the parser folded into a declaration builtin's argument
+	/// (`local a=(x y)` becomes `a=` + mark + `(x y)`), so the builtin can tell it from a quoted value that
+	/// merely looks like one (`local s="(x y)"` is a string in bash). U+FDD1, a noncharacter (2026-10-12).</summary>
+	public const char ArrayLiteralMark = '﷑';
+
 	private readonly string _src;
 	private int _pos;
 	private int _line;
@@ -213,7 +218,14 @@ public sealed class Lexer
 				return Make(TokenType.Ampersand, "&", startLine, startCol);
 
 			case ';':
-				if (Peek() == ';') { Advance(); return Make(TokenType.SemicolonSemicolon,  ";;",  startLine, startCol); }
+				// `;&` and `;;&` are tokens wherever they appear, as in bash (outside `case` a syntax error)
+				if (Peek() == ';')
+					{
+					Advance();
+					if (Peek() == '&') { Advance(); return Make(TokenType.SemicolonSemicolonAmpersand, ";;&", startLine, startCol); }
+					return Make(TokenType.SemicolonSemicolon,  ";;",  startLine, startCol);
+					}
+				if (Peek() == '&') { Advance(); return Make(TokenType.SemicolonAmpersand, ";&", startLine, startCol); }
 				return Make(TokenType.Semicolon, ";", startLine, startCol);
 
 			case '<':

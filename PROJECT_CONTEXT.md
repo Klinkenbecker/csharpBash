@@ -24,11 +24,11 @@
 > Then "go" (the open items): `-t -k -p` BUILT rev 216. "Build": DEBUG and RETURN traps, `$BASH_COMMAND`,
 > `-T`, `declare -ft`, trap `$LINENO` BUILT rev 217 (cost within noise, measured). "yup": rev 217
 > DEPLOYED and the six sessions told (2026-10-11). Then "go next": **IN FLIGHT: the OPEN DEFECTS, in
-> order** (`$0` FIXED rev 219; PATH lookup FIXED rev 220; a `case` inside `$( )` FIXED rev 221; `kill -l`/`trap -l` table FIXED rev 222; dir stack `+N`/`-N` FIXED rev 223; `jobs -x` FIXED rev 224; `%name`/`%?text` jobspecs FIXED rev 225; `a && b &` backgrounding only `b` FIXED rev 226 (in deployed rev 217 too); IFS splitting FIXED rev 228; open: `compgen` missing (daq-d1, scope to settle), compound job text (AWAITING item 0); then git's credential prompt on `/dev/tty` (inferred, untraced)). Revs 218-233 DEPLOYED 2026-10-12 (rev 233). Deploy only on "deploy and notify". The cold-resume briefing
+> order** (`$0` FIXED rev 219; PATH lookup FIXED rev 220; a `case` inside `$( )` FIXED rev 221; `kill -l`/`trap -l` table FIXED rev 222; dir stack `+N`/`-N` FIXED rev 223; `jobs -x` FIXED rev 224; `%name`/`%?text` jobspecs FIXED rev 225; `a && b &` backgrounding only `b` FIXED rev 226 (in deployed rev 217 too); IFS splitting FIXED rev 228; case ;& ;;& FIXED rev 238; PRINTER P1-P5 DONE revs 239-243 (declare -f, type, jobs as bash; corpus 845/912); diff -u --label FIXED rev 244; RAISED: arrays are not local (serious, variable model); next per GREENLIT: compgen; then git's credential prompt on `/dev/tty` (inferred, untraced)). Revs 218-252 DEPLOYED 2026-10-12 (rev 252). **Revs 254-257 DEPLOYED 2026-10-13 (rev 257: awk getline, MSYS arguments, sed, rm incl. the junction DATA LOSS fix; rollback `dist/Bash.exe.rev252`; six sessions told).** Then "publish" (benchmark of rev 257 + doc review first). **GREENLIT 2026-10-13 ("2/ yes"): `cmd //c` next, before `strings`** (measured rule in the open-defects list). **AWAITING: the Git Bash guard in deploy.sh/publish.sh** (DECISIONS 2026-10-13 "DEPLOYED: rev 257"). Deploy only on "deploy and notify". The cold-resume briefing
 > still comes first.
 >
 > **TRUE STATE (verified 2026-10-11):**
-> - **DEPLOYED 2026-10-12: `dist/Bash.exe` is rev 233** (`1.0.0+hg.2a0678c462c5 233`), by `tools/deploy.sh`: revs 218-233 (the open defects, IFS, `a && b &`, the contract tools); suite 123/123 on the AOT binary both modes; live-verified; rollback `dist/Bash.exe.rev217`; six sessions told. Before it, rev 217 (`1.0.0+hg.64cd033c7de6 217`): revs 214-217 (`-t -k -p`, DEBUG/RETURN traps, `$BASH_COMMAND`, `-T`, `declare -ft`); suite 114/114 on the AOT binary both modes; live check (ERR at 3: false, DEBUG, -t); rollback `dist/Bash.exe.rev213`; six sessions told. Before it, rev 213 (`1.0.0+hg.40a4296afbd6 213`): the
+> - **DEPLOYED 2026-10-12 (later): `dist/Bash.exe` is rev 252** (`1.0.0+hg.e7a1f2717689 252`, by `tools/deploy.sh`: printer, case ;& ;;&, declaration arrays, diff --label, VARIABLE SCOPE; rollback `dist/Bash.exe.rev233`; six sessions told). **PUBLISHED 2026-10-12: GitHub main = git 02f95bc = hg rev 235** (by `tools/publish.sh`). Earlier the same day: **`dist/Bash.exe` was rev 233** (`1.0.0+hg.2a0678c462c5 233`), by `tools/deploy.sh`: revs 218-233 (the open defects, IFS, `a && b &`, the contract tools); suite 123/123 on the AOT binary both modes; live-verified; rollback `dist/Bash.exe.rev217`; six sessions told. Before it, rev 217 (`1.0.0+hg.64cd033c7de6 217`): revs 214-217 (`-t -k -p`, DEBUG/RETURN traps, `$BASH_COMMAND`, `-T`, `declare -ft`); suite 114/114 on the AOT binary both modes; live check (ERR at 3: false, DEBUG, -t); rollback `dist/Bash.exe.rev213`; six sessions told. Before it, rev 213 (`1.0.0+hg.40a4296afbd6 213`): the
 >   `BASH_COREUTILS=external` fix over rev 209. Suite 112/112 on that AOT binary, both modes; live
 >   check (rev 213, `=external awk` is Git's GNU Awk, the shell survives). Rollback
 >   `dist/Bash.exe.rev209`. One-fix notice to the six sessions (msp430-a2: its caution lifted).
@@ -87,8 +87,36 @@
 >   fixed in rev 146, deployed in rev 150) → the OPEN DEFECTS below, one at a time on the architect's go.
 > - Serial I/O (item 4: COMn as a device file plus `stty`; 55 calls, all MSP430): to discuss.
 >
+> **GREENLIT 2026-10-12 ("Yes"): the PRINTER plan, then COMPGEN, in that order** (DECISIONS 2026-10-12
+> "RULING: Git Bash is a reference only as far as Claude is concerned" and the plan entry). Printer:
+> P1 measure bash 5.1's format (rules + probes into DECISIONS); P2 `CommandPrinter` from the AST, words as
+> written (case `command_printing` byte-identical to GNU); P3 wire into `declare -f`, `type`, `jobs`
+> (compound jobs as bash; `eval "$(declare -f f)"` round-trips); P4 `run-n.sh` corpus mode comparing
+> `declare -f` of the 945 corpus functions with GNU (ratchet; every difference listed with its cause);
+> P5 no regression. Do NOT derive: a change to `$BASH_COMMAND` for compound commands (raise it).
+> compgen: generating actions + -G -W -X -P -S + word filter + status; complete/compopt/-F/-C/-o/-u/-g/
+> hostname/service/binding answer with the NotAvailable notice; `compgen -c` names follow Git Bash
+> (Windows-specific form, per the ruling). Battery reference move (GNU for non-Windows probes): proposed,
+> after these two, NOT greenlit.
+>
 > **AWAITING THE ARCHITECT (do NOT derive; Claude's positions are proposals, not rulings):**
-> 0. (2026-10-12) **Command re-printing (bash's print_cmd.c).** C#Bash has no re-printer: `jobs` shows a
+> V. (2026-10-12) **VARIABLE-SCOPE PLAN: DONE V1-V4 (revs 246-250), cost accepted ("Yes to both"); a PERFORMANCE REVIEW is expected "shortly", the architect's to call** (the defect in OPEN DEFECTS, "MOST SERIOUS"):
+>    V1 measure: `tests/cases/variable_scope.sh` from the 29 probe cases plus export/-p, assoc, subshells;
+>    expected = GNU; criterion: written, and C#Bash's failing-line count recorded.
+>    V2 model: in ShellEnvironment each frame maps a name to one variable (scalar, indexed or associative,
+>    with its readonly/integer/exported attributes, or declared-unset); lookups innermost-out; an
+>    assignment to a name no frame has goes to the GLOBAL frame; local / declare in a function to the
+>    current frame; declare -g to the global; unset as bash (in the current scope it stays local and unset;
+>    a callee unsetting a caller's local uncovers the outer one); public API kept; FUNCNAME's lazy refresh
+>    and subshell snapshots kept. Criterion: `variable_scope` byte-identical to GNU, suite green both modes.
+>    V3 callers: declare/local/typeset/export/readonly/read/mapfile/printf -v/getopts/for/arith/let/${:=}
+>    through the model's rules (`local -i` evaluates, `local -r`/`-x` end with the function). Criterion: the
+>    same, plus battery, -n corpus and printer corpus without regression.
+>    V4 performance: `compare3.sh --build`, every row within noise (variable access is on every row's path);
+>    a row beyond noise is measured in-process and brought to the architect before going on.
+>    Do NOT derive: namerefs (`local -n`, not implemented: out of scope); shopts localvar_inherit /
+>    localvar_unset (out of scope); deploying after V4 (the architect's word).
+> 0. (2026-10-12; GREENLIT above, kept for the record) **Command re-printing (bash's print_cmd.c).** C#Bash has no re-printer: `jobs` shows a
 >    compound job as its node type (`BraceGroup`), and `declare -f` / `type` print a function as written
 >    where bash re-prints it (one command per line, 4-space indent; measured). Fork: (a) job text from
 >    the source span (a few lines; exact for one-line commands in bash's own style), or (b) port
@@ -309,6 +337,45 @@
 >   DECISIONS "`a && b &` backgrounded only `b`".)
 > - (FIXED rev 228, not deployed: IFS='' still split; non-white IFS lost empty fields; `$*` joined with a
 >   space. Found verifying daq-d1's workaround. DECISIONS "field splitting and `$*` ignored what IFS held".)
+> - **Found 2026-10-12 (measured, every build incl. deployed rev 233), MOST SERIOUS: the variable model
+>   does not follow bash's scoping.** (1) A NEW variable created in a function is lost on return
+>   (`f() { x=1; }; f; echo $x` prints nothing; also read, for, printf -v, getopts, (( )), let, ${x:=}, +=):
+>   `Set` writes an undeclared name into the innermost frame, bash into the global scope. (2) Arrays are not
+>   local at all (shell-wide `_arrays`/`_assocs`). (3) Attributes are shell-wide: `local -r` stays readonly
+>   after return (the script then aborts on a later assignment), `local -i` does no arithmetic. The
+>   architect: "Yes, go" (2026-10-12) = plan this fix next, ratify before building. Probes:
+>   scratchpad locarr/probe.sh, probe2.sh (29 cases, GNU vs C#Bash). PLAN below, AWAITING ratification.
+> - (FIXED rev 244, not deployed, adc-framework-d8: `diff -u` ignored `--label`. DECISIONS "`diff -u` ignored")
+> - (FIXED rev 254, not deployed, msp430-a2 DATA LOSS: awk with `getline` went to Git's gawk and lost CR. DECISIONS "awk program containing `getline`".) WAS: an awk program that merely
+>   CONTAINS main-input `getline` strips CR from every line (a CRLF file committed as LF). Code: the
+>   in-process awk refuses main-input getline at parse time (Builtins.Awk.cs:977) and the program falls
+>   through to Git's gawk, which strips CR in text mode (msp430-a2 MEASURED: `gawk '{print}'` 0 CR,
+>   `gawk -v BINMODE=3` 3 CR). Fix: implement `getline` / `getline var` on the main input; pass
+>   BINMODE=3 when awk does fall through to gawk. NEXT after V4.
+> - QUEUED 2026-10-12 (the architect: "We just had a second session try to use the strings utility - add it
+>   to the queue?"): `strings` (binutils). Deferred 2026-10-10 until a second session needed it; that
+>   condition is now met. Order: after the two msp430-a2 data-loss fixes, before compgen.
+> - (FIXED rev 255, not deployed, msp430-a2: arguments to MSYS programs re-parsed. DECISIONS "arguments to MSYS programs".) WAS: an argument with braces and no
+>   spaces loses them when C#Bash runs an MSYS program (`gawk '{print}'` arrives as `print`):
+>   ChildLauncher.AppendArgument quotes only on whitespace or `"`, and the MSYS runtime globs/brace-
+>   expands an unquoted word (a `'` is likely mangled too). Fix: double-quote arguments with `{ } * ? [ '`.
+>   NEXT after V4, with the awk fix.
+> - (FIXED rev 257, not deployed, adc-framework-d8: `rm` refused a ReadOnly file; `-i`/`-I` never asked;
+>   DATA LOSS in every deployed build: `rm -r` on a junction or directory symlink deleted the TARGET's
+>   contents. DECISIONS "rm refused a read-only file". Reply to adc-framework-d8 sent with the fix.)
+> - (FIXED rev 256, not deployed, found testing rm: sed added a missing final newline; `D` autoprinted, so
+>   `N;P;D` doubled lines in every deployed build. DECISIONS "sed added a missing final newline".)
+> - Found 2026-10-12 (measured, RAISED, not fixed): `cmd //c echo hi` starts an INTERACTIVE cmd under C#Bash
+>   (cmd receives `//c`; banner and prompt, then waits on stdin; a Claude Code call would hang to its
+>   timeout); Git Bash prints `hi` (the MSYS runtime turns a leading `//x` into `/x` for a native program).
+>   A common idiom of Claude's on Windows. GREENLIT 2026-10-13 ("2/ yes"): fix next, before `strings`.
+>   MEASURED Git Bash rule (native program, `py` printing argv), to build exactly: an argument STARTING
+>   `//` loses one leading `/` and its `\` become `/` (`//c`→`/c`, `//a\b\c`→`/a/b/c`, `///x`→`//x`,
+>   `//`→`/`, `//c=x`→`/c=x`); exactly two slashes with a later `/` is UNC, kept (`//srv/share/f`,
+>   `//c/x`; `//a\b/c`→`//a/b/c`); any of `* ? [ " '` leaves it alone; `MSYS_NO_PATHCONV` /
+>   `MSYS2_ARG_CONV_EXCL` switch it off. Mid-argument (`-o//x`, Git Bash `-o/x`) stays untouched per
+>   DECISIONS 2026-10-10 "never inside an argument". Consequence stated to the architect: `//host\share`
+>   becomes `/host/share`, as in Git Bash. Probes: scratchpad slash.sh, slash2.sh, slash3.sh.
 > - Reported 2026-10-12 by daq-d1 (verified): `compgen` is not a builtin (nor `complete`, `compopt`), in
 >   every build. daq-d1 runs on a verified workaround (`for f in "$1"/$2; do [ -e "$f" ] …`), needs
 >   nothing more. Scope to settle before building (AWAITING THE ARCHITECT): compgen's generating actions
@@ -318,8 +385,8 @@
 >   that registers completions (`complete -F`), which only an interactive shell uses.
 > - Found 2026-10-12 (measured, not raised): bash keeps finished jobs in its table until it reports them
 >   (`jobs` lists them as Done, job numbers keep counting); C#Bash's `wait` removes them.
-> - Found 2026-10-12 (measured): a compound background job's text is its node type (`jobs` shows
->   `BraceGroup`, `Subshell`, `ForCommand`; bash re-prints the command).
+> - (FIXED rev 241, not deployed: a compound job's text was its node type; `jobs` now prints as bash.
+>   PRINTER P2 rev 240: `declare -f` / `type` as bash. DECISIONS "PRINTER P2", "PRINTER P3".)
 > - Inferred, not traced (2026-09-15): git's credential prompt runs through C#Bash and fails on `/dev/tty`.
 > - (FIXED and DEPLOYED rev 213: `BASH_COREUTILS=external` killed the shell with a stack overflow.)
 >

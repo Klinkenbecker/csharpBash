@@ -1,0 +1,23 @@
+[{print}]
+[*.txt]
+[it's]
+[[ab]c]
+[a?c]
+[{a,b}]
+[x{}y]
+[~]
+[plain]
+[a\b]
+[q"q]
+[x\"y]
+[end\]
+[\\srv\share]
+[C:\Program Files\x]
+[tab	t]
+[]
+[$HOME]
+[é{x}]
+[a\\b]
+gawk: l1
+sed: X
+find: ./a.txt ./b.txt 

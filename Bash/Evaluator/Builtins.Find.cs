@@ -403,6 +403,11 @@ public sealed partial class Builtins
 			NewFile = o.Has('N'), Text = o.Has('a'), StripCr = o.HasLong("strip-trailing-cr"), Excludes = o.All('x').ToList(),
 			IgnoreTrailingSpace = o.Has('Z'),
 			};
+		// --label names the old file (first) and the new one (second) in the headers, with no timestamp (GNU);
+		// accepted and ignored until 2026-10-12, so a patch made with it named the real files
+		var labels = o.AllLong("label").ToList();
+		if (labels.Count > 0) opt.LabelA = labels[0];
+		if (labels.Count > 1) opt.LabelB = labels[1];
 		// `-` is standard input (GNU). It was taken as a path ("diff: -: No such file or directory");
 		// now it is read once into a temp file that is diffed in its place, still labelled `-`.
 		string a = o.Operands[0], b = o.Operands[1];
@@ -425,6 +430,7 @@ public sealed partial class Builtins
 	private sealed class DiffOptions
 		{
 		public bool Unified, Brief, ReportIdentical, IgnoreCase, IgnoreAllSpace, IgnoreSpaceChange, IgnoreBlankLines, Recursive, NewFile, Text, StripCr, IgnoreTrailingSpace;
+		public string? LabelA, LabelB;
 		public int Context = 3;
 		public List<string> Excludes = [];
 		}
@@ -597,8 +603,8 @@ public sealed partial class Builtins
 		string Stamp(string p) => File.Exists(p)
 			? File.GetLastWriteTime(p).ToString("yyyy-MM-dd HH:mm:ss.fffffff00 ", System.Globalization.CultureInfo.InvariantCulture) + File.GetLastWriteTime(p).ToString("zzz").Replace(":", "")
 			: "1970-01-01 00:00:00.000000000 +0000";
-		Console.WriteLine($"--- {a}\t{Stamp(pa)}");
-		Console.WriteLine($"+++ {b}\t{Stamp(pb)}");
+		Console.WriteLine(opt.LabelA is { } lblA ? $"--- {lblA}" : $"--- {a}\t{Stamp(pa)}");
+		Console.WriteLine(opt.LabelB is { } lblB ? $"+++ {lblB}" : $"+++ {b}\t{Stamp(pb)}");
 		int ctx = opt.Context;
 		int idx = 0;
 		while (idx < ops.Count)

@@ -22,6 +22,8 @@
 | `Lexer/LexException.cs` | Lex error; `Incomplete` flag drives REPL continuation. |
 | `Parser/Parser.cs` | Recursive-descent parser. |
 | `Parser/Nodes.cs` | AST record types (`Node`, `WordPart`, `CondExpr` hierarchies). |
+| `Parser/CommandText.cs` | A simple command's text as bash prints it, from its source span (`$BASH_COMMAND`, the printer's simple commands). |
+| `Parser/CommandPrinter.cs` | bash's command printer (print_cmd.c) over the AST: `declare -f`, `type`, `jobs`. |
 | `Parser/ParseException.cs` | Parse error: `Incomplete` (REPL continuation), the token it failed at (`At`), and how bash words it (`Missing` closer, `[[ ]]` form, `Unsupported`, `Status`). |
 | `Parser/SyntaxMessage.cs` | bash's report of a syntax error (parse.y `report_syntax_error`, `parser_error`, `cond_error`): "syntax error near unexpected token" with the source line, "syntax error: unexpected end of file", "unexpected EOF while looking for matching" a closer, and the `[[ ]]` forms. |
 | `Evaluator/Evaluator.cs` | Tree-walking executor: dispatch, pipelines, redirects (device files via `DeviceRedirect`; `N>&1` copies), external launch (`CurrentStdin`: a file the shell reads is shared with the child at its offset), jobs (`wait -n`, `jobs` in bash's format), traps, interrupts; the call-stack frames behind FUNCNAME / BASH_SOURCE / BASH_LINENO; bash's error prefix (`ErrorPrefix`, `SyntaxPrefix`) and the line base that numbers `eval` and `$( )` text from the caller's line. |
@@ -45,7 +47,7 @@
 | `Evaluator/Builtins.Jq.cs`, `JqParser.cs`, `JqInterp.cs`, `JqJson.cs` | The in-process `jq` subset (jq 1.6 behaviour): option handling and inputs; the filter lexer/parser; the generator interpreter with path-based assignment; ordered JSON values and the reader/writer. Outside the subset: a PATH jq, or a loud refusal. |
 | `Evaluator/Glob.cs` | Shell pattern → regex (`*` `?` `[…]` classes), `Match`, and the pathname-expansion walker (`dotglob`/`nullglob`/`nocaseglob`/`globstar`). |
 | `Evaluator/ConsoleMux.cs` | `ConsoleMux` (per-thread console slots + `Capture`/`Apply`), `PipeBuffer` (managed pipe with back-pressure, EOF and `BrokenPipeException`), `ChildJobs` (kill-on-close job object), `HiddenConsole` (a console-less shell -- Claude Code's Bash tool -- starts children with `CreateNoWindow` and attaches to the first one's hidden console, so no child ever opens a visible window; `StartInherited` starts a child with NO stream redirected through `CreateProcessW` + `STARTF_USESTDHANDLES` on the shell's own three std handles, because `Process.Start` would hand it its new console's handles and its output would be lost). |
-| `Evaluator/ShellEnvironment.cs` | Variables, arrays, exports, readonly/integer attributes, special parameters, scope/positional stack, snapshot/restore (subshells), `TranslatePath` (inbound: MSYS `/c/…`, `/tmp`, `~` → forward-slash Windows form) and `ToShellPath`/`ShellCwd`/`FullPath` (outbound: the same form, so the two directions agree), PATH normalisation and the Git-tools augmentation. |
+| `Evaluator/ShellEnvironment.cs` | Variables (`Var`: scalar or array with its attributes, in scope frames looked up innermost-out: bash's dynamic scoping), exports, special parameters, scope/positional stack, `NativeArgument` (a Windows program's MSYS-form arguments), snapshot/restore (subshells), `TranslatePath` (inbound: MSYS `/c/…`, `/tmp`, `~` → forward-slash Windows form) and `ToShellPath`/`ShellCwd`/`FullPath` (outbound: the same form, so the two directions agree), PATH normalisation and the Git-tools augmentation. |
 | `Evaluator/ShellEncoding.cs` | The shell's single encoding: UTF-8 with surrogateescape (an undecodable byte ↔ the lone surrogate U+DC00+byte), so bytes that are not text survive variables, `$( )`, pipes and files. `ByteChar` is what the `\xNN`/`\NNN` escape handlers emit; `ReadAllText`/`ReadAllLines` replace the `File.*` equivalents, which silently ignore their encoding argument on a file that starts with a BOM. Encode and decode are both overridden because an `EncoderFallback` cannot emit raw bytes. **Lines are LF-only everywhere** (a CR is data, as in GNU): `LfReader` is the shell's text reader -- over a raw stream it decodes with ONE read per fill (a `StreamReader` asked for a block keeps reading until full, which stalled pipeline stages), and its `ReadLine` is a vectorised LF scan. Its decoder is `CarryDecoder`, which carries a character cut by a block's end into the next block (Encoding's default decoder is stateless, so a character across byte 4096 became two raw bytes). Every stdin the shell installs is an `LfReader` (pipeline stages, `< file`, `<&n`, a redirected process stdin), so all readers of a stdin share one buffer and none reads past another; tools open their files through one too. `ShellEncoding.ReadLine`/`Lines`/`LineReaderFor` are the entry points; never call `TextReader.ReadLine`, which also ends a line at a lone CR. |
 | `Evaluator/ShellOptions.cs` | `set` flags (`-e/-u/-x/-n/-f/-v/-C/-a/-o …`), the `shopt` set, invocation facts, `$-`. |
 | `Evaluator/BackgroundJob.cs` | Background-job record; `Finished` wakes `wait -n`. |
@@ -117,9 +119,11 @@ Raises `LexException(Incomplete)` at EOF mid-construct.
 **`${…}` parameter expansion** (its `Raw` is the interior); literal `{a,b}` brace expansion is
 performed later in `WordExpander`, not as this node.
 
-P1 additions: every `Node` carries `Line` (for `$LINENO`); `FunctionDef.Source` keeps the
-definition's verbatim text (for `declare -f`), sliced from the source the parser was given
-(`Parser(tokens, source)`); `ArithmeticCommand` (`(( ))`) and `ArithForCommand` (`for ((;;))`)
+P1 additions: every `Node` carries `Line` (for `$LINENO`) and a `Span` into the source the parser
+was given (`Parser(tokens, source)`), and every `Word` a `RawSpan` (its text as written): from these
+`CommandText` renders a simple command (`$BASH_COMMAND`) and `CommandPrinter` lays out functions and
+compound commands as bash's print_cmd.c does (`declare -f`, `type`, `jobs`; until 2026-10-12 a
+function's verbatim source text was printed); `ArithmeticCommand` (`(( ))`) and `ArithForCommand` (`for ((;;))`)
 come from the lexer's `ArithCommand` token; `ArrayCompoundAssign.Append` is `arr+=(…)`; an
 assignment name ending in `+` is `var+=value`. A heredoc's `Redirect.Target` is the **body**
 (bound by `TryParseRedirect`, which pulls the `HeredocBody` token out of the stream);

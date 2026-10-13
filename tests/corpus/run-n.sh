@@ -24,6 +24,10 @@
 #     reported and folded in with --update-baseline.
 #   * --update-manifest re-records the corpus and GNU's verdicts: changing the corpus is a decision
 #     recorded in DECISIONS.md, never a routine step.
+#   * --printer (2026-10-12, the printer plan's P4) compares, instead of `bash -n`, what `declare -f` prints
+#     after each file is sourced (`bash --norc -c 'source FILE; declare -f'`), GNU's measured live in WSL;
+#     a file AGREES when the two outputs are byte-identical; printer-baseline.txt is its ratchet; the two
+#     outputs of every file are kept in tests/corpus/printer/{gnu,cs} (ignored) for the differences.
 # Every run writes its per-file verdicts to tests/corpus/last-run.txt (ignored).
 set -u
 case "${BASH_VERSION:-}" in *koliada*) echo "run-n: run me under Git Bash, not C#Bash (see the header)" >&2; exit 2 ;; esac
@@ -32,14 +36,15 @@ root="$(cd "$here/../.." && pwd)"
 SRC=/usr/share/bash-completion/completions
 files="$here/files"; manifest="$here/manifest.txt"; baseline="$here/baseline.txt"; last="$here/last-run.txt"
 
-usage() { echo "usage: tests/corpus/run-n.sh [--no-build] [--cs <exe>] [--update-baseline] [--update-manifest]" >&2; exit 2; }
-build=1; cs="$root/Bash/bin/Release/net8.0/Bash.exe"; upd_base=0; upd_man=0
+usage() { echo "usage: tests/corpus/run-n.sh [--printer] [--no-build] [--cs <exe>] [--update-baseline] [--update-manifest]" >&2; exit 2; }
+build=1; cs="$root/Bash/bin/Release/net8.0/Bash.exe"; upd_base=0; upd_man=0; printer=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) build=0; shift ;;
     --cs) [ $# -ge 2 ] || usage; cs="$2"; build=0; shift 2 ;;
     --update-baseline) upd_base=1; shift ;;
     --update-manifest) upd_man=1; shift ;;
+    --printer) printer=1; baseline="$here/printer-baseline.txt"; shift ;;
     *) usage ;;
   esac
 done
@@ -84,21 +89,36 @@ if [ "$want" != "$now" ]; then
   exit 2
 fi
 
-# ── C#Bash's verdicts ─────────────────────────────────────────────────────────
 : > "$last"
 agree=0; total=0; agreeing=()
-while read -r sha g name; do
-  "$cs" -n "$files/$name" > /dev/null 2>&1 < /dev/null; c=$?
-  total=$((total + 1))
-  if [ $(( g == 0 )) = $(( c == 0 )) ]; then agree=$((agree + 1)); agreeing+=("$name"); v=agree; else v=DIFFER; fi
-  printf '%s gnu=%s cs=%s %s\n' "$v" "$g" "$c" "$name" >> "$last"
-done <<< "$want"
+if [ $printer = 0 ]; then
+  # ── C#Bash's `bash -n` verdicts ─────────────────────────────────────────────
+  while read -r sha g name; do
+    "$cs" -n "$files/$name" > /dev/null 2>&1 < /dev/null; c=$?
+    total=$((total + 1))
+    if [ $(( g == 0 )) = $(( c == 0 )) ]; then agree=$((agree + 1)); agreeing+=("$name"); v=agree; else v=DIFFER; fi
+    printf '%s gnu=%s cs=%s %s\n' "$v" "$g" "$c" "$name" >> "$last"
+  done <<< "$want"
+  what="-n corpus"
+else
+  # ── `declare -f` after sourcing each file: GNU in one WSL bash, then C#Bash ────
+  pdir="$here/printer"; rm -rf "$pdir" && mkdir -p "$pdir/gnu" "$pdir/cs"
+  wsl bash -c 'cd "$1" && for f in *; do timeout 20 bash --norc -c "source \"./\$1\" >/dev/null 2>&1; declare -f" _ "$f" > "$2/$f" 2>/dev/null < /dev/null; done' \
+    _ "$SRC" "/mnt$pdir/gnu" || { echo "run-n: GNU's declare -f run in WSL failed" >&2; exit 2; }
+  while read -r sha g name; do
+    timeout 20 "$cs" --norc -c 'source "$1" >/dev/null 2>&1; declare -f' _ "$files/$name" > "$pdir/cs/$name" 2>/dev/null < /dev/null
+    total=$((total + 1))
+    if cmp -s "$pdir/gnu/$name" "$pdir/cs/$name"; then agree=$((agree + 1)); agreeing+=("$name"); v=agree; else v=DIFFER; fi
+    printf '%s %s\n' "$v" "$name" >> "$last"
+  done <<< "$want"
+  what="printer corpus"
+fi
 
 echo "candidate : $cs"
 "$cs" --version 2>/dev/null | tail -1 | sed 's/^/            /'
 echo "reference : GNU bash $gnu_ver (WSL)"
 echo "corpus    : $total files from WSL $SRC, as manifest.txt"
-echo "-n corpus : $agree of $total agree with GNU"
+echo "$what : $agree of $total agree with GNU"
 
 # ── the ratchet ───────────────────────────────────────────────────────────────
 rc=0
@@ -113,7 +133,7 @@ elif [ $upd_base = 0 ]; then
   echo "run-n: no baseline yet; record one with --update-baseline" >&2; rc=2
 fi
 if [ $upd_base = 1 ]; then
-  { echo "# tests/corpus/baseline.txt: corpus files whose bash -n verdict agrees with GNU's. Written by --update-baseline."
+  { echo "# tests/corpus/$(basename "$baseline"): corpus files that agree with GNU ($what). Written by --update-baseline."
     printf '%s\n' "${agreeing[@]}" | sort; } > "$baseline"
   echo "baseline rewritten: $agree files"; rc=0
 fi

@@ -429,14 +429,14 @@ public sealed class Parser
 						throw new ParseException("unexpected token in an array literal", Peek().Line, Peek().Column) { At = Peek(), Status = 1 };
 					Advance();
 					while (true) { var tr = TryParseRedirect(); if (tr is null) break; redirects.Add(tr); }
-					return new ArrayCompoundAssign(acName!, values, redirects) { Append = acAppend, Line = line };
+					return new ArrayCompoundAssign(acName!, values, redirects) { Append = acAppend, Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
 					}
 
 				// arr[n]=val — indexed element assignment
 				if (name is null && args.Count == 0 && IsArrayElementAssign(word, out var aeName, out var aeIdx, out var aeVal))
 					{
 					while (true) { var tr = TryParseRedirect(); if (tr is null) break; redirects.Add(tr); }
-					return new ArrayElementAssign(aeName!, aeIdx!, aeVal!, redirects);
+					return new ArrayElementAssign(aeName!, aeIdx!, aeVal!, redirects) { Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
 					}
 
 				// NAME=VALUE scalar assignment before the command name
@@ -453,7 +453,7 @@ public sealed class Parser
 				    && word.Parts is [LiteralPart wl] && wl.Value.EndsWith('=')
 				    && Peek().Type == TokenType.LParen && !Peek().HasLeadingSpace)
 					{
-					args.Add(Word.Literal(wl.Value + CollectParenText()));
+					args.Add(Word.Literal(wl.Value + Lexer.Lexer.ArrayLiteralMark + CollectParenText()));
 					continue;
 					}
 
@@ -526,7 +526,10 @@ public sealed class Parser
 		while (!IsEof() && depth > 0)
 			{
 			var t = Peek();
-			if (t.Type == TokenType.LParen) depth++;
+			// `$(`, `<(`, `>(` open a parenthesis too (closed by a `)` token); until 2026-10-12 only `(` counted, so
+			// `local p=($(cmd))` ended the literal at the substitution's `)`: a syntax error
+			if (t.Type is TokenType.LParen or TokenType.DollarLParen or TokenType.LessLParen or TokenType.GreaterLParen) depth++;
+			else if (t.Type == TokenType.DollarDollarLParen) depth += 2;
 			else if (t.Type == TokenType.RParen) { depth--; if (depth == 0) { last = Advance(); break; } }
 			var tok = Advance();
 			if (tok.HasLeadingSpace && sb.Length > 1) sb.Append(' ');
@@ -871,15 +874,26 @@ public sealed class Parser
 		SkipNewlines();
 
 		Node? body = null;
-		if (!PeekWord("esac") && Peek().Type != TokenType.SemicolonSemicolon)
+		if (!PeekWord("esac") && !IsCaseTerminator(Peek().Type))
 			body = ParseList();
 
 		SkipSeparators();
-		if (Peek().Type == TokenType.SemicolonSemicolon)
-			Advance();
+		var term = CaseTerminator.Break;
+		if (IsCaseTerminator(Peek().Type))
+			{
+			term = Advance().Type switch
+				{
+				TokenType.SemicolonAmpersand          => CaseTerminator.FallThrough,
+				TokenType.SemicolonSemicolonAmpersand => CaseTerminator.TestNext,
+				_                                     => CaseTerminator.Break,
+				};
+			}
 
-		return new CaseItem(patterns, body);
+		return new CaseItem(patterns, body) { Terminator = term };
 		}
+
+	private static bool IsCaseTerminator(TokenType t) =>
+		t is TokenType.SemicolonSemicolon or TokenType.SemicolonAmpersand or TokenType.SemicolonSemicolonAmpersand;
 
 	// ── [[ ]] conditional expression ──────────────────────────────────────────
 
@@ -970,7 +984,7 @@ public sealed class Parser
 			SkipNewlines();
 			if (Peek().Type != TokenType.RParen) throw CondError($"unexpected token `{Found()}', expected `)'");
 			Advance();
-			return inner;
+			return new CondGroup(inner);   // kept for the printer: bash prints the parentheses written
 			}
 
 		// unary: one of bash's test operators, whose operand must be a word (`[[ -f ]]` is an error;
@@ -1021,6 +1035,7 @@ public sealed class Parser
 		var parts = new List<WordPart>();
 		int depth = 0;
 		bool first = true;
+		var firstTok = Peek();
 		while (!IsEof())
 			{
 			var t = Peek();
@@ -1044,7 +1059,7 @@ public sealed class Parser
 				}
 			}
 		if (parts.Count == 0) throw Error("Expected right operand for '=~'");
-		return new Word(parts);
+		return new Word(parts) { RawSpan = SpanFrom(firstTok) };   // as written, for the printer
 		}
 
 	private static bool IsBinaryCondOp(string s) =>
@@ -1152,6 +1167,7 @@ public sealed class Parser
 		{
 		if (!IsWordToken()) return null;
 		var parts = new List<WordPart>();
+		var firstTok = Peek();
 
 		// Consume the first token unconditionally, then only continue if the
 		// next token is immediately adjacent (no leading space).
@@ -1160,7 +1176,8 @@ public sealed class Parser
 		while (IsWordToken() && !Peek().HasLeadingSpace)
 			parts.AddRange(ParseWordParts());
 
-		return new Word(parts);
+		// the word as written, for the command printer (`declare -f`): bash prints words verbatim
+		return new Word(parts) { RawSpan = SpanFrom(firstTok) };
 		}
 
 	private IEnumerable<WordPart> ParseWordParts()
@@ -1482,7 +1499,7 @@ public sealed class Parser
 			if (t.Type == TokenType.Word && !t.HasLeadingSpace && inner.Count > 0 && inner[^1].Type is not (TokenType.Newline or TokenType.Semicolon))
 				cases.OtherWord();   // glued to the token before: part of that word
 			else if (t.Type == TokenType.Word) cases.Word(t.Value, depth);
-			else if (t.Type == TokenType.SemicolonSemicolon) cases.EndOfBranch(depth);
+			else if (IsCaseTerminator(t.Type)) cases.EndOfBranch(depth);   // ;; ;& ;;&
 			else if (t.Type is TokenType.Semicolon or TokenType.Newline or TokenType.Pipe or TokenType.PipeAmpersand
 			         or TokenType.Ampersand or TokenType.AmpersandAmpersand or TokenType.PipePipe or TokenType.LParen
 			         or TokenType.LBrace or TokenType.DollarLParen) cases.Separator();

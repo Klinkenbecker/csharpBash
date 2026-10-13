@@ -10,7 +10,7 @@ A standalone **bash interpreter for Windows, written in C#** — no WSL, no msys
 
 **Language:** pipelines; lists (`&&`, `||`, `;`, `&`); redirections including fd-aware `2>`, `>>`, `<`, `&>`, `2>&1`, `1>&2`, numbered descriptors (`exec 3>f`, `exec 3>&1`, `>&3`); Linux's device files (`/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`, `/dev/fd/N`, `/dev/tty`) as redirect targets, as file arguments and under `test`; here-documents and here-strings; command substitution `$(…)` and backticks (nested, isolated like a subshell); arithmetic `$(( … ))`, `(( … ))` and `for (( ; ; ))` with assignment and `++`; brace expansion `{a,b}` / `{1..9}`; tilde and pathname (glob) expansion with `nullglob`/`dotglob`/`globstar`/`nocaseglob`; single / double / `$'…'` quoting with bash's exact backslash rules. A script, a `-c` string, `source` and `eval` are read and run one line at a time, as bash reads them: the lines before a syntax error run, and nothing after an `exit` is read (an installer's payload).
 
-**Variables & structure:** assignments and `+=`, `export`, `local`, `readonly`, `declare -i/-a/-A/-r/-x/-p/-f`, special parameters (`$?`, `$#`, `$@`, `$*`, `$0…`, `$!`, `$-`, `PIPESTATUS`, `BASH_REMATCH`, `LINENO`, `FUNCNAME`, `BASH_SOURCE`, `BASH_LINENO`, `RANDOM`, `PPID`, `UID`, `BASH_COMMAND`); the parameter-expansion operators (`${x:-y}` `${x:n:m}` `${x#pat}` `${x/pat/rep}` `${x^^}` `${!x}` `${arr[@]:n}` …); indexed and associative arrays; `if` / `while` / `until` / `for` / `case`; functions (both syntaxes); `[[ … ]]` with `&&`/`||`/`( )`, `=~` and pattern matching; `set -e/-u/-x/-T/-o pipefail`, `shopt`; field splitting by IFS as POSIX and bash define it (`IFS=` splits nothing, `IFS=,` keeps empty fields).
+**Variables & structure:** assignments and `+=`, `export`, `local`, `readonly`, `declare -i/-a/-A/-r/-x/-p/-f`, special parameters (`$?`, `$#`, `$@`, `$*`, `$0…`, `$!`, `$-`, `PIPESTATUS`, `BASH_REMATCH`, `LINENO`, `FUNCNAME`, `BASH_SOURCE`, `BASH_LINENO`, `RANDOM`, `PPID`, `UID`, `BASH_COMMAND`); the parameter-expansion operators (`${x:-y}` `${x:n:m}` `${x#pat}` `${x/pat/rep}` `${x^^}` `${!x}` `${arr[@]:n}` …); indexed and associative arrays; `if` / `while` / `until` / `for` / `case` (with `;&` and `;;&`); functions (both syntaxes), with bash's dynamic scoping (`local` arrays and attributes included); `[[ … ]]` with `&&`/`||`/`( )`, `=~` and pattern matching; `set -e/-u/-x/-T/-o pipefail`, `shopt`; field splitting by IFS as POSIX and bash define it (`IFS=` splits nothing, `IFS=,` keeps empty fields).
 
 **Paths:** MSYS drive-letter form (`/c/Users/…`) and `/tmp` are understood alongside native `C:\…`, and the conversion is symmetric — `pwd`, `$PWD`, `mktemp` and `realpath` hand back `E:/dir/file`, a valid Windows path containing no backslashes. That matters because backslash is the shell's *escape* character: a path with backslashes in it is a value the shell's own `${p#…}`, globs, `case` and `[[ … ]]` would misread.
 
@@ -25,7 +25,7 @@ To avoid the Windows process-spawn cost, the common AT&T System V toolset is imp
 - **Shell:** `echo` `printf` `cd` `pwd` `pushd` `popd` `dirs` `export` `unset` `readonly` `set` `shopt` `shift` `read` `mapfile`/`readarray` `getopts` `test`/`[` `type` `command` `builtin` `alias` `unalias` `eval` `exec` `source`/`.` `local` `declare`/`typeset` `let` `trap` `jobs` `wait` `fg` `bg` `kill` `sleep` `env` `history` `times` `umask` (stored and printed only: Windows files have no mode bits, so it does not change the files C#Bash creates) `fc` (says history editing is not supported) `exit` `return` `break` `continue` `true` `false` `:`
 - **Text:** `cat` `head` `tail` `wc` `rev` `tac` `tr` `cut` `uniq` `nl` `fold` `paste` `comm` `seq` `split` `od` `sort` `tee` `base64` `md5sum`/`sha1sum`/`sha256sum`/`sha512sum` `hexdump`
 - **Files & dirs:** `touch` `mkdir` `rmdir` `rm` `mv` `cp` `cmp` `du` `ls` `find` `stat` `mktemp` `realpath` `readlink` `chmod` `ln` `truncate` `basename` `dirname`
-- **Search & transform:** `grep`/`egrep`/`fgrep` `sed` `awk` (a documented subset, with user functions, `print > file`, `getline < file`, 3-argument `match`) `jq` (a jq 1.6 subset, with `-R`/`-Rs`) `diff` `xargs` `expr` `factor` `cal`
+- **Search & transform:** `grep`/`egrep`/`fgrep` `sed` `awk` (a documented subset, with user functions, `print > file`, `getline` and `getline < file`, 3-argument `match`) `jq` (a jq 1.6 subset, with `-R`/`-Rs`) `diff` `xargs` `expr` `factor` `cal`
 - **System:** `date` (incl. `-d` "3 days ago"-style parsing) `uname` `hostname` `arch` `nproc` `tty` `whoami` `id` `printenv` `timeout` `which` `kill` `hash` `pgrep` `pkill` `ps` (Windows has no procps; `pkill -f` never kills this shell's own ancestors) `df` (every drive, mapped shares included, in GNU's format)
 
 Every tool parses its options strictly: an option (or awk construct) that is not implemented is
@@ -38,18 +38,18 @@ emulation); `>( )` is refused with a clear message. See [`ARCHITECTURE.md`](ARCH
 
 ## Performance
 
-Measured on 2026-10-12 (build rev 233) on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched directly with `CreateProcess`, the way Claude Code launches one, and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the median of five samples, each the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`.
+Measured on 2026-10-13 (build rev 257) on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched directly with `CreateProcess`, the way Claude Code launches one, and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the median of five samples, each the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`.
 
 | benchmark | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.169** | 1.537 | 0.426 | 9.1× | 2.5× |
-| `arith` — 200 k `$(( ))` evaluations | **0.254** | 2.082 | 0.642 | 8.2× | 2.5× |
-| `func` — 100 k function calls | **0.221** | 2.393 | 0.588 | 10.8× | 2.7× |
-| `loop_big` — 2 M iterations | **1.425** | 15.165 | 3.469 | 10.6× | 2.4× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.058** | 15.962 | 0.821 | **275×** | 14.2× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.254 | 0.274 | **0.125** | 1.1× | 0.5× |
-| `find` — walk 400 files | **0.023** | 0.126 | 0.209 | 5.5× | 9.1× |
-| startup — `bash -c 'exit 0'` | 0.016 | 0.017 | 0.115 | 1.0× | 7.3× |
+| `loop` — 200 k `while` iterations | **0.169** | 1.515 | 0.452 | 9.0× | 2.7× |
+| `arith` — 200 k `$(( ))` evaluations | **0.249** | 2.083 | 0.634 | 8.4× | 2.5× |
+| `func` — 100 k function calls | **0.215** | 2.307 | 0.591 | 10.7× | 2.7× |
+| `loop_big` — 2 M iterations | **1.398** | 15.034 | 3.425 | 10.8× | 2.4× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.061** | 16.696 | 0.834 | **274×** | 13.7× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.246 | 0.304 | **0.132** | 1.2× | 0.5× |
+| `find` — walk 400 files | **0.022** | 0.128 | 0.209 | 5.8× | 9.5× |
+| startup — `bash -c 'exit 0'` | 0.017 | 0.017 | 0.117 | 1.0× | 7.1× |
 
 **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
 
@@ -57,7 +57,7 @@ Measured on 2026-10-12 (build rev 233) on one Windows 10 machine against the two
 
 **Where it loses, and why.** One row: a long streaming text pipeline against WSL, where native C `grep`/`sed`/`sort` beat managed implementations per line. It does beat Git Bash there. C#Bash is fastest where a script does *many small things*; a pipe pushing 50 k lines through five real tools is not that shape.
 
-**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment beyond the startup row: a single total of 100 launches moves by about ±1.5 ms from run to run on this machine, so that row is the median of five such totals, and a difference of a millisecond between two runs is still noise. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. Git Bash's own times move between runs (`loop_big` took 18.9 s on 2026-10-03 and 15.2 s here), and the "vs Git" ratios move with them. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
+**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment beyond the startup row: a single total of 100 launches moves by about ±1.5 ms from run to run on this machine, so that row is the median of five such totals, and a difference of a millisecond between two runs is still noise. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. Git Bash's own times move between runs (`loop_big` took 18.9 s on 2026-10-03 and 15.0 s here), and the "vs Git" ratios move with them. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
 
 ## Architecture
 
@@ -75,7 +75,7 @@ A classic four-stage pipeline: **lexer → parser → AST → tree-walking evalu
 ```sh
 dotnet build -c Release            # builds Bash.sln (.NET 8 SDK)
 Bash/bin/Release/net8.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-pwsh tests/run-tests.ps1           # 123 self-checking cases
+pwsh tests/run-tests.ps1           # 133 self-checking cases
 pwsh tests/compat/run-compat.ps1   # 237-probe differential battery against a reference bash
 ```
 

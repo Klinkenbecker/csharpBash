@@ -5696,3 +5696,428 @@ Code Bash call: stamp rev 233, `sleep 1 && echo x &` returns at once, `IFS=` kee
 inside `$( )`, `kill -l`'s table, `dirs +0`. Notice to the six live sessions (daq-d1, adc-framework-d8,
 msp430-a2, nupkg-28, errorlogs-42, koliada-net-6a), leading with the seven behaviour changes; daq-d1 told
 its `compgen` workaround stands.
+
+## 2026-10-12 -- PUBLISHED: GitHub main = git 02f95bc = hg rev 235; the first push by `tools/publish.sh`
+**Status:** Active. The architect: "deploy, notify and push"; the push rule followed (compare3 on the
+deployed rev 233, 2026-10-12 07:41: every row within noise of the README's previous table; the doc review
+committed as rev 235: README table, traps, IFS, jobs, 123 cases, compgen not yet, the tools in Layout;
+ARCHITECTURE field splitting, traps, jobs; IMPLEMENTATION CaseTracker, FindJobIn, RunWithJobGroups).
+
+`tools/publish.sh` as written: MERCURIAL_HISTORY.md and the bundle (236 changesets) regenerated, the bundle
+verified by unbundling; exactly hg's tracked files staged (`The Windows Shell Tax.url` listed and left
+out); pushed 1ab0a25..02f95bc; no extraHeader left in git config; remote main = HEAD. Git warned it
+stores `.hgignore` and `tests/expected/path_lookup.out` with LF (`* text=auto eol=lf`); checked that it
+does not matter: with GitHub's LF-only copies of `path_lookup.out` and `fieldutils.out` (the two expected
+files with CRLF lines) the suite passes 123/123, as the runner splits both sides on `\r?\n`.
+
+## 2026-10-12 -- RULING: Git Bash is a reference only as far as Claude is concerned; GNU bash is the strategic reference
+**Status:** Active. The architect, 2026-10-12: "I think I said earlier that git bash is a reference. Slight
+correction - only as far as Claude is concerned. GNU Bash is prolly a better 'strategic' reference going
+forward." Refines the 2026-10-03 ruling (GNU bash on Linux is the target; Git Bash is not a target).
+
+**Meaning:** where C#Bash's behaviour is open, GNU bash (5.1, via WSL) decides. Git Bash's behaviour counts
+only as evidence of what Claude expects on Windows (it is Claude Code's default shell there), which matters
+for Windows-specific forms (paths, `.exe` names, Claude Code's wrapper) that GNU bash on Linux never sees.
+The compat battery still uses Git Bash as its reference; moving it is proposed, not decided (anchor).
+
+**Also greenlit the same message:** the command printer (AWAITING item 0, option (b), port bash's
+print_cmd.c): "printer, yes". Its plan goes to the architect for ratification before building.
+
+## 2026-10-12 -- DEFECT FIXED: case's `;&` and `;;&` were syntax errors; found: `select` and `coproc` do not exist
+**Status:** Active. Found in printer P1 (the ratified plan): `CaseItem` had no terminator to print.
+
+**Measured (GNU bash 5.1 via WSL):** `;&` runs the next branch's commands without testing it, `;;&` goes on
+testing the branches after it; the status is the last command run's (0 when nothing matched). Outside
+`case` both are a syntax error, `near unexpected token ';&'` (bash lexes them as tokens everywhere). C#Bash
+rejected both inside `case` too.
+
+**Fix:** the lexer makes `;&` and `;;&` tokens; `CaseItem.Terminator` (`Break`, `FallThrough`, `TestNext`)
+records how a branch ends; `ExecCase` follows it, patterns still expanding lazily up to the first match;
+the `$( )` case tracker counts all three as a branch's end.
+
+**Found, not raised for action (measured):** `select` is a syntax error and `coproc` is "command not
+found" in C#Bash; bash runs both. Neither has an AST node, so the printer leaves them out until one exists.
+
+**Verified:** new case `case_fallthrough` (expected = GNU bash via WSL; rev 233 misses 22 diff lines). Suite
+124/124 with a console and `-Detached`; battery 226/237 against 225; `-n` corpus 846/912 (was 844: the
+`export` and `slackpkg` completions use the terminators), baseline advanced.
+
+**Implemented by:** rev 238. Files: `Bash/Lexer/TokenType.cs`, `Bash/Lexer/Lexer.cs`, `Bash/Parser/Nodes.cs`,
+`Bash/Parser/Parser.cs`, `Bash/Evaluator/Evaluator.cs`, `tests/cases/case_fallthrough.sh`,
+`tests/expected/case_fallthrough.out`, `tests/run-tests.ps1`, `tests/corpus/baseline.txt`.
+
+## 2026-10-12 -- PRINTER P1 (ratified plan): bash 5.1's command-printing rules, measured
+**Status:** Active. The plan (P1-P5, anchor GREENLIT 2026-10-12) was ratified ("Yes"). P1's criterion: every
+rule written here with a probe that shows it. The probes are `tests/cases/command_printing.sh` (53 functions;
+expected = GNU bash 5.1 via WSL, 440 lines; C#Bash today: 561 diff lines, it prints the source as written).
+Not yet in the suite: it joins when P2 passes it.
+
+**Rules (bash 5.1 `declare -f`, `type`):**
+1. A function: `NAME () ` + newline + `{ ` (trailing space), the body indented 4, `}`. At top level the
+   `function` keyword is dropped; a definition nested in a body prints `function NAME () `. A subshell body
+   (`g() ( … )`) is wrapped: `{` / `( … )` / `}`. The function's redirections follow `}`: `} 2> /dev/null`.
+   `declare -f` lists functions in name order (byte order: f1, f10, f2); comments are dropped.
+2. Lists: one command per line at the current indent, `;` after every command but a group's last; `&` ends a
+   backgrounded command instead of `;`; `&&` / `||` / `|` stay on one line with single spaces (a pipeline or
+   and-or list written across lines is joined); `|&` prints as `2>&1 |`.
+3. `if C; then` / body (+4, last command `;`) / `else` / body / `fi`. `elif` prints as `else` + a nested
+   `if … fi;` one level deeper.
+4. `while C; do` and `until C; do` / body (+4, every command `;`, the last too) / `done`.
+5. `for V in WORDS;` / `do` / body (+4, every command `;`) / `done`; `for V` (no `in`) prints `in "$@"`;
+   `for ((A; B; C))` (heads joined by `; `) / `do` / … / `done`.
+6. `case WORD in ` (trailing space) / each branch at +4: patterns joined by ` | ` then `)` (a leading `(` is
+   dropped) / body at +8 (commands `;`-joined, the last bare) / the terminator `;;`, `;&` or `;;&` at +4 /
+   `esac`. An empty body prints an empty line.
+7. `{ ` / body (+4, last bare) / `}` + redirections; `( A;` / later commands at the CURRENT indent / `… )`
+   (`( a; b; c ) > out` prints `( a;`, `    b;`, `    c ) > out`); `time { a; }` and `( a ) && { b; }`
+   follow the same rules.
+8. A simple command: assignments and words as written, one space apart (`$(…)`, backquotes, `$((…))`,
+   `$[…]`, `${…}` and quotes kept verbatim); `$'…'` prints decoded in single quotes (`$'it\'s'` →
+   `'it'\''s'`). Redirections: `> f`, `2> f`, `>> f`, `< f`, `3<> f`, `>| f`, `&> f` (a space before the
+   target); a descriptor copy has no space and an explicit fd (`>&2` → `1>&2`, `<&3` → `0<&3`, `2>&1`,
+   `3>&-`); `<<< w`.
+9. A here-document: `<<DELIM` / `<<'Q'` / `<<-EOT` with no space, other redirections after it; the body
+   and delimiter follow the command line verbatim (`<<-` bodies and delimiter with their tabs stripped);
+   then an EMPTY line; the command takes no `;`. In a pipeline the next stage follows the body indented
+   two spaces (`cat <<EOT |` / body / `EOT` / `  sort`).
+10. `[[ … ]]` and `(( … ))` as written with single spaces between tokens.
+11. `! P` and `time [-p] P` prefix the pipeline.
+12. Not printed by C#Bash (no AST node): `select`, `coproc` (bash prints `coproc COPROC cmd` for an
+    unnamed one).
+
+## 2026-10-12 -- PRINTER P2: `CommandPrinter` prints functions as bash does (`declare -f`, `type`)
+**Status:** Active. The ratified plan's P2; criterion: `command_printing` byte-identical to GNU bash 5.1.
+
+**Built:** `Bash/Parser/CommandPrinter.cs` walks the AST with bash's layout (P1's rules: 4-space indents, `;`
+placement, `elif` as a nested `if`, `for … in "$@"`, `case` branches and terminators, a subshell's later
+commands at the current indent, `function` for a nested definition, a brace body's redirections after `}`);
+here-document bodies wait for the next newline, as bash's print_deferred_heredocs, so `cat <<EOT | sort`
+prints `cat <<EOT |`, the body, `  sort`. Simple commands, assignments, `(( ))` and `[[ ]]` come from
+`CommandText.RenderParts` (their source text, as `$BASH_COMMAND` already rendered them), which now (1)
+returns the line and the bodies apart, (2) stops at a top-level operator, so a command whose span runs to
+its here-document's end does not take in the rest of its line (`[[ a && b ]]` excepted), (3) copies a
+`$( )`, `<( )`, `>( )`, `( )` or backquoted part verbatim to its matching close (it re-joined tokens and
+lost a here-document inside `$( )`), (4) gives a descriptor copy bash's explicit fd (`>&2` → `1>&2`,
+`<&0` → `0<&0`), (5) writes a `'` inside a decoded `$'…'` as `'\''`. (4) and (5) are bash's
+`$BASH_COMMAND` too: measured identical for `echo x >&2`, `read y <&0`, a here-document in `$( )`,
+`$'it\x27s'`. Words keep their source span (`Word.RawSpan`, no allocation while parsing) for patterns,
+`for` lists and compound redirections; the two array-assignment nodes now have spans and lines.
+
+**Verified:** `command_printing` (53 functions, `type`, `eval "$(declare -f f)"` round trip) byte-identical
+to GNU (rev 239's C#Bash: 561 diff lines); joined the suite. Suite 125/125 with a console and
+`-Detached`; battery 226/237 against 225; `-n` corpus 846/912 (= baseline).
+
+**Implemented by:** rev 240. Files: `Bash/Parser/CommandPrinter.cs` (new), `Bash/Parser/CommandText.cs`,
+`Bash/Parser/Nodes.cs`, `Bash/Parser/Parser.cs`, `Bash/Evaluator/Builtins.Shell.cs`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- PRINTER P3: `jobs` prints a job's command as bash does (closes "compound job text")
+**Status:** Active. The ratified plan's P3; criteria: compound jobs as bash shows them; the `eval "$(declare -f
+f)"` round trip (met in P2's case).
+
+**Measured (GNU bash 5.1):** `jobs` uses the same printer in another mode: a brace group or a subshell stays
+on one line (`{ sleep 5; echo hi; } > /dev/null`, `( sleep 5; true )`), while `for`, `if` and `case` take
+their lines at indent 0, also inside a group (`{ if true; then` / `    sleep 5;` / `fi; }`); assignments and
+redirections show (`x=1 sleep 5`, `sleep 5 1>&2 2> /dev/null`); a pipeline's `!` does not; `time` does.
+
+**Built:** `CommandPrinter.Command` (job mode); `DescribeNode` uses it, and its old reconstruction (node
+type names for compound commands, no assignments, no redirections) is gone. Per-stage texts for `%name`
+matching come from it too.
+
+**Verified:** new case `jobs_text` (14 job shapes, expected = GNU bash via WSL, identical on two runs; rev 233
+misses 37 diff lines). Suite 126/126 with a console and `-Detached`; battery 226/237 against 225.
+
+**Implemented by:** rev 241. Files: `Bash/Parser/CommandPrinter.cs`, `Bash/Evaluator/Evaluator.cs`,
+`tests/cases/jobs_text.sh`, `tests/expected/jobs_text.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- PRINTER P4: the corpus check; 845 of 912 files print as GNU, every other one has a cause
+**Status:** Active. The ratified plan's P4; criterion: every corpus function C#Bash defines prints as GNU's
+`declare -f`, or is listed with its cause.
+
+**Tool:** `tests/corpus/run-n.sh --printer` (contract): sources each corpus file in `bash --norc` (GNU in WSL,
+then C#Bash), compares the `declare -f` output byte for byte, ratchet `printer-baseline.txt`; both outputs
+kept in `tests/corpus/printer/` (ignored). First run 445/912.
+
+**Printer rules found in the corpus (each confirmed by the files it fixed):** `[[ ]]` is printed from its
+tree: a bare word is `-n WORD` (`[[ $x ]]` → `[[ -n $x ]]`), parentheses where written (new `CondGroup` node;
+the `=~` operand keeps its span); a line continuation (`\` + newline) is removed from every word and
+substitution, except inside single quotes, with quoting starting afresh inside each `$( )`; `$'…'` is decoded
+into single quotes everywhere outside double quotes, a substitution's text included, and a NUL ends it
+(`IFS=$'\0'` → `IFS=''`); an array literal prints its elements one space apart (`a=( $(x) )` → `a=($(x))`);
+an arithmetic `for`'s parts keep their written ends and an empty part is `1` (`for ((1; 1; 1))`); after a
+here-document's body the next `;` is left out (bash's was_heredoc: `fi` bare).
+
+**Result: 845/912 identical.** The 67 others: 62 files C#Bash cannot parse (the `-n` corpus's own list,
+chiefly extglob patterns in `[[ ]]`, a recorded gap); `smartctl` (the same, `@(…)` in `[[ ]]`, partway);
+`_su`, `_mount`, `_umount`, `route` define their functions only when `$OSTYPE` is Linux (C#Bash's is the
+Windows one): a platform difference, not the printer's.
+
+**Defects found and fixed on the way (measured against GNU bash 5.1):**
+- `local p=($(cmd))`, `declare -a q=($(…))`, `export v=($(…))`: a syntax error (`CollectParenText` counted
+  `(` but not the one inside `$(`, `<(`, `>(`), in every build. The `-n` corpus rises to 850/912 (gdb,
+  openssl, rdesktop, sysbench), baseline advanced.
+- `export v=(a b)` stored the text `(a b)`; `readonly r=(x y)` without `-a` set nothing: both assign arrays.
+- a quoted value that looks like `(…)` became an array in `declare`/`local` (`local s="(x y)"`): bash makes
+  an array only of the unquoted literal, or of any `(…)` value under `-a`/`-A` (measured: `declare -a
+  x='(a b)'` is an array). The parser now marks the literal it folds (`Lexer.ArrayLiteralMark`, U+FDD1, never
+  shown: `set -x` strips it); `ArrayLiteralValue` applies the rule.
+- `${#x[@]}` of a set scalar was 0; it is 1 (unset: 0).
+
+**Found, NOT fixed, raised to the architect:** arrays are not local. `ShellEnvironment` keeps indexed and
+associative arrays in two shell-wide dictionaries, outside the frames that hold scalars, so `local a=(x)` or
+`declare a=(x)` in a function creates or overwrites the GLOBAL array (measured: after `f() { local t=(a b);
+}; f`, bash has no `t`, C#Bash has `t=(a b)`), in every build. A fix makes array storage follow frames:
+a change to the variable model.
+
+**Verified:** new case `declaration_arrays` (expected = GNU via WSL; rev 233 misses 28 diff lines);
+`command_printing` and `jobs_text` still identical. Suite 127/127 with a console and `-Detached`; battery
+226/237 against 225; `-n` corpus 850/912; printer corpus 845/912 (baseline recorded).
+
+**Implemented by:** rev 242. Files: `Bash/Parser/CommandPrinter.cs`, `Bash/Parser/CommandText.cs`,
+`Bash/Parser/Nodes.cs`, `Bash/Parser/Parser.cs`, `Bash/Lexer/Lexer.cs`, `Bash/Evaluator/Evaluator.cs`,
+`Bash/Evaluator/Builtins.Shell.cs`, `Bash/Evaluator/WordExpander.cs`, `Bash/AstPrinter.cs`,
+`tests/corpus/run-n.sh`, `tests/corpus/baseline.txt`, `tests/corpus/printer-baseline.txt`,
+`tests/cases/declaration_arrays.sh`, `tests/expected/declaration_arrays.out`, `tests/run-tests.ps1`,
+`.hgignore`, `.gitignore`.
+
+## 2026-10-12 -- PRINTER P5: no regression; the printer plan is complete
+**Status:** Active. The ratified plan's P5; criterion: suite, battery, `-n` corpus and `compare3 --build` show
+no regression.
+
+`compare3.sh --build`, rev 242 against the deployed rev 233, alternating rounds (seconds): loop 0.161 /
+0.157 (+2.5%), arith 0.242 / 0.245, func 0.212 / 0.214, loop_big 1.387 / 1.390, coreutils 0.057 / 0.059,
+pipeline 0.245 / 0.246, find 0.022 / 0.021 (1 ms on a 1 ms clock), startup 0.0158 / 0.0154 (0.4 ms, inside
+the row's ±1.5 ms spread); outputs agree with Git Bash, WSL and the deployed build. Suite 127/127 both modes;
+battery 226/237 against 225; `-n` corpus 850/912; printer corpus 845/912. P1-P5 done, revs 239-242.
+
+## 2026-10-12 -- DEFECT FIXED (adc-framework-d8): `diff -u` ignored `--label`
+**Status:** Active. Reported by adc-framework-d8 (a patch made with `--label` could not be applied with
+`patch -p1`); verified, then fixed after the printer as promised to the reporter.
+
+**Measured (GNU diff via WSL):** `--label L` replaces a header's file name and drops its timestamp; the first
+names the old file, the second the new (`--- X1` / `+++ Y1`; one label: `--- only` / `+++ l2.txt<TAB>stamp`).
+C#Bash's in-process `diff -u` accepted the option and printed the names and times. `-c` looked right only
+because the in-process diff has no context format and hands it to Git's GNU diff.
+
+**Fix:** `Opts.AllLong` keeps every value of a repeated long option (`_longs` kept the last); `diff` passes
+the labels to the unified header.
+
+**Verified:** new case `diff_label` (expected = GNU diff via WSL; rev 233 misses 20 diff lines). Suite 128/128
+with a console and `-Detached`; battery 226/237 against 225.
+
+**Implemented by:** rev 244. Files: `Bash/Evaluator/Opts.cs`, `Bash/Evaluator/Builtins.Find.cs`,
+`tests/cases/diff_label.sh`, `tests/expected/diff_label.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- VARIABLE SCOPE V1 (ratified plan): the measured contract, and C#Bash's baseline
+**Status:** Active. The architect ratified the variable-scope plan V1-V4 ("ratified, go"; anchor item V).
+V1's criterion: the case written, expected = GNU, C#Bash's failure recorded.
+
+**The contract (GNU bash 5.1, `tests/cases/variable_scope.sh`, 59 lines):** an assignment to a name no scope
+holds goes to the global scope, however it is made (`x=`, `read`, `for`, `printf -v`, `getopts`, `(( ))`,
+`let`, `${x:=}`, `+=`, `arr[i]=`, `export`, `readonly`); `local` and `declare` (and `typeset`) in a function
+hold the variable, scalar or array or associative, with its attributes, for that call only (`-i` evaluates,
+`-r` and `-x` end with it; `declare -g` is global); a callee sees and changes its caller's locals (dynamic
+scope); `local x` with no value hides an outer x until it is set, and an array subscript then makes it a local
+array; `local a=("${a[@]}" new)` reads the outer `a` on the right; recursion keeps each call's arrays apart;
+`unset` of a local in its own scope leaves it local and unset, while a callee unsetting its caller's local
+uncovers the outer value; subshells and `$( )` get copies; `local` outside a function: "local: can only be
+used in a function", status 1.
+
+**Baseline, C#Bash rev 245 (and every build before it):** 20 lines, then the script aborts (`local -r` left
+the variable readonly globally); 67 diff lines against GNU's 59.
+
+## 2026-10-12 -- VARIABLE SCOPE V2+V3: one store per scope, bash's dynamic scoping for scalars, arrays and attributes
+**Status:** Active. The ratified plan's V2 (model) and V3 (callers), built together; criteria: `variable_scope`
+byte-identical to GNU; suite green both modes; battery, `-n` corpus, printer corpus without regression.
+
+**Model (`ShellEnvironment`):** the scopes are a list of dictionaries, global first, from a name to one `Var`:
+a scalar `Value`, or an `Indexed` or `Assoc` array, with its `Exported` / `Readonly` / `Integer` attributes;
+declared with no value (`local x`) is a scalar with a null value. `Find` looks a name up innermost-out
+(dynamic scope); `Target` is what an assignment changes: the innermost variable, else a NEW GLOBAL one (the
+heart of the fix: a function's `x=1`, `read x`, `for x`, `printf -v x`, `getopts`, `(( ))`, `let`, `${x:=}`,
+`x+=`, `a[i]=` now outlive the call). `DeclareLocal` / `SetLocal` work in the innermost scope (a readonly
+outer one cannot be shadowed), `SetGlobal` in the global one. Scalar and array are one variable: `$a` is an
+array's element 0; `a[1]=x` on a scalar makes it an array with the scalar as element 0; `a=x` on an array sets
+element 0 (bash). Attributes belong to the variable, so a local `-r`, `-i`, `-x` ends with the call; a local
+`-x` reaches children while its function runs (`GetExportedVars` takes each name's visible variable).
+`Unset`: in the function scope that declared it the variable stays declared and unset (still hiding an outer
+one); a callee unsetting its caller's local, or anything at top level, removes it, uncovering the next one
+out (measured). FUNCNAME / BASH_SOURCE / BASH_LINENO keep their lazy refresh (on reading one of them, a
+snapshot, a listing). Subshells, `$( )` and pipeline stages deep-copy the scopes (`CopyFrames`).
+
+**Callers:** `local`, and `declare` / `typeset` inside a function unless `-g`, declare the name in the current
+scope BEFORE its attributes and value; an array literal's words are expanded first (`PrepareArrayLiteral`),
+so `local a=("${a[@]}" x)` reads the outer `a` (bash). `local -i` now evaluates (`Assign` honours the
+variable's integer attribute; `SetLocal` used to bypass it). Found and fixed on the way: a subshell's fatal
+error (`( r=2 ) 2>/dev/null`, r readonly) was printed after its redirects were gone; it is reported inside
+them (bash is silent there), in every build.
+
+**Verified:** `variable_scope` byte-identical to GNU (rev 246's C#Bash: 20 lines, then an abort; 67 diff
+lines); joined the suite. Suite 129/129 with a console and `-Detached`; battery 226/237 against 225; `-n`
+corpus 850/912; printer corpus 845/912. V4 (the benchmark) next.
+
+**Implemented by:** rev 247. Files: `Bash/Evaluator/ShellEnvironment.cs`, `Bash/Evaluator/Builtins.Shell.cs`,
+`Bash/Evaluator/Evaluator.cs`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- VARIABLE SCOPE V4: the benchmark; one row is a real, small cost, brought to the architect
+**Status:** AWAITING THE ARCHITECT (the ratified plan: "a row beyond noise is measured in-process and
+brought to the architect before going on").
+
+**`compare3.sh --build` (alternating rounds against deployed rev 233):** rev 247: coreutils +10.5% (6 ms),
+the rest within noise. In-process diagnostic (coreutils.sh, rev 246 vs 247): allocation per `$( )` 87.0 vs
+87.8 KB, time 70.6-71.8 vs 72.9-82.3 ms. A snapshot is restored once, so `RestoreSnapshot` now takes over
+its copy instead of copying again (rev 248): in-process 68.9-70.2 ms against rev 246's 69.5-73.6, 78 KB per
+substitution against 87. rev 249 run: loop +3.1%, arith -1.6%, func +4.2%, loop_big +1.0%, coreutils +5.3%,
+pipeline -0.8%, find 0, startup +0.6%, outputs agree (the machine ran slower: Git Bash's startup 17.3 ms
+against 16.4 earlier).
+
+**In-process (`tools/bench.csx`, interleaved, rev 246 = old model):** loop 456-476 vs 456-462 ns/it, arith
+739-770 vs 766-797: level. func (100k calls, each `local r=$((…))`): 1404-1410 ns/call against 1332-1415,
++48 B per call: a REAL ~5% (~70 ns) per call with a local, the `Var` object the correct model gives each
+local. `SetLocal` now declares and assigns in one lookup (`local x=v` took two); that removed variance, not
+the object.
+
+**Options put to the architect:** accept the ~70 ns per `local` (Claude's recommendation: it buys bash's
+scoping in every script with functions, the absolute cost is tens of nanoseconds per call); or store
+scalars as structs inside the scope dictionaries (no allocation for a scalar local) [unmeasured estimate:
+recovers most of it], at the price of a harder-to-read model.
+
+## 2026-10-12 -- DECIDED: the variable-scope cost is accepted; a performance review will follow "shortly"
+**Status:** Active. The architect, on V4's question (accept ~5% / ~70 ns per function call with a `local`, and
+deploy revs 234-251): "Yes to both - note the creeping drop in performance will prompt a performance review
+'shortly'!"
+
+**Meaning:** the variable-scope plan is complete (V1-V4); the struct-storage alternative is not built now.
+The architect expects to call a PERFORMANCE REVIEW soon, prompted by the accumulating small costs. Its record
+so far, from `compare3.sh --build` (alternating rounds against the deployed build) and in-process
+`tools/bench.csx`: rev 242 (printer) every row within noise; rev 249 (variable scope) loop +3.1%, func +4.2%,
+coreutils +5.3% in the benchmark, func a real ~5% in-process (+48 B per call with a local), loop and arith
+level. Do NOT start the review unasked: it is the architect's to call.
+
+## 2026-10-12 -- DEPLOYED: rev 252 (revs 234-252), notice sent
+**Status:** Active. The architect: "Yes to both" (the variable-scope cost accepted; deploy).
+
+`tools/deploy.sh`: rev 252 (`1.0.0+hg.e7a1f2717689 252`); suite 129/129 on that exact binary with a console
+and `-Detached`; battery 228/237 against 225 (Git Bash's environment, as at rev 233's deploy); rev 233 renamed
+to `dist/Bash.exe.rev233`, rev 252 copied in. Live check in a Claude Code Bash call: stamp rev 252, a
+function's new variable persists, a local array and a local `-r` end with the call, `local p=($(…))`,
+`declare -f` in bash's layout, `case ;&`, `diff -u --label`. Notice to the six live sessions (daq-d1,
+adc-framework-d8 told its `diff --label` report is in, msp430-a2 told its two reports are next, nupkg-28,
+errorlogs-42, koliada-net-6a told `strings` is queued), leading with the variable-scope change.
+
+## 2026-10-12 -- DEFECT FIXED (msp430-a2, data loss): an awk program containing `getline` lost every CR
+**Status:** Active. Reported by msp430-a2 (a CRLF PROJECT_CONTEXT.md committed as LF), who also measured the
+mechanism: Git's gawk strips CR in text mode (`gawk '{print}'` 0 CR, `gawk -v BINMODE=3` 3 CR).
+
+**Cause:** the in-process awk refused main-input `getline` / `getline var` at PARSE time (even inside
+`if (0)`), and the dispatcher re-ran the whole program with the PATH awk, Git's gawk.
+
+**Fix:** (1) main-input `getline` and `getline var` in-process: the rule loop and a plain `getline` share one
+reader (`NextMainLine`): operands in order, `v=x` operands assigned as reached, standard input when there is no
+file, FILENAME and FNR following across files, NR/FNR counted, 0 at the end, in BEGIN too. (2) when awk still
+hands a program to the PATH awk (`cmd | getline`, other gaps) or `BASH_COREUTILS=external` asks for it, the
+arguments start `-v BINMODE=3`, so Git's gawk keeps CR as GNU awk on Linux does (a script's own `-v BINMODE`
+comes later and wins).
+
+**Verified:** new case `awk_getline` (15 lines: msp430-a2's three repros, getline across files, in BEGIN and
+END, with assignment operands, and both fall-through paths; expected = GNU awk via WSL; rev 252 misses 18 diff
+lines). The `awk` case's line asserting "unsupported: getline from the main input" now prints GNU's empty line.
+Suite 130/130 with a console and `-Detached`; battery 226/237 against 225.
+
+**Implemented by:** rev 254. Files: `Bash/Evaluator/Builtins.Awk.cs`, `Bash/Evaluator/Builtins.cs`,
+`tests/cases/awk_getline.sh`, `tests/expected/awk_getline.out`, `tests/expected/awk.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECT FIXED (msp430-a2): arguments to MSYS programs were re-parsed (braces, globs, quotes, backslashes)
+**Status:** Active. Reported by msp430-a2 (`gawk '{print}'` arrived as `print`).
+
+**Measured (Git's usr/bin printf.exe echoing its argv, C#Bash rev 254):** an MSYS program parses an UNQUOTED
+word of its Windows command line like a shell: `'[%s]\n'` lost the backslash, `'{print}'` became `print`,
+`'*.txt'` the matching files, and the `'` of `"it's"` opened a quote that swallowed every argument after it
+(so `sed "s/it's/X/"` failed). `ChildLauncher.AppendArgument` quoted only on white space or `"`. Inside
+double quotes the MSYS parser also takes `\\` as one backslash (`'\\srv\share'` arrived as `\srv\share`).
+
+**Fix:** for an MSYS program (`ChildLauncher.IsMsysProgram`: it sits beside msys-2.0.dll) an argument goes
+bare only if it is letters, digits and `-_./:=@%+,`; otherwise it is double-quoted with every backslash
+doubled and `"` as `\"`. Native programs keep .NET's quoting exactly (cmd.exe and friends parse their raw
+command line, so nothing changes for them).
+
+**Verified:** new case `msys_arguments` (20 argument shapes through the PATH printf, plus gawk `'{print}'`,
+sed with `'` and braces, find `-name '*.txt'`; expected = GNU bash via WSL with the native tools; rev 252
+misses 32 diff lines). Suite 131/131 with a console and `-Detached`; battery 226/237 against 225.
+
+**Implemented by:** rev 255. Files: `Bash/Evaluator/ChildLauncher.cs`, `tests/cases/msys_arguments.sh`,
+`tests/expected/msys_arguments.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECTS FIXED: sed added a missing final newline; `D` autoprinted (N;P;D doubled lines)
+**Status:** Active. Found testing adc-framework-d8's rm report: its case pipes rm's prompts through sed, and
+an unterminated prompt line came back with a newline.
+
+**Measured (GNU sed 4.8 via WSL against rev 252):** (1) GNU writes a last input line that has no newline
+without one, by every command that writes the pattern space (`p`, `P`, `n`, `N` at the end, `s///p`, autoprint,
+`q`, `-i`, several files: only the last file's last line counts); C#Bash always added it. (2) `D` with a newline
+in the pattern space restarts the cycle WITHOUT autoprinting, as `d` does, while text queued by `a` is still
+flushed (`1{N;a X};D` prints `X` alone); C#Bash autoprinted the rest, so `N;P;D` printed every line after the
+first twice, with or without a final newline. (2) was in every deployed build.
+
+**Fix:** `SedRun` writes through two helpers: `Out` (any text) and `PS` (the pattern space: on the last line
+of unterminated input it holds the newline back, written only if more output follows). The readers report
+`missingNl`. `D` sets `deleted` as well as `restartNoRead`.
+
+**Runner defect found on the way:** `tests/run-tests.ps1 -Detached` stripped the trailing newline with
+`-replace "\r?\n$"`; .NET's `$` also matches before a final newline, so output ending in an empty line lost it
+(PowerShell's own capture, which the runner imitates, keeps it: measured). Now `\z`. No earlier case ended in
+an empty line, so nothing passed because of it (the whole suite passes with the fix).
+
+**Verified:** new case `sed_final_newline` (24 lines; expected = GNU sed via WSL; rev 252 misses 36 diff lines).
+Suite 133/133 with a console and `-Detached`, run on the tree holding rev 257's rm too; battery 226/237
+against 225.
+
+**Implemented by:** rev 256. Files: `Bash/Evaluator/Builtins.Search.cs`, `tests/cases/sed_final_newline.sh`,
+`tests/expected/sed_final_newline.out`, `tests/run-tests.ps1`.
+
+## 2026-10-12 -- DEFECTS FIXED (adc-framework-d8): rm refused a read-only file; -i/-I never asked; `rm -r` on a directory link emptied its target
+**Status:** Active. Reported by adc-framework-d8 (measured on rev 252): `rm` without `-f` refuses a file with
+the Windows ReadOnly attribute when standard input is not a terminal; GNU rm deletes it. Measuring rm against
+GNU rm (via WSL) for the fix found two more defects, the second DATA LOSS in every deployed build.
+
+**Measured (rev 252 against GNU rm):** (1) a write-protected file (`chmod a-w`, which C#Bash maps to ReadOnly)
+was refused without `-f`; GNU removes it when standard input is not a terminal and asks when it is. (2) `-i`
+and `-I` removed without asking. (3) `rm -r` on a directory link (an `ln -s` link or a junction) descended
+into it and deleted the TARGET's contents; GNU removes the link only. Plain `rm` on one said "Is a directory".
+
+**Fix (`Builtins.Files.cs` `Rm`):** `-f`, `-i`, `-I` override each other, the last given winning
+(`--interactive` is `-i`). `-i` asks before each removal (with `-r`: descend, each entry, the directory, in
+GNU's order and wording); `-I` asks once for more than three operands or `-r`. The question goes to standard
+error and the answer is a line of the shell's standard input (`y`/`Y` yes, end of input no). A write-protected
+file is asked about only when standard input is a terminal and neither `-f` nor `-i` is given, else removed.
+A directory link is removed as a link, with or without `-r`, never descended into.
+
+**Not covered by the case:** a terminal stdin (the case cannot have one; the write-protected question there
+is GNU's documented behaviour, not measured here); `rm -r link/` with a trailing slash.
+
+**Verified:** new case `rm_interactive` (18 cases incl. `echo y | rm -i`, `-ri`, `-rI`, `-di`, both link
+cases; expected = GNU rm via WSL; rev 252 misses 77 diff lines; the junction itself spiked separately: rev 252
+deleted the target file, the fix keeps it). Suite 133/133 with a console and `-Detached`; battery 226/237
+against 225.
+
+**Implemented by:** rev 257. Files: `Bash/Evaluator/Builtins.Files.cs`, `tests/cases/rm_interactive.sh`,
+`tests/expected/rm_interactive.out`, `tests/run-tests.ps1`.
+
+## 2026-10-13 -- DEPLOYED: rev 257 (revs 254-257), notice sent
+**Status:** Active. The architect: "yes" (deploy now: two data-loss fixes waiting), then "deploy, notify
+and publish". The first attempt was refused by Claude Code's auto-mode classifier ("Production Deploy");
+it ran on the architect's explicit word.
+
+`tools/deploy.sh`: rev 257 (`1.0.0+hg.099fd70fc65b 257`) over rev 252; suite 133/133 on that exact binary
+with a console and `-Detached`; battery 228/237 against 225 (Git Bash's environment, as on 2026-10-12);
+rev 252 renamed to `dist/Bash.exe.rev252`. Live check in a Claude Code Bash call: stamp rev 257, `rm -r` on a
+directory link keeps the target, a read-only file removed, `N;P;D` once per line, a missing final newline
+kept missing, awk `getline` keeps CR, `'{print}'` reaches Git's gawk intact. Notice to the six live sessions
+(daq-d1, adc-framework-d8, msp430-a2, nupkg-28, errorlogs-42, and koliada-net-7c, new: koliada-net-6a has
+gone), leading with the data-loss fix and with `rm -i` now keeping files when stdin is empty; `cmd //c`
+named as known with the verified `cmd /c` workaround.
+
+**Open (raised 2026-10-13, the architect asked "why does the deploy script use git bash?"):** no recorded
+reason. The one recorded reason is the benchmark's (2026-09-13: its `#!/usr/bin/env bash` found C#Bash and
+timed nothing; and it times Git Bash itself). `deploy.sh` and `publish.sh` copied the guard the day they
+were written. Claude's position: drop the guard from those two and keep it for `compare3.sh`; falsifier: a
+step in either that measurably behaves differently under C#Bash. AWAITING THE ARCHITECT.

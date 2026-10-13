@@ -212,6 +212,16 @@ $tests = @(
     @{ Name = 'jobspec_names';      Script = 'cases\jobspec_names.sh';      Args = @() }   # 2026-10-12: %name, %?text, bare %, "ambiguous job spec" in jobs/kill/disown/jobs -x (GNU bash)
     @{ Name = 'and_or_background'; Script = 'cases\and_or_background.sh'; Args = @() }   # 2026-10-12: a && b & backgrounds the whole and-or list; its cd and assignments stay in the job (GNU bash)
     @{ Name = 'ifs_splitting';      Script = 'cases\ifs_splitting.sh';      Args = @() }   # 2026-10-12: IFS='' does not split; non-white IFS makes empty fields; $* joins with IFS[0] (GNU bash)
+    @{ Name = 'case_fallthrough';   Script = 'cases\case_fallthrough.sh';   Args = @() }   # 2026-10-12: case ;& and ;;& (were syntax errors) (GNU bash)
+    @{ Name = 'command_printing';   Script = 'cases\command_printing.sh';   Args = @() }   # 2026-10-12: declare -f / type print as bash's print_cmd.c (53 functions; eval round trip) (GNU bash)
+    @{ Name = 'jobs_text';          Script = 'cases\jobs_text.sh';          Args = @() }   # 2026-10-12: jobs shows compound jobs as bash prints them (GNU bash)
+    @{ Name = 'declaration_arrays'; Script = 'cases\declaration_arrays.sh'; Args = @() }   # 2026-10-12: local p=($(cmd)); export/readonly arrays; quoted (..) is a string; ${#scalar[@]} is 1 (GNU bash)
+    @{ Name = 'diff_label';         Script = 'cases\diff_label.sh';         Args = @() }   # 2026-10-12 (adc-framework-d8): diff -u --label (GNU diff)
+    @{ Name = 'variable_scope';     Script = 'cases\variable_scope.sh';     Args = @() }   # 2026-10-12: bash's dynamic scoping: globals from functions, local arrays and attributes, unset (GNU bash)
+    @{ Name = 'awk_getline';        Script = 'cases\awk_getline.sh';        Args = @() }   # 2026-10-12 (msp430-a2): main-input getline in-process; BINMODE=3 on fall-through, CR kept (GNU awk)
+    @{ Name = 'msys_arguments';     Script = 'cases\msys_arguments.sh';     Args = @() }   # 2026-10-12 (msp430-a2): arguments reach MSYS programs intact (braces, globs, quotes, backslashes) (GNU bash)
+    @{ Name = 'sed_final_newline';  Script = 'cases\sed_final_newline.sh';  Args = @() }   # 2026-10-12: a last line without a newline stays without one; D does not autoprint (N;P;D doubled lines) (GNU sed)
+    @{ Name = 'rm_interactive';     Script = 'cases\rm_interactive.sh';     Args = @() }   # 2026-10-12 (adc-framework-d8): write-protected files removed when stdin is not a terminal; -i/-I ask; last of -f/-i/-I wins; a directory link removed, never descended into (GNU rm)
     @{ Name = 'arg0_path';          Script = 'cases\arg0_path.sh';          Args = @() }   # 2026-10-11: $0 (argv[0] as passed) in the shell's forward-slash form; a PATHEXT match's on-disk name as a child's argv[0] (authored: Windows-specific)
     @{ Name = 'traps_debug_return'; Script = 'cases\traps_debug_return.sh'; Args = @() }   # 2026-10-11: DEBUG/RETURN traps run (were silent), $BASH_COMMAND exists, -T functrace, trap $LINENO (expected = GNU via WSL)
     @{ Name = 'options_tkp';        Script = 'cases\options_tkp.sh';        Args = @() }   # 2026-10-11: -t (onecmd), -k (keyword), -p (privileged: no BASH_ENV) act as in bash (were ignored); $- order with s last (expected = GNU via WSL)
@@ -237,7 +247,7 @@ try {
             if (-not [DetachedRun]::Run($cl, $testsDir, $tmp, 120000)) { Write-Host ("TIMEOUT {0}" -f $t.Name) -ForegroundColor Red }
             $text = [System.IO.File]::ReadAllText($tmp, [System.Text.Encoding]::UTF8)   # C#Bash writes UTF-8 (was the console's code page)
             Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
-            $actual = @(if ($text.Length -gt 0) { $text -replace "`r?`n$", '' -split "`r?`n" })
+            $actual = @(if ($text.Length -gt 0) { $text -replace "`r?`n\z", '' -split "`r?`n" })   # \z: .NET's $ also matches before a final newline, dropping a last empty line (2026-10-12)
         } else {
             $actual = @(& $exe $t.Script @a 2>$null)
         }

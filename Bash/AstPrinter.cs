@@ -170,6 +170,7 @@ public static class AstPrinter
 		CondBinary b => $"{PrintWord(b.Left)} {b.Op} {PrintWord(b.Right)}",
 		CondUnary u  => $"{u.Op} {PrintWord(u.Operand)}",
 		CondWord w   => PrintWord(w.Value),
+		CondGroup g  => $"({PrintCondExpr(g.Inner)})",
 		_ => "?"
 		};
 	}

@@ -326,7 +326,9 @@ Two model points:
   same policy as an unsupported option. Extended 2026-10-10 (as gawk 5.1): user functions (a frame
   of cells: scalars by value, arrays by reference, `return` by a flag, a stack guard instead of an
   overflow), `print > file` / `>> file`, `getline [var] < file`, `close`, `fflush`, 3-argument
-  `match`. Pipes (`print | cmd`, `cmd | getline`), `system()` and main-input `getline` stay loud.
+  `match`; 2026-10-12, main-input `getline` / `getline var` (one reader shared with the rule loop).
+  Pipes (`print | cmd`, `cmd | getline`) and `system()` stay loud. A program that still goes to the
+  PATH awk (Git's gawk) gets `-v BINMODE=3`, so CR survives as on Linux.
 - **Processes without procps.** `pgrep`/`pkill`/`ps` are in-process (Toolhelp32 for the list,
   `NtQueryInformationProcess` for command lines), because a Git-less Windows PATH has none and
   Claude Code's own `pkill` shim ends in `command pkill`. Names match case-insensitively; the
@@ -353,8 +355,13 @@ Two model points:
   path containing one is a value the shell's own `${p#…}`, globs, `case` and `[[ … ]]` misread.
   `TranslatePath` (inbound) and `ToShellPath` (outbound) both produce `E:/dir/file`, which every
   Windows API accepts — so a path that leaves through `pwd` and returns as an argument is the same
-  string. The conversion is a path boundary only: arguments are never rewritten, so `grep '\.txt'`
-  and `printf 'a\tb'` keep their escapes. *(DECISIONS: 2026-09-11, 2026-09-12.)*
+  string. Within the shell the conversion is a path boundary only, so `grep '\.txt'` and
+  `printf 'a\tb'` keep their escapes. Arguments are rewritten only for a WINDOWS program, as Git Bash
+  does, and only at the start: `/c/…` becomes `C:/…` and `/tmp` the temp directory, never a bare
+  `/c` (`MSYS_NO_PATHCONV` / `MSYS2_ARG_CONV_EXCL` switch it off; `ShellEnvironment.NativeArgument`).
+  An MSYS program (Git's `usr/bin`) reads `/c/…` itself but re-parses an unquoted word of its command
+  line like a shell, so for it `ChildLauncher` double-quotes any argument beyond letters, digits and
+  `-_./:=@%+,`, doubling backslashes. *(DECISIONS: 2026-09-11, 2026-09-12, 2026-10-10, 2026-10-12.)*
 - **PATH mirrors Git Bash.** When `git.exe` is discoverable on PATH the installation's
   `usr/bin` and `mingw64/bin` are prepended (exactly what the MSYS runtime does), so externals
   outside the in-process set resolve as they would under Git Bash; the shell's own directory is
@@ -366,12 +373,18 @@ Two model points:
 ## 11. Environment & scoping
 
 `ShellEnvironment` holds variables, exports, and the positional-parameter / scope stack.
-Indexed arrays use a `SortedDictionary<int,string>` (preserving index order through sparse
-assignment and `unset`); associative arrays use a `Dictionary<string,string>`. Function calls
-push a scope frame (`PushScope`/`PopScope`) carrying their own positionals; `local` binds into
-the current frame. Special variables (`$?`, `$#`, `$@`, `$*`, `$0`, `$1…`) and exports are
-resolved here. *(DECISIONS: 2026-06-13 — `$`-expansions unified, positional parameters; array
-`@`/`*` field expansion.)*
+Scoping is bash's dynamic scoping. The scopes are a list of frames, global first; each maps a name
+to a `Var` holding the variable whole: a scalar, an indexed array (`SortedDictionary<int,string>`,
+preserving index order through sparse assignment and `unset`) or an associative array, with its
+export / readonly / integer attributes. A name is looked up innermost-out. An assignment to a name
+no frame holds creates it in the GLOBAL frame, so a function's `x=1` survives the return, while
+`local` (and `declare` inside a function) binds into the innermost frame, arrays and attributes
+included. `unset` in the declaring function leaves the name declared and unset, still hiding an
+outer one; anywhere else it removes it. Function calls push a frame (`PushScope`/`PopScope`)
+carrying their own positionals; a subshell's snapshot deep-copies the frames. Special variables
+(`$?`, `$#`, `$@`, `$*`, `$0`, `$1…`) and exports are resolved here. *(DECISIONS: 2026-06-13 —
+`$`-expansions unified, positional parameters; array `@`/`*` field expansion; 2026-10-12 —
+VARIABLE SCOPE.)*
 
 ---
 

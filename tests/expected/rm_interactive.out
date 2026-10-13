@@ -1,0 +1,56 @@
+1 rm write-protected, stdin not a terminal:
+ rc=0
+  a removed
+2 rm -i, end of input:
+rm: remove regular empty file 'b'?  rc=0
+  b kept
+3 rm -i write-protected:
+rm: remove write-protected regular empty file 'c'?  rc=0
+  c kept
+4 rm -I four files, end of input:
+rm: remove 4 arguments?  rc=0
+4
+5 rm -I two files (no question):
+ rc=0
+0
+6 rm -r with a write-protected file inside:
+ rc=0
+  t removed
+7 rm -f write-protected:
+ rc=0
+  f removed
+8 echo y | rm -i:
+rm: remove regular file 'g'? 
+  g removed
+9 echo yes | rm -i:
+rm: remove regular file 'w'? 
+  w removed
+10 echo no | rm -i:
+rm: remove regular file 'n'? 
+  n kept
+11 rm -i -f (the last wins):
+ rc=0
+  h removed
+12 rm -f -i (the last wins):
+rm: remove regular file 'j'?  rc=0
+  j kept
+13 rm -ri, answer n:
+rm: descend into directory 'u'? 
+  u kept
+14 rm -ri, answers y y y:
+rm: descend into directory 'v'? rm: remove regular file 'v/f'? rm: remove directory 'v'? 
+  v removed
+15 rm -rI, end of input:
+rm: remove 1 argument recursively?  rc=0
+  r kept
+16 rm -di, answer y:
+rm: remove directory 'ed'? 
+  ed removed
+17 rm -r a directory link (C#Bash emptied the target):
+ rc=0
+  l1 removed
+  tg/f kept
+18 rm a directory link:
+ rc=0
+  l2 removed
+  tg/f kept
