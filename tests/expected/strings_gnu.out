@@ -1,0 +1,197 @@
+-- strings a.bin
+abcd
+abcde
+xyzw	q
+high
+bytes
+line two  
+rc=0
+-- strings -n 2 a.bin
+ab
+abcd
+abcde
+xyzw	q
+high
+bytes
+line two  
+end
+rc=0
+-- strings -3 a.bin
+abcd
+abcde
+xyzw	q
+high
+bytes
+line two  
+end
+rc=0
+-- strings --bytes=6 a.bin
+xyzw	q
+line two  
+rc=0
+-- strings -n1 b.bin
+one
+two2
+three
+rc=0
+-- strings -t x th.bin
+      4 abcd
+     1c offset-twenty
+rc=0
+-- strings -t d th.bin
+      4 abcd
+     28 offset-twenty
+rc=0
+-- strings -t o th.bin
+      4 abcd
+     34 offset-twenty
+rc=0
+-- strings -o th.bin
+      4 abcd
+     34 offset-twenty
+rc=0
+-- strings --radix=x a.bin
+      3 abcd
+      8 abcde
+      f xyzw	q
+     17 high
+     1c bytes
+     23 line two  
+rc=0
+-- strings -f a.bin b.bin
+a.bin: abcd
+a.bin: abcde
+a.bin: xyzw	q
+a.bin: high
+a.bin: bytes
+a.bin: line two  
+b.bin: two2
+b.bin: three
+rc=0
+-- strings -f -t x b.bin th.bin
+b.bin:       4 two2
+b.bin:       9 three
+th.bin:       4 abcd
+th.bin:      1c offset-twenty
+rc=0
+-- strings -w a.bin | od -c
+0000000   a   b   c   d  \n   a   b   c   d   e  \n   x   y   z   w  \t
+0000020   q  \n   h   i   g   h  \n   b   y   t   e   s  \n  \n   l   i
+0000040   n   e       t   w   o          \r  \n   e   n   d  \n
+0000056
+rc=0
+-- strings -s | b.bin
+two2|three|rc=0
+
+-- strings --output-separator=:: b.bin
+two2::three::rc=0
+
+-- strings -e S a.bin | od -c
+0000000   a   b   c   d  \n   a   b   c   d   e  \n   x   y   z   w  \t
+0000020   q 200 377   h   i   g   h 351   b   y   t   e   s  \n   l   i
+0000040   n   e       t   w   o          \n
+0000051
+rc=0
+-- strings -e l le.bin
+Hello
+xWide str
+rc=0
+-- strings -e b be.bin
+Hello
+xWide
+rc=0
+-- strings -e L l32.bin
+Long!
+rc=0
+-- strings -e B b32.bin
+Big!
+rc=0
+-- strings --encoding=l odd.bin
+ABCD
+EFGH
+rc=0
+-- strings -e l -t x odd.bin
+      1 ABCD
+      b EFGH
+rc=0
+-- strings le.bin
+rc=0
+-- strings -a b.bin
+two2
+three
+rc=0
+-- strings - b.bin
+two2
+three
+rc=0
+-- strings --all -n 5 b.bin a.bin
+three
+abcde
+xyzw	q
+bytes
+line two  
+rc=0
+-- strings empty.bin
+rc=0
+-- strings th.bin
+abcd
+offset-twenty
+rc=0
+-- stdin
+from stdin
+four
+rc=0
+-- stdin -f
+{standard input}: from stdin
+rc=0
+-- strings nofile.bin
+strings: 'nofile.bin': No such file
+rc=1
+-- strings dir
+strings: Warning: 'dir' is a directory
+rc=1
+-- strings a.bin nofile.bin b.bin
+abcd
+abcde
+xyzw	q
+high
+bytes
+line two  
+strings: 'nofile.bin': No such file
+two2
+three
+rc=1
+-- strings -n 0 a.bin
+strings: invalid minimum string length 0
+rc=1
+-- strings -n x a.bin
+strings: invalid integer argument x
+rc=1
+-- strings -n 010 c.bin
+bbbbbbbb
+dddddddddddddddd
+rc=0
+-- strings -n 0x5 c.bin
+bbbbbbbb
+ccccc
+dddddddddddddddd
+rc=0
+-- strings -n 5b c.bin
+strings: invalid integer argument 5b
+rc=1
+-- strings -12 c.bin
+dddddddddddddddd
+rc=0
+-- strings -o -t x c.bin
+      3 bbbbbbbb
+      c ccccc
+     12 dddddddddddddddd
+rc=0
+-- strings -t x -o c.bin
+      3 bbbbbbbb
+     14 ccccc
+     22 dddddddddddddddd
+rc=0
+-- strings -s  c.bin
+bbbbbbbbcccccddddddddddddddddrc=0
+

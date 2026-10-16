@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Deploy the committed tree as dist/Bash.exe, the shell every Claude Code session on this machine runs.
 #
-#   tools/deploy.sh            (run it FROM Git Bash, on the architect's "deploy")
-#   CHERE_INVOKING=1 F:/Tools/PortableGit/usr/bin/_bash.exe -l -c 'cd /f/Koliada/Tools/bash && "$BASH" tools/deploy.sh'
+#   bash tools/deploy.sh       (on the architect's "deploy"; from a Claude Code Bash call, i.e. C#Bash, or Git Bash)
+#
+# Any bash runs it. Until 2026-10-14 it refused C#Bash, a guard copied from compare3.sh with no reason of its
+# own; every command form here was then run under Git Bash, the deployed C#Bash and the next one with identical
+# results, renaming a running image included (DECISIONS 2026-10-14, the architect: "drop it, go").
 #
 # A CONTRACT TOOL (2026-10-12, the architect: "repetitive tools here need to be contracts, period").
 # Until then each deploy was done by hand from DECISIONS' notes. It runs one way:
@@ -19,7 +22,6 @@
 # notice to every live local session (ListAgents) leading with the behaviour changes, then the
 # DECISIONS entry and the anchor. Rolling back is the rename in reverse.
 set -u
-case "${BASH_VERSION:-}" in *koliada*) echo "deploy: run me under Git Bash, not C#Bash (see the header)" >&2; exit 2 ;; esac
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root" || exit 2
 stage="$root/dist.staging"; dist="$root/dist"

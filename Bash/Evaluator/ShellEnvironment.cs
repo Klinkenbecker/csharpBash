@@ -236,16 +236,18 @@ public sealed class ShellEnvironment
 	/// A Windows program's argument, with an MSYS-form path at its START converted to Windows form, as
 	/// Git Bash does: `/c/x` → `C:/x` (a drive that exists, so `/a/b` with no A: stays), `/tmp/x` → the
 	/// temp directory. Never a bare `/c` (`cmd /c`), never inside an argument (`--file=/c/x`), and the
-	/// rest of the argument is left as typed (no backslash rewriting). `//host/share/x` is already
-	/// Windows form; `~` the shell expands before. <paramref name="excluded"/>: Git Bash's
-	/// MSYS2_ARG_CONV_EXCL prefixes. Until 2026-10-10 every argument reached the program verbatim, so
-	/// `git -C /f/repo` failed while the shell's own `cd /f/repo` worked (the architect: "your
-	/// recommendation is good").
+	/// rest of the argument is left as typed (no backslash rewriting). `//x` is Git Bash's escape for a
+	/// Windows switch (<see cref="DoubleSlash"/>): `cmd //c` runs `cmd /c`. `~` the shell expands before.
+	/// <paramref name="excluded"/>: Git Bash's MSYS2_ARG_CONV_EXCL prefixes. Until 2026-10-10 every
+	/// argument reached the program verbatim, so `git -C /f/repo` failed while the shell's own
+	/// `cd /f/repo` worked (the architect: "your recommendation is good").
 	/// </summary>
 	public static string NativeArgument(string arg, string[]? excluded = null)
 		{
-		if (arg.Length < 3 || arg[0] != '/') return arg;
+		if (arg.Length < 2 || arg[0] != '/') return arg;
 		if (excluded is not null) foreach (var p in excluded) if (p.Length > 0 && arg.StartsWith(p, StringComparison.Ordinal)) return arg;
+		if (arg[1] == '/') return DoubleSlash(arg);
+		if (arg.Length < 3) return arg;
 		if (char.IsAsciiLetter(arg[1]) && arg[2] == '/')
 			{
 			char d = char.ToUpperInvariant(arg[1]);
@@ -258,6 +260,21 @@ public sealed class ShellEnvironment
 			return arg.Length == 4 ? temp : temp + arg[4..];
 			}
 		return arg;
+		}
+
+	/// <summary>
+	/// An argument starting `//`, as Git Bash hands it to a Windows program: one leading `/` goes and every
+	/// `\` becomes `/` (`//c` → `/c`, `//a\b` → `/a/b`, `///x` → `//x`, `//` → `/`); exactly two slashes with
+	/// another `/` later is a UNC path and keeps both (`//host/share/x`; a `\` still becomes `/`); an argument
+	/// holding a glob or quote character (<c>* ? [ ] " '</c> or a backquote) is left alone. Measured against Git
+	/// Bash 2026-10-13. Until then `//c` reached the program as typed, so `cmd //c …` started an interactive
+	/// cmd that waited on standard input.
+	/// </summary>
+	private static string DoubleSlash(string arg)
+		{
+		if (arg.IndexOfAny(['*', '?', '[', ']', '"', '\'', '`']) >= 0) return arg;
+		bool unc = arg.Length > 2 && arg[2] != '/' && arg.IndexOf('/', 2) > 0;
+		return (unc ? arg : arg[1..]).Replace('\\', '/');
 		}
 
 	private static string TranslateForm(string path)
@@ -585,6 +602,10 @@ public sealed class ShellEnvironment
 
 	/// <summary>Every visible variable's name, scalars and arrays (tab completion, `set`, `${!prefix*}`).</summary>
 	public IEnumerable<string> VariableNames() => [.. Visible().Select(p => p.Name)];
+
+	/// <summary>Every visible variable that holds something: a value, or an array with elements (`compgen -v`; a
+	/// name declared with no value, or an empty array, is left out, as bash 5.1 does).</summary>
+	public IEnumerable<string> VariablesWithValues() => [.. Visible().Where(p => p.V.Value is not null || p.V.Indexed is { Count: > 0 } || p.V.Assoc is { Count: > 0 }).Select(p => p.Name)];
 
 	// ── indexed arrays ────────────────────────────────────────────────────────
 

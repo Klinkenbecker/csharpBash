@@ -1,0 +1,71 @@
+-b has .
+-b has :
+-b has [
+-b has echo
+-b has cd
+-b has compgen
+-b has complete
+-b has compopt
+-b has cat
+-b has grep
+-b has sed
+-b has awk
+-b has jq
+-b has strings
+-b has find
+-b has no bind
+-b has no enable
+-b has no help
+-b has no ulimit
+-b has no caller
+-b has no logout
+-b has no suspend
+sorted-once ok
+enabled ok
+builtin-ec ok
+disabled rc=1
+stopped rc=1
+c-head ok
+c-rest ok
+c-fi ok
+notepad (on PATH) rc=1
+== compgen -o filenames -f x: rc=2
+compgen: compgen -o filenames is not currently available in C#Bash
+link ok
+== compgen -F f: rc=2
+compgen: compgen -F (completion functions) is not currently available in C#Bash
+link ok
+== compgen -C c: rc=2
+compgen: compgen -C (completion commands) is not currently available in C#Bash
+link ok
+== compgen -u: rc=2
+compgen: compgen -A user is not currently available in C#Bash
+link ok
+== compgen -g: rc=2
+compgen: compgen -A group is not currently available in C#Bash
+link ok
+== compgen -s: rc=2
+compgen: compgen -A service is not currently available in C#Bash
+link ok
+== compgen -A binding: rc=2
+compgen: compgen -A binding is not currently available in C#Bash
+link ok
+== compgen -A group: rc=2
+compgen: compgen -A group is not currently available in C#Bash
+link ok
+== compgen -A helptopic: rc=2
+compgen: compgen -A helptopic is not currently available in C#Bash
+link ok
+== compgen -A hostname: rc=2
+compgen: compgen -A hostname is not currently available in C#Bash
+link ok
+== compgen -A service: rc=2
+compgen: compgen -A service is not currently available in C#Bash
+link ok
+== compgen -A user: rc=2
+compgen: compgen -A user is not currently available in C#Bash
+link ok
+== complete -F f cmd: rc=2
+complete: complete (programmable completion) is not currently available in C#Bash
+== compopt -o nospace: rc=2
+compopt: compopt (programmable completion) is not currently available in C#Bash

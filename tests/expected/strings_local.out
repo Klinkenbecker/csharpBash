@@ -1,0 +1,44 @@
+version ok
+-V ok
+help rc=0 lines=21
+Usage: strings [option(s)] [file(s)]
+strings: C#Bash in-process: no object formats; -d, -T, -U / --unicode and @file are not available
+== strings -t q f
+Usage: strings [option(s)] [file(s)]
+strings: C#Bash in-process: no object formats; -d, -T, -U / --unicode and @file are not available
+rc=1
+== strings -e z f
+Usage: strings [option(s)] [file(s)]
+strings: C#Bash in-process: no object formats; -d, -T, -U / --unicode and @file are not available
+rc=1
+== strings -e ll f
+Usage: strings [option(s)] [file(s)]
+strings: C#Bash in-process: no object formats; -d, -T, -U / --unicode and @file are not available
+rc=1
+== strings -
+Usage: strings [option(s)] [file(s)]
+rc=1
+== strings -q f
+strings: invalid option -- 'q'
+strings: (C#Bash: not implemented in-process and no external 'strings' on PATH)
+rc=2
+== strings -d f
+rc=2
+strings: strings -d (--data) is not currently available in C#Bash
+link ok
+== strings -T pe-x86-64 f
+rc=2
+strings: strings -T (--target) is not currently available in C#Bash
+link ok
+== strings -U e f
+rc=2
+strings: strings -U (--unicode) is not currently available in C#Bash
+link ok
+== strings --unicode=hex f
+rc=2
+strings: strings -U (--unicode) is not currently available in C#Bash
+link ok
+== strings @opts f
+rc=2
+strings: strings @file is not currently available in C#Bash
+link ok

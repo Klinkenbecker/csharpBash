@@ -6121,3 +6121,195 @@ reason. The one recorded reason is the benchmark's (2026-09-13: its `#!/usr/bin/
 timed nothing; and it times Git Bash itself). `deploy.sh` and `publish.sh` copied the guard the day they
 were written. Claude's position: drop the guard from those two and keep it for `compare3.sh`; falsifier: a
 step in either that measurably behaves differently under C#Bash. AWAITING THE ARCHITECT.
+
+## 2026-10-13 -- PUBLISHED: GitHub main = git 0b3547d = hg rev 259
+**Status:** Active. The architect: "deploy, notify and publish". Before it, by the push rule: `compare3.sh`
+on the DEPLOYED build (rev 257; every row within noise of the rev 233 table, all outputs agree with Git Bash
+and WSL; results.md) and the doc review (rev 259). The review found two passages stale since before this
+session's work and fixed them: ARCHITECTURE's "arguments are never rewritten" (false since rev 186's
+Windows-program conversion) and IMPLEMENTATION's `FunctionDef.Source` for `declare -f` (gone since rev 240's
+printer); section 11 rewritten for the variable model of revs 245-250. `tools/publish.sh`: MERCURIAL_HISTORY.md
+and the bundle (260 changesets, verified), `The Windows Shell Tax.url` listed and not added, pushed
+02f95bc..0b3547d, no header left in git config, remote main = HEAD, no credential in the log.
+
+## 2026-10-14 -- DEFECT FIXED: `cmd //c` started an interactive cmd (Git Bash's `//` switch escape)
+**Status:** Active. Found 2026-10-12 (a spike's `cmd //c "mklink /J …"` hung a Claude Code call to its timeout);
+the architect: "2/ yes" (fix it before `strings`), then "go". Extends DECISIONS 2026-10-10 "a Windows program's
+MSYS-form path arguments are converted", whose frame it keeps: the start of an argument only, Windows programs
+only, `MSYS_NO_PATHCONV` / `MSYS2_ARG_CONV_EXCL` honoured.
+
+**Measured (Git Bash 4.4's MSYS runtime, a native program printing its argv, 63 arguments in four probes):** an argument starting
+`//` loses one leading `/` and every `\` becomes `/` (`//c` → `/c`, `//a\b\c` → `/a/b/c`, `///x` → `//x`,
+`//` → `/`); exactly two slashes with another `/` later is UNC and keeps both (`//host/share/x`, `//c/x`;
+`//a\b/c` → `//a/b/c`); any of `* ? [ ] " '` or a backquote leaves it alone; every other character converts
+(space, tab, newline, `\`, `!#$%&()+,.:;<=>@^_{|}~`, non-ASCII). C#Bash passed every such argument as typed.
+
+**Decision:** `ShellEnvironment.DoubleSlash`, reached from `NativeArgument`, exactly as measured. Kept different
+from Git Bash on purpose (DECISIONS 2026-10-10): a bare `/c` (Git Bash makes it `C:/`, which is why its users
+write `cmd //c`; C#Bash keeps `cmd /c` working too) and a `//` inside an argument (`-o//x`, Git Bash `-o/x`).
+Consequence, stated to the architect before building: `//host\share` becomes `/host/share`, as in Git Bash;
+the forward-slash UNC form is untouched.
+
+**Verified:** the four probe scripts (scratchpad slash*.sh) identical to Git Bash except bare `/c`, `-o//x` and
+`//*` (the glob, not this conversion: Git Bash lists network hosts, C#Bash the current drive's root; the known
+UNC-glob limitation). `native_args` +7 checks (`cmd //c echo hi`, the shapes, UNC, alone, both switches; deployed
+rev 257 fails 5). Suite 133/133 with a console and `-Detached`; battery 226/237 against 225.
+
+**Implemented by:** rev 261. Files: `Bash/Evaluator/ShellEnvironment.cs`, `tests/cases/native_args.sh`,
+`tests/expected/native_args.out`.
+
+## 2026-10-14 -- METHOD: `tools/deploy.sh` and `tools/publish.sh` run under any bash (the Git Bash guard dropped)
+**Status:** Active. Resolves the open item in "DEPLOYED: rev 257" (the architect had asked "why does the deploy
+script use git bash?"). The architect: "drop it, go". Amends the 2026-10-12 METHOD entry's "(from Git Bash)".
+
+**Context:** both tools refused C#Bash with a guard that gave no reason. The only recorded reason belongs to
+`compare3.sh` (2026-09-13: its `#!/usr/bin/env bash` found C#Bash and timed nothing; it also times Git Bash
+itself), and both tools copied its guard the day they were written. Claude's falsifier for dropping it: a step
+that measurably behaves differently under C#Bash.
+
+**Measured (2026-10-14, every command form of both tools, read-only, under Git Bash, the deployed C#Bash rev 257
+and rev 261):** identical results for `hg status`/`id`, `cygpath -w`, `cmd.exe /c` with `MSYS2_ARG_CONV_EXCL='*'`,
+`powershell.exe -File` with the suite's arguments, `[[ ]]` patterns, here-strings, the stamp-vs-results.md check,
+the MERCURIAL_HISTORY.md table (same md5 over 262 rows), the staging list (382 files, same md5), `base64`, the
+token mask, and renaming a running image. One cosmetic difference seen: `sed`'s error column ("char 0", GNU
+"char 12"), not raised.
+
+**Decision:** the guard is removed from both; their headers say any bash runs them and why. `compare3.sh` keeps
+its guard (its reason is measured). Polarity: under C#Bash the old `deploy.sh` stops at the guard; the new one
+reaches its own clean-tree check, and `publish.sh` its usage check.
+
+**Also decided (the architect, "1/ next"):** rev 261 (`cmd //c`) goes out with the next deploy, not on its own.
+
+**Implemented by:** rev 262. Files: `tools/deploy.sh`, `tools/publish.sh`.
+
+## 2026-10-14 -- BUILT: `strings` as GNU strings 2.38 (scope ratified)
+**Status:** Active. Queued 2026-10-12 when a second session needed it (koliada-net hit it inspecting a .NET exe,
+2026-10-10). Scope proposed against GNU strings 2.38 (Ubuntu, via WSL) and RATIFIED by the architect 2026-10-14
+("ratified"), with its three-step plan. Until then `strings` was not a command here at all: Git for Windows ships
+no binutils.
+
+**Behaviour (GNU's, measured):** files or standard input (`{standard input}` for `-f`); the whole file; runs of at
+least 4 printable characters (ASCII 32-126 and tab), each followed by a newline or the `-s` separator. `-n` /
+`--bytes` read as C's strtoul (`010` is 8, `0x5` is 5, trailing text "invalid integer argument", 0 "invalid
+minimum string length 0", a negative wraps to a huge minimum: nothing printed); `-N` the digits alone; `-t o|d|x`
+and `-o`, the last winning, offsets 7 wide; `-f`; `-w` (all white space, CR and newlines kept inside a run);
+`-e s|S|b|l|B|L` (8-bit, 16- and 32-bit big/little-endian; a character above 255 never printable). After a
+character that is not printable the scan resumes ONE BYTE past its start (GNU's unget_part_char), so odd-aligned
+UTF-16 is found: measured, against Claude's recollection of the C, which said otherwise. `-` is GNU's alias for
+`-a`, not standard input (`strings -` alone is a usage error). A missing file or a directory reports, carries on,
+exits 1, with standard output flushed first.
+
+**C#Bash's own:** the default stays `-e s` (ASCII only) as GNU, though Windows binaries keep most text in UTF-16:
+the ruling is bash as Claude expects it, and a C#Bash-only default would break it. `--version` never claims GNU
+(awk's precedent). `--help` / a usage error print GNU's usage text with its last line C#Bash's (GNU's lists BFD
+targets). An option GNU lacks (`-q`) follows DECISIONS 2026-09-04 #2. `-d`, `-T`, `-U` / `--unicode`, `@file`:
+a PATH `strings` takes the command when one exists (2026-09-04 #2), else the not-available notice and link
+(2026-10-11), exit 2.
+
+**Verified:** `strings_gnu` (197 lines: synthetic bytes, every option, both 16- and 32-bit orders, odd alignment,
+stdin, errors; expected = GNU via WSL; identical; rev 257 fails it, `command not found`); `strings_local`
+(authored: version, help, usage errors, the policy, the four notices with their links). On the real 6.9 MB
+`dist/Bash.exe`, `strings`, `-e l`, `-t x -n 8` and `-e S` give GNU's line counts and output md5 exactly
+(90449 lines for plain `strings`). One run, managed Release build including ~70 ms startup: 192 ms (`-e l` 185 ms).
+Suite 135/135 with a console and `-Detached`; battery 226/237 against 225.
+
+**Implemented by:** rev 264. Files: `Bash/Evaluator/Builtins.Text.cs` (`Strings`, `StringsScan`, `StrToUl`,
+`StringsOutput`), `Bash/Evaluator/Builtins.cs`, `tests/cases/strings_gnu.sh`, `tests/expected/strings_gnu.out`,
+`tests/cases/strings_local.sh`, `tests/expected/strings_local.out`, `tests/run-tests.ps1`, `README.md`,
+`IMPLEMENTATION.md`.
+
+## 2026-10-15 -- BUILT: `compgen` (describing THIS shell); `complete` / `compopt` say not available; PATH scan deferred
+**Status:** Active. Reported by daq-d1 2026-10-12 (`compgen` was not a builtin; it runs on a workaround). Scope
+GREENLIT 2026-10-12 ("Yes": generating actions + -G -W -X -P -S + word filter + status; complete/compopt/-F/-C/
+-o/-u/-g/hostname/service/binding the not-available notice; `-c` names as Git Bash). Built on "next; go".
+
+**Ruling on the fork found while building (the architect, 2026-10-15):** "C#Bash has no formal bin dir. Whereas
+some of the commands may or may not exist externally, C#Bash is really _only_ about its builtins. It is probably
+worth building a list of externally available linux commands (from the path), but I would defer that as a
+possible enhancement." So compgen describes THIS shell: `-b` / `-A builtin` / `enabled` list every C#Bash
+builtin, the in-process tools included (as `type -t` and the interactive completion already did); `-c` lists
+aliases, keywords, functions and builtins, and scans no PATH; `-A helptopic` gets the notice (no `help` here).
+The fork as put: bash 5.1's 61 builtins minus the 10 C#Bash lacks, or all of C#Bash's; Git Bash's PATH rule
+(`.exe`/`.com`/`#!`, measured) or what C#Bash runs (PATHEXT incl. `.cmd`/`.bat`); help topics or the notice.
+
+**DEFERRED (the architect's word: "a possible enhancement"):** listing the externally available commands on PATH
+in `compgen -c`. Measured for it: Git Bash lists PATH files by on-disk name (`zzt1.exe`, `zzt9.sh`), duplicates
+across PATH entries kept, only `.exe`/`.com` and `#!` scripts (not `.cmd`/`.bat`). Revisit: on the architect's
+word, or when a session needs `compgen -c` to find an external program.
+
+**Behaviour, measured against GNU bash 5.1:** the actions in bash's order (pcomplete.c's CA_ bits), then `-G`,
+then `-W`, no duplicates removed; each keeps the names starting with the word; `-W` split at IFS outside quotes,
+each piece expanded (braces, tilde, parameters, command substitution, arithmetic, word splitting) but never
+globbed; `-X` with `&` as the word and `!` to keep; `-P`/`-S` last; `-f`/`-d` complete the word as a path, dot
+files included, directory order (unsorted in bash too); `-G` ignores the word; names sorted for aliases,
+functions and variables, bash's own order for keywords, signals (EXIT, 64 Linux names with SIGJUNK(32)/(33),
+DEBUG, ERR, RETURN), set -o and shopt names (this shell's lists); jobs newest first by first word; a variable
+with no value or an empty array is not listed; status 1 for no output, 0 when nothing was asked, 2 (with bash's
+messages and usage line) for a bad option, a missing argument or a bad action name.
+
+**Verified:** `compgen` (246 lines, GNU-expected; rev 257 misses 306 diff lines) and `compgen_local` (authored:
+the builtin list, `-c` order and no PATH scan, the twelve notices, complete/compopt). Suite 137/137 with a
+console and `-Detached`; battery 226/237 against 225.
+
+**Implemented by:** rev 265. Files: `Bash/Evaluator/Builtins.Shell.cs` (`Compgen` and helpers,
+`CompletionNotAvailable`), `Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/ShellEnvironment.cs`
+(`VariablesWithValues`), `Bash/Evaluator/Evaluator.cs` (`JobTable`), `tests/cases/compgen.sh`,
+`tests/expected/compgen.out`, `tests/cases/compgen_local.sh`, `tests/expected/compgen_local.out`,
+`tests/run-tests.ps1`, `README.md`, `IMPLEMENTATION.md`.
+
+## 2026-10-15 -- DEFECT TRACED AND FIXED: git's credential prompt hung under Claude Code (`/dev/tty` in a windowless console)
+**Status:** Active. The open item "Inferred, not traced (2026-09-15): git's credential prompt runs through C#Bash
+and fails on /dev/tty", taken on the architect's "go next" (the last of the open-defects run).
+
+**Traced (2026-10-15, git 2.28.0.windows.1, `GIT_TRACE`):** with no helper answering (credential.helper=helper-
+selector is set in PortableGit's etc/gitconfig; the trace disabled it to keep a GUI off the desktop) and no
+askpass set, Git for Windows prompts by running `bash -c 'cat >/dev/tty && read -r line </dev/tty && echo
+"$line"'`, and `bash` on PATH is C#Bash (dist/Bash.exe). Claude Code gives its shell a console with NO WINDOW
+(CREATE_NO_WINDOW; GetConsoleWindow() NULL there and in git's child, measured), C#Bash opened it as /dev/tty, and
+the read waited for typing that cannot come: the call hung to its timeout, silently. The inference was half
+right: it does run through C#Bash, and it hangs rather than fails.
+
+**References, measured in the same place:** Git Bash's /dev/tty there is "No such device or address" at once;
+GNU bash with no controlling terminal (`setsid -w`) the same. git with no `bash` at all fails at once ("could
+not read Username"), so git's own fallback does not hang: C#Bash's read was the whole hang. Under Git Bash's
+login profile `etc/profile.d/env.sh` exports `SSH_ASKPASS=git-gui--askpass`, so there git shows a GUI password
+dialog instead (seen when the trace ran it: it waited 20 s for an answer on the desktop).
+
+**Fix:** `ShellFile.OpenTty` (every /dev/tty open: a program's redirect, an in-process redirect, `cat`/`read`):
+the console only when it has a window (`GetConsoleWindow() != NULL`), else bash's "No such device or address".
+Measured with a throwaway ConPTY probe: Windows Terminal's ConPTY and a classic console (even hidden) have a
+window handle, so interactive /dev/tty prompts keep working. Refines DECISIONS' 2026-10 device-file rule ("with
+none [console], it is 'No such device or address'") to "with no window".
+
+**Verified:** new case `dev_tty_windowless` (authored, GNU's messages): via the new fixture
+`tests/fixtures/console-kind.ps1` (a windowless console, or one with a hidden window, the same in both suite
+modes, a hang killed at 15 s), write/read/cat on /dev/tty fail at once and git's prompt fails ("could not read
+Username", 128) in about a second; with a window /dev/tty still opens. Rev 257 writes, then hangs (TIMEOUT).
+Suite 138/138 with a console and `-Detached`; battery 226/237 against 225.
+
+**Open (raised, AWAITING THE ARCHITECT, not built):** should C#Bash export `SSH_ASKPASS=git-gui--askpass` when
+unset, as Git Bash's profile does, so git asks with a dialog instead of failing? Claude's position: no. GNU
+bash (the strategic reference) fails fast; a dialog popping up from Claude's commands is surprising, and git's
+own credential helper (helper-selector / GCM) already offers the GUI route before any prompt. Falsifier: sessions
+that need interactive credentials and have no helper.
+
+**Implemented by:** rev 266. Files: `Bash/Evaluator/ShellFile.cs`, `Bash/Evaluator/Evaluator.cs`,
+`tests/fixtures/console-kind.ps1`, `tests/cases/dev_tty_windowless.sh`, `tests/expected/dev_tty_windowless.out`,
+`tests/run-tests.ps1`, `README.md`, `IMPLEMENTATION.md`.
+
+## 2026-10-16 -- DEPLOYED: rev 266 (revs 261-266), notice sent; the first deploy run by C#Bash itself
+**Status:** Active. The architect: "1/ deploy, notify and publish". `bash tools/deploy.sh` from a Claude Code
+Bash call, i.e. under the deployed C#Bash rev 257 (the guard was dropped in rev 262): rev 266
+(`1.0.0+hg.a160167e4eb9 266`) over rev 257; suite 138/138 on that exact binary with a console and `-Detached`;
+battery 226/237 against 225; rev 257 renamed to `dist/Bash.exe.rev257` while it was running the script, rev 266
+copied in, stamp re-checked. Live check in a Claude Code Bash call: stamp rev 266, `cmd //c echo hi` prints
+`hi`, `strings` and `strings -e l`, `compgen -W` and `-b`, `read </dev/tty` fails at once, git's credential
+prompt fails in 0 s (128). Notice to the eight live sessions (daq-fe, the successor of daq-d1, told its compgen
+report is in; koliada-net-7c told `strings` is in; gps-time-2c and guy-b3, new, told what their shell is),
+leading with the git hang.
+
+## 2026-10-16 -- DECIDED: C#Bash does not export SSH_ASKPASS (git fails fast without a terminal)
+**Status:** Active. The architect: "2/ No", on the question raised with the /dev/tty fix (rev 266): should
+C#Bash export `SSH_ASKPASS=git-gui--askpass` when unset, as Git Bash's `etc/profile.d/env.sh` does, so git asks
+for credentials with a dialog? No: without a terminal git fails at once, as under GNU bash; git's credential
+helper remains the GUI route. Revisit only on the architect's word.

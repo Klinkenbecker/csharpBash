@@ -11,5 +11,12 @@ backslash ok
 off ok
 excl-all ok
 excl-pref ok
+cmd-dbl-c ok
+dbl ok
+dbl-bs ok
+dbl-unc ok
+dbl-alone ok
+dbl-off ok
+dbl-excl ok
 msys ok
 git ok

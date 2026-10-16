@@ -11,6 +11,23 @@ public static class ShellFile
 	{
 	public const FileShare Share = FileShare.ReadWrite | FileShare.Delete;
 
+	/// <summary>
+	/// /dev/tty exists only when the console has a window: Windows Terminal (ConPTY) and a classic console
+	/// have one, even hidden; the console Claude Code gives its shell has none (CREATE_NO_WINDOW), and nor does
+	/// anything that shell starts. Reading a windowless console waits for typing that cannot come: git's
+	/// credential prompt (`bash -c 'cat >/dev/tty && read -r line </dev/tty …'`, which finds C#Bash as `bash`)
+	/// hung the call to its timeout. Without a window /dev/tty is bash's "No such device or address", as GNU
+	/// bash with no controlling terminal and Git Bash in the same place give it at once (measured 2026-10-15,
+	/// GetConsoleWindow under ConPTY, a hidden classic console, Claude Code's shell and a child of git).
+	/// </summary>
+	public static bool TtyAvailable => GetConsoleWindow() != IntPtr.Zero;
+
+	/// <summary>The console (CONIN$ or CONOUT$) for /dev/tty, or "No such device or address" without a terminal.</summary>
+	public static Microsoft.Win32.SafeHandles.SafeFileHandle OpenTty(string device, ChildLauncher.Access how) =>
+		TtyAvailable ? ChildLauncher.Open(device, how) : throw new IOException("No such device or address");
+
+	[System.Runtime.InteropServices.DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
+
 	public static FileStream OpenRead(string path) => new(path, FileMode.Open, FileAccess.Read, Share);
 
 	/// <summary>`&gt; file`: created, or truncated.</summary>
@@ -81,7 +98,7 @@ public static class ShellFile
 		"null" => Stream.Null,
 		"zero" => new ZeroStream(),
 		"random" => new RandomStream(),
-		"tty" => new FileStream(ChildLauncher.Open("CONIN$", ChildLauncher.Access.Read), FileAccess.Read),
+		"tty" => new FileStream(OpenTty("CONIN$", ChildLauncher.Access.Read), FileAccess.Read),
 		"fd:0" => Evaluator.CurrentRawStdin() ?? Console.OpenStandardInput(),
 		var fd => ShellEnvironment.Active?.FdStream?.Invoke(DeviceFd(path)) is { CanRead: true } s ? s
 		        : throw new IOException($"{path}: Bad file descriptor"),

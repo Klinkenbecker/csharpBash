@@ -1387,4 +1387,217 @@ public sealed partial class Builtins
 			}
 		return rc;
 		}
+
+	// ── strings ─────────────────────────────────────────────────────────────────
+
+	/// <summary>GNU strings 2.38's usage text (to standard error after a bad value, to standard output for
+	/// `--help`), all but its last line: GNU's names its BFD targets, and C#Bash reads no object format.</summary>
+	private const string StringsUsage =
+		"Usage: strings [option(s)] [file(s)]\n" +
+		" Display printable strings in [file(s)] (stdin by default)\n" +
+		" The options are:\n" +
+		"  -a - --all                Scan the entire file, not just the data section [default]\n" +
+		"  -d --data                 Only scan the data sections in the file\n" +
+		"  -f --print-file-name      Print the name of the file before each string\n" +
+		"  -n <number>               Locate & print any sequence of at least <number>\n" +
+		"    --bytes=<number>         displayable characters.  (The default is 4).\n" +
+		"  -t --radix={o,d,x}        Print the location of the string in base 8, 10 or 16\n" +
+		"  -w --include-all-whitespace Include all whitespace as valid string characters\n" +
+		"  -o                        An alias for --radix=o\n" +
+		"  -T --target=<BFDNAME>     Specify the binary file format\n" +
+		"  -e --encoding={s,S,b,l,B,L} Select character size and endianness:\n" +
+		"                            s = 7-bit, S = 8-bit, {b,l} = 16-bit, {B,L} = 32-bit\n" +
+		"  --unicode={default|show|invalid|hex|escape|highlight}\n" +
+		"  -U {d|s|i|x|e|h}          Specify how to treat UTF-8 encoded unicode characters\n" +
+		"  -s --output-separator=<string> String used to separate strings in output.\n" +
+		"  @<file>                   Read options from <file>\n" +
+		"  -h --help                 Display this information\n" +
+		"  -v -V --version           Print the program's version number\n" +
+		"strings: C#Bash in-process: no object formats; -d, -T, -U / --unicode and @file are not available\n";
+
+	/// <summary>
+	/// `strings` as GNU strings 2.38 (binutils; scope ratified by the architect 2026-10-14). The whole file is
+	/// scanned for runs of at least `-n` (4) printable characters, each written with the separator after it
+	/// (`-s`, a newline). Printable is ASCII 32-126 and tab; `-e S` adds bytes above 127, `-w` all white space.
+	/// `-e b|l|B|L` read 16- and 32-bit characters, big- or little-endian, one above 255 never printable. After
+	/// a character that is not printable, scanning resumes ONE BYTE past its start (GNU's unget_part_char), so
+	/// odd-aligned UTF-16 is found. `-f` names the file, `-t`/`-o` give the run's byte offset. `-d`, `-T`,
+	/// `-U`/`--unicode` and `@file` need object formats or UTF-8 display C#Bash lacks: a PATH `strings` takes
+	/// the command if there is one (DECISIONS 2026-09-04 #2), else the not-available notice. Until 2026-10-14
+	/// `strings` was not a command here at all (Git for Windows ships no binutils).
+	/// </summary>
+	private int Strings(List<string> args)
+		{
+		var o = Opts.Parse("strings", args, "adfhn:wot:e:T:s:U:vV",
+			["all:a", "data:d", "print-file-name:f", "bytes=:n", "include-all-whitespace:w", "radix=:t", "target=:T",
+			 "encoding=:e", "unicode=:U", "output-separator=:s", "help:h", "version:v"], allowNumeric: true);
+		if (o.Has('h')) { Console.Out.Write(StringsUsage); return 0; }
+		if (o.Has('v') || o.Has('V'))
+			{
+			// never "GNU strings": a script that checks for binutils must not take this for it
+			Console.WriteLine("strings (C#Bash in-process, GNU strings 2.38 compatible) " + BuildInfo.Stamp);
+			return 0;
+			}
+		string? missing = o.Has('d') ? "strings -d (--data)" : o.Has('T') ? "strings -T (--target)"
+			: o.Has('U') ? "strings -U (--unicode)" : o.Operands.Any(a => a.Length > 1 && a[0] == '@') ? "strings @file" : null;
+		if (missing is not null)
+			{
+			if (_env.Get("BASH_COREUTILS") != "builtin" && _eval.ResolveOnPath("strings") is not null)
+				throw new UnsupportedOptionException("strings", missing, "not available in-process");   // the PATH strings runs it
+			foreach (var line in NotAvailable.Lines("strings: ", missing)) Console.Error.WriteLine(line);
+			return 2;
+			}
+		int Usage() { Console.Error.Write(StringsUsage); return 1; }
+
+		// -n / --bytes as C's strtoul(s, &end, 0): 010 is octal, 0x5 hex, trailing text an error; a negative
+		// number wraps to a huge minimum (GNU prints nothing); `-N` the digits alone
+		int min = 4;
+		if (o.Get('n') is { } nv)
+			{
+			if (!StrToUl(nv, out var v)) { Console.Error.WriteLine($"strings: invalid integer argument {nv}"); return 1; }
+			min = v > int.MaxValue ? int.MaxValue : (int)v;
+			}
+		else if (o.Numeric is { } digits) min = int.TryParse(digits, out var d) ? d : int.MaxValue;
+		if (min < 1) { Console.Error.WriteLine($"strings: invalid minimum string length {min}"); return 1; }
+		int radix = 0;   // the last of -t / -o wins
+		foreach (var (opt, val) in o.Sequence)
+			if (opt == 'o') radix = 8;
+			else if (opt == 't') radix = val switch { "o" => 8, "d" => 10, "x" => 16, _ => -1 };
+		if (radix < 0) return Usage();
+		char enc = 's';
+		if (o.Get('e') is { } e) { if (e.Length != 1 || !"sSblBL".Contains(e[0])) return Usage(); enc = e[0]; }
+		string sep = o.Has('s') ? o.Get('s')! : "\n";
+		bool showName = o.Has('f'), allWs = o.Has('w');
+		var files = o.Operands.Where(a => a != "-").ToList();   // `-` is GNU's alias for -a, not standard input
+		if (o.Operands.Count > 0 && files.Count == 0) return Usage();
+
+		var rout = Evaluator.CurrentRawStdout();
+		if (rout is not null) Console.Out.Flush();
+		var output = new StringsOutput(rout);
+		void Scan(Stream input, string name) => StringsScan(input, name, output, min, radix, enc, allWs, showName, sep);
+		int rc = 0;
+		void Fail(string message) { output.Flush(); Console.Error.WriteLine(message); rc = 1; }   // stdout first, as GNU's non_fatal
+		if (files.Count == 0)
+			Scan(Evaluator.CurrentRawStdin() ?? new MemoryStream(ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd())), "{standard input}");
+		foreach (var f in files)
+			{
+			var p = ShellEnvironment.TranslatePath(f);
+			if (Directory.Exists(p)) { Fail($"strings: Warning: '{f}' is a directory"); continue; }
+			if (!ShellFile.Exists(p)) { Fail($"strings: '{f}': No such file"); continue; }
+			try { using var fs = ShellFile.OpenInput(p); Scan(fs, f); }
+			catch (Exception ex) when (ex is not BrokenPipeException && ex is IOException or UnauthorizedAccessException)
+				{ Fail($"strings: {f}: {IoError(ex)}"); }
+			}
+		output.Flush();
+		return rc;
+		}
+
+	/// <summary>C's strtoul(s, &amp;end, 0) where all of <paramref name="s"/> must be used: leading white space and
+	/// a sign, `0x` hex, a leading `0` octal, else decimal; a minus wraps around as in C.</summary>
+	private static bool StrToUl(string s, out ulong value)
+		{
+		value = 0;
+		int i = 0;
+		while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+		bool negative = false;
+		if (i < s.Length && s[i] is '+' or '-') { negative = s[i] == '-'; i++; }
+		int radix = 10;
+		if (i + 2 < s.Length && s[i] == '0' && s[i + 1] is 'x' or 'X' && Uri.IsHexDigit(s[i + 2])) { radix = 16; i += 2; }
+		else if (i < s.Length && s[i] == '0') radix = 8;
+		int first = i;
+		for (; i < s.Length; i++)
+			{
+			int digit = Uri.IsHexDigit(s[i]) ? Uri.FromHex(s[i]) : 99;
+			if (digit >= radix) break;
+			value = unchecked(value * (ulong)radix + (ulong)digit);
+			}
+		if (i == first) return s.Length == 0;   // no digits: strtoul consumed nothing, valid only for ""
+		if (i < s.Length) return false;
+		if (negative) value = unchecked(0 - value);
+		return true;
+		}
+
+	/// <summary>`strings`' output: bytes, written raw when standard output is a byte stream, in 64 KB pieces.</summary>
+	private sealed class StringsOutput(Stream? raw)
+		{
+		private readonly MemoryStream _buffer = new();
+		public void Byte(int b) => _buffer.WriteByte((byte)b);
+		public void Text(string s) { var b = ShellEncoding.Utf8.GetBytes(s); _buffer.Write(b, 0, b.Length); }
+		public void EndOfString(string separator) { Text(separator); if (_buffer.Length >= 65536) Flush(); }
+		public void Flush()
+			{
+			if (_buffer.Length == 0) return;
+			if (raw is not null) { raw.Write(_buffer.GetBuffer(), 0, (int)_buffer.Length); raw.Flush(); }
+			else { Console.Out.Write(ShellEncoding.Utf8.GetString(_buffer.GetBuffer(), 0, (int)_buffer.Length)); Console.Out.Flush(); }
+			_buffer.SetLength(0);
+			}
+		}
+
+	/// <summary>GNU strings' print_strings over one input: a run starts where <paramref name="min"/> printable
+	/// characters follow one another and goes on to the next character that is not printable.</summary>
+	private static void StringsScan(Stream input, string name, StringsOutput output, int min, int radix, char enc,
+		bool allWhitespace, bool showName, string separator)
+		{
+		int width = enc is 's' or 'S' ? 1 : enc is 'b' or 'l' ? 2 : 4;
+		var buffer = new byte[65536];
+		int pos = 0, len = 0;
+		var pushedBack = new byte[8];   // bytes an unget put back, read before the stream (last in, first out)
+		int pushed = 0;
+		var ch = new byte[4];
+		long address = 0;
+		int ReadByte()
+			{
+			if (pushed > 0) return pushedBack[--pushed];
+			if (pos == len) { len = input.Read(buffer, 0, buffer.Length); pos = 0; if (len <= 0) { len = 0; return -1; } }
+			return buffer[pos++];
+			}
+		long GetChar()
+			{
+			for (int k = 0; k < width; k++) { int b = ReadByte(); if (b < 0) return -1; ch[k] = (byte)b; address++; }
+			return enc switch
+				{
+				'b' => (ch[0] << 8) | ch[1],
+				'l' => (ch[1] << 8) | ch[0],
+				'B' => ((long)ch[0] << 24) | ((long)ch[1] << 16) | ((long)ch[2] << 8) | ch[3],
+				'L' => ((long)ch[3] << 24) | ((long)ch[2] << 16) | ((long)ch[1] << 8) | ch[0],
+				_ => ch[0],
+				};
+			}
+		void UngetPart()   // resume one byte past the start of the character just read
+			{
+			if (width == 1) return;
+			address -= width - 1;
+			for (int k = width - 1; k >= 1; k--) pushedBack[pushed++] = ch[k];
+			}
+		bool Printable(long c) => c is >= 0 and <= 255 && (c == '\t' || c is >= 32 and < 127 || (enc == 'S' && c > 127)
+			|| (allWhitespace && c is ' ' or '\n' or '\v' or '\f' or '\r'));
+
+		var run = new List<byte>();
+		while (true)
+			{
+			long start = address;
+			run.Clear();
+			bool broken = false;
+			while (run.Count < min)
+				{
+				long c = GetChar();
+				if (c < 0) return;
+				if (!Printable(c)) { UngetPart(); broken = true; break; }
+				run.Add((byte)c);
+				}
+			if (broken) continue;
+			if (showName) output.Text(name + ": ");
+			if (radix != 0)
+				output.Text((radix == 8 ? Convert.ToString(start, 8) : radix == 16 ? start.ToString("x") : start.ToString()).PadLeft(7) + " ");
+			foreach (var b in run) output.Byte(b);
+			while (true)
+				{
+				long c = GetChar();
+				if (c < 0) break;
+				if (!Printable(c)) { UngetPart(); break; }
+				output.Byte((int)c);
+				}
+			output.EndOfString(separator);
+			}
+		}
 	}

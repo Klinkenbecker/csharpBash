@@ -1097,6 +1097,9 @@ public sealed class Evaluator
 
 	public bool HasJobs => _jobs.Count > 0;
 
+	/// <summary>The job table `jobs` shows (a subshell sees its parent's until it starts one of its own).</summary>
+	public IReadOnlyList<BackgroundJob> JobTable => _jobs.Count == 0 && _parentJobs is not null ? _parentJobs : _jobs;
+
 	/// <summary>A job's text as `jobs` shows it: bash's command printer in its job mode
 	/// (<see cref="Bash.Parser.CommandPrinter.Command"/>). Until 2026-10-12 a reconstruction that named a
 	/// compound command by its node type (`BraceGroup`) and dropped assignments and redirections.</summary>
@@ -1898,7 +1901,7 @@ public sealed class Evaluator
 		// /dev/tty: the console itself; with none, bash's "No such device or address"
 		ChildFd ConsoleTarget(string device, string raw)
 			{
-			try { return new HandleFd(Keep(ChildLauncher.Open(device, ChildLauncher.Access.Device))); }
+			try { return new HandleFd(Keep(ShellFile.OpenTty(device, ChildLauncher.Access.Device))); }
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 				{ throw new RedirectException($"{raw}: No such device or address"); }
 			}
@@ -2313,7 +2316,7 @@ public sealed class Evaluator
 						{
 						// the console itself (CONOUT$); with none, bash's "No such device or address"
 						System.IO.FileStream tty;
-						try { tty = new System.IO.FileStream(ChildLauncher.Open("CONOUT$", ChildLauncher.Access.Device), System.IO.FileAccess.Write); }
+						try { tty = new System.IO.FileStream(ShellFile.OpenTty("CONOUT$", ChildLauncher.Access.Device), System.IO.FileAccess.Write); }
 						catch (Exception) { throw RedirectFailed(scope, $"{rawTarget}: No such device or address"); }
 						var tw = new System.IO.StreamWriter(tty, ShellEncoding.Utf8) { AutoFlush = true, NewLine = "\n" };
 						scope.TrackInstalled(tw);

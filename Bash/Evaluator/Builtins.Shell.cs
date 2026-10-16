@@ -1717,4 +1717,247 @@ public sealed partial class Builtins
 			}
 		return null;
 		}
+
+	// ── compgen ─────────────────────────────────────────────────────────────────
+
+	private const string CompgenUsage = "compgen: usage: compgen [-abcdefgjksuv] [-o option] [-A action] [-G globpat] [-W wordlist] [-F function] [-C command] [-X filterpat] [-P prefix] [-S suffix] [word]";
+
+	/// <summary>bash's `-A` action names, in the order bash generates them (pcomplete.c's CA_ bits).</summary>
+	private static readonly string[] CompgenActions =
+		["alias", "arrayvar", "binding", "builtin", "command", "directory", "disabled", "enabled", "export", "file",
+		 "function", "group", "helptopic", "hostname", "job", "keyword", "running", "service", "setopt", "shopt",
+		 "signal", "stopped", "user", "variable"];
+
+	/// <summary>Actions C#Bash cannot generate: readline bindings, users, groups, host and service names (the
+	/// greenlit scope, 2026-10-12), and help topics (there is no `help`; the architect, 2026-10-15).</summary>
+	private static readonly HashSet<string> CompgenUnavailable = ["binding", "group", "helptopic", "hostname", "service", "user"];
+
+	/// <summary>The reserved words in bash's own order (`compgen -k`).</summary>
+	private static readonly string[] BashKeywordOrder =
+		["if", "then", "else", "elif", "fi", "case", "esac", "for", "select", "while", "until", "do", "done", "in",
+		 "function", "time", "{", "}", "!", "[[", "]]", "coproc"];
+
+	/// <summary>
+	/// `compgen` as bash 5.1's (daq-d1, 2026-10-12; scope greenlit 2026-10-12). The actions run in bash's order,
+	/// then `-G`, then `-W`; each keeps the names that start with the word (`-G` ignores it, `-f`/`-d` complete it
+	/// as a path); `-X` removes the matches of its pattern (`&` is the word, a leading `!` keeps them instead);
+	/// `-P`/`-S` go on last. Status 1 when nothing came out, 2 for a bad option or action. It describes THIS shell
+	/// (the architect, 2026-10-15: "C#Bash is really _only_ about its builtins"): `-b` lists every C#Bash builtin,
+	/// the in-process tools included, and `-c` lists aliases, keywords, functions and builtins, with no scan of
+	/// PATH (deferred). `-o`, `-F`, `-C` and the unavailable actions answer with the not-available notice.
+	/// </summary>
+	private int Compgen(List<string> args)
+		{
+		var actions = new HashSet<string>(StringComparer.Ordinal);
+		string? glob = null, wordList = null, filter = null, prefix = null, suffix = null, missing = null;
+		int i = 0;
+		for (; i < args.Count; i++)
+			{
+			var a = args[i];
+			if (a == "--") { i++; break; }
+			if (a.Length < 2 || a[0] != '-') break;
+			for (int k = 1; k < a.Length; k++)
+				{
+				char c = a[k];
+				if ("abcdefgjksuv".Contains(c))
+					{
+					actions.Add(c switch
+						{
+						'a' => "alias", 'b' => "builtin", 'c' => "command", 'd' => "directory", 'e' => "export", 'f' => "file",
+						'g' => "group", 'j' => "job", 'k' => "keyword", 's' => "service", 'u' => "user", _ => "variable",
+						});
+					continue;
+					}
+				if (!"AGWXPSoFC".Contains(c))
+					{
+					Console.Error.WriteLine($"{Err}compgen: -{c}: invalid option");
+					Console.Error.WriteLine(CompgenUsage);
+					return 2;
+					}
+				// the option's argument: the rest of this word, else the next word
+				string? v = k + 1 < a.Length ? a[(k + 1)..] : i + 1 < args.Count ? args[++i] : null;
+				k = a.Length;
+				if (v is null)
+					{
+					Console.Error.WriteLine($"{Err}compgen: -{c}: option requires an argument");
+					Console.Error.WriteLine(CompgenUsage);
+					return 2;
+					}
+				switch (c)
+					{
+					case 'A':
+						if (Array.IndexOf(CompgenActions, v) < 0) { Console.Error.WriteLine($"{Err}compgen: {v}: invalid action name"); return 2; }
+						actions.Add(v);
+						break;
+					case 'G': glob = v; break;
+					case 'W': wordList = v; break;
+					case 'X': filter = v; break;
+					case 'P': prefix = v; break;
+					case 'S': suffix = v; break;
+					case 'o': missing ??= $"compgen -o {v}"; break;
+					case 'F': missing ??= "compgen -F (completion functions)"; break;
+					case 'C': missing ??= "compgen -C (completion commands)"; break;
+					}
+				}
+			}
+		string word = i < args.Count ? args[i] : "";
+		missing ??= CompgenActions.FirstOrDefault(n => actions.Contains(n) && CompgenUnavailable.Contains(n)) is { } u ? $"compgen -A {u}" : null;
+		if (missing is not null)
+			{
+			foreach (var line in NotAvailable.Lines($"{Err}compgen: ", missing)) Console.Error.WriteLine(line);
+			return 2;
+			}
+		if (actions.Count == 0 && glob is null && wordList is null) return 0;   // nothing asked for (bash)
+
+		bool Starts(string s) => s.StartsWith(word, StringComparison.Ordinal);
+		IEnumerable<string> Sorted(IEnumerable<string> names) => names.Where(Starts).Order(StringComparer.Ordinal);
+		var list = new List<string>();
+		foreach (var act in CompgenActions)
+			{
+			if (!actions.Contains(act)) continue;
+			switch (act)
+				{
+				case "alias":     list.AddRange(Sorted(_eval.Aliases.Keys)); break;
+				case "arrayvar":  list.AddRange(Sorted(_env.VariablesWithValues().Where(n => _env.IsArray(n) || _env.IsAssoc(n)))); break;
+				case "builtin" or "enabled": list.AddRange(Sorted(Names)); break;
+				case "command":
+					list.AddRange(Sorted(_eval.Aliases.Keys));
+					list.AddRange(BashKeywordOrder.Where(Starts));
+					list.AddRange(Sorted(_eval.FunctionNames));
+					list.AddRange(Sorted(Names));
+					break;
+				case "directory": list.AddRange(CompgenPaths(word, directoriesOnly: true)); break;
+				case "export":    list.AddRange(Sorted(_env.VariablesWithValues().Where(_env.IsExported))); break;
+				case "file":      list.AddRange(CompgenPaths(word, directoriesOnly: false)); break;
+				case "function":  list.AddRange(Sorted(_eval.FunctionNames)); break;
+				case "job" or "running":   // the newest job first, each by its first word (bash's it_init_joblist)
+					foreach (var j in _eval.JobTable.OrderByDescending(j => j.Id))
+						{
+						if (act == "running" && j.Done) continue;
+						var text = j.Stages.Count > 0 ? j.Stages[0] : j.Command;
+						var first = text.TrimStart().Split([' ', '\t', '\n'], 2)[0];
+						if (Starts(first)) list.Add(first);
+						}
+					break;
+				case "keyword":   list.AddRange(BashKeywordOrder.Where(Starts)); break;
+				case "setopt":    list.AddRange(_eval.Options.LongOptions().Select(o => o.Name).Where(Starts)); break;
+				case "shopt":     list.AddRange(ShellOptions.KnownShopts.Where(Starts)); break;
+				case "signal":    list.AddRange(CompgenSignals().Where(Starts)); break;
+				case "variable":  list.AddRange(Sorted(_env.VariablesWithValues())); break;
+				// "disabled" and "stopped": C#Bash disables no builtin and stops no job
+				}
+			}
+		if (glob is not null) list.AddRange(CompgenGlob(glob));
+		if (wordList is not null) list.AddRange(CompgenWords(wordList).Where(Starts));
+		if (filter is not null)
+			{
+			bool keep = filter.StartsWith('!');
+			var pattern = new StringBuilder();
+			for (int k = keep ? 1 : 0; k < filter.Length; k++)
+				{
+				if (filter[k] == '\\' && k + 1 < filter.Length && filter[k + 1] == '&') { pattern.Append('&'); k++; }
+				else if (filter[k] == '&') pattern.Append(word);
+				else pattern.Append(filter[k]);
+				}
+			var p = pattern.ToString();
+			list = [.. list.Where(s => Glob.Match(p, s) == keep)];
+			}
+		foreach (var s in list) Console.WriteLine($"{prefix}{s}{suffix}");
+		return list.Count > 0 ? 0 : 1;
+		}
+
+	/// <summary>`compgen -A signal`: EXIT, the 64 Linux signals by bash's names (32 and 33 are SIGJUNK), then the
+	/// shell's own DEBUG, ERR and RETURN.</summary>
+	private static IEnumerable<string> CompgenSignals()
+		{
+		yield return "EXIT";
+		for (int n = 1; n < LinuxSignals.Length; n++) yield return n is 32 or 33 ? $"SIGJUNK({n})" : "SIG" + LinuxSignals[n];
+		yield return "DEBUG"; yield return "ERR"; yield return "RETURN";
+		}
+
+	/// <summary>`compgen -f` / `-d`: the word completed as a path, its directory part kept as written; dot files
+	/// included, `.` and `..` never; in the directory's own order (bash's readdir order, unsorted).</summary>
+	private static IEnumerable<string> CompgenPaths(string word, bool directoriesOnly)
+		{
+		int slash = word.LastIndexOf('/');
+		string dirPart = slash >= 0 ? word[..(slash + 1)] : "", leaf = slash >= 0 ? word[(slash + 1)..] : word;
+		var dir = ShellEnvironment.TranslatePath(dirPart.Length == 0 ? "." : dirPart);
+		if (!Directory.Exists(dir)) yield break;
+		IEnumerable<string> entries;
+		try { entries = [.. Directory.EnumerateFileSystemEntries(dir)]; }
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { yield break; }
+		foreach (var e in entries)
+			{
+			var name = Path.GetFileName(e);
+			if (!name.StartsWith(leaf, StringComparison.Ordinal) || (directoriesOnly && !Directory.Exists(e))) continue;
+			yield return dirPart + name;
+			}
+		}
+
+	/// <summary>`compgen -G`: the pattern's pathname expansion, nothing when it matches nothing.</summary>
+	private IEnumerable<string> CompgenGlob(string pattern)
+		{
+		if (pattern.IndexOfAny(['*', '?', '[']) < 0)
+			return ShellFile.Exists(ShellEnvironment.TranslatePath(pattern)) || Directory.Exists(ShellEnvironment.TranslatePath(pattern)) ? [pattern] : [];
+		var o = _eval.Options;
+		try { return Glob.Expand(pattern, o.DotGlob, o.NoCaseGlob, o.GlobStar); }
+		catch { return []; }
+		}
+
+	/// <summary>`compgen -W`: the list split at IFS's characters where they are not quoted, then each word
+	/// expanded as bash's expand_words_shellexp does: braces, tilde, parameters, command substitution,
+	/// arithmetic, word splitting and quote removal, never pathname expansion (`-W '*'` stays `*`).</summary>
+	private List<string> CompgenWords(string list)
+		{
+		string ifs = _env.IsSet("IFS") ? _env.Get("IFS") : " \t\n";
+		var pieces = new List<string>();
+		var cur = new StringBuilder();
+		char quote = '\0';   // ' or " while inside one
+		int depth = 0;       // inside $( … ), ${ … } or ` … `
+		for (int k = 0; k < list.Length; k++)
+			{
+			char c = list[k];
+			if (c == '\\' && quote != '\'' && k + 1 < list.Length) { cur.Append(c).Append(list[++k]); continue; }
+			if (quote != '\0')
+				{
+				cur.Append(c);
+				if (c == quote && (quote == '\'' || depth == 0)) quote = '\0';
+				continue;
+				}
+			if (c is '\'' or '"' && depth == 0) { quote = c; cur.Append(c); continue; }
+			if (c == '$' && k + 1 < list.Length && list[k + 1] is '(' or '{') { depth++; cur.Append(c).Append(list[++k]); continue; }
+			if (depth > 0)
+				{
+				if (c is '(' or '{') depth++;
+				else if (c is ')' or '}') depth--;
+				cur.Append(c);
+				continue;
+				}
+			if (ifs.Contains(c)) { if (cur.Length > 0) pieces.Add(cur.ToString()); cur.Clear(); continue; }
+			// not a delimiter here: keep characters the shell's grammar would split on as part of the word
+			if (c is ' ' or '\t' or '\n' or '&' or '|' or ';' or '<' or '>' or '(' or ')') cur.Append('\\');
+			cur.Append(c);
+			}
+		if (cur.Length > 0) pieces.Add(cur.ToString());
+
+		var result = new List<string>();
+		bool noGlob = _eval.Options.NoGlob;
+		_eval.Options.NoGlob = true;
+		try
+			{
+			foreach (var piece in pieces)
+				foreach (var w in Parser.Parser.ParseWords(piece))
+					result.AddRange(_eval.Expander.ExpandToFields(w));
+			}
+		finally { _eval.Options.NoGlob = noGlob; }
+		return result;
+		}
+
+	/// <summary>`complete` and `compopt`: programmable completion, which only an interactive bash uses, is not
+	/// in C#Bash (the greenlit compgen scope, 2026-10-12).</summary>
+	private int CompletionNotAvailable(string name)
+		{
+		foreach (var line in NotAvailable.Lines($"{Err}{name}: ", $"{name} (programmable completion)")) Console.Error.WriteLine(line);
+		return 2;
+		}
 	}

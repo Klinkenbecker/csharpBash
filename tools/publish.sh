@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Publish: bring GitHub's main up to the committed hg tree (hg is the development VCS; git only mirrors it).
 #
-#   tools/publish.sh <message-file> <token-file>           (run it FROM Git Bash, on the architect's "push")
-#   CHERE_INVOKING=1 F:/Tools/PortableGit/usr/bin/_bash.exe -l -c 'cd /f/Koliada/Tools/bash && "$BASH" tools/publish.sh MSG TOKENFILE'
+#   bash tools/publish.sh <message-file> <token-file>      (on the architect's "push"; C#Bash or Git Bash)
+#
+# Any bash runs it. Until 2026-10-14 it refused C#Bash, a guard copied from compare3.sh with no reason of its
+# own; every command form here was then run under Git Bash, the deployed C#Bash and the next one with identical
+# results: the history table byte for byte, the staging list, base64 and the token mask (DECISIONS 2026-10-14).
 #
 # A CONTRACT TOOL (2026-10-12, the architect: "repetitive tools here need to be contracts, period").
 # Until then each push was done by hand. Before it runs, by the push rule of 2026-10-10 ("another
@@ -23,7 +26,6 @@
 #      output masked; then the header must be absent from git config and the remote main must be HEAD.
 # The token is briefly visible on git's command line to processes of the same user.
 set -u
-case "${BASH_VERSION:-}" in *koliada*) echo "publish: run me under Git Bash, not C#Bash (see the header)" >&2; exit 2 ;; esac
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root" || exit 2
 die() { echo "publish: $*" >&2; exit 2; }

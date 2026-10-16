@@ -271,6 +271,8 @@ the I/O model:
 - **External processes** can't be reached by a slot swap — a child writes to OS handles —
   so `ExecExternal` owns a self-contained fd-map and hands the child exactly three std handles
   through `ChildLauncher` (file truncate/append, NUL for `/dev/null` and the other device files,
+  the console for `/dev/tty` only when the console has a window, else bash's "No such device or
+  address", as in Claude Code's windowless console (`ShellFile.OpenTty`; DECISIONS 2026-10-15),
   `/dev/stdout`·`/dev/stderr`·`/dev/fd/N`, `2>&1`, `1>&2`, `&>`, heredocs/here-strings as fed
   stdin, and pipeline ends), for stdin, stdout **and** stderr. A file the shell is reading (`while
   read; do prog; done < list`) is given to the child itself at the shell's offset, so it reads only
@@ -359,9 +361,13 @@ Two model points:
   `printf 'a\tb'` keep their escapes. Arguments are rewritten only for a WINDOWS program, as Git Bash
   does, and only at the start: `/c/…` becomes `C:/…` and `/tmp` the temp directory, never a bare
   `/c` (`MSYS_NO_PATHCONV` / `MSYS2_ARG_CONV_EXCL` switch it off; `ShellEnvironment.NativeArgument`).
+  An argument starting `//` is Git Bash's escape for a Windows switch: one leading `/` goes and `\`
+  becomes `/` (`cmd //c` runs `cmd /c`), except a UNC path (exactly two slashes and a later `/`) or a
+  word holding a glob or quote character (`ShellEnvironment.DoubleSlash`).
   An MSYS program (Git's `usr/bin`) reads `/c/…` itself but re-parses an unquoted word of its command
   line like a shell, so for it `ChildLauncher` double-quotes any argument beyond letters, digits and
-  `-_./:=@%+,`, doubling backslashes. *(DECISIONS: 2026-09-11, 2026-09-12, 2026-10-10, 2026-10-12.)*
+  `-_./:=@%+,`, doubling backslashes. *(DECISIONS: 2026-09-11, 2026-09-12, 2026-10-10, 2026-10-12,
+  2026-10-14.)*
 - **PATH mirrors Git Bash.** When `git.exe` is discoverable on PATH the installation's
   `usr/bin` and `mingw64/bin` are prepended (exactly what the MSYS runtime does), so externals
   outside the in-process set resolve as they would under Git Bash; the shell's own directory is

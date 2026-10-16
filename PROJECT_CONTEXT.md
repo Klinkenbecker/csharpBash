@@ -24,7 +24,7 @@
 > Then "go" (the open items): `-t -k -p` BUILT rev 216. "Build": DEBUG and RETURN traps, `$BASH_COMMAND`,
 > `-T`, `declare -ft`, trap `$LINENO` BUILT rev 217 (cost within noise, measured). "yup": rev 217
 > DEPLOYED and the six sessions told (2026-10-11). Then "go next": **IN FLIGHT: the OPEN DEFECTS, in
-> order** (`$0` FIXED rev 219; PATH lookup FIXED rev 220; a `case` inside `$( )` FIXED rev 221; `kill -l`/`trap -l` table FIXED rev 222; dir stack `+N`/`-N` FIXED rev 223; `jobs -x` FIXED rev 224; `%name`/`%?text` jobspecs FIXED rev 225; `a && b &` backgrounding only `b` FIXED rev 226 (in deployed rev 217 too); IFS splitting FIXED rev 228; case ;& ;;& FIXED rev 238; PRINTER P1-P5 DONE revs 239-243 (declare -f, type, jobs as bash; corpus 845/912); diff -u --label FIXED rev 244; RAISED: arrays are not local (serious, variable model); next per GREENLIT: compgen; then git's credential prompt on `/dev/tty` (inferred, untraced)). Revs 218-252 DEPLOYED 2026-10-12 (rev 252). **Revs 254-257 DEPLOYED 2026-10-13 (rev 257: awk getline, MSYS arguments, sed, rm incl. the junction DATA LOSS fix; rollback `dist/Bash.exe.rev252`; six sessions told).** Then "publish" (benchmark of rev 257 + doc review first). **GREENLIT 2026-10-13 ("2/ yes"): `cmd //c` next, before `strings`** (measured rule in the open-defects list). **AWAITING: the Git Bash guard in deploy.sh/publish.sh** (DECISIONS 2026-10-13 "DEPLOYED: rev 257"). Deploy only on "deploy and notify". The cold-resume briefing
+> order** (`$0` FIXED rev 219; PATH lookup FIXED rev 220; a `case` inside `$( )` FIXED rev 221; `kill -l`/`trap -l` table FIXED rev 222; dir stack `+N`/`-N` FIXED rev 223; `jobs -x` FIXED rev 224; `%name`/`%?text` jobspecs FIXED rev 225; `a && b &` backgrounding only `b` FIXED rev 226 (in deployed rev 217 too); IFS splitting FIXED rev 228; case ;& ;;& FIXED rev 238; PRINTER P1-P5 DONE revs 239-243 (declare -f, type, jobs as bash; corpus 845/912); diff -u --label FIXED rev 244; RAISED: arrays are not local (serious, variable model); next per GREENLIT: compgen; then git's credential prompt on `/dev/tty` (inferred, untraced)). Revs 218-252 DEPLOYED 2026-10-12 (rev 252). **Revs 254-257 DEPLOYED 2026-10-13 (rev 257: awk getline, MSYS arguments, sed, rm incl. the junction DATA LOSS fix; rollback `dist/Bash.exe.rev252`; six sessions told).** PUBLISHED 2026-10-13: GitHub main = git `0b3547d` = hg rev 259 (by `tools/publish.sh`). `cmd //c` FIXED rev 261 (2026-10-14, "go"; NOT deployed: it goes with the next deploy, "1/ next"). The Git Bash guard DROPPED from deploy.sh/publish.sh, rev 262 ("drop it, go"; both run under C#Bash now). `strings` BUILT rev 264 (scope ratified 2026-10-14). compgen BUILT rev 265 (2026-10-15; `-c` PATH scan DEFERRED). NOT deployed: revs 261-265 (cmd //c, the tools, strings, compgen). The open-defects run is DONE: git's credential prompt traced and FIXED rev 266 (2026-10-15). **Revs 261-266 DEPLOYED 2026-10-16 (rev 266, by C#Bash itself; rollback `dist/Bash.exe.rev257`; eight sessions told).** Then "publish" (benchmark of rev 266 + doc review first). Next after that: the architect's call. Deploy only on "deploy and notify". The cold-resume briefing
 > still comes first.
 >
 > **TRUE STATE (verified 2026-10-11):**
@@ -355,6 +355,11 @@
 > - QUEUED 2026-10-12 (the architect: "We just had a second session try to use the strings utility - add it
 >   to the queue?"): `strings` (binutils). Deferred 2026-10-10 until a second session needed it; that
 >   condition is now met. Order: after the two msp430-a2 data-loss fixes, before compgen.
+>   BUILT rev 264 (scope RATIFIED 2026-10-14, "ratified"; DECISIONS "BUILT: `strings`"). The scope: an in-process `strings` as GNU
+>   strings 2.38 (WSL): files or stdin, whole file, min 4, `-e s` default; `-n`/`--bytes`, `-t o|d|x`/`-o`,
+>   `-f`, `-w`, `-s`, `-e s|S|b|l|B|L`, `--help`, `--version`; `-d`, `-T`, `-U`/`--unicode`, `@file` answer
+>   with the NotAvailable notice. Evidence: koliada-net hit it inspecting a .NET exe (2026-10-10); the
+>   option list in the compacted summary was Claude's own answer to "what does strings do", never ratified.
 > - (FIXED rev 255, not deployed, msp430-a2: arguments to MSYS programs re-parsed. DECISIONS "arguments to MSYS programs".) WAS: an argument with braces and no
 >   spaces loses them when C#Bash runs an MSYS program (`gawk '{print}'` arrives as `print`):
 >   ChildLauncher.AppendArgument quotes only on whitespace or `"`, and the MSYS runtime globs/brace-
@@ -365,7 +370,8 @@
 >   contents. DECISIONS "rm refused a read-only file". Reply to adc-framework-d8 sent with the fix.)
 > - (FIXED rev 256, not deployed, found testing rm: sed added a missing final newline; `D` autoprinted, so
 >   `N;P;D` doubled lines in every deployed build. DECISIONS "sed added a missing final newline".)
-> - Found 2026-10-12 (measured, RAISED, not fixed): `cmd //c echo hi` starts an INTERACTIVE cmd under C#Bash
+> - (FIXED rev 261, not deployed: `cmd //c` as Git Bash, `ShellEnvironment.DoubleSlash`. DECISIONS 2026-10-14
+>   "`cmd //c` started an interactive cmd".) WAS: found 2026-10-12: `cmd //c echo hi` starts an INTERACTIVE cmd under C#Bash
 >   (cmd receives `//c`; banner and prompt, then waits on stdin; a Claude Code call would hang to its
 >   timeout); Git Bash prints `hi` (the MSYS runtime turns a leading `//x` into `/x` for a native program).
 >   A common idiom of Claude's on Windows. GREENLIT 2026-10-13 ("2/ yes"): fix next, before `strings`.
@@ -376,9 +382,20 @@
 >   `MSYS2_ARG_CONV_EXCL` switch it off. Mid-argument (`-o//x`, Git Bash `-o/x`) stays untouched per
 >   DECISIONS 2026-10-10 "never inside an argument". Consequence stated to the architect: `//host\share`
 >   becomes `/host/share`, as in Git Bash. Probes: scratchpad slash.sh, slash2.sh, slash3.sh.
+> - **compgen BUILT rev 265 (not deployed; DECISIONS "BUILT: `compgen`"). DEFERRED enhancement: the PATH scan for `compgen -c`. FORK DECIDED 2026-10-15 (the architect: "C#Bash has no formal
+>   bin dir ... C#Bash is really _only_ about its builtins ... a list of externally available linux commands (from
+>   the path) ... I would defer that as a possible enhancement"): compgen describes THIS shell; `-b` = every C#Bash
+>   builtin; `-c` = aliases, keywords, functions, builtins, NO PATH scan (DEFERRED enhancement); helptopic = the
+>   notice.** The question as it was put: does compgen describe THIS shell or bash's lists? (1) `-b` / `-A builtin` / `enabled`: bash 5.1's builtins that
+>   C#Bash has (51; GNU-like) or every C#Bash builtin incl. the in-process tools (`type -t cat` says builtin here,
+>   and the interactive CompletionEngine offers them). (2) `-c` PATH entries: Git Bash's rule (`.exe`/`.com` and
+>   `#!` scripts) or what C#Bash runs (PATHEXT incl. `.cmd`/`.bat`, plus `#!` scripts); on-disk names either way
+>   (greenlit). (3) `-A helptopic`: C#Bash has no `help`: the notice, or bash's 78 topics. Claude's position:
+>   THIS shell for all three. Done meanwhile: tests/cases/compgen.sh (GNU-expected, fork-free parts).
 > - Reported 2026-10-12 by daq-d1 (verified): `compgen` is not a builtin (nor `complete`, `compopt`), in
 >   every build. daq-d1 runs on a verified workaround (`for f in "$1"/$2; do [ -e "$f" ] …`), needs
->   nothing more. Scope to settle before building (AWAITING THE ARCHITECT): compgen's generating actions
+>   nothing more. (SETTLED 2026-10-12: the architect's "Yes" GREENLIT this position, see the GREENLIT
+>   "PRINTER plan, then COMPGEN" block; the text below is the proposal as it stood.) Scope: compgen's generating actions
 >   (-G -W -f -d -c -b -k -a -v -e -A …, -X -P -S, word prefix) vs programmable completion
 >   (complete/compopt, -F/-C). Claude's position: build compgen's generating actions now; `complete`,
 >   `compopt`, `-F`, `-C` answer with the NotAvailable notice (2026-10-11 pattern). Falsifier: a session
@@ -387,7 +404,7 @@
 >   (`jobs` lists them as Done, job numbers keep counting); C#Bash's `wait` removes them.
 > - (FIXED rev 241, not deployed: a compound job's text was its node type; `jobs` now prints as bash.
 >   PRINTER P2 rev 240: `declare -f` / `type` as bash. DECISIONS "PRINTER P2", "PRINTER P3".)
-> - Inferred, not traced (2026-09-15): git's credential prompt runs through C#Bash and fails on `/dev/tty`.
+> - (FIXED rev 266, not deployed: git's credential prompt HUNG under Claude Code: `/dev/tty` in a windowless console. DECISIONS 2026-10-15 "git's credential prompt hung". SSH_ASKPASS: DECIDED no, 2026-10-16, "2/ No".)
 > - (FIXED and DEPLOYED rev 213: `BASH_COREUTILS=external` killed the shell with a stack overflow.)
 >
 > **KNOWN LIMITATIONS (documented, not raised for action):**

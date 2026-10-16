@@ -1,0 +1,10 @@
+== a console with no window
+probe.sh: line 1: /dev/tty: No such device or address
+write rc=1
+probe.sh: line 2: /dev/tty: No such device or address
+read rc=1
+cat: /dev/tty: No such device or address
+cat rc=1
+git rc=128 prompt failed: 1
+== a console with a (hidden) window
+write rc=0

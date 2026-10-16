@@ -21,6 +21,16 @@ check backslash  "$(show '/c/a\b')"              'C:/a\b'
 check off        "$(MSYS_NO_PATHCONV=1 show /c/Windows)"              "/c/Windows"
 check excl-all   "$(MSYS2_ARG_CONV_EXCL='*' show /c/Windows)"         "/c/Windows"
 check excl-pref  "$(MSYS2_ARG_CONV_EXCL='/c/W' show /c/Windows /c/Users)" "/c/Windows C:/Users"
+# 2026-10-13: `//x` is Git Bash's escape for a Windows switch: one leading / goes, \ becomes /; two slashes with a
+# later / is UNC and kept; a glob or quote character leaves it alone (measured against Git Bash). `cmd //c` started
+# an interactive cmd, which waits on standard input (here NUL: the banner instead of `hi`).
+check cmd-dbl-c  "$(cmd //c echo hi </dev/null | tr -d '\r')"         "hi"
+check dbl        "$(show //c //nologo // ///x)"                       "/c /nologo / //x"
+check dbl-bs     "$(show '//a\b\c' '//c\')"                           "/a/b/c /c/"
+check dbl-unc    "$(show //c/x //host/share '//a\b/c' ///x/y)"        "//c/x //host/share //a/b/c //x/y"
+check dbl-alone  "$(show '//c*' '//c]x' '//c`x')"                    '//c* //c]x //c`x'
+check dbl-off    "$(MSYS_NO_PATHCONV=1 show //c)"                     "//c"
+check dbl-excl   "$(MSYS2_ARG_CONV_EXCL='//c' show //c //k)"          "//c /k"
 if m=$(type -P echo.exe) && [ -f "$(dirname "$m")/msys-2.0.dll" ]; then
   check msys     "$("$m" /c/Windows)"            "/c/Windows"
 else echo "msys ok"; fi   # no Git usr/bin here: nothing to check
