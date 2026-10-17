@@ -51,6 +51,8 @@ PATH, re-runs the command there (`BASH_COREUTILS=builtin` forbids that, `=extern
 
 ## Startup and command lookup
 
+**Why it matters on Windows: finding a program is slow, and not finding one is slowest.** A bare command name is looked up by trying every PATH entry with every `PATHEXT` extension, each try a file-system probe; a hit stops early, but a miss makes every probe and fails them all. On the machine this was measured on, 51 PATH entries × 12 names is about 600 probes, **~15 ms for one miss**, 8.8 ms of it two entries on a slow drive. Claude Code's snapshot makes exactly such a miss (`hash rg`) on every Bash call, so it was half of what each call cost. So C#Bash controls where its PATH comes from and remembers what it finds, misses included, as below; the measurements are under [Performance](#performance) ("What a Claude Code call costs") and in [`DECISIONS.md`](DECISIONS.md) ("REVIEW R1 RESULT").
+
 **At startup**, in this order:
 
 1. The environment is imported; Windows' `Path` becomes `PATH`.

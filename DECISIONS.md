@@ -6629,3 +6629,10 @@ adc-framework-d8, msp430-a2, nupkg-28, errorlogs-42, guy-b3, koliada-net-7c and 
 process wrote after this shell first read the map (`Forget` trusts the in-memory copy when the name is absent from
 it): it says "not found" and the entry stays. Each Claude Code call is a new process, so it bites only a long
 interactive shell; the fix is to re-read the file in `Forget` (cheap: `hash -d` is rare).
+
+## 2026-10-16 -- PUBLISHED: GitHub main = git 5cf4d27 = hg rev 287
+**Status:** Active. By `tools/publish.sh` (the benchmark of deployed rev 286 found; doc review rev 287; 288 changesets;
+bundle verified; remote main = HEAD). Git's "CRLF will be replaced by LF" for `tests/expected/command_map.out`
+(and, already, `path_lookup.out`): `.gitattributes` normalises every text file to LF, so the CRs that `cmd`'s
+`echo` puts in those expected lines are not in git. Harmless: `run-tests.ps1` compares lines, and both
+`Get-Content` and PowerShell's capture of the shell's output take CRLF and LF alike as the line end.

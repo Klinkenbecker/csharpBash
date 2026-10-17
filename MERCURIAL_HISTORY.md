@@ -12,11 +12,13 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 288 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 290 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 289 | 2026-10-16 | README: Startup and command lookup opens with why it matters (a PATH lookup probes every entry x every PATHEXT name, a miss probes them all: ~600 probes, ~15 ms here, half of every Claude Code call via the snapshot's hash rg), pointing to Performance and DECISIONS "REVIEW R1 RESULT" (the architect's request) |
+| 288 | 2026-10-16 | Published: GitHub main = git 5cf4d27 = hg rev 287 by tools/publish.sh (benchmark of deployed rev 286, doc review rev 287, 288 changesets, bundle verified, remote main = HEAD); the CRLF-to-LF warning for expected files with CRs is harmless (the runner compares lines) |
 | 287 | 2026-10-16 | Doc review before publishing (deployed rev 286): README reworked: the benchmark table (compare3 on deployed rev 286, all outputs agree; startup 19.3 vs Git Bash 19.0 ms) is the last item of the intro under "Bullshit walks, money talks:"; new sections Startup and command lookup (BASH_PATH, Git usr/bin, own dir, startup files, lookup order, remembered lookups in ~/.bash/commands, hash misses, Windows fallback, known gaps) and Using it as Claude Code's shell (the start file, getting the best out of it); Performance refers back and adds what a Claude Code call costs (~16 ms: ~11 floor, ~3 start-up, snapshot <1, exit ~0.25); commands list gains disown/nohup/setsid/yes and verified options; stale compgen line fixed; 140 cases. DECISIONS: the deploy; PROJECT_CONTEXT: current state, stale trap note fixed |
 | 286 | 2026-10-16 | The command map moves to ~/.bash/commands (the architect: bash is not a "normal" Windows app; HOME, MSYS or Windows form, else the profile) and is pruned by age: a map read is touched at most hourly, one unused for 30 days goes when a new map is made (a burst of test PATH values can no longer push out the one in use); command_map extended (touch on read, 40-day prune), isolated by HOME; the old %LOCALAPPDATA%/CSharpBash test-only folder removed |
 | 285 | 2026-10-16 | Fix: name[subscript]+=value appends to the element (it ran as a command, "a[k]+=v: command not found", the value lost): the indexed-assignment split takes ]+= for element assignments, ArrayElementAssign.Append, ShellEnvironment.AppendArrayElement/AppendAssocElement shared with declare/local (joined, or added under declare -i; a scalar is element 0), and declare a[k]+=v now appends; case array_element_append byte-identical to GNU 5.1 (deployed 266 fails it); suite 140/140 both modes on AOT; battery 226/237; -n corpus 850 and printer corpus 845 at baseline |
