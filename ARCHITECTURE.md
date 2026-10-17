@@ -404,6 +404,19 @@ Two pieces of machinery sit in front of `Process.Start`:
   to the OS launcher's own search and can only ever speed things up, never break resolution.
   This cache is what the `hash` builtin inspects/clears. *(DECISIONS: 2026-06-14 — hash + PATH
   cache.)*
+  Behind it, `CommandMap` keeps the shell's own lookups across processes: one file per PATH value
+  (with PATHEXT) under `~/.bash/commands`, read on the first lookup. Every lookup
+  remembers hits (one existence probe before use; gone: searched again). Misses are `hash name`'s
+  alone: it records them, and obeys one an EARLIER process recorded until `hash -r` / `hash -d name`,
+  saying so in its "not found"; running a program, `command -v` and `type` search past a remembered
+  miss, as bash, and a found name replaces it. Not kept for a PATH with a relative entry; writes
+  merge and rename atomically; a map in use is touched when read (at most hourly) and one unused for
+  30 days is pruned. Why: Claude Code's snapshot runs `hash rg` on every call, and that
+  one miss searched the whole PATH each time. *(DECISIONS: 2026-10-16 — the tool-lookup plan; only
+  `hash` records and obeys misses.)*
+- **`BASH_PATH`.** At startup a non-empty `BASH_PATH` becomes `PATH` and is removed (from the
+  process environment too, so a nested shell keeps its parent's PATH): a launcher that keeps its own
+  PATH narrow, such as `claude.exe`, hands the shell its PATH this way. *(DECISIONS: 2026-10-16.)*
 
 - **Shebang dispatch.** Windows can't `exec` a `#!` script, so when a command names an actual
   script file the interpreter reads its interpreter line: `bash`/`sh` scripts run in-process

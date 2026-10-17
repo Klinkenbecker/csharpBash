@@ -242,8 +242,8 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"return"  => DoReturn(args),
 			"break"   => DoBreak(args),
 			"continue"=> DoContinue(args),
-			"source"  => Source(args),
-			"."       => Source(args),
+			"source"  => Timing.On ? SourceTimed(args) : Source(args),
+			"."       => Timing.On ? SourceTimed(args) : Source(args),
 			"local"   => Local(args),
 			"declare" => Declare(args),
 			"typeset" => Declare(args),
@@ -431,7 +431,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 				}
 			names.Add(a);
 			}
-		if (reset) _eval.HashClear();
+		if (reset) _eval.HashReset();   // remembered lookups too (CommandMap)
 		var hashTable = _eval.HashTable;
 		if (names.Count == 0)
 			{
@@ -460,7 +460,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 				}
 			if (Has(name) || _eval.HasFunction(name)) continue;   // builtins and functions are not hashed
 			bool known = hashTable.ContainsKey(name);
-			if (_eval.ResolveOnPath(name) is null) { Console.Error.WriteLine($"{Err}hash: {name}: not found"); rc = 1; }
+			if (_eval.ResolveOnPath(name, probe: true) is null) { Console.Error.WriteLine($"{Err}hash: {name}: not found{_eval.MissNote(name)}"); rc = 1; }
 			else if (!known) _eval.HashSetPath(name, hashTable[name]);
 			}
 		return rc;

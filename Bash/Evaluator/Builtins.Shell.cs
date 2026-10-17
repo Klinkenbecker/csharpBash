@@ -96,6 +96,14 @@ public sealed partial class Builtins
 		_env.Set(spec, value);
 		}
 
+	/// <summary>`declare name[sub]+=value`: the element append, as the statement `name[sub]+=value`.</summary>
+	private void AppendElement(string name, string sub, string value)
+		{
+		value = ShellEncoding.Canonical(value);
+		if (_env.IsAssoc(name)) _env.AppendAssocElement(name, sub, value);
+		else _env.AppendArrayElement(name, (int)_eval.Expander.EvalArithmetic(sub), value);
+		}
+
 	private static bool IsIdentifier(string s) =>
 		s.Length > 0 && (char.IsLetter(s[0]) || s[0] == '_') && s.All(c => char.IsLetterOrDigit(c) || c == '_');
 
@@ -786,7 +794,18 @@ public sealed partial class Builtins
 		if (src.Trim().Length == 0) return 0;
 		// its lines continue the eval command's (bash: $LINENO and the error prefix; they
 		// restarted at 1 until 2026-10-10)
-		return _eval.RunEval(src);
+		if (!Timing.On) return _eval.RunEval(src);
+		Timing.Mark("eval+");
+		try { return _eval.RunEval(src); }
+		finally { Timing.Mark("eval-"); }
+		}
+
+	/// <summary>`source` under the timing switch: its file's run as one region.</summary>
+	private int SourceTimed(List<string> args)
+		{
+		Timing.Mark("source+ " + (args.Count > 1 && args[0] == "--" ? args[1] : args.Count > 0 ? args[0] : ""));
+		try { return Source(args); }
+		finally { Timing.Mark("source-"); }
 		}
 
 	// ── declare / local / typeset ─────────────────────────────────────────────
@@ -993,7 +1012,8 @@ public sealed partial class Builtins
 
 			if (val is not null)
 				{
-				if (sub is not null) AssignVar($"{name}[{sub}]", val);
+				if (sub is not null && append) AppendElement(name, sub, val);   // `declare a[0]+=v` (was a plain assignment)
+				else if (sub is not null) AssignVar($"{name}[{sub}]", val);
 				else if (assignLiteral is not null) assignLiteral();
 				else if (append) _env.Append(name, val);
 				else if (scopeLocal) _env.SetLocal(name, val);

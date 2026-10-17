@@ -6313,3 +6313,319 @@ leading with the git hang.
 C#Bash export `SSH_ASKPASS=git-gui--askpass` when unset, as Git Bash's `etc/profile.d/env.sh` does, so git asks
 for credentials with a dialog? No: without a terminal git fails at once, as under GNU bash; git's credential
 helper remains the GUI route. Revisit only on the architect's word.
+
+## 2026-10-16 -- PUBLISHED: GitHub main = git 94a3ed2 = hg rev 268; the first publish run by C#Bash itself
+**Status:** Active. The architect: "1/ deploy, notify and publish". Before it, by the push rule: `compare3.sh` on
+the DEPLOYED build (rev 266, from Git Bash, as its guard requires; all outputs agree with Git Bash and WSL; C#Bash's
+rows within noise of the rev 257 table; startup 18.1 ms against 16.6 ms, with Git Bash and WSL slower in the same
+run, so the machine, not the build) and the doc review (rev 268: ARCHITECTURE's path model gains the `//` rule and
+its redirect model `/dev/tty` with a window only; README's table). `bash tools/publish.sh` under C#Bash:
+MERCURIAL_HISTORY.md and the bundle (269 changesets, verified), `The Windows Shell Tax.url` listed and not added,
+pushed 0b3547d..94a3ed2 (30 files), no header left in git config, remote main = HEAD, no credential in the log.
+
+## 2026-10-16 -- RATIFIED: the performance review plan (R1-R4), with a timing switch and a "Claude call" contract tool
+**Status:** Active. The architect called the review flagged 2026-10-12 ("Lets take the opportunity to do a
+performance review to see where we can optimize performance?"), then on the plan: "ratified, two additions sound
+good".
+
+**Context:** `compare3.sh` (unchanged, still THE benchmark) times long scripts and `bash -c 'exit 0'`; nothing
+measures what a Claude Code call costs (the wrapper, the live snapshot, a command, the cwd write-back). The
+2026-09-13 finding that 38% of a call was the snapshot was measured on a 58 KB snapshot; today's are ~5 KB.
+
+**Plan (each phase's criterion written before it starts):**
+- R1 anatomy of a real call: the exact wrapper with a snapshot and typical commands, split into named segments
+  (process start, environment/PATH, snapshot, wrapper builtins, the command, exit). Done when the segments sum to
+  within 10% of the measured whole-process time.
+- R2 throughput hot spots: `tools/bench.csx` / `tools/attrib.csx` (as their headers say) on the current build. Done
+  when each benchmark row has time and allocation per iteration and its top three contributors in %.
+- R3 parse speed: the 2026-09-13 per-byte / per-token figures re-measured, plus the parse share of a real call.
+- R4 report: ranked table (measured cost, predicted saving measured or marked, effort, risk, main or steroids)
+  and a recommendation. No optimisation code before the architect picks.
+
+**The two additions (approved):** an opt-in timing switch in the shell (off by default; its cost when off to be
+measured, not assumed) and a contract tool for the Claude-call measurement beside compare3.sh (a method addition,
+hence the architect's). Do NOT derive: any change to compare3.sh itself; any architectural (steroids) work.
+
+## 2026-10-16 -- BUILT (review R1 instruments): the timing switch `BASH_TIMING_LOG` and `tests/bench/claudecall.sh`
+**Status:** Active. The two additions the architect approved with the review plan ("two additions sound good").
+
+**The switch (`Bash/Evaluator/Timing.cs`):** with BASH_TIMING_LOG naming a file, the shell keeps marks in memory
+and appends them to that file when the process exits: ms since the process was created (the OS creation time),
+then the event: main, console, evaluator, ready, done, exit, and the regions `source+ file`/`source-`,
+`eval+`/`eval-`, `ext+ name`/`ext- name`. Off: one environment read in Main and a false bool tested at each mark;
+no closures on hot paths (a lambda capturing `args` in the dispatcher would allocate on every call), string work
+only when on. Its cost when off is for compare3 --build to show (startup row).
+
+**The tool (`tests/bench/claudecall.sh`, a contract tool):** the exact Claude Code call, re-read from this
+session's own command line (2026-10-16: the wrapper matches the 2026-09-03 record except that `eval '…'` no longer
+gets `< /dev/null`); the snapshot fixture `tests/bench/claudecall/snapshot.sh` (a live one, user name scrubbed,
+PATH filled at run time in each shell's form); six commands (`true`, `ls`, `cat | head`, `grep -rn`,
+`git status --short`, `cd && pwd`) plus `bare` (`-c 'exit 0'`); launched by tools/benchtimer; median of 5 samples
+of 20 launches; the build under test, the deployed build (with --build) and Git Bash in alternating rounds; then
+the anatomy from 20 launches with the switch on, judged against R1's criterion. Results to
+`tests/bench/claudecall-results.md`. compare3.sh is untouched.
+
+**Implemented by:** rev 271. Files: `Bash/Evaluator/Timing.cs`, `Bash/Program.cs`, `Bash/Evaluator/Builtins.cs`,
+`Bash/Evaluator/Builtins.Shell.cs`, `Bash/Evaluator/Evaluator.cs`, `tests/bench/claudecall.sh`,
+`tests/bench/claudecall/snapshot.sh`, `README.md`, `IMPLEMENTATION.md`.
+
+## 2026-10-16 -- REVIEW R1 RESULT: where a Claude Code call's ~31 ms goes (the snapshot's failed `hash rg` is half of it)
+**Status:** Active (a finding; no code changed by it). Phase R1 of the ratified review.
+
+**Measured (`tests/bench/claudecall.sh --build`, rev 273, AOT; the anatomy with the timing switch; diagnostics
+labelled as such, not the benchmark):** a trivial call (`true`, `ls`, `cat | head`, `cd && pwd`) is ~31 ms; `bare`
+(`-c 'exit 0'`) 15 ms; `grep -rn` adds ~7 ms, `git status` ~18 ms (16 inside git.exe). The timing switch costs
+nothing measurable when off (rev 273 vs deployed rev 266: -0.5% to +1.8%, noise). One `ls` call, ms:
+- runtime start (process creation to Main) 7.1; console 0.7; evaluator (environment, PATH) 1.6; options 0.2;
+  parsing the call 0.2;
+- the snapshot (`source`, 110 lines) 15.2, of which the `rg` block is 14.3 (cumulative prefixes): its
+  `hash rg` misses (rg is not on PATH), searching 51 PATH entries x 12 names (bare + 11 PATHEXT) = ~600 probes.
+  Measured as whole launches: failed `hash rg` +15.4 ms (`type -P rg` +17.1), a found `hash git` +0, the same
+  miss with PATH = System32 +0. Two entries on drive X: (`X:\CC2541 …\bin`, `…\bin\targets\CC8051`) cost 8.8 ms
+  of it (the miss without them: +6.0 ms); the other 49 ~10 us per probe. The other 109 lines: ~1 ms;
+- the command, wrapper builtins, the cwd write-back 0.8; process exit after the last mark 6.9.
+**The criterion** (segments within 10%) failed on the first reading: 21% fell after the exit mark. Split with a
+minimal Native AOT program built and measured the same way: ANY AOT process here costs ~11 ms to start and end
+(creation to Main 5.8-7.0, after its mark 2-3.5); C#Bash `bare` 15.8-16.2 (7.4-7.7 and 5-6). So: the platform floor
+~11 ms; C#Bash's own start +~1 ms and exit +~3 ms (it loads 5 DLLs the minimal program does not: icu, ws2_32,
+iphlpapi, secur32, sspicli; the rest, user32/gdi32/COM included, the runtime loads anyway). With that split the
+call is accounted for; the C#Bash part of exit (~3 ms) is attributed by subtraction, not decomposed.
+
+**Found on the way (recorded, not fixed):** (1) C#Bash does not expand PS4 (`PS4='+[$x] '` traces `+[$x]`, GNU
+`+[val]`). (2) `$EPOCHREALTIME` has millisecond steps (GNU: microseconds). (3) Claude Code's snapshot generator
+writes `set -o monitor` and `set -o onecmd` (its `set -o | grep on` matches the option names; all three shells
+print them off); C#Bash ignores them. (4) Git Bash 4.4's `git status` hangs when this C#Bash-made snapshot is
+sourced with a second wrapper part (bisected; not C#Bash; claudecall.sh is C#Bash-only since rev 273).
+
+## 2026-10-16 -- FINDING (review R1 follow-up): ws2_32, iphlpapi and secur32 load at process creation because Native AOT binds them directly; icu.dll is a runtime load
+**Status:** Active (a finding; no code changed). The architect asked why C#Bash loads these DLLs, whether they could
+load on demand, and why the AOT build does not include them.
+
+**Verified (dumpbin 14.44 on deployed rev 266; ILCompiler 8.0.25's targets):**
+- `dumpbin -dependents dist/Bash.exe`: ADVAPI32, bcrypt, IPHLPAPI, KERNEL32, ole32, Secur32, USER32, WS2_32 and
+  seven api-ms-win-crt. These are static imports: the Windows loader maps them before Main, used or not.
+- Imported: WS2_32 GetAddrInfoW, GetNameInfoW, WSASocketW, FreeAddrInfoW; IPHLPAPI if_nametoindex; Secur32
+  GetUserNameExW, which secur32.dll forwards to SSPICLI (hence sspicli).
+- Why static: `Microsoft.NETCore.Native.Windows.targets` adds `WindowsAPIs.txt` ("ubiquitous Windows APIs that are
+  safe to emit direct calls for") as a DirectPInvokeList, and all six functions are in it. A P/Invoke not on the
+  list is bound lazily, at its first call.
+- The only System.Net use in the source is `hostname -I` / `-f` (Builtins.Sys.cs:182, 189): ws2_32 and iphlpapi
+  load on every start for two rarely used options.
+- Why not "in the AOT": they are Windows system DLLs, the OS's API surface, with no static form to link; AOT
+  decides only WHEN they load. icu.dll is not an import at all: .NET loads Windows' own ICU (System32) at the first
+  culture-sensitive operation.
+
+**Not checked:** which call brings GetUserNameExW (Environment.UserName and WindowsIdentity.GetCurrent are the
+candidates); which startup operation loads icu.dll; whether these loads ARE the ~1 ms start / ~3 ms exit R1
+attributed to C#Bash by subtraction (a correlation, not a measurement).
+
+**Levers for R4 (not built; the architect picks):** lazy binding for those entries (a build setting; the MSBuild
+hook is untested) or no System.Net in the binary; for ICU, find and remove the startup trigger, or
+`InvariantGlobalization` / `UseNls` (behaviour changes: collation, and the ICU `StartsWith` gotchas go away).
+
+## 2026-10-16 -- DECIDED (the architect, "yes, lazy load"): ws2_32, iphlpapi and secur32 bound lazily in the AOT build
+**Status:** Active. Follows the FINDING entry above; the architect picked it ahead of R2.
+
+**Decision:** `Bash/Bash.csproj` gains a target that runs after the ILCompiler's `SetupOSSpecificProps` and swaps
+the SDK's `WindowsAPIs.txt` direct-call list for a copy written to obj/ without the `ws2_32!`, `iphlpapi!` and
+`secur32!` lines (462 of 2368). The P/Invokes still link; they resolve at their first call. If the SDK's list is not
+found (a renamed file or target in a later SDK) the build FAILS, so the setting cannot silently lapse.
+
+**Alternatives:** no System.Net in `hostname -I` / `-f` (a code change, and secur32 stays); a committed filtered
+copy of the list (drifts from the SDK it came from); ILC's `--directpinvoke` has no negative form.
+
+**Criteria, written before building:** (1) `dumpbin -dependents` of the AOT build no longer lists the three (rev 266
+does: the polarity check); (2) the suite green on the AOT binary in both modes, and `hostname -I`, `hostname -f`,
+`whoami` still answer; (3) the saving measured with `compare3.sh --build` (startup row) and `claudecall.sh --build`
+(`bare`); within noise, it is reported as such and keeping it is the architect's call.
+
+**Run conditions (stated, not hidden):** this session's PATH is one entry (`dist`, the architect's choice), so the
+build and the benchmarks run with the PATH of Claude's 2026-10-15 snapshot (50 entries) given to the tools only.
+
+## 2026-10-16 -- RESULT: lazy binding (rev 277) saves ~0.3 ms at start and nothing at exit; C#Bash's extra exit cost is not these DLLs
+**Status:** Active (a measurement). Criterion 3 of the entry above.
+
+**Measured (2026-10-16, the 2026-10-15 snapshot's PATH given to the tools):**
+- `compare3.sh --build` (rev 277 vs deployed rev 266): startup 18.1 ms vs 18.5 (-2.2%); Git Bash 18.8, WSL 135.7.
+  Also loop +6.3%, loop_big +3.8%: NOT attributable to rev 277 by this comparison (revs 267-276 differ too).
+- `claudecall.sh --build` (rev 278 = 277 + results; vs 266): bare 15.0 vs 14.6 (+2.8%); the call rows -4.8% to
+  +1.6%, both signs: within noise.
+- The anatomy against rev 273's (same tool, same fixture): runtime start (creation to Main) 6.74-7.06 vs 7.13-7.62,
+  ~-0.3 ms in every row; process exit after the mark 7.01-7.68 vs 6.94-7.38, unchanged.
+
+**Reading:** the loader maps four fewer DLLs (~0.3 ms, consistent across rows, below compare3's resolution). R1's
+~3 ms "C#Bash exit beyond the AOT floor" does NOT come from ws2_32/iphlpapi/secur32/sspicli. icu.dll is now the only
+loaded-DLL difference from the minimal AOT program; whether it (or anything else) is the exit cost is untraced.
+Keeping rev 277 is the architect's call (Claude: keep; no behaviour change, the build guards it).
+
+## 2026-10-16 -- DECIDED: keep rev 277 (lazy binding); tool lookup = a profile PATH plus a self-maintained C#Bash command map whose misses are permanent
+**Status:** Active. The architect: "1/ keep it" (rev 277, after the explanation); "2/ good catch, record misses but
+record them as 'fail once' if it is not there it is never there".
+
+**Context:** Claude Code's PATH is one entry (`dist`) by the architect's choice; a long PATH costs every call through
+Claude Code's snapshot (`hash rg` misses, ~15 ms, DECISIONS "REVIEW R1 RESULT"). The architect proposed a
+`~/.bash_profile` PATH that C#Bash's own command map keeps fast; Claude added that misses must be remembered too.
+
+**Decided:** (1) rev 277 stays. (2) The map records hits AND misses; a recorded miss is never searched again ("fail
+once"). This drops Claude's proposed folder-time check on misses, and with it the spike that was to measure it.
+
+**Plan (written 2026-10-16, AWAITING the architect's ratification; nothing built):**
+- T1 profile: `~/.bash_profile`, only when `$CLAUDECODE` is set, sets PATH from the Windows PATH (HKLM then HKCU,
+  `%VAR%` expanded, via System32's `reg.exe` by full path). It runs once per session, when Claude Code builds its
+  snapshot; children inherit it. The architect's file: Claude drafts, the architect installs.
+- T2 map: a per-user file, one map per PATH value (bash's own rule: assigning PATH clears the hash, so a new PATH
+  folder starts fresh); a hit is used after one existence probe (gone: search again); a miss is recorded and
+  final; `hash -r` clears it (memory and file), `hash -d name` one name; a temporary `PATH=… cmd` bypasses it, as
+  today; written atomically (temp + rename), a lost concurrent update only costs one re-search.
+- T3 measure: `claudecall.sh --build` with the full Windows PATH: the snapshot segment from ~15 ms to ~1 ms on calls
+  after the first; `compare3.sh --build` no regression; suite green both modes plus a new case (hit, remembered
+  miss, `hash -r`, PATH change, two shells writing at once).
+
+**The risk, put to the architect:** a tool installed into a folder ALREADY on PATH (pip, `dotnet tool install`,
+`npm -g`) after its name was recorded as a miss stays "command not found" until `hash -r`. Claude's position: keep
+the rule as ruled, and say so in the message (`bash: x: command not found (remembered miss: hash -r searches
+again)`), since a silent false "not found" sends Claude chasing a tool that is there. Falsifier: a test or battery
+case that compares that message byte for byte with GNU; then bash's text stays and the README documents it.
+
+## 2026-10-16 -- RATIFIED: the tool-lookup plan, T1 amended to `$BASH_PATH`; the remembered-miss note in the error
+**Status:** Active. The architect: "Use $BASH_PATH instead of $CLAUDECODE - this has generic utility to any use of
+BASH. Yes, keep the rule, but say so in the error. Ratified", and "Yes" to: `$BASH_PATH` holds the PATH list, set by
+the launcher. Amends the plan in the entry above.
+
+**T1 (replaces the profile and the reg.exe read):** at startup, if `BASH_PATH` is set and not empty, C#Bash sets
+PATH from it (the process environment too, so children inherit it) and then UNSETS it (Claude's call, stated:
+otherwise a nested `bash` would reset PATH and drop its parent's `export PATH=/x:$PATH`; PATH carries the list from
+there on). A launcher narrows its own PATH and hands the list on, e.g. `set BASH_PATH=%PATH%` then `set PATH=…dist`.
+`claude.exe` then carries the list under a name it never searches; no file to keep; any launcher can use it.
+
+**T2 (as written, plus):** the map is read on the first lookup, not at startup; one file per PATH value (with
+PATHEXT), a stable hash in the name and the PATH in the file; not kept when PATH has a relative entry (the answer
+would depend on the directory); the oldest files pruned beyond a small number; under `%LOCALAPPDATA%` (so a test can
+point it elsewhere). A remembered miss prints `bash: x: command not found (remembered miss: hash -r searches
+again)`; a miss found by searching prints bash's own message.
+
+**T3:** as written.
+
+## 2026-10-16 -- DECIDED (Claude's call, delegated): only `hash` records and obeys misses; every other lookup is bash's
+**Status:** Active. Amends T2 of "RATIFIED: the tool-lookup plan". The architect, asked which rule to build: "You tell
+me - come on, you can see further into this crud than I can?"
+
+**Context:** the first build applied "fail once" to every lookup through `ResolveOnPath`. The suite then failed two
+GNU-compared cases (`shellbuiltins`, `error_prefix`): a script that runs a missing command twice in one process got
+the note on the second run where bash prints its plain message. Measured on that build: a script that misses a
+command, creates it and runs it again fails for a `.cmd` (Windows' own search tries only `.exe`), and for an `.exe` it
+runs while `command -v` still says it does not exist. The architect asked why a query (`command -v`) should record a
+miss at all.
+
+**Decision:** a miss is recorded only by `hash name`, and obeyed only by `hash name` when an EARLIER process recorded
+it (a process's own miss is searched again, as bash). Running a program, `command -v`, `type` and the
+unsupported-option fallback search past a remembered miss and never write one. Every lookup remembers hits (one
+existence probe before use) and a found name replaces a remembered miss. The note is `hash`'s alone:
+`hash: x: not found (remembered miss: hash -r searches again)`.
+
+**Why:** the measured per-call cost is one probe, the snapshot's `hash rg` (its only PATH probe; `command rg` inside
+its function runs only when claude.exe is missing), so this keeps all of the saving. Elsewhere a remembered miss buys
+one search on a path that is failing anyway (~15 ms) and costs a false "not found" (a confused Claude); bash
+searches every time. **Falsifier:** a measured per-call miss other than `hash rg` (Claude Code probing with `command
+-v`, or Claude re-running a missing tool often enough to show): then that lookup records misses too.
+
+## 2026-10-16 -- BUILT (T1, T2): `BASH_PATH` and the command map; two older defects found on the way (open)
+**Status:** Active. The plan's T1 and T2 as ratified and amended above.
+
+**Built:** `ShellEnvironment` takes a non-empty `BASH_PATH` as PATH at startup and removes it (frames and process
+environment); `Evaluator/CommandMap.cs` (per-PATH files under `%LOCALAPPDATA%/CSharpBash/commands`); `ResolveOnPath`
+uses remembered hits for every lookup and remembered misses for `hash name` only (`probe: true`); `hash -r` clears
+the map (`HashReset`), `hash -d` forgets a name in it; `hash`'s "not found" carries the note when an earlier
+process's miss answered. Case `command_map` (deployed rev 266 fails it); the process-environment removal proven by
+disabling it (the nested `"$BASH" -c` check then fails). Suite 139/139 both modes on the AOT build, run twice against
+the real map; battery 226/237 against 225.
+
+**Found on the way, in deployed rev 266, NOT fixed (open, the architect's to schedule):** (1) with PATH holding only
+`dist`, a relative path with a slash and no `./` (`Bash/bin/Release/net8.0/Bash.exe`) gives "command not found"
+while `./Bash/…`, the absolute path, and the same relative path under the full PATH work; cause not traced.
+(2) An extensionless `#!` script found on PATH gives "Permission denied" (Windows cannot run it; bash runs it by its
+interpreter line); a `./script` or a `.sh` file works.
+
+## 2026-10-16 -- RESULT (T3): with the full PATH, a Claude Code call is ~16 ms, not ~31 (the snapshot 15 ms -> 0.6 ms)
+**Status:** Active (a measurement). T3 of the tool-lookup plan; prediction (16-17 ms) met.
+
+**Measured (`claudecall.sh --build`, rev 282 vs deployed rev 266, the snapshot fixture's PATH = the 50-entry PATH of
+2026-10-15, so `hash rg` misses):** true 16.4 vs 31.1 ms (-47%), ls 16.1 vs 31.5, cat-head 16.4 vs 31.5, cd-pwd 16.0
+vs 31.8 (-50%), grep-rn 24.2 vs 39.1, git-status 33.4 vs 49.6; bare 14.5 vs 15.0 (noise). Anatomy: the snapshot
+segment 0.55-0.60 ms (rev 278: 14.6-16.9); every other segment unchanged. So a call costs what the platform floor
+plus C#Bash's start and exit cost, whatever the PATH length: the architect's PATH need no longer be kept short.
+
+## 2026-10-16 -- RESULT (exit trace): C#Bash's exit costs ~0.25 ms, as any AOT program's; R1's "+3 ms exit" was misplaced
+**Status:** Active (a measurement; corrects the attribution in "REVIEW R1 RESULT", which stands as written). The
+architect: "let's trace that 3ms of exit time just to be sure we covered all the exits".
+
+**Method (a diagnostic, not the benchmark):** whole launches by tools/benchtimer, 100-launch totals, median of 5
+rounds in rotating order, timing switch OFF. A scratch minimal AOT program, and a scratch C#Bash build (rev 283 plus
+an uncommitted `BASH_PROBE_EXIT` switch, reverted after the build), each leaving three ways: normal return;
+kernel32 `ExitProcess` (skips .NET's shutdown, DLLs still unload); `TerminateProcess` on itself (skips both).
+
+**Measured (ms per launch):** minimal 10.60 / 10.62 / 10.43; minimal with ICU loaded 11.32 / 11.23 / 11.10; C#Bash
+`-c 'exit 0'` 14.39 / 14.44 / 14.14. So C#Bash's whole exit path (.NET shutdown + DLL unloading) is ~0.25 ms, the
+minimal+ICU program's ~0.22: no exit cost of its own. Its ~3 ms over minimal+ICU stays when exit is skipped
+entirely (14.14 vs 11.10), so it is before exit: start-up, which R1's anatomy measured (~2.6 ms after Main: console
+0.7, environment 1.6, options and parse 0.35; the rest creation to Main for a larger image). Where the "+3 ms exit"
+came from: the timing switch, ON, costs ~1.85 ms a launch (16.08 vs 14.23 ms) and its exit work (the process start
+time, the log append) runs after its own `exit` mark. ICU costs ~0.7 ms a launch (~0.5 load, ~0.2 unload): the one
+DLL lever left, and a behaviour change (`InvariantGlobalization`), so an R4 candidate.
+
+**Not separable without ETW (the session is not elevated):** the kernel's share of process teardown; that the 3 ms
+is start-up rather than a larger teardown is inferred from R1's measured init, not traced.
+
+**Found on the way (open, the architect's to schedule):** (1) `name[subscript]+=value` is not an assignment: C#Bash
+runs it as a command ("r[k]+=a: command not found") for indexed and associative arrays, literal or variable
+subscripts (rev 266 and the current code; GNU appends). `name[sub]=v` and `name+=v` work. No test runs the form
+(`command_printing` only prints it). (2) The command map prunes by last WRITE: each test's temporary PATH makes a
+map file (18 after today's runs), and a settled map is rarely rewritten, so two suite runs can push out the real
+one (costs one search, never a wrong answer). Claude's position: touch a map when it is read, at most hourly, so
+pruning keeps the ones in use; or give the suite its own LOCALAPPDATA.
+
+## 2026-10-16 -- FIXED: `name[subscript]+=value` appends to the element (it ran as a command)
+**Status:** Active. The architect: "Yes, fix" (found during the exit trace, entry above).
+
+**Cause (read, then reproduced):** `Word.TrySplitIndexedAssignment` accepted only `]` followed by `=`, so `a[k]+=v`
+was no assignment and became a command name ("a[k]+=v: command not found"), the value lost; `name+=v` takes a
+different path and worked. Separately, `declare a[k]+=v` parsed the `+` but assigned instead of appending.
+
+**Fix:** the helper takes `]+=` when the caller allows it (the element-assignment parse; the `(...)` literal form
+is unchanged); `ArrayElementAssign.Append`; `ShellEnvironment.AppendArrayElement` / `AppendAssocElement` shared
+by the statement and `declare`/`local` (joined, or added under `declare -i`; a scalar is element 0, as bash:
+`s=abc; s[0]+=x` is abcx); a declaration argument `a[k]+=v` prints back as written.
+
+**Verified:** case `array_element_append` (expected = GNU 5.1 via WSL; byte-identical; deployed rev 266 fails it);
+suite 140/140 both modes on the AOT build; battery 226/237; `-n` corpus 850/912 and printer corpus 845/912, both
+at baseline.
+
+## 2026-10-16 -- DECIDED: the command map lives in `~/.bash/commands`; maps are pruned by age, touched when read
+**Status:** Active. Amends where "BUILT (T1, T2)" put the map. The architect: "I know 'Local' is the normal windows
+place to put app data, but bash is not 'normal' and I think the bash persistent command data should be in a folder
+/c/users/guy/.bash/commands", and "Prune" (Claude's recommendation: touch a map when it is read, at most hourly).
+
+**Decided:** the folder is `$HOME/.bash/commands` (HOME as the process has it, MSYS or Windows form, else the
+Windows profile), beside bash's other files. Pruning: a map read is touched when its time is over an hour old, and
+when a new map is made every map unused for 30 days goes (Claude's call, stated: under the earlier "keep the newest
+32", a burst of new PATH values, one suite run makes ~18, could still push out a map in use however recently
+touched; by age it cannot, and a map is ~2 KB). Tests isolate with HOME (was LOCALAPPDATA). The old folder,
+`%LOCALAPPDATA%/CSharpBash`, held only today's test maps (no deployed build wrote there): removed.
+
+**Verified:** `command_map` extended (an in-use map touched on read; a 40-day-old map pruned when a new PATH value
+makes a map); the concurrency check finds its entries under `$HOME/.bash/commands`.
+
+## 2026-10-16 -- DEPLOYED rev 286 (revs 267-286); notice sent to the eight sessions
+**Status:** Active. The architect: "Prune, commit, deploy notify, publish?".
+
+**Deployed by `tools/deploy.sh`:** `dist/Bash.exe` = `1.0.0+hg.0cc3c25dbada 286`; suite 140/140 on that binary
+with a console and `-Detached`; battery 226/237 against 225; rollback `dist/Bash.exe.rev266`. Live check from a
+Claude Code call: rev 286 runs; `r[k]+=a; r[k]+=b` gives `ab`; `hash x` records a miss and a later process
+reports it with the note; maps in `~/.bash/commands`; `BASH_PATH` becomes PATH. Notice (behaviour changes first:
+element append, remembered lookups and `hash -r`, `BASH_PATH`, ~16 ms calls) delivered to gps-time-2c,
+adc-framework-d8, msp430-a2, nupkg-28, errorlogs-42, guy-b3, koliada-net-7c and daq-fe.
+
+**Found in the live check (open, minor):** a long-lived shell's `hash -d name` does not see an entry another
+process wrote after this shell first read the map (`Forget` trusts the in-memory copy when the name is absent from
+it): it says "not found" and the entry stays. Each Claude Code call is a new process, so it bites only a long
+interactive shell; the fix is to re-read the file in `Forget` (cheap: `hash -d` is rare).

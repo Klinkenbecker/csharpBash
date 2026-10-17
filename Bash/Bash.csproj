@@ -26,4 +26,26 @@
       <InformationalVersion>1.0.0+hg.$(HgStamp)</InformationalVersion>
     </PropertyGroup>
   </Target>
+
+  <!-- Native AOT only. The ILCompiler emits a direct call for every API on the SDK's WindowsAPIs.txt, which puts
+       that API's DLL in the exe's import table, and Windows then loads it at process creation whether it is used
+       or not. ws2_32 and iphlpapi serve only `hostname -I` / `-f`, secur32 a user-name call, so they come off the
+       list and resolve at their first call instead (DECISIONS 2026-10-16 "ws2_32, iphlpapi and secur32 bound
+       lazily"). No SDK list found means the SDK changed: fail rather than lose the setting silently. -->
+  <Target Name="LazyBindRareWindowsDlls" AfterTargets="SetupOSSpecificProps">
+    <ItemGroup>
+      <_SdkWindowsApiList Include="@(DirectPInvokeList)" Condition="'%(Filename)%(Extension)' == 'WindowsAPIs.txt'" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_SdkWindowsApiFile>@(_SdkWindowsApiList)</_SdkWindowsApiFile>
+      <_LazyWindowsApiFile>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)WindowsAPIs.lazy.txt</_LazyWindowsApiFile>
+    </PropertyGroup>
+    <Error Condition="'$(_SdkWindowsApiFile)' == ''" Text="LazyBindRareWindowsDlls: the ILCompiler no longer lists WindowsAPIs.txt in DirectPInvokeList; re-check this target against the SDK" />
+    <WriteLinesToFile File="$(_LazyWindowsApiFile)" Overwrite="true"
+                      Lines="$([System.Text.RegularExpressions.Regex]::Replace($([System.IO.File]::ReadAllText('$(_SdkWindowsApiFile)')), '(?im)^(ws2_32|iphlpapi|secur32)![^\n]*\n?', ''))" />
+    <ItemGroup>
+      <DirectPInvokeList Remove="@(_SdkWindowsApiList)" />
+      <DirectPInvokeList Include="$(_LazyWindowsApiFile)" />
+    </ItemGroup>
+  </Target>
 </Project>

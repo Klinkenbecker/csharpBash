@@ -376,6 +376,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		TildePart t                => ExpandTilde(t.Suffix),
 		AssignmentArgPart aa       => aa.Index is null
 		                              ? $"{aa.Name}={ExpandToString(aa.Value)}"
+		                              : aa.Name.EndsWith('+')   // `local a[k]+=v`: the append's `+` goes after the index
+		                              ? $"{aa.Name[..^1]}[{ExpandToString(aa.Index)}]+={ExpandToString(aa.Value)}"
 		                              : $"{aa.Name}[{ExpandToString(aa.Index)}]={ExpandToString(aa.Value)}",
 		VarExpansionPart v         => GetChecked(v.Name, dollarForm: true),
 		BraceExpansionPart b       => ExpandBraceParam(b.Raw),

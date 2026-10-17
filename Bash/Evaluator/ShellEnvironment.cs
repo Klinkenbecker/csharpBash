@@ -141,6 +141,15 @@ public sealed class ShellEnvironment
 				}
 			}
 
+		// BASH_PATH: a launcher that keeps its own PATH narrow (claude.exe) hands the shell its PATH here
+		// (DECISIONS 2026-10-16 "RATIFIED: the tool-lookup plan"). Taken once and removed, from the process
+		// environment too: a nested bash must keep its parent's `export PATH=/x:$PATH`, not reset it.
+		if (_frames[0].Remove("BASH_PATH", out var handed))
+			{
+			try { Environment.SetEnvironmentVariable("BASH_PATH", null); } catch { }
+			if (handed.Value is { Length: > 0 } list) Set("PATH", list);
+			}
+
 		AugmentPathWithGitTools();
 		AppendOwnDirectoryToPath();
 
@@ -649,6 +658,23 @@ public sealed class ShellEnvironment
 			try { value = ArithEval(value).ToString(); } catch (EvalException) { value = "0"; }
 			}
 		arr[index] = value;
+		}
+
+	/// <summary>`a[i]+=v` (and `declare a[i]+=v`): added under `declare -i`, else joined, as `x+=v`; a scalar is
+	/// element 0 (bash: `s=abc; s[0]+=x` makes abcx). Until 2026-10-16 `a[i]+=v` was not an assignment at all.</summary>
+	public void AppendArrayElement(string name, int index, string value) =>
+		SetArrayElement(name, index, Appended(name, IndexedOf(name) is null && index == 0 ? Get(name) : GetArrayElement(name, index), value));
+
+	/// <summary>`m[k]+=v` on an associative array: as <see cref="AppendArrayElement"/>.</summary>
+	public void AppendAssocElement(string name, string key, string value) =>
+		SetAssocElement(name, key, Appended(name, GetAssocElement(name, key), value));
+
+	private string Appended(string name, string current, string value)
+		{
+		if (!IsInteger(name) || ArithEval is null) return current + value;
+		long cur = long.TryParse(current, out var c) ? c : 0;
+		long add; try { add = ArithEval(value); } catch (EvalException) { add = 0; }
+		return (cur + add).ToString();
 		}
 
 	public string GetArrayElement(string name, int index)

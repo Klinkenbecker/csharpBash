@@ -1,0 +1,53 @@
+== hash records a miss
+hash: zzm: not found
+rc=1
+== a later hash obeys it, and says so
+hash: zzm: not found (remembered miss: hash -r searches again)
+rc=1
+== running it searches past the miss; the hit replaces it
+zzm-ran
+rc=0
+== a remembered hit
+rc=0
+zzm is D/A/zzm.cmd
+== the process that recorded a miss searches again
+hash: zzs: not found
+rc=0
+zzs-ran
+== command -v and type record no miss
+command -v: none
+type: zzv: not found
+rc=0
+== running a missing command records no miss
+zzx: command not found
+rc=127
+rc=0
+== a remembered program that has gone is searched for
+hash: zzm: not found
+rc=1
+== hash -d forgets one name
+rc=0
+rc=0
+== hash -r forgets everything
+hash: zzm: not found
+hash: zzm: not found (remembered miss: hash -r searches again)
+rc=1
+rc=0
+== a PATH with a relative entry is not kept
+hash: zzr: not found
+hash: zzr: not found
+== shells writing at once leave a readable map
+remembered: between 1 and 8
+malformed lines: 0
+== a map in use is touched when read; one unused for 30 days is pruned
+in use: touched
+hash: zzp: not found
+unused: pruned
+== BASH_PATH becomes the PATH, once
+zzb-ran
+PATH starts with it
+BASH_PATH=unset
+not in the environment
+== a nested shell keeps its parent's PATH
+zzn-ran
+zzn-ran

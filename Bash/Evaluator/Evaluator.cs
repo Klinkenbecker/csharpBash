@@ -1347,11 +1347,15 @@ public sealed class Evaluator
 		var val    = _expander.ExpandToString(ae.Value);
 
 		if (_env.IsAssoc(ae.ArrayName))
-			_env.SetAssocElement(ae.ArrayName, idxStr, val);
+			{
+			if (ae.Append) _env.AppendAssocElement(ae.ArrayName, idxStr, val);
+			else _env.SetAssocElement(ae.ArrayName, idxStr, val);
+			}
 		else
 			{
-			long idx = _expander.EvalArithmetic(idxStr);
-			_env.SetArrayElement(ae.ArrayName, (int)idx, val);
+			int idx = (int)_expander.EvalArithmetic(idxStr);
+			if (ae.Append) _env.AppendArrayElement(ae.ArrayName, idx, val);
+			else _env.SetArrayElement(ae.ArrayName, idx, val);
 			}
 		return 0;
 		}
@@ -1609,7 +1613,28 @@ public sealed class Evaluator
 	public void HashClear() { _pathHash.Clear(); _pathHits.Clear(); }
 	private string? _pathHashFor;   // the PATH value the hash table was built for
 	public void HashSetPath(string name, string path) { _pathHash[name] = path; _pathHits[name] = 0; }
-	public bool HashDelete(string name) { _pathHits.Remove(name); return _pathHash.Remove(name); }
+	/// <summary>`hash -d name`: this shell's entry and the remembered one (CommandMap).</summary>
+	public bool HashDelete(string name)
+		{
+		_pathHits.Remove(name);
+		_rememberedMisses.Remove(name);
+		bool remembered = CommandMap.Forget(_env.Get("PATH"), PathExt, name);
+		return _pathHash.Remove(name) | remembered;
+		}
+	/// <summary>`hash -r`: this shell's table and everything remembered for this PATH (CommandMap).</summary>
+	public void HashReset()
+		{
+		HashClear();
+		_rememberedMisses.Clear();
+		CommandMap.Clear(_env.Get("PATH"), PathExt);
+		}
+
+	// names whose lookup in this shell was answered by a remembered miss: their "not found" says so
+	private readonly HashSet<string> _rememberedMisses = [];
+	/// <summary>The note a "not found" carries when the answer was a remembered miss (the architect: "say so in
+	/// the error"), else "".</summary>
+	public string MissNote(string name) => _rememberedMisses.Contains(name) ? " (remembered miss: hash -r searches again)" : "";
+	private static string PathExt => Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
 	public IReadOnlyDictionary<string, string> HashTable => _pathHash;
 	public int HashHits(string name) => _pathHits.GetValueOrDefault(name);
 	public void HashHit(string name) { if (_pathHash.ContainsKey(name)) _pathHits[name] = HashHits(name) + 1; }
@@ -1620,7 +1645,8 @@ public sealed class Evaluator
 	/// <param name="pathOverride">A temporary `PATH=… cmd`: searched for this command only and not hashed,
 	/// as bash does. Otherwise the shell's own PATH (ShellEnvironment.CurrentPath), whose hash is reset
 	/// whenever that value is not the one it was built for (a subshell's PATH, restored).</param>
-	public string? ResolveOnPath(string name, string? pathOverride = null)
+	/// <param name="probe">`hash name`: the one lookup that records a miss and obeys an earlier process's.</param>
+	public string? ResolveOnPath(string name, string? pathOverride = null, bool probe = false)
 		{
 		if (name.Length == 0 || name.Contains('/') || name.Contains('\\')) return null;
 		string pathValue;
@@ -1631,8 +1657,21 @@ public sealed class Evaluator
 			if (_pathHash.TryGetValue(name, out var hit)) return hit;
 			}
 		else pathValue = pathOverride;
-		var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
-			.Split(';', StringSplitOptions.RemoveEmptyEntries);
+		var pathExtValue = PathExt;
+		// remembered answers (CommandMap): every lookup uses a hit after one existence probe; only `hash name`
+		// obeys a miss, and only one an earlier process recorded (DECISIONS 2026-10-16 "only `hash` records and
+		// obeys misses"): anything else searches, as bash
+		if (pathOverride is null)
+			{
+			if (CommandMap.Hit(pathValue, pathExtValue, name) is { } known)
+				{
+				if (File.Exists(known)) { _pathHash[name] = known; return known; }
+				CommandMap.Forget(pathValue, pathExtValue, name);   // moved or removed: search again
+				}
+			else if (probe && CommandMap.EarlierMiss(pathValue, pathExtValue, name)) { _rememberedMisses.Add(name); return null; }
+			_rememberedMisses.Remove(name);   // this answer comes from a search
+			}
+		var pathExt = pathExtValue.Split(';', StringSplitOptions.RemoveEmptyEntries);
 		var dirs = pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
 		bool hasExt = Path.HasExtension(name);
 		foreach (var d in dirs)
@@ -1640,19 +1679,26 @@ public sealed class Evaluator
 			try
 				{
 				var bare = Path.Combine(d, name);
-				if (File.Exists(bare)) { if (pathOverride is null) _pathHash[name] = bare; return bare; }
+				if (File.Exists(bare)) return Found(bare);
 				if (!hasExt)
 					foreach (var ext in pathExt)
 						{
 						var p = Path.Combine(d, name + ext);
 						// the on-disk name: it is the child's argv[0] (`bash.EXE` until 2026-10-11; Git
 						// Bash passes `Bash.exe`), once per name (cached)
-						if (File.Exists(p)) { p = ShellFile.OnDiskName(p); if (pathOverride is null) _pathHash[name] = p; return p; }
+						if (File.Exists(p)) return Found(ShellFile.OnDiskName(p));
 						}
 				}
 			catch { }
 			}
+		if (pathOverride is null && probe) CommandMap.Record(pathValue, pathExtValue, name, "");
 		return null;
+
+		string Found(string p)
+			{
+			if (pathOverride is null) { _pathHash[name] = p; CommandMap.Record(pathValue, pathExtValue, name, p); }
+			return p;
+			}
 		}
 
 	/// <summary>Run a single command (name + already-expanded args) through the normal
@@ -2001,6 +2047,7 @@ public sealed class Evaluator
 		bool ownConsole = detached && HiddenConsole.ConsoleMayDieWithAShell;
 		try
 			{
+			if (Timing.On) Timing.Mark("ext+ " + name);   // the performance review's timing switch
 			proc = ChildLauncher.Start(psi, HandleFor(fds[0]), HandleFor(fds[1]), HandleFor(fds[2]),
 			                           noWindow: hideConsole || ownConsole, breakaway: detached);
 			}
@@ -2043,6 +2090,7 @@ public sealed class Evaluator
 				}
 
 			proc.WaitForExit();
+			if (Timing.On) Timing.Mark("ext- " + name);
 			foreach (var t in pumps) t.Join();
 			if (fds[0] is SharedFileFd read && ChildLauncher.HandlePosition(read.Handle) is >= 0 and var at)
 				try { read.File.Position = at; } catch (IOException) { }   // the shell reads on from where the child stopped

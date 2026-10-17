@@ -8,6 +8,7 @@ using Bash.IO;
 // page, NOT UTF-8 as this comment used to assume: `echo 'é — ✓'` reached Claude Code as "� � ?"
 // (measured 2026-10-05; DECISIONS). So without a console, stdout and stderr get UTF-8 writers of
 // our own, before ConsoleMux captures them as the real streams.
+Timing.Begin();              // the performance review's timing switch: nothing unless BASH_TIMING_LOG is set
 bool consoleUtf8 = true;
 try { Console.OutputEncoding = ShellEncoding.Utf8; } catch (Exception) { consoleUtf8 = false; }   // byte-transparent (2026-09-12)
 try { Console.InputEncoding  = ShellEncoding.Utf8; } catch (Exception) { }
@@ -19,6 +20,7 @@ if (!consoleUtf8)
 Console.Out.NewLine = "\n";    // bash emits LF, not Windows CRLF (installed writers set it too)
 Console.Error.NewLine = "\n";
 ConsoleMux.Install();          // per-thread console streams (pipeline stages, captures, jobs)
+Timing.Mark("console");
 
 const string BashVersion = "5.1.0-koliada";
 const string BashVersionLong = "bash, version 5.1.0-koliada(1)-release (x86_64-pc-msys)";
@@ -140,6 +142,7 @@ else
 
 // ── the shell ────────────────────────────────────────────────────────────────────
 var evaluator = new Evaluator();
+Timing.Mark("evaluator");
 bool interactive = forceInteractive || (cFlagCmd is null && scriptPath is null && !Console.IsInputRedirected);
 evaluator.Options.Interactive   = interactive;
 evaluator.Options.CommandString = cFlagCmd is not null;
@@ -184,7 +187,8 @@ if (cFlagCmd is not null)
 	evaluator.TopLevelSource = "environment";
 	if (login) SourceLogin(evaluator, noprofile);
 	else SourceBashEnv(evaluator);
-	try { var code = evaluator.RunString(cFlagCmd, origin: "-c", mainLoop: true); evaluator.RunExitTrap(); return code; }
+	Timing.Mark("ready");
+	try { var code = evaluator.RunString(cFlagCmd, origin: "-c", mainLoop: true); evaluator.RunExitTrap(); Timing.Mark("done"); return code; }
 	// bash ends a -c shell on an expansion error (set -u, ${x:?}) with 127, or 1 where set -e is in
 	// force (on, and not suspended by && / || / if, as inside Claude Code's `eval '…' && pwd`); a
 	// script file ends with 1 (measured against bash 5.1, 2026-10-08)
@@ -204,7 +208,8 @@ if (scriptPath is not null)
 	else SourceBashEnv(evaluator);
 	// The read is inside the try: a locked, blocked (AV) or vanished script must be an error
 	// message and a status, never an unhandled exception (2026-09-12).
-	try { var code = evaluator.RunString(ShellEncoding.ReadAllText(resolved), origin: scriptPath, mainLoop: true); evaluator.RunExitTrap(); return code; }
+	Timing.Mark("ready");
+	try { var code = evaluator.RunString(ShellEncoding.ReadAllText(resolved), origin: scriptPath, mainLoop: true); evaluator.RunExitTrap(); Timing.Mark("done"); return code; }
 	catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or System.Security.SecurityException)
 		{ Console.Error.WriteLine($"bash: {scriptPath}: {ex.Message}"); return 126; }
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }

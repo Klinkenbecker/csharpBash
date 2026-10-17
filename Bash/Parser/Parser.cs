@@ -432,11 +432,11 @@ public sealed class Parser
 					return new ArrayCompoundAssign(acName!, values, redirects) { Append = acAppend, Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
 					}
 
-				// arr[n]=val — indexed element assignment
-				if (name is null && args.Count == 0 && IsArrayElementAssign(word, out var aeName, out var aeIdx, out var aeVal))
+				// arr[n]=val / arr[n]+=val — indexed element assignment
+				if (name is null && args.Count == 0 && IsArrayElementAssign(word, out var aeName, out var aeIdx, out var aeVal, out bool aeAppend))
 					{
 					while (true) { var tr = TryParseRedirect(); if (tr is null) break; redirects.Add(tr); }
-					return new ArrayElementAssign(aeName!, aeIdx!, aeVal!, redirects) { Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
+					return new ArrayElementAssign(aeName!, aeIdx!, aeVal!, redirects) { Append = aeAppend, Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
 					}
 
 				// NAME=VALUE scalar assignment before the command name
@@ -465,8 +465,8 @@ public sealed class Parser
 					{
 					if (IsAssignment(word, out var dName, out var dVal))
 						{ args.Add(new Word([new AssignmentArgPart(dName!, null, dVal!)])); continue; }
-					if (IsArrayElementAssign(word, out var eName, out var eIdx, out var eVal))
-						{ args.Add(new Word([new AssignmentArgPart(eName!, eIdx, eVal!)])); continue; }
+					if (IsArrayElementAssign(word, out var eName, out var eIdx, out var eVal, out bool eAppend))
+						{ args.Add(new Word([new AssignmentArgPart(eAppend ? eName! + "+" : eName!, eIdx, eVal!)])); continue; }
 					}
 
 				if (name is null)
@@ -636,10 +636,10 @@ public sealed class Parser
 		return true;
 		}
 
-	/// <summary>Detects arr[expr]=val.</summary>
-	private bool IsArrayElementAssign(Word word, out string? arrayName, out Word? index, out Word? value)
+	/// <summary>Detects arr[expr]=val and arr[expr]+=val (<paramref name="append"/>).</summary>
+	private bool IsArrayElementAssign(Word word, out string? arrayName, out Word? index, out Word? value, out bool append)
 		{
-		arrayName = null; index = null; value = null;
+		arrayName = null; index = null; value = null; append = false;
 		if (word.Parts.Count == 0) return false;
 		if (word.Parts[0] is not LiteralPart lit) return false;
 
@@ -650,7 +650,7 @@ public sealed class Parser
 		if (!IsValidIdentifier(lhs)) return false;
 
 		// the index may span word parts: arr[0]=, arr[$k]=, arr["$k"]=, arr[$i+1]=
-		if (!word.TrySplitIndexedAssignment(bracket + 1, out var idx, out var val)) return false;
+		if (!word.TrySplitIndexedAssignment(bracket + 1, out var idx, out var val, out append, allowAppend: true)) return false;
 		arrayName = lhs;
 		index = idx;
 		value = WithAssignmentTildes(val);

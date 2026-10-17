@@ -88,9 +88,16 @@ public sealed record Word(List<WordPart> Parts)
 	/// first literal was recognised: `map[$key]=v` ran as a command ("command not found") and
 	/// `m+=(["$k"]=v)` silently set nothing.
 	/// </summary>
-	public bool TrySplitIndexedAssignment(int skip, out Word index, out Word value)
+	public bool TrySplitIndexedAssignment(int skip, out Word index, out Word value) =>
+		TrySplitIndexedAssignment(skip, out index, out value, out _, allowAppend: false);
+
+	/// <summary>The same, also taking `…]+=value` (an element append, `a[k]+=v`) when
+	/// <paramref name="allowAppend"/>: until 2026-10-16 `a[k]+=v` was not an assignment at all and ran as
+	/// a command ("a[k]+=v: command not found"), the value lost.</summary>
+	public bool TrySplitIndexedAssignment(int skip, out Word index, out Word value, out bool append, bool allowAppend)
 		{
 		index = value = null!;
+		append = false;
 		if (Parts.Count == 0 || Parts[0] is not LiteralPart) return false;
 		var idx = new List<WordPart>();
 		for (int p = 0; p < Parts.Count; p++)
@@ -99,10 +106,12 @@ public sealed record Word(List<WordPart> Parts)
 			if (text is null) { idx.Add(Parts[p]); continue; }           // an expansion or quote: part of the index
 			int close = text.IndexOf(']');
 			if (close < 0) { if (text.Length > 0) idx.Add(new LiteralPart(text)); continue; }
-			if (close + 1 >= text.Length || text[close + 1] != '=') return false;
+			append = allowAppend && close + 2 < text.Length && text[close + 1] == '+' && text[close + 2] == '=';
+			if (!append && (close + 1 >= text.Length || text[close + 1] != '=')) return false;
 			if (close > 0) idx.Add(new LiteralPart(text[..close]));
+			int valueAt = close + (append ? 3 : 2);
 			var val = new List<WordPart>();
-			if (text.Length > close + 2) val.Add(new LiteralPart(text[(close + 2)..]));
+			if (text.Length > valueAt) val.Add(new LiteralPart(text[valueAt..]));
 			val.AddRange(Parts.Skip(p + 1));
 			index = new Word(idx);
 			value = new Word(val);
@@ -174,12 +183,15 @@ public sealed record SimpleCommand(
 	List<Word> Args,
 	List<Redirect> Redirects) : Node;
 
-/// <summary>Indexed array element assignment: arr[n]=val</summary>
+/// <summary>Indexed array element assignment: arr[n]=val — or arr[n]+=val when Append.</summary>
 public sealed record ArrayElementAssign(
 	string ArrayName,
 	Word Index,
 	Word Value,
-	List<Redirect> Redirects) : Node;
+	List<Redirect> Redirects) : Node
+	{
+	public bool Append { get; init; }
+	}
 
 /// <summary>Compound array assignment: arr=(a b c) — or arr+=(…) when Append.</summary>
 public sealed record ArrayCompoundAssign(
