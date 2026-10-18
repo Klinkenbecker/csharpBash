@@ -371,8 +371,10 @@ Two model points:
 - **PATH mirrors Git Bash.** When `git.exe` is discoverable on PATH the installation's
   `usr/bin` and `mingw64/bin` are prepended (exactly what the MSYS runtime does), so externals
   outside the in-process set resolve as they would under Git Bash; the shell's own directory is
-  appended so a nested `bash` resolves even on a Git-less machine. Command lookup reads the
-  process environment, and `$PATH` assignments are mirrored into it.
+  appended so a nested `bash` resolves even on a Git-less machine. Command lookup follows the
+  shell's own `$PATH` (since 2026-10-11: assigning it resets the hash, a temporary `PATH=… cmd` is
+  searched for that command only, a subshell's stays in it), and assignments are mirrored into the
+  process environment so child programs see them.
 
 ---
 
@@ -400,10 +402,11 @@ For a command that is neither builtin nor function, `ExecExternal` launches a ch
 Two pieces of machinery sit in front of `Process.Start`:
 
 - **PATH resolution + hash cache.** `ResolveOnPath` scans `PATH` (with `PATHEXT` on Windows)
-  and memoises hits; `psi.FileName = ResolveOnPath(name) ?? name`, so a cache miss falls back
-  to the OS launcher's own search and can only ever speed things up, never break resolution.
-  This cache is what the `hash` builtin inspects/clears. *(DECISIONS: 2026-06-14 — hash + PATH
-  cache.)*
+  and memoises hits; this cache is what the `hash` builtin inspects/clears. C#Bash's lookup is
+  the only authority: a bare name it does not find is looked for in its own folder, System32 and
+  the Windows folder (`FallbackProgram`), else "command not found", and is never handed to
+  Windows' launcher to search (it searched the cwd and the process PATH). *(DECISIONS: 2026-06-14
+  — hash + PATH cache; 2026-10-17 — the launcher never searches.)*
   Behind it, `CommandMap` keeps the shell's own lookups across processes: one file per PATH value
   (with PATHEXT) under `~/.bash/commands`, read on the first lookup. Every lookup
   remembers hits (one existence probe before use; gone: searched again). Misses are `hash name`'s
@@ -414,14 +417,26 @@ Two pieces of machinery sit in front of `Process.Start`:
   30 days is pruned. Why: Claude Code's snapshot runs `hash rg` on every call, and that
   one miss searched the whole PATH each time. *(DECISIONS: 2026-10-16 — the tool-lookup plan; only
   `hash` records and obeys misses.)*
+- **A child's environment is the shell's exported variables, nothing else.** Built per launch from
+  the exported set (every inherited variable is imported exported), so `unset`/`export -n` reach
+  children; no empty PATH entry is ever handed to Windows (its launcher reads one as the cwd), in a
+  child's PATH or in C#Bash's own process PATH. *(DECISIONS: 2026-10-17 — fix b; red team on the
+  lookup changes.)*
 - **`BASH_PATH`.** At startup a non-empty `BASH_PATH` becomes `PATH` and is removed (from the
   process environment too, so a nested shell keeps its parent's PATH): a launcher that keeps its own
   PATH narrow, such as `claude.exe`, hands the shell its PATH this way. *(DECISIONS: 2026-10-16.)*
 
 - **Shebang dispatch.** Windows can't `exec` a `#!` script, so when a command names an actual
   script file the interpreter reads its interpreter line: `bash`/`sh` scripts run in-process
-  in a child `Evaluator`; anything else is spawned as `<interp> <script> <args>`. *(DECISIONS:
-  2026-06-14 — Shebang dispatch.)*
+  in a child `Evaluator`; anything else is spawned as `<interp> <script> <args>`. A bare name is a
+  script only at its PATH match, never in the current directory (a planted `git` there ran instead
+  of git.exe), and the PATH search takes the first match that passes `-x`; the interpreter chain is
+  capped at 8. *(DECISIONS: 2026-06-14 — Shebang dispatch; 2026-10-17 — defect a.)*
+
+**A background job resolves its own paths.** A shell whose owner keeps running (`&`, `setsid -f`) is
+`Detached`, and so is everything started inside it: it resolves every relative path against its own cwd,
+because its parent's `cd` moves the process cwd under it. A pipeline stage keeps paths relative until it
+moves (its parent waits for it). *(DECISIONS: 2026-10-03 — each shell's own cwd; 2026-10-17 — background job.)*
 
 **`TranslatePath`** maps `~`/`~user` and forward-slash paths to Windows paths. A general Unix
 root mapping (`/tmp`, `/usr`, `/etc`, configurable `BASH_ROOT`) is a **deferred** design

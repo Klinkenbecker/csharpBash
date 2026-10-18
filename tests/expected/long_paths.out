@@ -1,0 +1,7 @@
+a directory over 260 characters: yes
+cd: ok
+hi
+whoami.exe: cannot start a program in a directory over 260 characters (a Windows limit)
+rc=126
+w.exe: cannot start a program whose path is over 260 characters (a Windows limit)
+rc=126

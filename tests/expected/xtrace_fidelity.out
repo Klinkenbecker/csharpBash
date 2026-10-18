@@ -1,0 +1,23 @@
++ x=1
+++ echo sub
++ y=sub
++ echo 'a b' '' 'c'\''d' '$x' 'tab	x' plain '*.nomatch'
+a b  c'd $x tab	x plain *.nomatch
++ f
++ echo in-f
+in-f
++ FOO=bar
++ true
++ a=(1 "2 3")
++ echo sub-shell
+sub-shell
++++ echo deeper
+++ echo nested deeper
++ : nested deeper
++ x=3
++ z=two
++ set +x
+bash-5.1> true
+bash-5.1> set +x
+[$] true
+[$] set +x

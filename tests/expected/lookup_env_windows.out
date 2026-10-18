@@ -1,0 +1,10 @@
+== an MSYS-form PATH entry
+zzmsys-ran
+== \x and C:x in a pipeline stage that changed directory
+\x on the stage's drive (C:): rc=127
+C:x in the stage's directory: rc=0
+== a child's PATH: unset, and an exported lowercase path
+the child has no PATH
+C:/Windows/System32;C:/Windows
+== cmd.exe by a full forward-slash path
+cmd-by-full-path

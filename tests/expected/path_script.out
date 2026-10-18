@@ -1,0 +1,24 @@
+== a #! script found on PATH
+hello: 2 args, first [a b], 0=[/bin/hello]
+rc=3
+hello: 1 args, first [z], 0=[/bin/hello]
+rc=3
+file
+D/bin/hello
+D/bin/hello
+== a .sh file with no #! found on PATH
+plain.sh ran
+rc=0
+== a match that cannot run is passed over for a later one
+p2 tool ran
+rc=0
+== the only match cannot run
+D/p1/data: Permission denied
+rc=126
+== a bare name never runs a script from the current directory
+zzt from PATH
+rc=0
+onlyhere: command not found
+rc=127
+cwd script ran
+rc=0

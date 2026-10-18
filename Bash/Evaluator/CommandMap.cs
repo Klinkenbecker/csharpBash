@@ -90,10 +90,20 @@ public static class CommandMap
 			Select(path, pathExt);
 			if (_file is null) return false;
 			bool had = _entries.TryGetValue(name, out var old);
-			if (found is null ? !had : had && old == found) return had;
-			// merge with what other shells wrote since this one read the file
+			if (found is not null && had && old == found) return true;
+			// merge with what other shells wrote since this one read the file. A forget looks there too: the
+			// name may have been written since (a long-lived shell's `hash -d` said "not found" and the entry
+			// stayed, 2026-10-16)
 			var merged = Load(_file, path, pathExt) ?? [];
-			if (found is null) merged.Remove(name); else merged[name] = found;
+			if (found is null)
+				{
+				bool inFile = merged.Remove(name);
+				_entries = merged;
+				if (!inFile) return had;   // nothing to write
+				Write(_file, path, pathExt, merged);
+				return true;
+				}
+			merged[name] = found;
 			_entries = merged;
 			Write(_file, path, pathExt, merged);
 			return had;

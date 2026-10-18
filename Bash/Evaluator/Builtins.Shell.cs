@@ -131,6 +131,7 @@ public sealed partial class Builtins
 			{
 			dest = _env.Get("OLDPWD");
 			if (dest.Length == 0) { Console.Error.WriteLine($"{Err}{_called}: OLDPWD not set"); return 1; }
+			dest = ShellEnvironment.TranslatePath(dest);   // a relative OLDPWD is this shell's (a job's), not the process cwd's
 			printDir = true;
 			}
 		else if (target.Length == 0) return 0;
@@ -774,9 +775,10 @@ public sealed partial class Builtins
 		args = args.Skip(first).ToList();
 		var file = args[0];
 		var path = ShellEnvironment.TranslatePath(file);
-		if (!File.Exists(path) && !file.Contains('/') && !file.Contains('\\') && _eval.Options.Shopt("sourcepath"))
+		if (!file.Contains('/') && !file.Contains('\\') && _eval.Options.Shopt("sourcepath"))
 			{
-			// bash searches PATH for a bare filename
+			// bash searches PATH for a bare filename FIRST, and the current directory only when PATH has none (not
+			// in POSIX mode); the cwd's came first until 2026-10-17, so a planted file there was sourced instead
 			foreach (var d in ShellEnvironment.CurrentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
 				{
 				var cand = Path.Combine(ShellEnvironment.TranslatePath(d), file);
@@ -1081,12 +1083,15 @@ public sealed partial class Builtins
 				case "keyword":  Console.WriteLine($"{n} is a shell keyword"); break;
 				case "function": Console.WriteLine($"{n} is a function"); Console.WriteLine(FunctionText(_eval.GetFunction(n)!)); break;
 				case "builtin":  Console.WriteLine($"{n} is a shell builtin"); break;
-				case "file":     Console.WriteLine($"{n} is {path}"); break;
+				case "file":     if (!all) Console.WriteLine($"{n} is {path}"); break;
 				}
-			if (all && kind != "file")
+			if (all)
 				{
-				var p = Shown(_eval.ResolveOnPath(n));
-				if (p is not null) Console.WriteLine($"{n} is {p}");
+				// every match on PATH that can run, in order, as bash: C#Bash showed one, even one that could not run
+				// ("type: x: not found" in bash), and none after a builtin's line (2026-10-17)
+				var files = n.Contains('/') || n.Contains('\\') ? [path!] : _eval.AllOnPath(n).Select(f => Shown(f)!).ToList();
+				foreach (var f in files) Console.WriteLine($"{n} is {f}");
+				if (kind == "file" && files.Count == 0) { Console.Error.WriteLine($"{Err}type: {n}: not found"); rc = 1; }
 				}
 			}
 		return rc;

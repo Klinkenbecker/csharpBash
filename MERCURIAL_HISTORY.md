@@ -12,11 +12,39 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 290 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 318 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 317 | 2026-10-18 | Doc review before publishing rev 316: README's benchmark table and figures from the deployed build's compare3 run |
+| 316 | 2026-10-18 | Only what Windows' launcher starts is a program: a zz.js before zz.exe on PATH is passed over (as Git Bash) |
+| 315 | 2026-10-18 | Ruled: .. after a junction stays lexical (the architect: "2/ ok") |
+| 314 | 2026-10-18 | Raised two forks for the architect (PATHEXT matches Windows cannot start; .. after a junction); anchor: run done |
+| 313 | 2026-10-18 | Paths over 260 characters: cd enters them (longPathAware manifest); starting a program there says the Windows limit |
+| 312 | 2026-10-18 | set -x traces compound commands as bash does: [[ ]], (( )), for heads, arithmetic for, case |
+| 311 | 2026-10-18 | set -x prints what bash prints: assignments, ++ levels, quoted words, PS4 prompt escapes |
+| 310 | 2026-10-18 | An MSYS program inside Bash.exe s.sh >> out can write: the inherited append-only handle is reopened for it |
+| 309 | 2026-10-18 | Red team on the lookup changes: ~ PATH entries, MSYS/root/drive-relative paths, a child's environment, missing interpreters |
+| 308 | 2026-10-17 | Eight GNU differences fixed, and a hash crash from rev 298 (live in deployed 302) |
+| 307 | 2026-10-17 | A subshell's exec redirect ends with it: ( exec > f; echo in ); echo after put every later line into f |
+| 306 | 2026-10-17 | C#Bash's lookup is the only authority: a bare name not on PATH is never handed to Windows' launcher to search |
+| 305 | 2026-10-17 | Anchor: the fix-everything run (the architect: "Fix all the wrong results and smaller diffs from GNU ... go"), its order and fork rule |
+| 304 | 2026-10-17 | Ruled: the shell's $PATH keeps empty entries as given; only what reaches Windows is cleaned |
+| 303 | 2026-10-17 | Deployed rev 302 (revs 297-302) by tools/deploy.sh; notice to the nine live sessions; anchor updated |
+| 302 | 2026-10-17 | Fix b: no empty PATH entry reaches Windows (C#Bash's process PATH and every child's) |
+| 301 | 2026-10-17 | Finding addendum: the empty PATH entry is the user Path's trailing ";" (HKCU), re-checked |
+| 300 | 2026-10-17 | Anchor: the OS-launcher item is live under Claude Code (empty process-PATH entry); the architect's call |
+| 299 | 2026-10-17 | Finding: an empty process-PATH entry makes Windows search the cwd under Claude Code (8 of 10 live sessions) |
+| 298 | 2026-10-17 | A background job works in its own directory: after the parent's cd, its relative paths hit the parent's |
+| 297 | 2026-10-17 | Deployed rev 296 (revs 287-296) by tools/deploy.sh; notice to the nine live sessions |
+| 296 | 2026-10-17 | A colon name is a path only with a drive: `ads:bar.exe` (an NTFS stream) ran from the cwd |
+| 295 | 2026-10-17 | Defect (d): PS4 is expanded for each trace line; $EPOCHREALTIME has microseconds |
+| 294 | 2026-10-17 | Defect (c): a command name with a slash runs from the shell's own directory, never searched for |
+| 293 | 2026-10-17 | Defects (a) and (b): a script found on PATH runs; a bare name never runs a script from the cwd; hash -d reads the map |
+| 292 | 2026-10-17 | Anchor: the global CLAUDE.md is Claude's file (the architect, 2026-10-17): its stale C#Bash limits fixed and committed in ~/.claude (git 4ef2f2e), not "suggested only" |
+| 291 | 2026-10-16 | Before the restart as a full C#Bash session (BASH_PATH): RESUME anchor head rewritten (the old run-on START HERE is in rev 290; open items carried: defects a-d, review R2-R4, parked items, do-not-derive guards; tail byte-identical); machine fact re-verified (PortableGit bin/_bash.exe stub broken); ARCHITECTURE lookup wording fixed; stale CLAUDE.md lines told to the architect |
+| 290 | 2026-10-16 | Published: GitHub main = git 0b67afa = hg rev 289 by tools/publish.sh (the README lookup-section intro; benchmark of deployed rev 286; 290 changesets; bundle verified) |
 | 289 | 2026-10-16 | README: Startup and command lookup opens with why it matters (a PATH lookup probes every entry x every PATHEXT name, a miss probes them all: ~600 probes, ~15 ms here, half of every Claude Code call via the snapshot's hash rg), pointing to Performance and DECISIONS "REVIEW R1 RESULT" (the architect's request) |
 | 288 | 2026-10-16 | Published: GitHub main = git 5cf4d27 = hg rev 287 by tools/publish.sh (benchmark of deployed rev 286, doc review rev 287, 288 changesets, bundle verified, remote main = HEAD); the CRLF-to-LF warning for expected files with CRs is harmless (the runner compares lines) |
 | 287 | 2026-10-16 | Doc review before publishing (deployed rev 286): README reworked: the benchmark table (compare3 on deployed rev 286, all outputs agree; startup 19.3 vs Git Bash 19.0 ms) is the last item of the intro under "Bullshit walks, money talks:"; new sections Startup and command lookup (BASH_PATH, Git usr/bin, own dir, startup files, lookup order, remembered lookups in ~/.bash/commands, hash misses, Windows fallback, known gaps) and Using it as Claude Code's shell (the start file, getting the best out of it); Performance refers back and adds what a Claude Code call costs (~16 ms: ~11 floor, ~3 start-up, snapshot <1, exit ~0.25); commands list gains disown/nohup/setsid/yes and verified options; stale compgen line fixed; 140 cases. DECISIONS: the deploy; PROJECT_CONTEXT: current state, stale trap note fixed |

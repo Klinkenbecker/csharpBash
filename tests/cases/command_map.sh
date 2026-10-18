@@ -24,6 +24,14 @@ printf '@echo zzx-ran\r\n' > A/zzx.cmd; run 'hash zzx; echo rc=$?'
 echo "== a remembered program that has gone is searched for"; rm A/zzm.cmd; run 'hash zzm; echo rc=$?'
 printf '@echo zzm-ran\r\n' > A/zzm.cmd
 echo "== hash -d forgets one name"; run 'hash -d zzm; echo rc=$?; hash zzm; echo rc=$?'
+echo "== a long-lived shell's hash -d forgets a name another shell wrote since it read the map"   # 2026-10-17
+printf '@echo zzl-ran\r\n' > A/zzl.cmd
+run 'hash zzm; "$BASH" -c "hash zzl"; hash -d zzl; echo rc=$?'
+echo "remembered after hash -d: $(cat "$HOME"/.bash/commands/*.map | grep -c "^zzl"$'\t')"
+echo "== a drive-relative name (F:x) is a path: it runs, and the map keeps nothing for it"   # 2026-10-17
+printf '#!/bin/bash\necho "drive-relative ran"\n' > zzdr; dv=${d%%:*}
+run "$dv:zzdr; echo rc=\$?"
+echo "kept: $(cat "$HOME"/.bash/commands/*.map | grep -c "^$dv:zzdr")"
 echo "== hash -r forgets everything"; rm A/zzm.cmd; run 'hash zzm'; printf '@echo zzm-ran\r\n' > A/zzm.cmd
 run 'hash zzm; echo rc=$?'; run 'hash -r; hash zzm; echo rc=$?'
 echo "== a PATH with a relative entry is not kept"; run 'PATH="A;$PATH"; hash zzr'; run 'PATH="A;$PATH"; hash zzr'

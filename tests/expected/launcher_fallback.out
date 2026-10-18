@@ -1,0 +1,10 @@
+== an ordinary terminal (NoDefaultCurrentDirectoryInExePath unset): nothing runs from the current directory
+zzplant: command not found
+planted .exe: rc=127
+zzcwd.sh: command not found
+cwd script: rc=127
+== an empty PATH still runs Windows' own programs; command -v still reports nothing
+cmd-ran
+command -v cmd: none
+== a redirect on a command not found is still made, as bash
+rc=127 out.txt: made

@@ -6636,3 +6636,572 @@ bundle verified; remote main = HEAD). Git's "CRLF will be replaced by LF" for `t
 (and, already, `path_lookup.out`): `.gitattributes` normalises every text file to LF, so the CRs that `cmd`'s
 `echo` puts in those expected lines are not in git. Harmless: `run-tests.ps1` compares lines, and both
 `Get-Content` and PowerShell's capture of the shell's output take CRLF and LF alike as the line end.
+
+## 2026-10-16 -- Housekeeping before the restart as a full C#Bash session (`BASH_PATH`): anchor rewritten, stale records fixed
+**Status:** Active. The architect: "save _everything_ not already saved, check for ambiguities/stales/brokens and
+restart as a full c#bash session using BASH_PATH".
+
+- **RESUME anchor head rewritten** (the 2026-10-08 head had become one run-on START HERE paragraph that still listed
+  resolved items as open: map pruning, the `loop` +6.3%). The old head is in hg rev 290's `PROJECT_CONTEXT.md`;
+  every item in it is resolved with a DECISIONS entry or carried into the new head (the open defects, the review,
+  the parked items, the "not raised" jobs-table note, the do-not-derive guards). The tail (KNOWN LIMITATIONS,
+  SETTLED, DO NOT undo, machine facts) is byte-identical; the replacement was made between two marker lines.
+- **Verified and recorded:** Git's `PortableGit/bin/_bash.exe` stub is broken (it looks for the renamed
+  `usr/bin/bash.exe`); Git Bash is `usr/bin/_bash.exe`, as compare3 uses. The architect's 2026-10-16 pointer to
+  `bin\_bash.exe` names the broken stub.
+- **Told the architect (his global CLAUDE.md, suggested only):** two "Known limits of C#Bash" lines are stale on
+  deployed rev 286: a UNC glob expands, and awk's 3-argument `match()` works.
+- **Fixed:** ARCHITECTURE §10 said command lookup reads the process environment (stale since 2026-10-11: it follows
+  the shell's own PATH). The Claude Code contract memory: the wrapper's `eval` no longer gets `< /dev/null`; the
+  `BASH_PATH` launch added.
+
+## 2026-10-17 -- RATIFIED: the defects first, then the review; the `BASH_PATH` launch verified from `claude.exe`'s environment
+**Status:** Active. The architect: "Yes, go on the defects!" (Claude's recommendation, re-stated at the resume: the
+goal order puts a correct shell before a faster Claude, and the review only measures, so it loses nothing by
+waiting). Order: (a) a script found on PATH; (b) `hash -d` in a long-lived shell; (c) a relative `a/b.exe` with
+PATH = `dist`; (d) `PS4`, `$EPOCHREALTIME`. Then R2-R4.
+
+**Verified at the session start** (the architect: "Can you look at claudes own environment?"): each ancestor's live
+environment block read from its PEB by a scratch reader (control: a probe variable it set in itself, read back).
+Windows Terminal: no `BASH_PATH`, PATH 48 entries. `cmd /k kes-term` (the start file) and `claude.exe`: `BASH_PATH`
+48 entries, PATH = `F:/Koliada/Tools/bash/dist`. The shell (`Bash.exe` 286) and its child: no `BASH_PATH`, PATH 50
+entries (Git's `usr/bin` and `mingw64/bin` put first by `AugmentPathWithGitTools`). So the start file works and the
+shell removes `BASH_PATH` from its process environment as designed.
+
+## 2026-10-17 -- CAUSE + PLAN (defect a): a script found on PATH does not run; a bare name runs a script from the current directory
+**Status:** Active. GREENLIT defect (a). Supersedes, in part, the 2026-06-14 "Shebang dispatch" entry's
+"PATH-resident extensionless scripts aren't auto-detected yet (only explicit paths / cwd files)".
+
+**Reproduced (deployed 286 against GNU 5.1 in WSL; case `path_script`, red on 286):**
+- A `#!` script found on PATH, and a `.sh` file found on PATH: "Permission denied", 126. GNU runs both; `$0` is
+  the path found.
+- A PATH match that cannot run (`p1/tool`, data) ahead of a `#!` script (`p2/tool`): "Permission denied"; GNU
+  passes over it. When the only match cannot run, both say "Permission denied", 126; GNU names the path, C#Bash
+  the name. GNU still hashes it, and `type -t` says `file` (measured).
+- A bare name runs a `#!` or `.sh` file from the current directory, before PATH: a planted `#!` file named `git`
+  ran instead of `git.exe`; GNU runs git. Any directory one `cd`s into (a clone, a download) could replace any
+  external tool, in a terminal and in every Claude Code call. Builtins and in-process tools are not reachable so.
+
+**Cause (read):** the shebang dispatch in `ExecExternal` called `TryResolveScriptFile(name)`, which resolves the
+name against the current directory (`TranslatePath`), never against PATH; a PATH match then went to
+`CreateProcess`, which cannot run a script (error 193, reported as "Permission denied"). `ResolveOnPath` took the
+first file whose name matched, whether it could run or not.
+
+**Plan (Claude's call):**
+- `ResolveOnPath`: a bare match counts only if it can run by C#Bash's own `-x` (`FileTests.IsExecutable`: a
+  PATHEXT extension, `.sh`, or `#!`). With none, the first match that cannot run is the answer, hashed as bash
+  hashes it but not written to the command map (the map holds programs; a remembered hit is checked the same way).
+- `ExecExternal`: a bare name is a script only at its PATH match, never in the current directory; `$0` is that path
+  in shell form (as `command -v` shows it). A match with a PATHEXT extension is still never opened for its first
+  line (the 2026-06-14 property). "Permission denied" after a PATH lookup names the path, as bash.
+- The current-directory part is a behaviour change, made under the SETTLED "match GNU where behaviour is open" and
+  as the secure default: the 2026-06-14 entry describes cwd files running and gives no reason for it. Falsifier:
+  the architect wants a bare `script.sh` in the current directory to keep running; the cost is the shadowing above.
+
+**Found, not in this fix (open, the architect's):** a bare name NOT on PATH still goes to `CreateProcess`'s own
+search (`ChildLauncher` passes no application name), which looks in C#Bash's folder and the current directory: a
+`zzplant.exe` there ran by `zzplant` (rc 0) in an ordinary terminal, and was 127 under Claude Code (it sets
+`NoDefaultCurrentDirectoryInExePath=1`). It cannot shadow a PATH tool (PATH is searched first) but can supply a
+missing one (a planted `rg.exe` where ripgrep is not installed). The fallback is the 2026-06 hash entry's "the
+cache can only speed things up, never break resolution that previously worked". Claude's position: drop it (a bare
+name not found on PATH is "command not found", as bash) once it is checked what the OS search finds that
+`ResolveOnPath` does not (App Execution Aliases; C#Bash's own folder). The same search makes a bare `x.sh` in the
+current directory, not on PATH, "Permission denied" (126) in an ordinary terminal; 127 under Claude Code.
+
+## 2026-10-17 -- FIXED (defect a): a script found on PATH runs; a bare name never runs a script from the current directory
+**Status:** Active. Implements "CAUSE + PLAN (defect a)" above, plus two fixes from the red team.
+
+**Fix:** as planned: `ResolveOnPath` counts a bare match only if it passes `-x` (`FileTests.IsExecutable`), else the
+first match that cannot run (hashed, not in the map), and re-checks a remembered hit the same way; `ExecExternal`
+resolves first, takes a bare name as a script at its PATH match only, gives `$0` the path found, never reads a
+PATHEXT match's first line, and names the path in "Permission denied". From the red team:
+- **The interpreter chain is capped at 8** (`MaxInterpreterDepth`; Claude's call, real chains are one or two):
+  `#!/usr/bin/env self` re-entered `ExecExternal` until the stack overflowed and the process died. Newly reachable
+  by a bare name; `./self` already crashed 286 so. Now "NAME: SHEBANG: bad interpreter: too many levels of
+  interpreters", 126, the stderr redirect honoured; the shell goes on (GNU execs forever).
+- **A name with a drive colon is a path** (`IsPathName`: slash, backslash, colon). `F:x` counted as bare,
+  `Path.Combine` dropped the PATH entry so it resolved in F:'s current directory, and with the lookup now ahead of
+  the script check it was written to the map (`F:x<TAB>F:x`). It still runs, as the explicit path it is.
+
+**Verified:** case `path_script` (expected = GNU 5.1 via WSL, byte-identical), case `interpreter_loop` (authored),
+`command_map` extended (the drive-relative name: runs, kept 0). Each red first: `path_script` fails on deployed 286;
+on the pre-fix build the loop crashed and the drive name was kept. Suite 142/142 with a console and `-Detached`
+(Release build); battery 226/237 against 225. Not run: the `-n` corpus (parser untouched), the suite on the AOT
+build (deploy does), compare3 (per lookup: one `-x` test on a remembered hit, one cwd existence probe fewer per
+launch [unmeasured]).
+
+**Red team (an independent agent; its repros run on the build, GNU via WSL):** held: no bare name ran a cwd file
+through the script path, from a plain command, a pipeline, `&`, `command`, `env`, `exec`, `xargs`, `find -exec`,
+`nohup`, `timeout`, `time`, `$( )`, `PATH=x cmd`, `setsid -w`, a case variant or the env-interpreter re-entry
+(286 ran the planted file in every one); a PATHEXT file is never read as a script (a `.bat` starting `#!` ran under
+cmd); `$0`, arguments, exit code, redirects, `VAR=x`, `env -i` match GNU. On this machine PortableGit's `#!` scripts
+`egrep`, `fgrep`, `gunzip`, `zcat` now run (were "Permission denied"), and `F:/KoliadaES/bin/targets/CC8051/buildLib`
+now runs ahead of `buildLib.bat` beside it, as in Git Bash; the `.bat` only runs that script under MSYS bash.
+
+**Found, in 286 too, not fixed (open, the architect's to schedule):**
+1. `.`/`source NAME` reads a file in the current directory before PATH; GNU searches PATH first and the current
+   directory only when nothing is found. A planted file there wins over the intended one.
+2. `hash NAME` and `type -a NAME` accept a PATH match that cannot run; GNU: `hash: NAME: not found` (rc 1, entry
+   removed) and `type -a` "not found". `type`, `command -v`, `type -P` match GNU.
+3. A PATHEXT match that CreateProcess cannot start (`zz.js`: Windows' PATHEXT lists `.JS`) stops the search
+   ("Permission denied", 126) and is kept in the map; a later `zz.exe` is never reached.
+4. Cosmetic: the env-interpreter re-entry hashes the interpreter too (`nb`, one hit; GNU lists the script only); a
+   trailing dot (`s1.`) finds `s1` (Windows drops it); a relative PATH entry is searched from the process cwd, not
+   a pipeline stage's; `export HOME` in a script does not move the command map's folder (it reads the process
+   environment, so tests' in-process lookups write maps into the real folder, as `path_lookup`'s always have).
+
+**The OS fallback (open, above), position refined:** README "Finding a command" documents it on purpose (`cmd` runs
+on an empty PATH). Claude's position: keep Windows' own folders and drop the current directory (search C#Bash's
+folder, System32 and the Windows folder explicitly), so a planted `rg.exe` cannot answer a missing `rg`. Falsifier:
+anything that relies on the launcher finding a program in the current directory by a bare name.
+
+## 2026-10-17 -- CORRECTION (defect c): the cause is `NoDefaultCurrentDirectoryInExePath`, not a PATH holding only `dist`
+**Status:** Active. Corrects the cause in "BUILT (T1, T2)" (2026-10-16), the anchor, README's known gap and the
+global CLAUDE.md limit line ("with PATH holding only C#Bash's folder").
+
+**Measured (deployed 286; a copy of whoami.exe at `sub/w.exe`):** `sub/w.exe` is 127 under
+`NoDefaultCurrentDirectoryInExePath=1` (Claude Code sets it) with the full PATH, with `dist` only and with System32
+only, and runs with the variable unset whatever the PATH; `./sub/w.exe` always runs. Cause: a name with a slash
+reaches `CreateProcessW` relative (no application name), and Windows SEARCHES for it (C#Bash's folder, the current
+directory unless that variable says no, the system folders, PATH); bash never searches for a name with a slash. The
+same search would also take `<PATH dir>/sub/w.exe` [inferred from the search order, not run]. Fix direction (match
+GNU): resolve it against the shell's own current directory before launching.
+
+## 2026-10-17 -- FIXED (defect b): a long-lived shell's `hash -d` forgets a name another shell wrote since it read the map
+**Status:** Active. GREENLIT defect (b) ("DEPLOYED rev 286", found in the live check).
+
+**Cause (read, then reproduced):** `CommandMap.Change` returned early on a forget when the name was not in this
+process's copy of the map and never read the file, so `hash -d` said "not found" and the entry stayed.
+**Fix:** a forget reads the file and removes the name there, writing only when it was there; it reports the name
+as there when either copy had it.
+**Verified:** `command_map` extended (a shell reads the map, its child records `zzl`, the first shell's
+`hash -d zzl`: rc 0, the map keeps none); red on 286 ("hash: zzl: not found", rc 1, kept 1). Cost: one file read per
+forget, which only `hash -d` and a remembered program that has gone (or no longer runs) cause.
+
+## 2026-10-17 -- PLAN (defect c): a name with a slash is a path from the shell's own directory, never searched for
+**Status:** Active. GREENLIT defect (c); cause in "CORRECTION (defect c)" above.
+
+**Measured further (deployed 286):** the search is also a shadowing path: with no `sub/` in the current directory,
+`sub/w.exe` ran `<a PATH dir>/sub/w.exe` (rc 0). A missing path says "command not found" (127); GNU says
+"No such file or directory" (127).
+**Plan (match GNU):** `ExecExternal` resolves a relative path name (after `TranslatePath`, which already makes it
+absolute in a pipeline stage that changed directory) against the shell's cwd, so `CreateProcess` gets a full path
+and searches nothing; a rooted or drive-relative name is left as it is. Error 2/3 for a path name is "No such file
+or directory". The child's argv[0] becomes the full path, as it already is for a PATH match.
+
+## 2026-10-17 -- FIXED (defect c): a name with a slash runs from the shell's own directory; a missing one is "No such file or directory"
+**Status:** Active. Implements "PLAN (defect c)".
+
+**Fix:** `ExecExternal` hands `CreateProcess` a full path for a path name (`FromShellCwd`: a relative path joined
+to the shell's cwd; a rooted or drive-relative one as it is), so Windows searches nothing; error 2/3 for a path
+name says "No such file or directory".
+**Verified:** case `relative_path_launch` (authored: a copy of whoami.exe): `sub/w.exe` runs with
+`NoDefaultCurrentDirectoryInExePath=1` and without; a `sub/v.exe` only under a PATH directory is "No such file or
+directory", 127; `./nope`, `sub/nope` likewise; `../sub/w.exe` and a pipeline stage that changed directory still
+run. Red on 286 (127 "command not found"; the PATH directory's `sub/v.exe` ran). Suite 143/143 with a console and
+`-Detached`; battery 226/237.
+
+## 2026-10-17 -- FIXED (defect d): PS4 is expanded for each trace line; `$EPOCHREALTIME` has microseconds
+**Status:** Active. GREENLIT defect (d) (found in "REVIEW R1 RESULT", 2026-10-16).
+
+**Cause (read, then reproduced against GNU 5.1):** the xtrace line printed `_env.Get("PS4")` raw
+(`+ $LINENO: echo hi`); `$EPOCHREALTIME` was `ToUnixTimeMilliseconds() / 1000.0`, so its last three digits were 000.
+**Fix:** `XtracePrefix` expands PS4 as the inside of "…" (`Parser.ParseDoubleQuotedText`, then the expander):
+parameters, arithmetic, command substitution, quotes literal, `\$` a dollar, as GNU prints them. During the
+expansion xtrace is off (a `$( )` in PS4 would trace itself and expand PS4 again) and `$?` is restored afterwards
+(GNU: with `PS4='+$(exit 7) '`, `false; echo "status=$?"` prints 1). A PS4 with no `$`, `` ` `` or `\` is used as it
+is (the default `+ `: no cost). `$EPOCHREALTIME` = UTC ticks since the epoch / 10, six digits.
+**Not done (known gaps):** PS4's prompt escapes (`\u`, `\w`; bash decodes them "as with PS1"); a failed expansion
+leaves PS4 as written.
+**Verified:** case `ps4_epochrealtime` (expected = GNU 5.1 via WSL, byte-identical; red on 286 on every PS4 line and
+"microseconds: no"). Suite 144/144 with a console and `-Detached`; battery 226/237.
+
+**Found, not fixed (open, xtrace fidelity, the architect's to schedule):** GNU traces assignments (`+ x=sub`, and
+`PS4=…` itself), repeats PS4's first character per level of indirection (`++ echo sub` inside `$( )`), and quotes a
+traced argument that needs it (`+ echo 'a b'`); C#Bash does none of the three.
+
+## 2026-10-17 -- RED TEAM (defect c): a colon name ran an NTFS stream (fixed); a background job works in the PARENT's directory (open, HIGH)
+**Status:** Active. An independent read-only agent attacked rev 294; each item below it reproduced, the first two
+also reproduced by Claude.
+
+**Fixed (a regression of rev 293's colon rule):** `IsPathName` took any colon as a path, so `ads:bar.exe` (an NTFS
+stream of the file `ads`) was joined to the cwd and ran; 286 said "command not found" under Claude Code, but ran it
+too with `NoDefaultCurrentDirectoryInExePath` unset (Windows' launcher searched the cwd). Now only a drive (`F:x`)
+makes a path; a bare name with any other colon is never searched (`ResolveOnPath`) and is "command not found",
+127, before the launcher sees it (GNU: the same). `relative_path_launch` extended (red on the rev 295 build: the
+stream ran; on 286 without the variable: ran). Suite 144/144 both modes; battery 226/237.
+
+**Open, HIGH (data loss; in 286; NOT in the greenlit list; the architect's to schedule):** a background job resolves
+relative paths against the PARENT shell's directory once the parent has moved: `cd r1; ( sleep 1; echo w > out.txt;
+rm -f victim ) & cd ../r2; wait` deletes `r2/victim` and writes `r2/out.txt` (286 and the new build alike; GNU: both
+in `r1`). The same runs `q/x.sh` for `( sleep 1; ./x.sh ) & cd ../q`. The red team's reading of the cause [not yet
+verified by Claude]: `ShellEnvironment.AgainstActiveCwd` leaves a path relative when the shell's cwd equals its
+`_baseCwd`, assuming the process cwd still equals `_baseCwd`, but the owning shell has moved it; `TryResolveScriptFile`
+and `Classify` go through the same `TranslatePath`. Claude's position: fix it next, before review R2; it touches the
+2026-10-03 "each shell's own cwd" design, whose stated invariant (a relative path stays relative so output that
+echoes it does not change) the fix must keep.
+
+**Open, low (in 286 unless said):** a root-relative (`\x`) or drive-relative (`C:x`) name in a pipeline stage that
+changed directory resolves against the process cwd, not the stage's; `..` across a junction is lexical (GNU: the
+target's parent); `find -execdir` is `-exec` (read in `Builtins.Find.cs`, not run); `sub/w.exe/x` is 127 "No such
+file or directory" (GNU 126 "Not a directory") and `./sub` (a directory) "Permission denied" (GNU "Is a
+directory"); an exe path over 260 characters fails, relative or absolute, though LongPathsEnabled=1.
+**Noted, no action:** a path name's argv[0] is now the full Windows path, quoted (Git Bash: the same, unquoted;
+GNU: as typed); nothing found that it breaks. Held: UNC cwd and MSYS tools by relative path now work (286: "not
+found"); every entry point in a stage that changed directory resolves correctly.
+
+## 2026-10-17 -- DEPLOYED rev 296 (revs 287-296); notice sent to the nine live sessions
+**Status:** Active. The architect: "deploy, notify and next; go".
+
+**Deployed by `tools/deploy.sh`:** `dist/Bash.exe` = `1.0.0+hg.82d59ea69d63 296`; suite 144/144 on that AOT binary
+with a console and `-Detached`; battery 226/237 against 225; rollback `dist/Bash.exe.rev286`. Live check from a
+Claude Code call: rev 296 runs; a `#!` script on PATH runs (`$0` its name); a planted `#!` `git` in the cwd is
+ignored (git answers); `sub/w.exe` runs under `NoDefaultCurrentDirectoryInExePath=1`; `PS4='+ $LINENO: '` traces
+`+ 4: true`; `$EPOCHREALTIME` has six live digits. Notice (behaviour changes first: no cwd scripts by bare name, PATH
+scripts run, relative paths from the shell's cwd and their argv[0], colon names, PATH passes over files that cannot
+run; then the fixes; then the open background-job defect with its workaround) delivered to gps-time-2c,
+adc-framework-d8, msp430-a2, nupkg-28, errorlogs-42, guy-b3, koliada-net-7c, daq-fe and ananta-f5 (new since 286).
+Global CLAUDE.md (git `d1dcadd`): the two fixed limit lines replaced by the cwd-script change and the open
+background-job defect.
+
+## 2026-10-17 -- CAUSE + PLAN: a background job resolves relative paths in the PARENT's directory (HIGH, data loss)
+**Status:** Active. The architect: "deploy, notify and next; go" (next = this, Claude's recommendation). Extends the
+2026-10-03 "each shell has its own working directory" design, whose "Not covered" names background jobs.
+
+**Reproduced (deployed 296 against GNU 5.1; case `background_cwd`, red):** a job started in `r1`, run after the
+parent's `cd ../r2`, wrote `out.txt` into r2, deleted r2's `victim`, globbed r2's files, `test -f` and a pipeline
+looked in r2, `./s.sh` ran r2's script, and its own `cd sub` landed in r2/sub. GNU: all in r1.
+**Cause (read, the red team's reading confirmed):** a copied shell (`CloneForSubshell`) never owns the process cwd
+and starts with `_baseCwd` = its parent's directory; `AgainstActiveCwd` leaves a relative path relative while the
+shell has not moved (`Cwd == _baseCwd`), trusting the process cwd to equal it. That holds for a pipeline stage (its
+parent waits for the pipeline) and fails for a job (`&`, `setsid -f`), whose parent goes on and `cd`s. The job's own
+`cd sub` then resolves `sub` against the moved process cwd too.
+**Plan (Claude's call):** a shell whose owner keeps running is `Detached` (set on the `&` job's and the `setsid -f`
+fork's environment; inherited by `CloneForSubshell` and `AdoptCwd`, so its stages, subshells, `$( )` and in-process
+scripts are detached too); a detached shell ALWAYS resolves a relative path against its own `Cwd`. Race-free: no
+"is the process cwd still mine?" test, which a parent's `cd` could falsify between the test and the file operation.
+Pipelines and the shell itself keep the 2026-10-03 rule (relative stays relative, output unchanged). Cost to watch:
+a tool that prints a translated path would print it absolute inside a job; the GNU comparison and the suite say.
+
+**Peer report (msp430-a2, on 296; open item "the OS launcher"):** a bare `probe3.sh` in the cwd, not on PATH, is 126
+"Permission denied" in its direct Claude Code calls (GNU 127); in this session the same command is 127. All ten
+claude.exe processes have `NoDefaultCurrentDirectoryInExePath=1` in their live environment (read from their PEB);
+that session's claude.exe started 2026-10-03, before the start file, and launches the shell as `.../dist/bash.exe`.
+Which environment its shell process has is asked of the peer (a read-only ancestor reader); not concluded.
+
+## 2026-10-17 -- FIXED: a background job works in its own directory (red team: two more paths, two regressions fixed)
+**Status:** Active. Implements "CAUSE + PLAN: a background job resolves relative paths in the PARENT's directory".
+
+**Fix:** as planned (`ShellEnvironment.Detached`: set by `Detach()` on the `&` job's and `setsid -f`'s copy,
+inherited by `CloneForSubshell` and `AdoptCwd`; `AgainstActiveCwd` always resolves for a detached shell). From an
+independent red-team pass (read-only, each item reproduced against GNU 5.1):
+- **A relative PATH entry** (`PATH=bin;…`) was searched from the process cwd (`ResolveOnPath`, `which`), so a job ran
+  its parent's program, or said "not found" for its own (in 296 too). Now a relative entry is looked in from the
+  shell's own directory (`TranslatePath` of the entry), answered relative as bash prints it, never cached (the
+  answer moves with the cwd; the map already skipped such PATHs), and launched by its full path (`FromShellCwd`).
+- **`cd -` with a relative OLDPWD** used it untranslated (in 296 too): translated now.
+- **Regression of the fix, fixed:** `ln -s d sub/l` made a FILE link inside a job: the directory test resolved the
+  link target with `P(s)` (now absolute in a job) instead of against the link's folder; it now takes the target's
+  form only (`TranslateForm`, made internal). The same was already wrong in a pipeline stage that had moved.
+- **Regression of the fix, fixed:** `cp -v`, `ln -v`, and `mv`/`ln` messages printed the resolved (absolute)
+  destination inside a job; they print it as typed (`shown`), as GNU, which also turns the main shell's
+  `'b' -> 'sub\b'` into `'b' -> 'sub/b'`.
+**Verified:** case `background_cwd` extended (relative PATH entry with commands only in the job's, only in the
+parent's, and in both `bin`; `cd -`; a directory symlink; `cp -v`/`ln -v`), byte-identical to GNU three runs in
+three; red on 296 and on the first fix. Suite 145/145 both modes; battery 226/237. Error messages inside a job
+checked against GNU (rm, ls, cat, cd, cp, mv, mkdir, rmdir, touch, head, redirect): relative, as GNU. Red team held:
+every redirection form, `source`, `pushd`/`popd`, file tools from `cp -r` to `awk` and `grep -r`, globs, tests,
+externals with relative arguments, jobs from functions/scripts/jobs/stages, `setsid -f`, `nohup`, `timeout`, `eval`,
+`trap EXIT`; 40-round race test of `cmd > f & cd ..` in six forms: 296 misplaced 11-16 of 40, the fix none.
+
+**Found by the red team, not fixed (in 296, unrelated to the job's directory; open, the architect's):**
+`( exec > f; echo in ); echo after` puts "after" in f too (a subshell's `exec` redirect outlives it; the main
+shell as well as jobs); `mktemp mk.XXXX` creates in TEMP (GNU: the cwd); `readlink -f` prints backslashes;
+`exec 5<> f; read -u 5` is "invalid file descriptor"; an MSYS tool (join.exe, cat.exe) inside `Bash.exe s.sh > out`
+started from C#Bash fails "write error: Bad file descriptor" (through cmd it works). The red team also ran
+`rm -f F:/TEMP/mk.*` for its own leftovers without listing the folder first (anything else named so would have gone).
+
+## 2026-10-17 -- FINDING (the open "OS launcher" item, now LIVE under Claude Code): an empty PATH entry makes Windows search the cwd
+**Status:** Active (a finding; no code changed). Resolves msp430-a2's unexplained 126.
+
+**Measured:** Windows' launcher (`CreateProcessW` with no application name, which `ChildLauncher` uses for a bare
+name C#Bash did not find) searches the PATH of C#Bash's PROCESS environment, not the shell's PATH variable, and
+takes an EMPTY entry there as the current directory, `NoDefaultCurrentDirectoryInExePath=1` notwithstanding. A child
+shell with process PATH `C:/Windows/System32;;C:/Windows` and the variable set: a bare `probe3.sh` in the cwd is 126
+(the peer's result) and a planted `zzplant.exe` in the cwd RUNS (rc 0) while `command -v zzplant` finds nothing;
+without the empty entry both are 127. Read from the live environment of all ten claude.exe processes: the eight
+started 2026-10-03 to 10-15 carry the architect's 49-entry PATH with entry #46 EMPTY (a `;;`); the two started
+today through the start file have PATH = `dist` (one entry), so their shells' launcher search is C#Bash's folder,
+System32, the Windows folder. So in eight of ten live sessions a `.exe` planted in a cloned repo answers any bare
+name missing from the shell's PATH (a missing `rg`). The shell's own PATH (from the snapshot) drops empty entries.
+**Claude's position (raised, the architect's call: it supersedes the 2026-06 "the OS launcher's own search" hash
+entry):** C#Bash's lookup is the authority. A bare name it does not find on the shell's PATH is looked for only in
+C#Bash's own folder, System32 and the Windows folder (what keeps `cmd` working on an empty PATH, README), launched by
+full path, else "command not found" (127) without the launcher; neither the process PATH nor the cwd is searched.
+Falsifier: something relies on the launcher finding a program outside the shell's PATH and those three folders.
+Mitigation outside the code: remove the empty entry from the PATH the architect's terminals inherit; sessions
+started through the start file are unaffected either way.
+
+## 2026-10-17 -- FINDING (addendum): the empty PATH entry comes from the user Path's trailing `;`
+**Status:** Active (a finding). msp430-a2's registry read, re-checked by Claude: `HKCU\Environment` Path ends with
+`;` (one empty entry); the system Path (HKLM) has none. A process PATH is system;user, so the trailing `;` becomes an
+empty entry once anything is appended after it. Its position in the old sessions (#46 of 49) does not match exactly,
+so something in the launch chain also edits PATH [inferred]. Mitigation (the architect's): delete that trailing `;`;
+it reaches only sessions started afterwards. The C#Bash fix proposed above covers every case either way.
+
+## 2026-10-17 -- PLAN (fix b): an empty PATH entry never reaches Windows
+**Status:** Active. The architect: "Now, the fix b) go, then deploy and notify" (fix (a), C#Bash's lookup as the
+only authority, stays open: not greenlit). The user Path's trailing `;` is the architect's to remove (not done).
+
+**Plan:** `ShellEnvironment.WithoutEmptyPathEntries` drops empty `;`-separated entries (a `;;`, a leading or
+trailing `;`), order kept, the string untouched when there are none. Applied (1) at startup to C#Bash's own
+PROCESS PATH, which Windows' launcher searches for a name C#Bash did not find (the measured hole: a planted `.exe`
+ran in the eight sessions whose claude.exe carries a `;;`); (2) to the PATH in every child's environment
+(`ExecExternal`, the only launch site), so a program C#Bash starts cannot inherit one either. The shell's `$PATH`
+variable stays as written (bash: an empty entry means `.`; C#Bash's own lookup already skips empty entries).
+Falsifier: anything that needs a child to inherit an empty PATH entry.
+
+## 2026-10-17 -- FIXED (fix b): no empty PATH entry reaches Windows; CORRECTION: a trailing `;` alone is harmless
+**Status:** Active. Implements "PLAN (fix b)". CORRECTS this session's earlier claim (told to the architect) that a
+trailing `;` is "just as dangerous" as `;;`: that measurement was C#Bash's own doing.
+
+**Measured (deployed 296, `NoDefaultCurrentDirectoryInExePath=1`, a planted `zzplant.exe` in the cwd, the child's
+live PATH read from its PEB):** process PATH ending in `;` with nothing appended: 127 (harmless); a `;;` inside the
+list: 0 (the hole). The earlier "trailing `;`: ran" came from `AppendOwnDirectoryToPath`, which joined
+`path + ";" + dir`, so `…;` became `…;;dir`; its presence test also missed C#Bash's folder spelled with `/`, so it
+appended it again. And `Set("PATH")` copies the shell's PATH into the process environment, so a startup clean
+placed before the appends was overwritten (the first version of this fix failed its own test so).
+**Fix:** `WithoutEmptyPathEntries` applied where `Set("PATH")` copies into the process environment, once at startup
+after `AugmentPathWithGitTools`/`AppendOwnDirectoryToPath` (the PATH as inherited, when nothing is set), and to every
+child's PATH (`ExecExternal`). Both joins no longer create an empty entry; the own-folder test compares with `/` and
+`\` alike. The shell's `$PATH` keeps what it was given.
+**Verified:** case `path_empty_entries` (authored): C#Bash started by cmd with `;;`, and with a trailing `;` and no
+own folder: the planted `.exe` is 127 (296: ran, both); the child's own `$PATH` has the empty entry only when given
+one; `cmd` started from a shell whose PATH has `;;` and a trailing `;` sees neither. Red on 296. Suite 146/146 both
+modes; battery 226/237.
+**The user Path's trailing `;`** (the architect: "not my doing"): it is in the stored registry value; Windows copies
+the value as stored; what wrote it is not determined. It is harmless on its own, so removing it is tidiness, not a
+fix. **Found, not fixed (in 296):** `cmd.exe` started by a full forward-slash path (`C:/Windows/System32/cmd.exe /c
+…`) misreads its command line ("The system cannot find the path specified"); `cmd` by name works [cause inferred].
+
+## 2026-10-17 -- DEPLOYED rev 302 (revs 297-302); notice sent to the nine live sessions
+**Status:** Active. The architect: "Now, the fix b) go, then deploy and notify".
+
+**Deployed by `tools/deploy.sh`:** `dist/Bash.exe` = `1.0.0+hg.c815b7a0b05c 302`; suite 146/146 on that AOT binary
+with a console and `-Detached`; battery 226/237 against 225; rollback `dist/Bash.exe.rev296`. Live check from a
+Claude Code call: rev 302 runs; a background job's `rm -f victim` after the parent's `cd` removed the job's own
+file; C#Bash started by cmd with a `;;` in its PATH does not run a planted `.exe` (127). Notice (behaviour changes
+first: jobs in their own directory incl. relative PATH entries and `cd -`; no empty PATH entry reaches Windows, which
+closes the planted-`.exe` hole in the sessions started before 10-17; `-v` paths as typed; then fix (a) still open)
+delivered to gps-time-2c, adc-framework-d8, msp430-a2, nupkg-28, errorlogs-42, guy-b3, koliada-net-7c, daq-fe,
+ananta-f5. Global CLAUDE.md (`~/.claude` git `f6c9c87`): the background-job limit line removed.
+
+## 2026-10-17 -- RULED: the shell's `$PATH` keeps empty entries as given; only what reaches Windows is cleaned
+**Status:** Active. The architect: "ok, leave as is" (after Claude's verification of fix (b) on rev 302: given
+`abc\def;;fgh\ijk`, from the launcher or by `export`, the shell's `$PATH` keeps the `;;`; C#Bash's own process PATH and
+every child's carry none; C#Bash's own PATH additions never create one; polarity: the 296 rollback copy's process
+PATH keeps the `;;`). Unverified, the architect's reading: the user Path's trailing `;` was written by the System
+Properties environment editor (check: edit an entry there, then `reg query HKCU\Environment /v Path`).
+
+## 2026-10-17 -- FIXED: C#Bash's lookup is the only authority; Windows' launcher never searches for a bare name
+**Status:** Active. The architect: "1/ yes" (to stopping Windows' launcher searching the current directory).
+Supersedes the 2026-06 hash entry's "a cache miss falls back to the bare name so the OS launcher still does its own
+PATH search" (its reason, "never break resolution that previously worked", is kept by the three folders below).
+
+**Fix:** in `ExecExternal`, a bare name `ResolveOnPath` does not find is looked for in C#Bash's own folder, System32
+and the Windows folder (`FallbackProgram`; `.exe` appended to a name without an extension, as Windows' launcher did;
+a name with a non-PATHEXT extension: none), launched by its full path; else "command not found", 127, without
+calling the launcher (`NotFound`, which makes the redirects first, as bash's child does: `nope > f` creates f, GNU
+measured). So neither the current directory nor the process PATH is ever searched by Windows for C#Bash.
+**Verified:** case `launcher_fallback` (authored): with `NoDefaultCurrentDirectoryInExePath` unset, a planted
+`zzplant.exe` is "command not found" (302: ran) and a bare cwd `zzcwd.sh` not on PATH is 127 (302: 126 "Permission
+denied"); `PATH=; cmd /d /c echo` still runs and `command -v cmd` reports nothing (README's documented behaviour);
+a redirect on a missing command is made. Suite 147/147 both modes; battery 226/237.
+
+## 2026-10-17 -- FIXED: a subshell's `exec` redirect ends with it (it took every later line of the shell)
+**Status:** Active. The architect: "2/ yes".
+
+**Reproduced (GNU 5.1 against deployed 302):** `( exec > f; echo in ); echo after` put "after", and every later line
+of the script, into f (the whole case printed nothing); likewise `exec 2>`, `exec 3>` and inside `$( )`.
+**Cause (read):** `exec` with only redirects adds a permanent `RedirectScope` to `_permanentScopes`; `ExecSubshell`,
+`RunSubstitution` and `RunProcessSubstitution` restored variables, cwd, options and traps but never the scopes made
+inside them.
+**Fix:** `SubshellMark` records the count at `EnterSubshell`; `DropSubshellRedirects(mark)` disposes the newer ones,
+newest first, after the subshell's EXIT trap (which still writes inside them, as bash) and before its own
+redirects come off; all three call it. A `{ }` group is the shell itself: its `exec` stays.
+**Verified:** case `subshell_exec_redirect` (expected = GNU via WSL, byte-identical: stdout, stderr, fd 3, `$( )`, a
+pipeline stage, an EXIT trap writing into the subshell's redirect, `exit 3` inside, a group's `exec 4>` kept); red
+on 302. Suite 148/148 both modes; battery 226/237.
+**Test fixed on the way:** `native_args` picked its "no such drive" letter with `[ -d L:/ ]`, false for an empty
+card reader; Q: (removable, not ready) appeared on this machine and the case failed, though the conversion rightly
+treats Q: as a drive. It now takes a letter `fsutil fsinfo drives` does not list.
+
+## 2026-10-17 -- FIXED: eight smaller differences from GNU, and a `hash` crash from rev 298 (live in deployed 302)
+**Status:** Active. The architect: "Fix all the wrong results and smaller diffs from GNU".
+
+**Each measured against GNU 5.1 first (case `gnu_differences`, expected = GNU via WSL, byte-identical):**
+- `source name` / `. name`: PATH first, then the current directory (not in POSIX mode), as bash; the cwd's file came
+  first, so a planted one was sourced instead.
+- `hash name` with only a PATH match that cannot run: "not found", rc 1, not kept (it hashed it); `type -a name`
+  lists every runnable match on PATH in order (`Evaluator.AllOnPath`), "not found" when none can run (it listed one,
+  even one that could not run). Plain `type` and `type -P` already matched GNU.
+- `mktemp x.XXXX`: in the current directory, the name printed as built (a template without `/` went to TEMP and
+  printed its full path); `-t`, `-p`, `--tmpdir` and no template still use the temp directory.
+- `readlink -f`: the shell form, as `realpath` (it printed backslashes).
+- A path name through a file (`sub/s.sh/x`): "Not a directory", 126 (127 "No such file or directory"); a directory
+  (`./sub`): "Is a directory", 126 ("Permission denied").
+- `s1.` / `./s1.`: no such command / file (Win32 drops a trailing dot or space, so they ran `s1`). Only command lookup:
+  `cat s1.` still opens s1 (a Win32 property of every file operation; recorded as a known limitation).
+- `find -execdir`: from the file's own directory, `{}` = `./name`, a `+` batch per directory (it ran as `-exec`).
+- `exec 5<> f` then `read -u 5`: `<>` had no in-process case (only for externals), so fd 5 never opened.
+- **A crash introduced by rev 298, live in deployed 302 (red team):** `hash name` for a name found through a relative
+  PATH entry indexed the hash table for a key rev 298 no longer stores (relative matches are not cached): an unhandled
+  KeyNotFoundException killed the shell. Guarded; `hash` succeeds (rc 0), as GNU.
+**Verified:** red on 302 (each item, and the crash per the red team: exit 82); suite 149/149 both modes; battery
+226/237.
+
+## 2026-10-17 -- FIXED (red team on the lookup changes, revs 298-306): `~` PATH entries, MSYS/root/drive-relative paths, a child's environment, missing interpreters, cmd.exe by a `/` path
+**Status:** Active. An independent read-only agent attacked revs 298-306 (on a frozen copy of the build); each item it
+reproduced, the ones below fixed (also in 296/302 unless said).
+- **`~` PATH entry (security, medium):** looked up in the profile (`TranslatePath`'s `~`) but answered `~/x`, which
+  the launcher joined to the cwd: a copy planted at `<cwd>/~/...` ran. `Evaluator.PathEntry` now decides every PATH
+  entry once (lookup, `type -a`, `which`): `~` is `$HOME` (bash expands it at search time), the form translated
+  (`/f/x` was looked up as F:\f\x), and only an entry whose form is not fully qualified (relative, `\x`, `C:x`)
+  "moves with the cwd": answered as written, never cached. `TranslatePath`'s own `~` (the profile) is unchanged.
+- **`\x` and `C:x` in a pipeline stage or job that changed directory** took the PROCESS cwd's drive (my list's item):
+  `ShellEnvironment.FullAgainst` resolves them against the shell's own directory (`\x` on its drive, `C:x` in it when it
+  is on C:, else C:'s own current directory), used by `AgainstActiveCwd` and the launcher's `FromShellCwd`.
+- **A child's environment** began as C#Bash's process environment with the exported variables over it, so `unset X` and
+  `export -n X` of an inherited variable (PATH included) still reached children, and an exported `path` replaced PATH
+  (Windows names are case-blind). Now it is exactly the exported variables (every inherited variable is imported
+  exported at startup), the shell's PATH winning over any other casing. Children now see the name `PATH` (was `Path`).
+- **A missing interpreter:** `#!zzmissing` is "bad interpreter: No such file or directory" (126); `#!/usr/bin/env
+  zzmissing` gets env's own message (127); both were "command not found".
+- **cmd.exe by a full forward-slash path** (`C:/Windows/System32/cmd.exe /c …`) read its own path's `/`s as switches:
+  `ChildLauncher` puts the program path in the command line with backslashes, as Git Bash does.
+**Kept, deliberate safe divergences (not fixed):** an empty or unset PATH, or an empty entry, never searches the cwd
+(GNU's does); after `PATH=x`, `cmd` still runs through the fallback while `type`/`command -v` find nothing (README).
+**Verified:** cases `lookup_env` (expected = GNU via WSL) and `lookup_env_windows` (authored), red on 302 in every
+section; `path_empty_entries` matches the child's PATH name case-blind. Suite 151/151 both modes; battery 226/237.
+
+## 2026-10-17 -- FIXED: an MSYS program inside `Bash.exe s.sh >> out` can write (an inherited append-only handle)
+**Status:** Active. The architect: "Fix all the wrong results".
+
+**Reproduced:** inside `Bash.exe s.sh >> out` (started from C#Bash), Git's `cat.exe` said "write error: Bad file
+descriptor" and its line was lost; with `> out` it worked; started directly (`cat.exe >> out`) it worked.
+**Cause:** C#Bash's `>>` hands a child an APPEND-ONLY handle (FILE_APPEND_DATA, so concurrent appenders interleave,
+DECISIONS 2026-10-04); an MSYS program takes such a handle as unwritable, which is why a direct MSYS child already
+gets an ordinary write handle at the end (`Access.AppendAtEnd`). A nested shell INHERITS the append-only handle and
+passed it on unchanged (`InheritFd`) to its MSYS child.
+**Fix:** `ChildLauncher.WritableForMsys`: for an MSYS child, an inherited standard handle that is a disk file without
+write-data access (`NtQueryObject` GrantedAccess) is reopened (`ReOpenFile`, GENERIC_WRITE) at the end, once per
+original handle so a `2>&1` stdout and stderr keep sharing one; closed once the child holds its own.
+**Verified:** case `msys_inherited_append` (authored, needs Git; red on the build before): the line arrives; with 2>&1
+the output and cat's own error keep their order. Suite 152/152 both modes; battery 226/237.
+
+## 2026-10-17 -- FIXED: set -x prints what bash prints (assignments, `++` levels, quoting, PS4 prompt escapes)
+**Status:** Active. The architect: "Fix all ... smaller diffs from GNU" (the xtrace items of "FIXED (defect d)").
+
+**Measured against GNU 5.1 first, then matched byte for byte (case `xtrace_fidelity`):**
+- Every assignment is traced as it is made: a bare one (`+ x=1`, `+ y=sub` after its `++ echo sub`), a prefix one on its
+  own line before its command (`+ FOO=bar`, `+ true`), each of several (`+ x=3`, `+ z=two`), an element (`a[i]=v`), a
+  compound one as written (`+ a=(1 "2 3")`, from the node's source span). Values quoted as bash's
+  xtrace_print_assignment (empty stays empty).
+- PS4's first character once more per level of command (and process) substitution (`++`, `+++`): `Evaluator
+  .XtraceDepth`, raised in `RunSubstitution`/`RunProcessSubstitution`, inherited by pipeline stages and jobs; a `( )`
+  subshell stays at one level, as bash.
+- Words quoted as bash's xtrace: '' when empty, single quotes when the word holds a shell metacharacter (bash's
+  sh_contains_shell_metas, `'` as '\''), $'…' for other control characters (`PrintfFormatter.ShellQuote`).
+- PS4's prompt escapes decoded before its expansion (`PromptExpander.DecodeForExpansion`: decoded values and `\$`
+  protected; `\\` is one backslash the expansion may still use, so `PS4='[\\$] '` is `[$] `, as GNU).
+**Verified:** `xtrace_fidelity` (expected = GNU via WSL; red on 302); `ps4_epochrealtime` unchanged. Suite 153/153
+both modes; battery 226/237.
+
+## 2026-10-17 -- FIXED: set -x traces compound commands as bash does (`[[ ]]`, `(( ))`, for, arithmetic for, case)
+**Status:** Active. Found while closing the xtrace items: GNU traces these, C#Bash traced none.
+
+**Measured against GNU 5.1, then matched (case `xtrace_compound`):** each `[[ ]]` primary as it is evaluated, operands
+expanded and unquoted (`+ [[ a b == a* ]]`, `+ [[ -n a b ]]`), a lone word as `-n`, a `!` printed with the primary
+it negates, a quoted pattern character backslashed (`"x*"` is `\x\*`: `ExpandToPattern` builds that form in the same
+pass, so a `$( )` in the operand runs once); `(( expr ))` with its text as written (`((  1 + 2  ))`); a `for` head as
+written on every turn; an arithmetic `for`'s init, each test and each step (`(( j++  ))`, the part with its front
+trimmed, from the parser's existing `Heads`); `case WORD in`. `while (( … ))` traces through its `(( ))`.
+**Verified:** red on 302; suite 154/154 both modes; battery 226/237.
+
+## 2026-10-17 -- FIXED (in part): paths over 260 characters; the rest is a Windows limit, now said plainly
+**Status:** Active. The red team's "an exe path over 260 characters fails; `cd` into one fails" (LongPathsEnabled=1).
+
+**Measured:** C#Bash's file operations already worked on such paths (.NET); `cd` into a 386-character directory failed
+("path is too long": SetCurrentDirectory without a long-path-aware manifest; it seemed to work only in a pipeline
+stage, which never moves the process cwd). Starting a program whose own path is 391 characters failed in C#Bash AND in
+cmd (error 206), the `\\?\` prefix too; starting any program from the long directory failed (error 267).
+**Fix:** `Bash/app.manifest` (`<ApplicationManifest>` in the csproj) declares longPathAware, with the asInvoker and
+Windows 10 supportedOS entries .NET's default manifest gives; the AOT publish embeds it (measured: the AOT build's `cd`
+enters the long directory). Errors 206 and 267 (the latter with a cwd of 260+ characters) say "cannot start a program
+whose path is / in a directory over 260 characters (a Windows limit)", 126 (were 127 with Windows' text). README and
+the anchor's known limitations record what stays; also there: Win32 drops a trailing dot or space in EVERY file
+operation (`cat s1.` reads s1), command lookup alone refuses it.
+**Verified:** case `long_paths` (authored; red on 302); suite 155/155 both modes; battery 226/237.
+**Found on the way (not C#Bash):** the no-windows hook flagged `Start-Process … -NoNewWindow` as lacking -NoNewWindow
+when the flag came after a `$( )` substitution in the same argument string (a text-match false positive; the probe was
+dropped as not needed).
+
+## 2026-10-17 -- RAISED (two forks, the architect's): PATHEXT matches Windows cannot start; `..` after a junction
+**Status:** Open, AWAITING THE ARCHITECT. The fix-everything run ends here: every other recorded item is fixed above.
+
+1. **A PATHEXT match CreateProcess cannot start** (`.js`, `.vbs`, `.wsf`, `.msc`, … in Windows' PATHEXT). Measured: with
+   `p7/zz.js` before `p8/zz.exe` on PATH, C#Bash stops at zz.js ("Permission denied", 126) and `[ -x zz.js ]` is true;
+   Git Bash runs `p8/zz.exe` (`type -a`: only that) and `-x zz.js` is false; cmd runs zz.js through Windows Script Host
+   [recalled, not run: it can open a window]. Choices: pass over such matches (a program is what CreateProcess can
+   start: .COM .EXE .BAT .CMD, plus `.sh` and `#!`), so the later zz.exe runs and `-x` agrees; or run them through
+   their file association, as cmd. Claude: pass over them (Git Bash's and bash's answer, and the secure default:
+   running any `.js`/`.vbs` on PATH by bare name through WSH is a classic malware route, and WSH can open windows).
+   Falsifier: the architect runs `.js`/`.vbs`/`.msc` tools by bare name from the shell.
+2. **`..` after `cd` into a junction or symlink.** C#Bash resolves `..` lexically (`cd J; cat ../x` reads J's parent's
+   x), as Win32 does for every Windows program; GNU and Git Bash resolve it physically (the target's parent). bash's own
+   `cd ..` is logical (-L) either way. Claude: keep lexical, because it agrees with every Windows program the shell
+   starts (handing them a path that means something else would be worse), and physical resolution would mean
+   resolving reparse points on every path with a `..`. Falsifier: scripts ported from Linux that rely on physical `..`.
+
+## 2026-10-18 -- RULED: `..` after a junction stays lexical (Windows' resolution), as Claude proposed
+**Status:** Active. The architect: "2/ ok" (to "RAISED (two forks)" item 2). C#Bash keeps resolving `..` lexically,
+as every Windows program it starts does; GNU/Git Bash's physical resolution is a recorded, deliberate difference.
+The PATHEXT fork (item 1) stays open.
+
+## 2026-10-18 -- RULED + FIXED: only what Windows' launcher starts is a program (.com .exe .bat .cmd, .sh, #!)
+**Status:** Active. Resolves "RAISED (two forks)" item 1. Claude, asked what GNU and Claude expect: bash matches only the
+exact name and passes over any match it cannot execute; Claude Code is built around Git Bash, which runs the later
+`zz.exe`; running `zz.js` through Windows Script Host would both run something other than what `type -a` reports and
+can open a dialog that hangs a Claude Code call. The architect: "Yes make the change, then deploy, notify and publish".
+
+**Fix:** `FileTests.IsProgramExtension` (.com .exe .bat .cmd) replaces "any PATHEXT extension" in `IsExecutable` (so
+`[ -x ]`, `ls -F`, `find -executable` agree), in the launcher (`IsProgramFile`: a `.js` with a `#!` line is now a
+script, not a refused program) and in the PATHEXT loops of `ResolveOnPath`, `AllOnPath` and `which` (PATHEXT still
+decides which extensions a bare name is tried with). A name only a `.js` answers is "command not found" (127); naming
+the `.js` in full is "Permission denied" (126), as bash with a file it cannot execute.
+**Verified:** case `pathext_programs` (authored; red on 302 in every section); suite 156/156 both modes; battery 226/237.
+
+## 2026-10-18 -- DEPLOYED rev 316 (revs 303-316); notice sent to the nine live sessions
+**Status:** Active. The architect: "Yes make the change, then deploy, notify and publish (push)".
+
+**Deployed by `tools/deploy.sh`:** `dist/Bash.exe` = `1.0.0+hg.32784b3827fd 316`; suite 156/156 on that AOT binary
+with a console and `-Detached`; battery 226/237 against 225; rollback `dist/Bash.exe.rev302`. Live check from a
+Claude Code call: rev 316 runs; `( exec > f; echo in )` keeps the later line on stdout; `hash` of a relative entry's
+match returns 0 (302 crashed); a planted `.exe` in an ordinary terminal is 127; `zz.js` before `zz.exe` runs the
+exe; `set -x` prints `+ echo 'a b'`. Notice (behaviour changes first: the launcher never searches the cwd, only
+.com .exe .bat .cmd are programs, a child gets exactly the exported variables and the name PATH, `mktemp x.XXXX` in
+the cwd, `source` PATH-first, set -x in bash's format, bash's messages; then the fixes, the 302 crash among them)
+delivered to gps-time-2c, adc-framework-d8, msp430-a2, nupkg-28, guy-b3, koliada-net-7c, daq-fe, guy-97 (new),
+ananta-f5 (errorlogs-42 has ended).
+
+## 2026-10-18 -- BENCHMARK of deployed rev 316 (for the publish); a possible slowdown carried to the performance review
+**Status:** Active (a measurement). `tests/bench/compare3.sh` on dist/Bash.exe (rev 316), run unmodified from Git Bash;
+every row's output identical in all three shells. C#Bash: loop 0.185, arith 0.254, func 0.229, loop_big 1.491,
+coreutils 0.066, pipeline 0.266, find 0.024 s, startup 18.3 ms (Git Bash 16.4 ms, WSL 111 ms). README's table and its
+sentences updated from this run (the publish rule: the benchmark of the deployed build and a doc review).
+**Against the rev 286 run (2026-10-16):** loop +9.5%, func +5.5%, loop_big +5.4% (C#Bash only: Git Bash's and WSL's
+columns moved under 2%), the others within ±5%. Not established as a regression (one run each; `loop` moved +6.3% at
+rev 277 and was judged noise): carried to review R2, to be measured with alternating rounds (`compare3 --cs` against
+the rev 286/302 rollback copies, or the R1 timing switch). These rows run `while [ $i -lt N ]` loops, so the one
+waste found by reading does NOT explain them: the `[[ ]]` trace strings of rev 312 are built before the xtrace check
+on every `[[ ]]` test (`CondTrace($"…")`, `op + val`), an allocation per test with set -x off. Listed for R4.

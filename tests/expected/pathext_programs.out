@@ -1,0 +1,12 @@
+== zz.js before zz.exe: the program runs
+rc=0
+zz is D/p8/zz.exe
+== [ -x ] of a .js
+-x zz.js: false
+== a name only a .js answers
+zzonly: command not found
+rc=127
+D/p7/zzonly.js: Permission denied
+rc=126
+== a .js with a #! line, named in full
+a .js with a #! line ran

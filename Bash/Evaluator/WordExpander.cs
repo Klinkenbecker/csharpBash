@@ -243,17 +243,28 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	/// <summary>Expand a word into a shell *pattern* for `case` / `[[ == ]]` / `${x#pat}`:
 	/// unquoted parts keep their glob metacharacters, quoted parts have them escaped so
 	/// they match literally.</summary>
-	public string ExpandToPattern(Word word)
+	public string ExpandToPattern(Word word) => ExpandToPattern(word, null);
+
+	/// <summary>As <see cref="ExpandToPattern(Word)"/>; <paramref name="shown"/>, when given, receives the operand as bash's
+	/// set -x prints it, in the same pass: every quoted character backslashed (`"x*"` is `\x\*`).</summary>
+	public string ExpandToPattern(Word word, System.Text.StringBuilder? shown)
 		{
 		var sb = new System.Text.StringBuilder();
 		foreach (var p in word.Parts)
 			{
+			string text; bool quoted = true;
 			switch (p)
 				{
-				case SingleQuotedPart s: sb.Append(EscapeGlob(s.Value)); break;
-				case AnsiCQuotedPart a:  sb.Append(EscapeGlob(a.Value)); break;
-				case DoubleQuotedPart d: sb.Append(EscapeGlob(string.Concat(d.Parts.Select(ExpandPart)))); break;
-				default: sb.Append(ExpandPart(p)); break;
+				case SingleQuotedPart s: text = s.Value; break;
+				case AnsiCQuotedPart a:  text = a.Value; break;
+				case DoubleQuotedPart d: text = string.Concat(d.Parts.Select(ExpandPart)); break;
+				default: text = ExpandPart(p); quoted = false; break;
+				}
+			sb.Append(quoted ? EscapeGlob(text) : text);
+			if (shown is not null)
+				{
+				if (quoted) foreach (var c in text) shown.Append('\\').Append(c);
+				else shown.Append(text);
 				}
 			}
 		return ShellEncoding.Canonical(sb.ToString());   // as ExpandToString: `$'\xc3\xa9'` matches é
@@ -1143,13 +1154,16 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		ConsoleMux.SetOut(sw);
 		ConsoleMux.Raw = null;
 		ConsoleMux.Capturing = true;   // byte-builtins must write text into the capture
+		_eval.XtraceDepth++;           // set -x: `++` for what runs in here
 		try   { status = _eval.Execute(command); }
 		catch (ExitException ex) { status = ex.Code; }
 		catch (BrokenPipeException) { status = 141; }
 		catch (CommandAbortException) { status = 1; }   // a bad `$( )` inside ends this one only (bash: its own process)
 		finally
 			{
+			_eval.XtraceDepth--;
 			status = SubshellExitTrap(mark, status);   // still captured: its output is part of the result
+			_eval.DropSubshellRedirects(mark);         // its own `exec > f` ends with it
 			ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 			_env.RestoreSnapshot(snap);
 			_eval.LeaveSubshell(mark);
@@ -1231,13 +1245,16 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			ConsoleMux.SetOut(sw);
 			ConsoleMux.Raw = fs;
 			ConsoleMux.Capturing = false;
+			_eval.XtraceDepth++;
 			try   { status = _eval.Execute(command); }
 			catch (ExitException ex) { status = ex.Code; }
 			catch (BrokenPipeException) { status = 141; }
 			catch (CommandAbortException) { status = 1; }   // as for $( )
 			finally
 				{
+				_eval.XtraceDepth--;
 				status = SubshellExitTrap(mark, status);
+				_eval.DropSubshellRedirects(mark);
 				try { sw.Flush(); } catch { }
 				ConsoleMux.SetOut(oldOut); ConsoleMux.Raw = oldRaw; ConsoleMux.Capturing = oldCap;
 				_env.RestoreSnapshot(snap);

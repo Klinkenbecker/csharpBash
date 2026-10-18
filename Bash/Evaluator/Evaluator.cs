@@ -60,12 +60,25 @@ public sealed class Evaluator
 		{
 		internal readonly int Depth;
 		internal readonly ShellOptions.State Options;
-		internal SubshellMark(int depth, ShellOptions.State options) { Depth = depth; Options = options; }
+		internal readonly int PermanentScopes;   // `exec` redirects that were in place when it started
+		internal SubshellMark(int depth, ShellOptions.State options, int permanentScopes) { Depth = depth; Options = options; PermanentScopes = permanentScopes; }
 		}
 
 	/// <summary>Enter an in-process subshell. Pair with <see cref="SubshellExitTrap"/> (while its
-	/// output is still redirected) and then <see cref="LeaveSubshell"/>.</summary>
-	internal SubshellMark EnterSubshell() => new(++_subshellDepth, Options.Save());
+	/// output is still redirected), <see cref="DropSubshellRedirects"/>, and then <see cref="LeaveSubshell"/>.</summary>
+	internal SubshellMark EnterSubshell() => new(++_subshellDepth, Options.Save(), _permanentScopes.Count);
+
+	/// <summary>Undo the `exec` redirects the subshell <paramref name="mark"/> made: they are its own. `( exec > f );
+	/// echo after` sent "after", and everything after it, into f (2026-10-17). Called after its EXIT trap, which still
+	/// runs inside them, and before its own redirects come off.</summary>
+	internal void DropSubshellRedirects(SubshellMark mark)
+		{
+		for (int i = _permanentScopes.Count - 1; i >= mark.PermanentScopes; i--)
+			{
+			try { _permanentScopes[i].Dispose(); } catch { }
+			_permanentScopes.RemoveAt(i);
+			}
+		}
 
 	/// <summary>Run the EXIT trap the subshell <paramref name="mark"/> set for itself, if any.
 	/// An `exit` inside the trap propagates, as it would from the subshell's last command.</summary>
@@ -421,6 +434,7 @@ public sealed class Evaluator
 		_parent   = sharesInterrupts ? parent : null;
 		_env      = parent._env.CloneForSubshell();
 		Options   = parent.Options.Clone();
+		XtraceDepth = parent.XtraceDepth;   // a stage of `$( a | b )` traces at the substitution's level
 		_builtins = new Builtins(_env, this);
 		_expander = new WordExpander(_env, this);
 		_env.FlagsProvider = () => Options.FlagString();
@@ -754,6 +768,7 @@ public sealed class Evaluator
 		// state: `for f in *; do gzip "$f" & done` read $f after the loop had moved on (the last file,
 		// every time), and a job's `cd` or assignment changed the parent (DECISIONS 2026-10-05).
 		var shell = new Evaluator(this, sharesInterrupts: false);
+		shell._env.Detach();   // this shell goes on and may `cd`: the job resolves its paths itself (2026-10-17)
 		job.Shell = shell;
 		job.Thread = new Thread(() =>
 			{
@@ -824,6 +839,7 @@ public sealed class Evaluator
 		var stdio = ConsoleMux.Capture();
 		var name = args[0]; var rest = args[1..];
 		var shell = new Evaluator(this, sharesInterrupts: false);   // its own copy, like a `&` job
+		shell._env.Detach();
 		job.Shell = shell;
 		job.Thread = new Thread(() =>
 			{
@@ -1345,6 +1361,7 @@ public sealed class Evaluator
 		{
 		var idxStr = _expander.ExpandToString(ae.Index);
 		var val    = _expander.ExpandToString(ae.Value);
+		if (Options.XTrace) Xtrace($"{ae.ArrayName}[{idxStr}]{(ae.Append ? "+=" : "=")}{XtraceValue(val)}");
 
 		if (_env.IsAssoc(ae.ArrayName))
 			{
@@ -1362,6 +1379,10 @@ public sealed class Evaluator
 
 	private int ExecArrayCompoundAssign(ArrayCompoundAssign ac)
 		{
+		// set -x prints a compound assignment as written (bash: `+ a=(1 "2 3")`)
+		if (Options.XTrace)
+			Xtrace(ac.Span.IsKnown ? ac.Span.Text.Trim()
+			       : $"{ac.ArrayName}{(ac.Append ? "+=" : "=")}({string.Join(" ", ac.Values.Select(w => w.Raw ?? XtraceWord(_expander.ExpandToString(w))))})");
 		// [key]=value elements target an associative (or explicit-index) array. The key may span
 		// word parts -- ["$k"]=v, [$i]=v -- so each element is split structurally, then the key
 		// and the value are expanded separately (a key containing "]=" stays intact).
@@ -1387,6 +1408,7 @@ public sealed class Evaluator
 	private int ExecArithmeticCommand(ArithmeticCommand am)
 		{
 		using var scope = am.Redirects.Count > 0 ? ApplyRedirects(am.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
+		if (Options.XTrace) Xtrace($"(( {am.Expression} ))");   // bash: `((  1 + 2  ))`, the text as written
 		long v = _expander.EvalArithmetic(am.Expression);
 		return v != 0 ? 0 : 1;
 		}
@@ -1441,6 +1463,8 @@ public sealed class Evaluator
 			bool append = rawName.EndsWith('+');
 			var name = append ? rawName[..^1] : rawName;
 			var val = _expander.ExpandToString(valWord);
+			// set -x traces each assignment as it is made, a prefix one before its command (bash); none was traced
+			if (Options.XTrace) Xtrace($"{name}{(append ? "+=" : "=")}{XtraceValue(val)}");
 			if (cmd.Name is null)
 				{
 				if (append) _env.Append(name, val); else _env.Set(name, val);
@@ -1525,7 +1549,7 @@ public sealed class Evaluator
 
 		// -x: xtrace
 		if (Options.XTrace)
-			Console.Error.WriteLine($"{_env.Get("PS4")}{namStr} {string.Join(" ", args)}".TrimEnd().Replace(Bash.Lexer.Lexer.ArrayLiteralMark.ToString(), ""));   // never show the parser's array mark
+			Xtrace(string.Join(" ", args.Prepend(namStr).Select(a => XtraceWord(a.Replace(Bash.Lexer.Lexer.ArrayLiteralMark.ToString(), "")))));   // never show the parser's array mark
 
 		// `exec` with only redirects makes them permanent for the rest of the shell;
 		// `exec cmd` replaces the shell: run it and exit with its status.
@@ -1635,6 +1659,128 @@ public sealed class Evaluator
 	/// the error"), else "".</summary>
 	public string MissNote(string name) => _rememberedMisses.Contains(name) ? " (remembered miss: hash -r searches again)" : "";
 	private static string PathExt => Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
+
+	/// <summary>PS4 for a trace line, expanded as bash expands it: parameters, arithmetic and command substitution
+	/// as inside "…" (quotes literal), with no trace of its own and `$?` kept (it printed raw: `+ $LINENO: echo hi`,
+	/// 2026-10-17). Not done: prompt escapes (`\u`, `\w`); a failed expansion leaves PS4 as written.</summary>
+	private string XtracePrefix()
+		{
+		var ps4 = _env.Get("PS4");
+		if (ps4.IndexOfAny(['$', '`', '\\']) >= 0) ps4 = ExpandPs4(ps4);   // the default `+ ` has nothing to expand
+		// its first character once more per level of command substitution, as bash: `++ cmd` inside $( ) (2026-10-17)
+		return XtraceDepth > 0 && ps4.Length > 0 ? new string(ps4[0], XtraceDepth) + ps4 : ps4;
+		}
+
+	/// <summary>How many command substitutions deep this shell runs (set -x's `++`); pipeline stages and jobs inherit it.</summary>
+	internal int XtraceDepth;
+
+	private string ExpandPs4(string ps4)
+		{
+		// prompt escapes first (`\s`, `\v`, `\u`, `\w`, …; they printed raw), protected from the expansion that follows
+		if (ps4.Contains('\\'))
+			ps4 = new Bash.IO.PromptExpander(_env, () => (History?.Count ?? 0) + 1, () => (History?.Count ?? 0) + 1).DecodeForExpansion(ps4);
+		var status = _env.LastExitCode;
+		Options.XTrace = false;   // a $( ) in PS4 traced itself, expanding PS4 again
+		try   { return _expander.ExpandToString(new Word([new DoubleQuotedPart(Parser.Parser.ParseDoubleQuotedText(ps4))])); }
+		catch (FatalShellException ex) when (ex.ExpansionError) { return ps4; }
+		finally { Options.XTrace = true; _env.LastExitCode = status; }
+		}
+
+	/// <summary>One line of set -x output, under PS4.</summary>
+	private void Xtrace(string text) => Console.Error.WriteLine(XtracePrefix() + text);
+
+	/// <summary>A word as bash's xtrace prints it: '' when empty; single quotes when it holds a shell metacharacter (bash's
+	/// sh_contains_shell_metas: blanks, quotes, backslash, `|&amp;;()&lt;&gt;!{}*[?]^$` and backquote, `~` first or after
+	/// `=`/`:`, `#` first), a `'` written '\''; $'…' when it holds another control character; else as it is. Words
+	/// printed raw until 2026-10-17 (`+ echo a b` for 'a b').</summary>
+	internal static string XtraceWord(string w)
+		{
+		if (w.Length == 0) return "''";
+		bool control = false;
+		for (int i = 0; i < w.Length; i++)
+			{
+			char c = w[i];
+			switch (c)
+				{
+				case ' ': case '\t': case '\n': case '\'': case '"': case '\\': case '|': case '&': case ';': case '(': case ')':
+				case '<': case '>': case '!': case '{': case '}': case '*': case '[': case '?': case ']': case '^': case '$': case '`':
+					return "'" + w.Replace("'", "'\\''") + "'";
+				case '~': if (i == 0 || w[i - 1] is '=' or ':') return "'" + w.Replace("'", "'\\''") + "'"; break;
+				case '#': if (i == 0) return "'" + w.Replace("'", "'\\''") + "'"; break;
+				default: if (char.IsControl(c)) control = true; break;
+				}
+			}
+		return control ? PrintfFormatter.ShellQuote(w) : w;
+		}
+
+	/// <summary>An assignment's value as xtrace prints it (bash's xtrace_print_assignment): empty stays empty.</summary>
+	private static string XtraceValue(string v) => v.Length == 0 ? "" : XtraceWord(v);
+
+	/// <summary>A command name that is a path, never searched on PATH: a slash, a backslash, or a drive (`F:x` is in
+	/// F:'s current directory: Path.Combine dropped the PATH entry, and the map kept `F:x`, 2026-10-17). Any other
+	/// colon is no path: `ads:bar.exe` is an NTFS stream, and taken as a path it ran from the cwd (red team).</summary>
+	private static bool IsPathName(string name) =>
+		name.AsSpan().IndexOfAny('/', '\\') >= 0 || (name.Length >= 2 && name[1] == ':' && char.IsAsciiLetter(name[0]));
+
+	/// <summary>"command not found" (127) for a name that never reaches the launcher, its redirects made first, as
+	/// bash's child makes them before it reports (`nope > f` creates f).</summary>
+	private int NotFound(string name, List<Redirect> redirects, string what = "command not found")
+		{
+		using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
+		Console.Error.WriteLine($"{ErrorPrefix}{name}: {what}");
+		return 127;
+		}
+
+	/// <summary>A file name Win32 cannot hold as written: it drops a trailing dot or space, so `s1.` opened s1.</summary>
+	private static bool DotOrSpaceEnding(string leaf) => leaf.Length > 0 && leaf is not "." and not ".." && leaf[^1] is '.' or ' ';
+
+	/// <summary>True when a directory on the way to <paramref name="path"/> is a file (bash's ENOTDIR).</summary>
+	private static bool RunsThroughAFile(string path)
+		{
+		try
+			{
+			for (var p = Path.GetDirectoryName(path); !string.IsNullOrEmpty(p); p = Path.GetDirectoryName(p))
+				if (File.Exists(p)) return true;
+			}
+		catch { }
+		return false;
+		}
+
+	/// <summary>Where a bare name C#Bash did not find on PATH may still be: C#Bash's own folder, System32 and the
+	/// Windows folder, `.exe` appended as Windows' launcher did (which also searched the cwd and the process PATH:
+	/// never again, 2026-10-17). `cmd` on an empty PATH runs from here.</summary>
+	private static string? FallbackProgram(string name)
+		{
+		if (Path.HasExtension(name) && !IsProgramFile(name)) return null;
+		var file = Path.HasExtension(name) ? name : name + ".exe";
+		foreach (var dir in new[] { AppContext.BaseDirectory, Environment.SystemDirectory, Environment.GetFolderPath(Environment.SpecialFolder.Windows) })
+			{
+			try { if (dir.Length > 0 && Path.Combine(dir, file) is var p && File.Exists(p)) return p; }
+			catch { }
+			}
+		return null;
+		}
+
+	/// <summary>A path made full against this shell's own cwd (`\x` and `C:x` too: they took the process cwd's drive).</summary>
+	private string FromShellCwd(string p) => ShellEnvironment.FullAgainst(p, _env.Cwd);
+
+	/// <summary>A PATH entry as searched: where to look, and whether it moves with the cwd (relative, `\x`, `C:x`), in
+	/// which case it is answered as written and never remembered. The form is translated first: `~/x` was looked up in
+	/// the profile but answered `~/x`, which the launcher then joined to the cwd, so a copy planted there ran; `/f/x`
+	/// was looked up as F:\f\x (red team, 2026-10-17).</summary>
+	internal static (string At, bool Relative) PathEntry(string d)
+		{
+		// `~` in a PATH entry is $HOME, as bash expands it at search time (TranslateForm's `~` is the profile)
+		if ((d == "~" || d.StartsWith("~/") || d.StartsWith("~\\")) && ShellEnvironment.Active?.Get("HOME") is { Length: > 0 } home)
+			d = ShellEnvironment.ToShellPath(ShellEnvironment.TranslateForm(home)) + d[1..];
+		var form = d.Length > 0 && d[0] is '~' or '/' ? ShellEnvironment.TranslateForm(d) : d;
+		bool rel = !Path.IsPathFullyQualified(form);
+		return (rel ? ShellEnvironment.TranslatePath(d) : form, rel);
+		}
+
+	/// <summary>A program extension (.com .exe .bat .cmd): CreateProcess runs it, so it is never read as a script. A
+	/// `.js` with a `#!` line is a script now (it was taken for a program and refused, 2026-10-18).</summary>
+	private static bool IsProgramFile(string path) => FileTests.IsProgramExtension(Path.GetExtension(path));
 	public IReadOnlyDictionary<string, string> HashTable => _pathHash;
 	public int HashHits(string name) => _pathHits.GetValueOrDefault(name);
 	public void HashHit(string name) { if (_pathHash.ContainsKey(name)) _pathHits[name] = HashHits(name) + 1; }
@@ -1648,7 +1794,8 @@ public sealed class Evaluator
 	/// <param name="probe">`hash name`: the one lookup that records a miss and obeys an earlier process's.</param>
 	public string? ResolveOnPath(string name, string? pathOverride = null, bool probe = false)
 		{
-		if (name.Length == 0 || name.Contains('/') || name.Contains('\\')) return null;
+		if (name.Length == 0 || IsPathName(name) || name.Contains(':')) return null;   // a colon: a stream, never a file
+		if (DotOrSpaceEnding(name)) return null;   // Win32 would drop it and find `s1` for `s1.` (2026-10-17)
 		string pathValue;
 		if (pathOverride is null)
 			{
@@ -1665,40 +1812,85 @@ public sealed class Evaluator
 			{
 			if (CommandMap.Hit(pathValue, pathExtValue, name) is { } known)
 				{
-				if (File.Exists(known)) { _pathHash[name] = known; return known; }
-				CommandMap.Forget(pathValue, pathExtValue, name);   // moved or removed: search again
+				if (File.Exists(known) && FileTests.IsExecutable(known)) { _pathHash[name] = known; return known; }
+				CommandMap.Forget(pathValue, pathExtValue, name);   // moved, removed, or no longer runs: search again
 				}
 			else if (probe && CommandMap.EarlierMiss(pathValue, pathExtValue, name)) { _rememberedMisses.Add(name); return null; }
 			_rememberedMisses.Remove(name);   // this answer comes from a search
 			}
-		var pathExt = pathExtValue.Split(';', StringSplitOptions.RemoveEmptyEntries);
+		// PATHEXT says which extensions a bare name is tried with; only a program extension can be a match (2026-10-18)
+		var pathExt = pathExtValue.Split(';', StringSplitOptions.RemoveEmptyEntries).Where(FileTests.IsProgramExtension).ToArray();
 		var dirs = pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
 		bool hasExt = Path.HasExtension(name);
+		string? cannotRun = null;   // bash: the first match it cannot run is the answer when no later one can
+		bool cannotRunRelative = false;
 		foreach (var d in dirs)
 			{
 			try
 				{
-				var bare = Path.Combine(d, name);
-				if (File.Exists(bare)) return Found(bare);
+				// a relative PATH entry is relative to THIS shell's directory (a job's, a stage's): looked in there,
+				// answered relative as bash prints it, and never remembered, as its answer moves with the cwd (a
+				// background job ran its parent's program, 2026-10-17)
+				var (at, rel) = PathEntry(d);
+				var bare = Path.Combine(at, name);
+				// a match counts if it runs by C#Bash's `-x` (a PATHEXT extension, .sh, or #!): a data file
+				// named like the command stopped the search with "Permission denied" (2026-10-17)
+				if (File.Exists(bare))
+					{
+					if (FileTests.IsExecutable(bare)) return Found(rel ? Path.Combine(d, name) : bare, rel);
+					if (cannotRun is null) { cannotRun = rel ? Path.Combine(d, name) : bare; cannotRunRelative = rel; }
+					}
 				if (!hasExt)
 					foreach (var ext in pathExt)
 						{
-						var p = Path.Combine(d, name + ext);
+						var p = Path.Combine(at, name + ext);
 						// the on-disk name: it is the child's argv[0] (`bash.EXE` until 2026-10-11; Git
 						// Bash passes `Bash.exe`), once per name (cached)
-						if (File.Exists(p)) return Found(ShellFile.OnDiskName(p));
+						if (File.Exists(p)) return Found(rel ? Path.Combine(d, name + ext) : ShellFile.OnDiskName(p), rel);
 						}
 				}
 			catch { }
 			}
+		if (cannotRun is not null)
+			{
+			if (pathOverride is null && !cannotRunRelative) _pathHash[name] = cannotRun;   // hashed, as bash; the map keeps only what passes -x
+			return cannotRun;
+			}
 		if (pathOverride is null && probe) CommandMap.Record(pathValue, pathExtValue, name, "");
 		return null;
 
-		string Found(string p)
+		string Found(string p, bool relative)
 			{
-			if (pathOverride is null) { _pathHash[name] = p; CommandMap.Record(pathValue, pathExtValue, name, p); }
+			if (pathOverride is null && !relative) { _pathHash[name] = p; CommandMap.Record(pathValue, pathExtValue, name, p); }
 			return p;
 			}
+		}
+
+	/// <summary>Every match for <paramref name="name"/> on the shell's PATH that can run, in PATH order (`type -a`): the
+	/// name itself if it runs, then its first PATHEXT form, per entry; relative entries from this shell's directory.</summary>
+	public List<string> AllOnPath(string name)
+		{
+		var found = new List<string>();
+		if (name.Length == 0 || IsPathName(name) || name.Contains(':')) return found;
+		var pathExt = PathExt.Split(';', StringSplitOptions.RemoveEmptyEntries).Where(FileTests.IsProgramExtension).ToArray();
+		bool hasExt = Path.HasExtension(name);
+		foreach (var d in _env.Get("PATH").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+			{
+			try
+				{
+				var (at, rel) = PathEntry(d);
+				var bare = Path.Combine(at, name);
+				if (File.Exists(bare) && FileTests.IsExecutable(bare)) found.Add(rel ? Path.Combine(d, name) : bare);
+				if (hasExt) continue;
+				foreach (var ext in pathExt)
+					{
+					var p = Path.Combine(at, name + ext);
+					if (File.Exists(p)) { found.Add(rel ? Path.Combine(d, name + ext) : ShellFile.OnDiskName(p)); break; }
+					}
+				}
+			catch { }
+			}
+		return found;
 		}
 
 	/// <summary>Run a single command (name + already-expanded args) through the normal
@@ -1757,7 +1949,7 @@ public sealed class Evaluator
 		if (Keywords.Contains(name)) return ("keyword", null);
 		if (!skipFunctions && _functions.ContainsKey(name)) return ("function", null);
 		if (Builtins.Has(name)) return ("builtin", null);
-		if (name.Contains('/') || name.Contains('\\'))
+		if (IsPathName(name))
 			{
 			var p = ShellEnvironment.TranslatePath(name);
 			return File.Exists(p) ? ("file", name) : null;
@@ -1822,14 +2014,38 @@ public sealed class Evaluator
 		finally { _env.ReassertProcessCwd(); }   // the child may have moved the process cwd we own
 		}
 
+	// how many #! interpreters deep the current launch is; real chains are one or two (`#!/usr/bin/env node`)
+	private int _interpreterDepth;
+	private const int MaxInterpreterDepth = 8;
+
 	private int ExecExternal(string name, List<string> args,
 		List<(string, string)> tempAssign, List<Redirect> redirects, bool clearEnv = false,
 		IReadOnlyCollection<string>? unsetEnv = null)
 		{
+		// `PATH=… cmd`: bash finds cmd on that PATH (it was looked up on the shell's own until 2026-10-11)
+		string? tempPath = null;
+		foreach (var (n, v) in tempAssign) if (n == "PATH") tempPath = ShellEnvironment.NormalizePath(v);
+		bool bare  = !IsPathName(name);
+		var  found = bare ? ResolveOnPath(name, tempPath) : null;   // cached full path, else OS resolves
+		if (bare && tempPath is null) HashHit(name);
+		// a bare name with a colon is an NTFS stream, never a program: Windows' launcher found `ads:bar.exe` in the
+		// current directory (red team, 2026-10-17); bash looks it up on PATH and finds nothing
+		if (bare && name.Contains(':')) return NotFound(name, redirects);
+		// Win32 drops a trailing dot or space: `s1.` and `./s1.` ran s1, where bash finds no such file (2026-10-17)
+		if (!bare && DotOrSpaceEnding(Path.GetFileName(name.TrimEnd('/', '\\')))) return NotFound(name, redirects, "No such file or directory");
+		// a bare name not on PATH: C#Bash's own folder, System32 and the Windows folder only (so `cmd` runs on an
+		// empty PATH), else not found. Windows' launcher searched for it, the current directory included in an
+		// ordinary terminal (and under Claude Code through an empty PATH entry): a planted `.exe` ran (2026-10-17)
+		if (bare && found is null && (found = FallbackProgram(name)) is null) return NotFound(name, redirects);
+
 		// Shebang dispatch: Windows cannot exec a #! script directly. When the command
 		// names an actual script file, read its interpreter line and run it ourselves —
-		// in-process when it's bash/sh (we are the shell), spawning otherwise.
-		if (TryResolveScriptFile(name, out var scriptPath, out var shebang))
+		// in-process when it's bash/sh (we are the shell), spawning otherwise. A bare name is a
+		// script at its PATH match only, never in the current directory, as bash: a planted #! `git`
+		// there ran instead of git.exe, and a script found on PATH said "Permission denied"
+		// (2026-10-17). A PATHEXT match is a program: never opened for its first line.
+		var script = bare ? (found is not null && !IsProgramFile(found) ? found : null) : name;
+		if (script is not null && TryResolveScriptFile(script, out var scriptPath, out var shebang))
 			{
 			var (interp, interpArgs) = ResolveInterpreter(shebang);
 			var ib = Path.GetFileNameWithoutExtension(interp).ToLowerInvariant();
@@ -1839,26 +2055,54 @@ public sealed class Evaluator
 				// dropped: `./s.sh > out` printed to the terminal, `FOO=1 ./s.sh` saw no FOO (2026-10-04)
 				using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
 				using var temp  = ApplyTempAssignments(tempAssign);
-				return RunScriptInProcess(name, scriptPath, args);
+				return RunScriptInProcess(bare ? ShellEnvironment.ToShellPath(found!) : name, scriptPath, args);   // bash's $0: the path it found
 				}
 			// External interpreter: <interp> [shebang args] <script> <args...>,
 			// using the basename so PATH resolves it (Unix interpreter paths won't exist).
+			// The chain is capped: `#!/usr/bin/env self` re-entered here until the stack overflowed and
+			// the shell died (GNU execs forever; 2026-10-17)
+			if (_interpreterDepth >= MaxInterpreterDepth)
+				{
+				using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
+				Console.Error.WriteLine($"{ErrorPrefix}{name}: {shebang}: bad interpreter: too many levels of interpreters");
+				return 126;
+				}
+			// an interpreter that is nowhere: bash's "bad interpreter" (126); through `/usr/bin/env x`, what env says
+			// (127). Both were "x: command not found" (red team, 2026-10-17)
+			var interpName = Path.GetFileName(interp);
+			if (ResolveOnPath(interpName, tempPath) is null && FallbackProgram(interpName) is null)
+				{
+				var first = shebang.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)[0];
+				bool viaEnv = Path.GetFileName(first) == "env";
+				using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
+				Console.Error.WriteLine(viaEnv ? $"{first}: '{interpName}': No such file or directory"
+				                               : $"{ErrorPrefix}{name}: {first}: bad interpreter: No such file or directory");
+				return viaEnv ? 127 : 126;
+				}
 			var spawn = new List<string>(interpArgs) { scriptPath };
 			spawn.AddRange(args);
-			return ExecExternal(Path.GetFileName(interp), spawn, tempAssign, redirects, clearEnv, unsetEnv);
+			_interpreterDepth++;
+			try     { return ExecExternal(Path.GetFileName(interp), spawn, tempAssign, redirects, clearEnv, unsetEnv); }
+			finally { _interpreterDepth--; }
 			}
 
-		// `PATH=… cmd`: bash finds cmd on that PATH (it was looked up on the shell's own until 2026-10-11)
-		string? tempPath = null;
-		foreach (var (n, v) in tempAssign) if (n == "PATH") tempPath = ShellEnvironment.NormalizePath(v);
-		var fileName = name.Contains('/') || name.Contains('\\')
-			? ShellEnvironment.TranslatePath(name)
-			: ResolveOnPath(name, tempPath) ?? name;   // cached full path, else OS resolves
-		if (!name.Contains('/') && !name.Contains('\\') && tempPath is null) HashHit(name);
+		// a name with a slash is a path from this shell's directory, as bash. Handed over relative, Windows SEARCHED
+		// for it (C#Bash's folder, the cwd unless NoDefaultCurrentDirectoryInExePath, PATH): under Claude Code
+		// `sub/w.exe` was "command not found", and a `sub/v.exe` under a PATH directory ran from there (2026-10-17)
+		var fileName = bare ? (found is null ? name : FromShellCwd(found)) : FromShellCwd(ShellEnvironment.TranslatePath(name));   // a relative PATH entry's match too
 		// `>>` and the shell's own redirects hand a child an append-only handle, so concurrent appenders
 		// interleave (DECISIONS 2026-10-04). An MSYS program (Git's usr/bin tools) takes that handle as
 		// read-only and every write failed (Bad file descriptor): it gets a write handle at the end.
-		var appendAccess = ChildLauncher.IsMsysProgram(fileName) ? ChildLauncher.Access.AppendAtEnd : ChildLauncher.Access.Append;
+		bool msysChild = ChildLauncher.IsMsysProgram(fileName);
+		var appendAccess = msysChild ? ChildLauncher.Access.AppendAtEnd : ChildLauncher.Access.Append;
+		// an inherited append-only handle (a nested shell under `>> f`) reopened for an MSYS child, once per handle so a
+		// 2>&1 stdout and stderr keep sharing one (2026-10-17)
+		var msysReopened = new Dictionary<IntPtr, IntPtr>();
+		IntPtr MsysWritable(IntPtr h)
+			{
+			if (msysReopened.TryGetValue(h, out var w)) return w;
+			return msysReopened[h] = ChildLauncher.WritableForMsys(h) is { } reopened ? Keep(reopened).DangerousGetHandle() : h;
+			}
 		var psi = new ProcessStartInfo
 			{
 			FileName         = fileName,
@@ -1876,14 +2120,29 @@ public sealed class Evaluator
 		foreach (var arg in args)
 			psi.ArgumentList.Add(convert ? ShellEnvironment.NativeArgument(arg, excluded) : arg);
 
-		if (clearEnv) psi.Environment.Clear();
-		else
+		// a child's environment is the shell's exported variables and nothing else, as bash: it began as C#Bash's own
+		// process environment, so `unset X` and `export -n X` (PATH included) never reached a child, and an exported
+		// `path` replaced PATH (Windows names are case-blind) (red team, 2026-10-17). Every variable inherited at
+		// startup is imported exported, so nothing the shell has is lost.
+		psi.Environment.Clear();
+		if (!clearEnv)
+			{
 			foreach (var (k, v) in _env.GetExportedVars())
 				psi.Environment[k] = v;
+			if (_env.IsExported("PATH"))
+				{
+				foreach (var k in psi.Environment.Keys.Where(k => k != "PATH" && k.Equals("PATH", StringComparison.OrdinalIgnoreCase)).ToList())
+					psi.Environment.Remove(k);
+				psi.Environment["PATH"] = _env.Get("PATH");
+				}
+			}
 		foreach (var (k, v) in tempAssign)
 			psi.Environment[k] = v;
 		if (unsetEnv is not null)
 			foreach (var u in unsetEnv) psi.Environment.Remove(u);   // env -u NAME (2026-10-08)
+		// nor in a child's: a program C#Bash starts would take an empty PATH entry as its cwd too (2026-10-17)
+		if (psi.Environment.TryGetValue("PATH", out var childPath) && childPath is not null)
+			psi.Environment["PATH"] = ShellEnvironment.WithoutEmptyPathEntries(childPath);
 
 		// ── the child's std handles (DECISIONS 2026-10-04: the real file handle) ─────────────
 		// Each of fd 0-2 starts where this shell's own stream points NOW -- the newest installation
@@ -2032,7 +2291,7 @@ public sealed class Evaluator
 		var pipes = new Dictionary<ChildFd, (SafeFileHandle Shell, SafeFileHandle Child)>();
 		IntPtr HandleFor(ChildFd f) => f switch
 			{
-			InheritFd i => ChildLauncher.StdHandle(i.Fd),
+			InheritFd i => i.Fd > 0 && msysChild ? MsysWritable(ChildLauncher.StdHandle(i.Fd)) : ChildLauncher.StdHandle(i.Fd),
 			HandleFd h  => h.Handle.DangerousGetHandle(),
 			SharedFileFd s => s.Handle.DangerousGetHandle(),
 			_           => (pipes.TryGetValue(f, out var p) ? p : pipes[f] = ChildLauncher.Pipe(childReads: f is InPumpFd)).Child.DangerousGetHandle(),
@@ -2055,9 +2314,20 @@ public sealed class Evaluator
 			{
 			// bash-style diagnostics, routed to wherever this command's stderr was sent
 			// (so `cmd 2>/dev/null` really is silent)
-			bool denied = ex.NativeErrorCode is 5 or 193;
-			ReportTo(fds[2], ex.NativeErrorCode is 2 or 3 ? $"{ErrorPrefix}{name}: command not found"
-			                 : denied ? $"{ErrorPrefix}{name}: Permission denied" : $"{ErrorPrefix}{name}: {ex.Message}");
+			// a refusal names the path found on PATH, as bash ("/x/p1/tool: Permission denied"); a path name that is a
+			// directory, or goes through a file, says what bash's exec says, 126 (it was "Permission denied" and 127
+			// "No such file or directory", 2026-10-17)
+			string? notRunnable = bare ? null : Directory.Exists(fileName) ? "Is a directory" : RunsThroughAFile(fileName) ? "Not a directory" : null;
+			// Windows starts no program whose working directory is over MAX_PATH (error 267, "The directory name is
+			// invalid"), though the shell itself can be there (longPathAware, 2026-10-17): say so, 126
+			if (ex.NativeErrorCode == 267 && _env.Cwd.Length >= 260) notRunnable = "cannot start a program in a directory over 260 characters (a Windows limit)";
+			// nor one whose own path is (error 206, "The filename or extension is too long"; cmd cannot either)
+			if (ex.NativeErrorCode == 206) notRunnable = "cannot start a program whose path is over 260 characters (a Windows limit)";
+			bool denied = notRunnable is not null || ex.NativeErrorCode is 5 or 193;
+			ReportTo(fds[2], notRunnable is not null ? $"{ErrorPrefix}{name}: {notRunnable}"
+			                 : ex.NativeErrorCode is 2 or 3 ? $"{ErrorPrefix}{name}: {(bare ? "command not found" : "No such file or directory")}"
+			                 : denied ? $"{ErrorPrefix}{(found is not null ? ShellEnvironment.ToShellPath(found) : name)}: Permission denied"
+			                 : $"{ErrorPrefix}{name}: {ex.Message}");
 			foreach (var p in pipes.Values) { p.Shell.Dispose(); p.Child.Dispose(); }
 			foreach (var h in opened) h.Dispose();
 			return denied ? 126 : 127;
@@ -2395,6 +2665,29 @@ public sealed class Evaluator
 					else         { scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(w); ConsoleMux.Raw = fs; }
 					break;
 					}
+				case RedirectKind.ReadWrite:
+					{
+					// `n<> file`: read and write, made if missing, never truncated (bash: O_RDWR|O_CREAT). Not handled
+					// in process until 2026-10-17: `exec 5<> f; read -u 5` found no fd 5
+					int rfd = r.Fd ?? 0;
+					System.IO.FileStream rws;
+					try { rws = new System.IO.FileStream(target, System.IO.FileMode.OpenOrCreate, System.IO.FileAccess.ReadWrite, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					if (rfd > 2) { scope.TrackFd(_fds, rfd, rws); break; }
+					if (rfd == 0)
+						{
+						scope.SaveIn(); scope.SaveRawIn();
+						var rr = new LfReader(rws);
+						scope.TrackInstalled(rr);
+						ConsoleMux.SetIn(rr); ConsoleMux.RawIn = rws;
+						break;
+						}
+					var rw = new System.IO.StreamWriter(rws, ShellEncoding.Utf8) { AutoFlush = true, NewLine = "\n" };
+					scope.TrackInstalled(rw);
+					if (rfd == 2) { scope.SaveErr(); ConsoleMux.SetErr(rw); }
+					else         { scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(rw); ConsoleMux.Raw = rws; }
+					break;
+					}
 				case RedirectKind.Input:
 					{
 					int ifd = r.Fd ?? 0;
@@ -2551,7 +2844,7 @@ public sealed class Evaluator
 			// fatal to the subshell only, and reported inside its own redirects: `( r=2 ) 2>/dev/null` with r
 			// readonly is silent in bash (C#Bash printed it after the redirects were gone, until 2026-10-12)
 			catch (FatalShellException ex) { Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); return ex.Code; }
-			finally { SubshellExitTrap(mark); ResumeDebug(debugOff); }
+			finally { SubshellExitTrap(mark); DropSubshellRedirects(mark); ResumeDebug(debugOff); }
 			}
 		catch (ExitException ex) { return ex.Code; }
 		catch (FatalShellException ex) { Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}"); return ex.Code; }   // a redirect of the subshell's own that failed
@@ -2605,7 +2898,12 @@ public sealed class Evaluator
 		{
 		using var scope = af.Redirects.Count > 0 ? ApplyRedirects(af.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
 		// DEBUG before the init, each test and each step, as `((part))` (bash)
-		void Head(int part) { if (_traps.Count != 0) { SetCommand(af.Heads[part]); DebugTrap(null); } }
+		void Head(int part)
+			{
+			// set -x: `(( j=0 ))`, `(( j<2 ))`, `(( j++  ))`, as bash (the part with its front trimmed)
+			if (Options.XTrace && af.Heads[part].Length > 4) Xtrace($"(( {af.Heads[part][2..^2]} ))");
+			if (_traps.Count != 0) { SetCommand(af.Heads[part]); DebugTrap(null); }
+			}
 		Head(0);
 		if (af.Init.Length > 0) _expander.EvalArithmetic(af.Init);
 		int code = 0;
@@ -2671,6 +2969,7 @@ public sealed class Evaluator
 		foreach (var word in words)
 			{
 			CheckInterrupt();
+			if (Options.XTrace) Xtrace(head ??= Bash.Parser.CommandText.Render(fc.Span));   // each turn, as written (bash)
 			if (_traps.Count != 0)
 				{
 				SetCommand(head ??= Bash.Parser.CommandText.Render(fc.Span));
@@ -2687,6 +2986,7 @@ public sealed class Evaluator
 	private int ExecCase(CaseCommand cc)
 		{
 		using var scope = cc.Redirects.Count > 0 ? ApplyRedirects(cc.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
+		if (Options.XTrace) Xtrace($"case {Bash.Parser.CommandText.Render(cc.Span)} in");   // the word as written (bash)
 		if (_traps.Count != 0)
 			{
 			SetCommand($"case {Bash.Parser.CommandText.Render(cc.Span)} in ");   // bash's own text, trailing space and all
@@ -2725,13 +3025,33 @@ public sealed class Evaluator
 		{
 		CondAnd a    => EvalCondExpr(a.Left) && EvalCondExpr(a.Right),
 		CondOr  o    => EvalCondExpr(o.Left) || EvalCondExpr(o.Right),
-		CondNot n    => !EvalCondExpr(n.Operand),
-		CondUnary u  => EvalCondUnary(u.Op, _expander.ExpandToString(u.Operand)),
+		CondNot n    => !EvalCondNot(n),
+		CondUnary u  => EvalCondUnary(u.Op, CondTraced(u.Op + " ", _expander.ExpandToString(u.Operand))),
 		CondBinary b => EvalCondBinary(b),
-		CondWord w   => _expander.ExpandToString(w.Value).Length > 0,
+		CondWord w   => CondTraced("-n ", _expander.ExpandToString(w.Value)).Length > 0,   // bash traces a lone word as -n
 		CondGroup g  => EvalCondExpr(g.Inner),
 		_ => false
 		};
+
+	/// <summary>set -x traces each `[[ ]]` test as it is evaluated, its operands expanded (bash: `+ [[ a b == a* ]]`,
+	/// one line per primary); `[[ ]]` was not traced (2026-10-17).</summary>
+	private void CondTrace(string test)
+		{
+		if (Options.XTrace) Xtrace($"[[ {_condNot}{test} ]]");
+		_condNot = "";
+		}
+
+	// a `!` waiting for the primary it negates, which bash prints with it (`+ [[ ! -z a b ]]`)
+	private string _condNot = "";
+
+	private bool EvalCondNot(CondNot n)
+		{
+		_condNot += "! ";
+		try   { return EvalCondExpr(n.Operand); }
+		finally { _condNot = ""; }
+		}
+
+	private string CondTraced(string op, string val) { CondTrace(op + val); return val; }
 
 	private bool EvalCondUnary(string op, string val)
 		{
@@ -2761,13 +3081,17 @@ public sealed class Evaluator
 		string left = _expander.ExpandToString(b.Left);
 		switch (b.Op)
 			{
-			case "=" or "==":
-				return Glob.Match(_expander.ExpandToPattern(b.Right), left, Options.NoCaseMatch);
-			case "!=":
-				return !Glob.Match(_expander.ExpandToPattern(b.Right), left, Options.NoCaseMatch);
+			case "=" or "==" or "!=":
+				{
+				var shown = Options.XTrace ? new System.Text.StringBuilder() : null;
+				var glob = _expander.ExpandToPattern(b.Right, shown);
+				CondTrace($"{left} {b.Op} {shown}");
+				return Glob.Match(glob, left, Options.NoCaseMatch) == (b.Op != "!=");
+				}
 			case "=~":
 				{
 				var pattern = _expander.ExpandToRegex(b.Right);
+				CondTrace($"{left} {b.Op} {pattern}");
 				System.Text.RegularExpressions.Match m;
 				try
 					{
@@ -2786,6 +3110,7 @@ public sealed class Evaluator
 				}
 			}
 		string right = _expander.ExpandToString(b.Right);
+		CondTrace($"{left} {b.Op} {right}");
 		switch (b.Op)
 			{
 			case "<": return string.Compare(left, right, StringComparison.Ordinal) < 0;

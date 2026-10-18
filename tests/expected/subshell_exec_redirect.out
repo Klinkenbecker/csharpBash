@@ -1,0 +1,9 @@
+after subshell
+after stderr subshell
+after cmdsub: x=[]
+after pipeline stage
+fd 3 after: closed
+after trap subshell
+after exit: rc=3
+f=[in] e=[err-in] h=[x-in] p=[p-in] t=[t-in] q=[q-in trap-out ] r=[]
+a group's exec stays: g=[g-in]

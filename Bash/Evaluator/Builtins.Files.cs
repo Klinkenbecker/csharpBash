@@ -321,20 +321,22 @@ public sealed partial class Builtins
 			try
 				{
 				var target = dstIsDir ? Path.Combine(dstP, Path.GetFileName(sp.TrimEnd('/', '\\'))) : dstP;
+				// the destination as typed, for messages: `target` is resolved, and absolute in a background job
+				var shown = dstIsDir ? dst.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp.TrimEnd('/', '\\')) : dst;
 				if (noClobber && (File.Exists(target) || Directory.Exists(target))) continue;
 				if (Directory.Exists(sp))
 					{
-					if (Directory.Exists(target)) { Console.Error.WriteLine($"mv: cannot overwrite directory '{target}' with directory '{s}'"); rc = 1; continue; }
+					if (Directory.Exists(target)) { Console.Error.WriteLine($"mv: cannot overwrite directory '{shown}' with directory '{s}'"); rc = 1; continue; }
 					try { Directory.Move(sp, target); }
 					catch (IOException) { CopyDir(sp, target, true); Directory.Delete(sp, true); }   // cross-volume
 					}
 				else if (File.Exists(sp))
 					{
-					if (Directory.Exists(target)) { Console.Error.WriteLine($"mv: cannot overwrite directory '{target}' with non-directory"); rc = 1; continue; }
+					if (Directory.Exists(target)) { Console.Error.WriteLine($"mv: cannot overwrite directory '{shown}' with non-directory"); rc = 1; continue; }
 					File.Move(sp, target, overwrite: true);
 					}
 				else { Console.Error.WriteLine($"mv: cannot stat '{s}': No such file or directory"); rc = 1; continue; }
-				if (verbose) Console.WriteLine($"renamed '{s}' -> '{(dstIsDir ? dst.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp.TrimEnd('/', '\\')) : dst)}'");
+				if (verbose) Console.WriteLine($"renamed '{s}' -> '{shown}'");
 				}
 			catch (Exception ex) { Console.Error.WriteLine($"mv: cannot move '{s}' to '{dst}': {IoError(ex)}"); rc = 1; }
 			}
@@ -363,9 +365,14 @@ public sealed partial class Builtins
 			var sp = P(s);
 			try
 				{
-				string target;
-				if (o.HasLong("parents") && dstIsDir) { target = Path.Combine(dstP, s.Replace('/', '\\')); Directory.CreateDirectory(Path.GetDirectoryName(target)!); }
-				else target = dstIsDir ? Path.Combine(dstP, Path.GetFileName(sp.TrimEnd('/', '\\'))) : dstP;
+				// `shown`: the destination as typed, for -v; `target` is resolved, and absolute in a background job
+				string target, shown;
+				if (o.HasLong("parents") && dstIsDir) { target = Path.Combine(dstP, s.Replace('/', '\\')); shown = dst.TrimEnd('/', '\\') + "/" + s; Directory.CreateDirectory(Path.GetDirectoryName(target)!); }
+				else
+					{
+					target = dstIsDir ? Path.Combine(dstP, Path.GetFileName(sp.TrimEnd('/', '\\'))) : dstP;
+					shown  = dstIsDir ? dst.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp.TrimEnd('/', '\\')) : dst;
+					}
 				if (Directory.Exists(sp))
 					{
 					if (!recursive) { Console.Error.WriteLine($"cp: -r not specified; omitting directory '{s}'"); rc = 1; continue; }
@@ -374,7 +381,7 @@ public sealed partial class Builtins
 					}
 				else if (File.Exists(sp))
 					{
-					if (Directory.Exists(target)) target = Path.Combine(target, Path.GetFileName(sp));
+					if (Directory.Exists(target)) { target = Path.Combine(target, Path.GetFileName(sp)); shown = shown.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp); }
 					if (noClobber && File.Exists(target)) continue;
 					if (update && File.Exists(target) && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(sp)) continue;
 					File.Copy(sp, target, overwrite: true);
@@ -384,13 +391,13 @@ public sealed partial class Builtins
 				else if (ShellFile.Device(sp) is not null)
 					{
 					// a device's contents into a file: `cp /dev/null f` empties f (it was "cannot stat")
-					if (Directory.Exists(target)) target = Path.Combine(target, Path.GetFileName(sp));
+					if (Directory.Exists(target)) { target = Path.Combine(target, Path.GetFileName(sp)); shown = shown.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp); }
 					using var src = ShellFile.OpenInput(sp);
 					using var into = ShellFile.Create(target);
 					src.CopyTo(into);
 					}
 				else { Console.Error.WriteLine($"cp: cannot stat '{s}': No such file or directory"); rc = 1; continue; }
-				if (verbose) Console.WriteLine($"'{s}' -> '{target}'");
+				if (verbose) Console.WriteLine($"'{s}' -> '{shown}'");
 				}
 			catch (Exception ex) { Console.Error.WriteLine($"cp: cannot copy '{s}': {IoError(ex)}"); rc = 1; }
 			}
@@ -737,8 +744,9 @@ public sealed partial class Builtins
 		string template = o.Operands.Count > 0 ? o.Operands[0] : "tmp.XXXXXXXXXX";
 		string suffix = o.GetLong("suffix") ?? "";
 		string? tmpdir = o.GetLong("tmpdir") ?? o.Get('p');
-		bool useTmp = tmpdir is not null || o.HasLong("tmpdir") || o.Has('t') || o.Operands.Count == 0 || !(template.Contains('/') || template.Contains('\\'));
-		if (o.Operands.Count > 0 && (template.Contains('/') || template.Contains('\\')) && tmpdir is null) useTmp = false;
+		// a template is relative to the current directory unless -t, -p/--tmpdir or no template, and the name prints as
+		// built (GNU): `mktemp x.XXXX` went to TEMP and printed its full path (2026-10-17)
+		bool useTmp = tmpdir is not null || o.HasLong("tmpdir") || o.Has('t') || o.Operands.Count == 0;
 		string baseDir = useTmp ? P(tmpdir is { Length: > 0 } ? tmpdir : (Environment.GetEnvironmentVariable("TMPDIR") is { Length: > 0 } td ? td : Path.GetTempPath())) : "";
 		int xs = template.Length - template.TrimEnd('X').Length;
 		if (xs < 3 && suffix.Length == 0 && !template.Contains("XXX")) { Console.Error.WriteLine($"mktemp: too few X's in template '{template}'"); return 1; }
@@ -758,7 +766,7 @@ public sealed partial class Builtins
 				try { if (dir) Directory.CreateDirectory(full); else File.Create(full).Dispose(); }
 				catch (Exception ex) { if (!o.Has('q')) Console.Error.WriteLine($"mktemp: failed to create {(dir ? "directory" : "file")} via template '{template}': {IoError(ex)}"); return 1; }
 				}
-			Console.WriteLine(ShellEnvironment.ToShellPath(full));   // forward-slash form: no shell escapes (2026-09-11)
+			Console.WriteLine(useTmp ? ShellEnvironment.ToShellPath(full) : candidate);   // forward-slash form: no shell escapes (2026-09-11)
 			return 0;
 			}
 		Console.Error.WriteLine("mktemp: too many attempts");
@@ -814,7 +822,7 @@ public sealed partial class Builtins
 					{
 					var full = ResolveLinks(Path.GetFullPath(p));
 					if (o.Has('e') && !File.Exists(full) && !Directory.Exists(full)) { rc = 1; continue; }
-					Console.Out.Write(full + term);
+					Console.Out.Write(ShellEnvironment.ToShellPath(full) + term);   // as realpath: it printed backslashes (2026-10-17)
 					continue;
 					}
 				FileSystemInfo info = Directory.Exists(p) ? new DirectoryInfo(p) : new FileInfo(p);
@@ -915,18 +923,23 @@ public sealed partial class Builtins
 		foreach (var s in srcs)
 			{
 			var target = dstIsDir ? Path.Combine(dstP, Path.GetFileName(s.TrimEnd('/', '\\'))) : dstP;
+			// the link as typed, for messages: `target` is resolved, and absolute in a background job (2026-10-17)
+			var shown = dstIsDir ? dst.TrimEnd('/', '\\') + "/" + Path.GetFileName(s.TrimEnd('/', '\\')) : dst;
 			try
 				{
 				if (File.Exists(target) || Directory.Exists(target))
 					{
 					if (!force) { Console.Error.WriteLine($"ln: failed to create {(symbolic ? "symbolic" : "hard")} link '{dst}': File exists"); rc = 1; continue; }
-					if (Directory.Exists(target) && new DirectoryInfo(target).LinkTarget is null) { Console.Error.WriteLine($"ln: '{target}': cannot overwrite directory"); rc = 1; continue; }
+					if (Directory.Exists(target) && new DirectoryInfo(target).LinkTarget is null) { Console.Error.WriteLine($"ln: '{shown}': cannot overwrite directory"); rc = 1; continue; }
 					if (File.Exists(target)) File.Delete(target); else Directory.Delete(target);
 					}
 				if (symbolic)
 					{
 					var linkTarget = o.Has('r') ? Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(target))!, Path.GetFullPath(P(s))) : s.Replace('/', '\\');
-					var sp = Path.IsPathRooted(P(s)) ? P(s) : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(target))!, P(s));
+					// a relative link target is relative to the LINK's folder: its form only, never this shell's cwd
+					// (P(s) is absolute in a background job, so a directory link was made as a file link, 2026-10-17)
+					var sf = ShellEnvironment.TranslateForm(s);
+					var sp = Path.IsPathRooted(sf) ? sf : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(target))!, sf);
 					if (Directory.Exists(sp)) Directory.CreateSymbolicLink(target, linkTarget);
 					else File.CreateSymbolicLink(target, linkTarget);
 					}
@@ -936,9 +949,9 @@ public sealed partial class Builtins
 					if (!File.Exists(sp)) { Console.Error.WriteLine($"ln: failed to access '{s}': No such file or directory"); rc = 1; continue; }
 					if (!CreateHardLinkW(target, sp, IntPtr.Zero)) throw new IOException(Marshal.GetLastPInvokeErrorMessage());
 					}
-				if (verbose) Console.WriteLine($"'{target}' -> '{s}'");
+				if (verbose) Console.WriteLine($"'{shown}' -> '{s}'");
 				}
-			catch (Exception ex) { Console.Error.WriteLine($"ln: failed to create {(symbolic ? "symbolic" : "hard")} link '{target}': {IoError(ex)}"); rc = 1; }
+			catch (Exception ex) { Console.Error.WriteLine($"ln: failed to create {(symbolic ? "symbolic" : "hard")} link '{shown}': {IoError(ex)}"); rc = 1; }
 			}
 		return rc;
 		}

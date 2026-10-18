@@ -1,0 +1,9 @@
+== a planted .exe in the cwd; C#Bash started (by cmd) with an empty PATH entry, or a trailing ';' and no own folder
+rc=127
+its $PATH: has an empty entry
+rc=127
+its $PATH: none
+== a child gets PATH without empty entries; the shell's $PATH is as written
+Path=C:/Windows/System32;C:/Windows
+[C:/Windows/System32;;C:/Windows;]
+Path=C:/Windows/System32;C:/Windows

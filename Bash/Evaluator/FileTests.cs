@@ -97,15 +97,22 @@ public static class FileTests
 		return null;
 		}
 
-	/// <summary>Windows notion of executable: a PATHEXT extension, a `.sh` file, or a `#!` script.</summary>
+	/// <summary>An extension Windows' launcher starts: .com, .exe, .bat, .cmd. Not every PATHEXT one: `.js`, `.vbs`, `.wsf`,
+	/// `.msc` run only through a file association, so a `zz.js` on PATH stopped the search for `zz` with "Permission
+	/// denied" before a later `zz.exe`, and `[ -x zz.js ]` was true; Git Bash passes over it and says false, and bash
+	/// passes over any match it cannot execute (the architect: "Yes make the change", 2026-10-18).</summary>
+	public static bool IsProgramExtension(string ext) =>
+		ext.Equals(".exe", StringComparison.OrdinalIgnoreCase) || ext.Equals(".com", StringComparison.OrdinalIgnoreCase)
+		|| ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) || ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>Windows notion of executable: a program extension (<see cref="IsProgramExtension"/>), a `.sh` file, or a
+	/// `#!` script.</summary>
 	public static bool IsExecutable(string path)
 		{
 		var ext = Path.GetExtension(path);
 		if (ext.Length > 0)
 			{
-			var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD")
-				.Split(';', StringSplitOptions.RemoveEmptyEntries);
-			foreach (var e in pathExt) if (string.Equals(e, ext, StringComparison.OrdinalIgnoreCase)) return true;
+			if (IsProgramExtension(ext)) return true;
 			if (ext.Equals(".sh", StringComparison.OrdinalIgnoreCase)) return true;
 			}
 		try

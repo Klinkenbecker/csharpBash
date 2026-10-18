@@ -1,0 +1,8 @@
+selfy: /usr/bin/env selfy: bad interpreter: too many levels of interpreters
+rc=126
+selfy: /usr/bin/env selfy: bad interpreter: too many levels of interpreters
+rc=126
+ma: /usr/bin/env mb: bad interpreter: too many levels of interpreters
+rc=126
+quiet: rc=126
+the shell goes on

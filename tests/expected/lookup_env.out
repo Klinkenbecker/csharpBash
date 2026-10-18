@@ -1,0 +1,10 @@
+== a ~ PATH entry is $HOME's
+zztilde: from HOME
+D/home/tbin/zztilde
+== an inherited variable unset or unexported does not reach a child
+unset: gone, export -n: gone
+== a missing interpreter
+./a.sh: zzmissing: bad interpreter: No such file or directory
+rc=126
+/usr/bin/env: 'zzmissing': No such file or directory
+rc=127

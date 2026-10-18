@@ -34,6 +34,7 @@ public sealed partial class Builtins
 		public int Rc;
 		public List<string> ExecPlusBatch = [];
 		public List<string>? ExecPlusCmd;
+		public string? ExecPlusDir;   // -execdir: the directory the batch runs from
 		public DateTime Now = DateTime.Now;
 		}
 
@@ -269,21 +270,26 @@ public sealed partial class Builtins
 					cmd.Add(w);
 					}
 				if (cmd.Count == 0) throw new Exception($"missing argument to `{t}'");
+				// -execdir runs from the file's own directory with `{}` as ./name, a `+` batch per directory (GNU); it
+				// ran as -exec, from the shell's directory with the path as printed (2026-10-17)
+				bool inDir = t == "-execdir";
 				if (plus)
 					{
 					return new FindPred((e, s, b) =>
 						{
-						s.ExecPlusCmd = cmd;
-						s.ExecPlusBatch.Add(e.Display);
+						var (where, arg) = inDir ? ExecDirOf(e) : (null, e.Display);
+						if (inDir && s.ExecPlusBatch.Count > 0 && s.ExecPlusDir != where) b.FindExecPlusFlush(s);
+						s.ExecPlusCmd = cmd; s.ExecPlusDir = where;
+						s.ExecPlusBatch.Add(arg);
 						if (s.ExecPlusBatch.Count >= 500) b.FindExecPlusFlush(s);
 						return true;
 						});
 					}
 				return new FindPred((e, s, b) =>
 					{
-					var line = cmd.Select(w => w.Replace("{}", e.Display)).ToList();
-					int rc = b._eval.RunCommand(line[0], line.GetRange(1, line.Count - 1));
-					return rc == 0;
+					var (where, arg) = inDir ? ExecDirOf(e) : (null, e.Display);
+					var line = cmd.Select(w => w.Replace("{}", arg)).ToList();
+					return b.FindRunIn(where, line) == 0;
 					});
 				}
 			case "-ok": case "-okdir": throw new UnsupportedOptionException("find", t, "interactive confirmation is not available");
@@ -302,8 +308,25 @@ public sealed partial class Builtins
 		var line = new List<string>(s.ExecPlusCmd);
 		line.AddRange(s.ExecPlusBatch);
 		s.ExecPlusBatch.Clear();
-		int rc = _eval.RunCommand(line[0], line.GetRange(1, line.Count - 1));
+		int rc = FindRunIn(s.ExecPlusDir, line);
 		if (rc != 0) s.Rc = 1;
+		}
+
+	/// <summary>-execdir's working directory and `{}`: the entry's own directory, and ./name.</summary>
+	private static (string? Dir, string Arg) ExecDirOf(FindEntry e)
+		{
+		var full = Path.GetFullPath(e.Fs);
+		return (Path.GetDirectoryName(full) ?? full, "./" + Path.GetFileName(full.TrimEnd('/', '\\')));
+		}
+
+	/// <summary>Run a -exec/-execdir command, from <paramref name="dir"/> when given (the shell's cwd comes back).</summary>
+	private int FindRunIn(string? dir, List<string> line)
+		{
+		if (dir is null) return _eval.RunCommand(line[0], line.GetRange(1, line.Count - 1));
+		var env = _eval.Env;
+		var old = env.Cwd;
+		try   { env.ChangeCwd(dir); return _eval.RunCommand(line[0], line.GetRange(1, line.Count - 1)); }
+		finally { try { env.ChangeCwd(ShellEnvironment.TranslatePath(old)); } catch { } }
 		}
 
 	private static string FindArg(List<string> a, ref int i, string opt)

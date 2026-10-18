@@ -7,7 +7,10 @@
 show() { cmd.exe /c echo "$@" | tr -d '\r'; }
 check() { if [ "$2" = "$3" ]; then echo "$1 ok"; else echo "$1 BAD [$2] want [$3]"; fi; }
 tmp=$(cd /tmp && pwd)
-nd=; for L in q r s t u v w x y z; do [ -d "$L:/" ] || { nd=$L; break; }; done
+# a free letter is one Windows does not list as a drive, not merely one whose root cannot be read: an empty card
+# reader (Q:, removable, not ready) is a drive, and the conversion rightly took /q/x for it (2026-10-17)
+drives=$(fsutil.exe fsinfo drives 2>/dev/null | tr -d '\r\0')
+nd=; for L in q r s t u v w x y z; do U=$(echo "$L" | tr a-z A-Z); case "$drives" in *"$U:"*) ;; *) nd=$L; break ;; esac; done
 check drive      "$(show /c/Windows)"            "C:/Windows"
 check root       "$(show /c/)"                   "C:/"
 check tmp        "$(show /tmp/x)"                "$tmp/x"

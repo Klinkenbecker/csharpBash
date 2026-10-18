@@ -36,7 +36,9 @@ public static class ChildLauncher
 		var file = psi.FileName.Trim();
 		bool quoted = file.Length >= 2 && file[0] == '"' && file[^1] == '"';
 		if (!quoted) cmd.Append('"');
-		cmd.Append(file);
+		// the program's path with backslashes: cmd.exe given `C:/Windows/System32/cmd.exe /c …` read the `/`s of its own
+		// path as switches ("The system cannot find the path specified"); Git Bash passes backslashes too (2026-10-17)
+		cmd.Append(file.Replace('/', '\\'));
 		if (!quoted) cmd.Append('"');
 		bool msys = IsMsysProgram(file.Trim('"'));
 		foreach (var arg in psi.ArgumentList) { cmd.Append(' '); AppendArgument(cmd, arg, msys); }
@@ -296,6 +298,23 @@ public static class ChildLauncher
 	[DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetFilePointerEx(SafeFileHandle hFile, long distance, IntPtr newPointer, uint moveMethod);
 	[DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetFilePointerEx(SafeFileHandle hFile, long distance, out long newPointer, uint moveMethod);
 	[DllImport("kernel32.dll")] private static extern uint GetFileType(IntPtr hFile);
+	[DllImport("kernel32.dll", SetLastError = true)] private static extern SafeFileHandle ReOpenFile(IntPtr hOriginalFile, uint dwDesiredAccess, uint dwShareMode, uint dwFlags);
+	[DllImport("ntdll.dll")] private static extern int NtQueryObject(IntPtr handle, int objectInformationClass, byte[] info, int length, out int returned);
+	private const uint FILE_WRITE_DATA = 0x2;
+
+	/// <summary>For an MSYS child: an inherited standard handle that is a disk file without write-data access (the
+	/// append-only one C#Bash's `>>` hands a nested shell) reopened as an ordinary write handle at the end; null when it
+	/// needs nothing. MSYS takes an append-only handle as unwritable: inside `Bash.exe s.sh >> out`, Git's cat said "write
+	/// error: Bad file descriptor" and the line was lost (2026-10-17). The caller closes the handle once the child runs.</summary>
+	public static SafeFileHandle? WritableForMsys(IntPtr h)
+		{
+		if (h == IntPtr.Zero || h == InvalidHandle || GetFileType(h) != FILE_TYPE_DISK) return null;
+		var info = new byte[56];   // OBJECT_BASIC_INFORMATION: Attributes, GrantedAccess, ...
+		if (NtQueryObject(h, 0, info, info.Length, out _) != 0 || (BitConverter.ToUInt32(info, 4) & FILE_WRITE_DATA) != 0) return null;
+		var w = ReOpenFile(h, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+		if (w.IsInvalid || !SetFilePointerEx(w, 0, IntPtr.Zero, FILE_END)) { w.Dispose(); return null; }
+		return w;
+		}
 	private const uint FILE_BEGIN = 0, FILE_CURRENT = 1, FILE_END = 2, FILE_TYPE_DISK = 1;
 
 	/// <summary>Move a handle's OS file pointer, which a child given the handle reads from. Relative

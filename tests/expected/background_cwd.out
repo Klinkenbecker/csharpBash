@@ -1,0 +1,15 @@
+'r1/a.tmp' -> 'r1/sub/a.tmp'
+glob: a.tmp b.tmp
+pipeline: 2
+test -f a.tmp: yes
+the r1 script
+the r1 zzex, 0=bin/zzex
+zzone ran
+zztwo: command not found
+'b.tmp' -> 'sub/b.tmp'
+'lc' -> 'a.tmp'
+ln -s to a directory: inside
+r1: a.tmp b.tmp bin lc out.txt s.sh sub 
+r2: bin c.tmp s.sh sub victim 
+r1/sub: a.tmp b.tmp d l made 
+r2/sub: victim2 

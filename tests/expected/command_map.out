@@ -28,6 +28,13 @@ rc=1
 == hash -d forgets one name
 rc=0
 rc=0
+== a long-lived shell's hash -d forgets a name another shell wrote since it read the map
+rc=0
+remembered after hash -d: 0
+== a drive-relative name (F:x) is a path: it runs, and the map keeps nothing for it
+drive-relative ran
+rc=0
+kept: 0
 == hash -r forgets everything
 hash: zzm: not found
 hash: zzm: not found (remembered miss: hash -r searches again)

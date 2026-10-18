@@ -1,0 +1,29 @@
++ 11: echo hi
+hi
++ 12: f
++ 6: echo in-f
+in-f
++ 13: set +x
++f
++f(): echo in-f
+in-f
++set +x
+[3] echo arith
+arith
+[3] set +x
++ "q" val $v echo quote
+quote
++ "q" val $v set +x
++cs echo cmdsub
+cmdsub
++cs set +x
++ 0 false
++ 1 echo after-false
+after-false
++ 0 set +x
++ false
++ echo status=1
+status=1
++ set +x
+== EPOCHREALTIME: six decimals, not three zeros
+microseconds: yes

@@ -153,6 +153,18 @@ public sealed class ShellEnvironment
 		AugmentPathWithGitTools();
 		AppendOwnDirectoryToPath();
 
+		// an empty PATH entry inside the list (`;;`) is the current directory to Windows' launcher, which searches
+		// this PROCESS's PATH for a name C#Bash did not find, NoDefaultCurrentDirectoryInExePath notwithstanding: a
+		// `.exe` planted in the cwd ran (2026-10-17). Cleaned here for the PATH as inherited (`Set` cleans what it
+		// writes); the shell's $PATH keeps what it was given.
+		try
+			{
+			if (Environment.GetEnvironmentVariable("PATH") is { } processPath && WithoutEmptyPathEntries(processPath) is var clean
+			    && !ReferenceEquals(clean, processPath))
+				Environment.SetEnvironmentVariable("PATH", clean);
+			}
+		catch { }
+
 		if (Get("HOME").Length == 0)
 			{
 			var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -205,6 +217,15 @@ public sealed class ShellEnvironment
 		Cwd = src.Cwd;              // a stage starts where the pipeline does ...
 		OwnsProcessCwd = false;     // ... and never moves the process cwd
 		_baseCwd = src.OwnsProcessCwd ? src.Cwd : src._baseCwd;
+		Detached = src.Detached;    // a job's stages, subshells and $( ) are detached with it
+		}
+
+	/// <summary>A `;` PATH list without its empty entries (`;;`, a leading or trailing `;`), order kept; the same
+	/// string when it has none. Windows takes an empty entry as the current directory (2026-10-17).</summary>
+	public static string WithoutEmptyPathEntries(string path)
+		{
+		if (!path.Contains(";;") && !path.StartsWith(';') && !path.EndsWith(';')) return path;
+		return string.Join(';', path.Split(';', StringSplitOptions.RemoveEmptyEntries));
 		}
 
 	/// <summary>An independent copy of all variable state, for a pipeline stage: bash runs every
@@ -233,8 +254,22 @@ public sealed class ShellEnvironment
 	/// output that echoes a translated path changes.</summary>
 	private static string AgainstActiveCwd(string p)
 		{
-		if (p.Length == 0 || t_active is not { OwnsProcessCwd: false } a || a.Cwd == a._baseCwd || Path.IsPathRooted(p)) return p;
-		return ToShellPath(Path.Join(a.Cwd, p));
+		if (p.Length == 0 || t_active is not { OwnsProcessCwd: false } a || (!a.Detached && a.Cwd == a._baseCwd) || Path.IsPathFullyQualified(p)) return p;
+		return ToShellPath(FullAgainst(p, a.Cwd));
+		}
+
+	/// <summary><paramref name="p"/> made full against the directory <paramref name="cwd"/> (fully qualified, shell form):
+	/// relative as joined; `\x` on cwd's drive; `C:x` in cwd when cwd is on C:, else in C:'s own current directory. A
+	/// pipeline stage or job resolved `\x` and `C:x` against the PROCESS cwd's drive (2026-10-17).</summary>
+	internal static string FullAgainst(string p, string cwd)
+		{
+		if (Path.IsPathFullyQualified(p)) return p;
+		if (p.Length >= 2 && p[1] == ':')
+			return cwd.Length >= 2 && cwd[1] == ':' && char.ToUpperInvariant(cwd[0]) == char.ToUpperInvariant(p[0])
+				? Path.GetFullPath(Path.Join(cwd, p[2..])) : Path.GetFullPath(p);
+		if (p.Length > 0 && p[0] is '\\' or '/')
+			return Path.GetFullPath(Path.Join(Path.GetPathRoot(cwd) ?? "", p.TrimStart('\\', '/')));
+		return Path.GetFullPath(Path.Join(cwd, p));
 		}
 
 	/// <summary>For a shell that does not own the process cwd: the process cwd it started from.
@@ -286,7 +321,9 @@ public sealed class ShellEnvironment
 		return (unc ? arg : arg[1..]).Replace('\\', '/');
 		}
 
-	private static string TranslateForm(string path)
+	/// <summary>The path's form only (`~`, `/c/x`, `/tmp`, slashes), never resolved against a cwd: for a path that
+	/// is relative to something else, such as a symlink's target (relative to the link's folder).</summary>
+	internal static string TranslateForm(string path)
 		{
 		if (path.Length == 0) return path;
 
@@ -360,6 +397,15 @@ public sealed class ShellEnvironment
 	/// <summary>True for a shell whose cwd IS the process cwd; false for a pipeline stage's copy.</summary>
 	public bool OwnsProcessCwd { get; private set; }
 
+	/// <summary>A shell whose owner keeps running (a `&` job, `setsid -f`): the process cwd can move under it at
+	/// any moment, so its relative paths always resolve against its own <see cref="Cwd"/>. They resolved against
+	/// the process cwd until the job moved: after the parent's `cd`, a job's `rm -f victim` deleted the parent's
+	/// victim (2026-10-17). A pipeline stage is not detached: its parent waits for it.</summary>
+	public bool Detached { get; private set; }
+
+	/// <summary>Mark this (copied) shell as one whose owner keeps running.</summary>
+	public void Detach() => Detached = true;
+
 	[ThreadStatic] private static ShellEnvironment? t_active;
 
 	/// <summary>The environment whose commands this thread is running. Set at every entry where a
@@ -390,6 +436,7 @@ public sealed class ShellEnvironment
 		Cwd = caller.Cwd;
 		OwnsProcessCwd = caller.OwnsProcessCwd;
 		_baseCwd = caller.OwnsProcessCwd ? caller.Cwd : caller._baseCwd;
+		Detached = caller.Detached;   // a script run inside a job
 		}
 
 	/// <summary>Put the process cwd back to this (owning) shell's cwd, after a child that also owned
@@ -426,7 +473,12 @@ public sealed class ShellEnvironment
 			case "BASH_COMMAND": return CommandTextProvider?.Invoke() ?? "";
 			case "BASHPID": return Environment.ProcessId.ToString();
 			case "EPOCHSECONDS":  return DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-			case "EPOCHREALTIME": return (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0).ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
+			case "EPOCHREALTIME":   // microseconds, as bash (it was milliseconds / 1000.0: the last three digits 000, 2026-10-17)
+				{
+				long us = (DateTime.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) / 10;
+				return (us / 1_000_000).ToString(System.Globalization.CultureInfo.InvariantCulture) + "."
+				     + (us % 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+				}
 			}
 
 		if (int.TryParse(name, out int idx))
@@ -524,7 +576,8 @@ public sealed class ShellEnvironment
 			{
 			// the shell's own command lookup (ResolveOnPath/FindInPath) reads the process
 			// environment, so `export PATH=…` must reach it or new directories are invisible
-			try { Environment.SetEnvironmentVariable("PATH", value); } catch { }
+			// without empty entries: Windows' launcher searches this PATH and takes one as the cwd (2026-10-17)
+			try { Environment.SetEnvironmentVariable("PATH", WithoutEmptyPathEntries(value)); } catch { }
 			PathChanged?.Invoke();   // the hash table is reset, as bash's
 			}
 		}
@@ -909,7 +962,7 @@ public sealed class ShellEnvironment
 			extra.Add(sub);
 			}
 		if (extra.Count == 0) return;
-		Set("PATH", string.Join(";", extra) + ";" + path);
+		Set("PATH", string.Join(";", extra) + ";" + path.TrimStart(';'));   // a leading `;` made a `;;`
 		}
 
 	/// <summary>
@@ -925,8 +978,10 @@ public sealed class ShellEnvironment
 		if (dir.Length == 0) return;
 		var path = Get("PATH");
 		var entries = path.Split(';', StringSplitOptions.RemoveEmptyEntries);
-		if (entries.Any(e => string.Equals(e.TrimEnd('\\'), dir, StringComparison.OrdinalIgnoreCase))) return;
-		Set("PATH", path.Length == 0 ? dir : path + ";" + dir);
+		if (entries.Any(e => string.Equals(e.Replace('/', '\\').TrimEnd('\\'), dir.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase))) return;
+		// a trailing `;` made `…;;dir`, an empty entry Windows' launcher takes as the cwd (2026-10-17); and the
+		// folder spelled with `/` was not recognised, so it was added again
+		Set("PATH", path.Length == 0 ? dir : path.TrimEnd(';') + ";" + dir);
 		}
 
 	private static long WindowsUid()

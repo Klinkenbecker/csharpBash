@@ -1,0 +1,2 @@
+out=[before|msys-line|after|]
+both=[before|msys-out|cat: /nonexistent: No such file or directory|after|]

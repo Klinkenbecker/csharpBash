@@ -376,7 +376,8 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		bool all = false;
 		var names = new List<string>();
 		foreach (var a in args) { if (a == "-a") all = true; else if (!a.StartsWith('-') || a == "-") names.Add(a); }
-		var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(';', StringSplitOptions.RemoveEmptyEntries);
+		var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(';', StringSplitOptions.RemoveEmptyEntries)
+			.Where(FileTests.IsProgramExtension).ToArray();   // a `.js` is no program (2026-10-18)
 		var dirs = ShellEnvironment.CurrentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
 		int rc = 0;
 		foreach (var name in names)
@@ -384,13 +385,17 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			bool found = false, hasExt = Path.HasExtension(name);
 			foreach (var d in dirs)
 				{
-				var bare = Path.Combine(d, name);
-				if (File.Exists(bare)) { Console.WriteLine(Shown(bare)); found = true; if (!all) break; }
+				// a relative PATH entry is looked in from this shell's directory (a job's), shown as written; `~/x` and
+				// `/f/x` as translated
+				var (at, rel) = Evaluator.PathEntry(d);
+				var shownDir = rel ? d : at;
+				var bare = Path.Combine(shownDir, name);
+				if (File.Exists(Path.Combine(at, name))) { Console.WriteLine(Shown(bare)); found = true; if (!all) break; }
 				if (!hasExt)
 					foreach (var ext in pathExt)
 						{
-						var p = Path.Combine(d, name + ext);
-						if (File.Exists(p)) { Console.WriteLine(Shown(p)); found = true; if (!all) break; }
+						var p = Path.Combine(shownDir, name + ext);
+						if (File.Exists(Path.Combine(at, name + ext))) { Console.WriteLine(Shown(p)); found = true; if (!all) break; }
 						}
 				if (found && !all) break;
 				}
@@ -460,8 +465,13 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 				}
 			if (Has(name) || _eval.HasFunction(name)) continue;   // builtins and functions are not hashed
 			bool known = hashTable.ContainsKey(name);
-			if (_eval.ResolveOnPath(name, probe: true) is null) { Console.Error.WriteLine($"{Err}hash: {name}: not found{_eval.MissNote(name)}"); rc = 1; }
-			else if (!known) _eval.HashSetPath(name, hashTable[name]);
+			var hit = _eval.ResolveOnPath(name, probe: true);
+			// a match that cannot run is no answer for `hash` (bash: "not found", and it is not kept), though running
+			// it hashes it (2026-10-17)
+			if (hit is not null && !FileTests.IsExecutable(ShellEnvironment.TranslatePath(hit))) { _eval.HashDelete(name); hit = null; }
+			if (hit is null) { Console.Error.WriteLine($"{Err}hash: {name}: not found{_eval.MissNote(name)}"); rc = 1; }
+			// a match in a relative PATH entry is not remembered (its answer moves with the cwd): nothing to reset
+			else if (!known && hashTable.TryGetValue(name, out var hashed)) _eval.HashSetPath(name, hashed);
 			}
 		return rc;
 		}

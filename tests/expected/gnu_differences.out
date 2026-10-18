@@ -1,0 +1,42 @@
+== 1 source
+FROM-PATH
+ONLY-CWD
+FROM-CWD
+== 2 non-runnable only
+hash: data: not found
+hash rc=1
+data is D/p1/data
+type rc=0
+type: data: not found
+type -a rc=1
+D/p1/data
+type -P rc=0
+== 3 mktemp
+printed: zz.XXXX in-cwd: yes relative: yes
+== 4 readlink -f
+D/rf
+D/rf
+== 5 not a dir / is a dir
+sub/s.sh/x: Not a directory
+rc=126
+./sub: Is a directory
+rc=126
+== 6 trailing dot
+s1.: command not found
+rc=127
+./s1.: No such file or directory
+rc=127
+== 7 find -execdir
+./f1
+D/fx/deep
+== 8 exec 5<>
+read: [line1]
+== 9 type -a, two matches
+zzm is D/p3/zzm
+zzm is D/p4/zzm
+== 10 hash of a relative PATH entry's match
+hash rc=0
+rel-ran
+== 11 find -execdir +
+./f1
+./f2

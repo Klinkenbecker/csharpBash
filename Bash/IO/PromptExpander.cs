@@ -16,9 +16,22 @@ public sealed class PromptExpander(ShellEnvironment env, Func<int> historyNumber
 	private readonly Func<int> _historyNumber = historyNumber;
 	private readonly Func<int> _commandNumber = commandNumber;
 
-	public string Expand(string ps)
+	public string Expand(string ps) => ExpandVars(Decode(ps, protect: false));
+
+	/// <summary>The backslash escapes only, decoded for the shell's own expansion to follow (PS4, as bash's
+	/// decode_prompt_string with promptvars): `\$` stays escaped, and every decoded value has its `\`, `$` and `` ` ``
+	/// escaped, so none of them is expanded again; `\\` is one backslash (measured against GNU). PS4's escapes printed
+	/// raw (`\s-\v> `, 2026-10-17).</summary>
+	public string DecodeForExpansion(string ps) => Decode(ps, protect: true);
+
+	private string Decode(string ps, bool protect)
 		{
 		var sb = new StringBuilder();
+		void Add(string v)
+			{
+			if (!protect) { sb.Append(v); return; }
+			foreach (var c in v) { if (c is '\\' or '$' or '`') sb.Append('\\'); sb.Append(c); }
+			}
 		for (int i = 0; i < ps.Length; i++)
 			{
 			if (ps[i] != '\\' || i + 1 >= ps.Length) { sb.Append(ps[i]); continue; }
@@ -26,28 +39,28 @@ public sealed class PromptExpander(ShellEnvironment env, Func<int> historyNumber
 			char e = ps[++i];
 			switch (e)
 				{
-				case 'u': sb.Append(Environment.UserName); break;
-				case 'h': sb.Append(HostShort()); break;
-				case 'H': sb.Append(Environment.MachineName); break;
-				case 'w': sb.Append(Cwd(full: true)); break;
-				case 'W': sb.Append(Cwd(full: false)); break;
-				case 's': sb.Append("bash"); break;
-				case 'v': sb.Append(VersionShort()); break;
-				case 'V': sb.Append(_env.Get("BASH_VERSION")); break;
-				case '$': sb.Append('$'); break;          // no root concept on Windows
-				case 'n': sb.Append('\n'); break;
-				case 'r': sb.Append('\r'); break;
-				case 'a': sb.Append('\a'); break;
-				case 'e': sb.Append('\x1b'); break;
-				case 't': sb.Append(DateTime.Now.ToString("HH:mm:ss")); break;
-				case 'T': sb.Append(DateTime.Now.ToString("hh:mm:ss")); break;
-				case '@': sb.Append(DateTime.Now.ToString("hh:mm tt")); break;
-				case 'A': sb.Append(DateTime.Now.ToString("HH:mm")); break;
-				case 'd': sb.Append(DateTime.Now.ToString("ddd MMM dd")); break;
-				case '!': sb.Append(_historyNumber()); break;
-				case '#': sb.Append(_commandNumber()); break;
-				case 'j': sb.Append('0'); break;          // no job control
-				case '\\': sb.Append('\\'); break;
+				case 'u': Add(Environment.UserName); break;
+				case 'h': Add(HostShort()); break;
+				case 'H': Add(Environment.MachineName); break;
+				case 'w': Add(Cwd(full: true)); break;
+				case 'W': Add(Cwd(full: false)); break;
+				case 's': Add("bash"); break;
+				case 'v': Add(VersionShort()); break;
+				case 'V': Add(_env.Get("BASH_VERSION")); break;
+				case '$': sb.Append(protect ? "\\$" : "$"); break;   // no root concept on Windows
+				case 'n': Add("\n"); break;
+				case 'r': Add("\r"); break;
+				case 'a': Add("\a"); break;
+				case 'e': Add("\x1b"); break;
+				case 't': Add(DateTime.Now.ToString("HH:mm:ss")); break;
+				case 'T': Add(DateTime.Now.ToString("hh:mm:ss")); break;
+				case '@': Add(DateTime.Now.ToString("hh:mm tt")); break;
+				case 'A': Add(DateTime.Now.ToString("HH:mm")); break;
+				case 'd': Add(DateTime.Now.ToString("ddd MMM dd")); break;
+				case '!': Add(_historyNumber().ToString()); break;
+				case '#': Add(_commandNumber().ToString()); break;
+				case 'j': Add("0"); break;               // no job control
+				case '\\': sb.Append('\\'); break;       // one backslash, which the expansion after may still use (bash: PS4='[\\$]' is `[$]`)
 				case '[': break;                          // non-printing region start — strip
 				case ']': break;                          // non-printing region end — strip
 				case >= '0' and <= '7':                   // \nnn octal escape
@@ -55,13 +68,13 @@ public sealed class PromptExpander(ShellEnvironment env, Func<int> historyNumber
 					int val = e - '0', n = 1;
 					while (n < 3 && i + 1 < ps.Length && ps[i + 1] is >= '0' and <= '7')
 						{ val = val * 8 + (ps[++i] - '0'); n++; }
-					sb.Append((char)val);
+					Add(((char)val).ToString());
 					break;
 					}
 				default: sb.Append('\\').Append(e); break;
 				}
 			}
-		return ExpandVars(sb.ToString());
+		return sb.ToString();
 		}
 
 	// ── promptvars: $VAR / ${VAR} ────────────────────────────────────────────────

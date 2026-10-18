@@ -1,0 +1,20 @@
+== sub/w.exe with NoDefaultCurrentDirectoryInExePath=1
+rc=0
+== and without it
+rc=0
+== sub/v.exe exists only under a PATH directory
+sub/v.exe: No such file or directory
+rc=127
+== a missing path
+./nope: No such file or directory
+rc=127
+sub/nope: No such file or directory
+rc=127
+== a name with a colon but no drive is an NTFS stream, never a program (it ran from the cwd)
+zads:bar.exe: command not found
+rc=127
+rc=127
+type: zads:bar.exe: not found
+== ../sub/w.exe from sub, and in a pipeline stage that changed directory
+rc=0
+stage rc=0

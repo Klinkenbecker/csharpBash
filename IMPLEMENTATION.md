@@ -17,6 +17,7 @@
 | Path | Role |
 |------|------|
 | `Program.cs` | Entry point; flag parsing; the three run modes (`-c`, script, REPL); startup-file sourcing; continuation-line accumulation. |
+| `app.manifest` | The application manifest (`<ApplicationManifest>` in the csproj; the AOT publish embeds it): longPathAware, so the shell's `cd` can enter a directory over 260 characters; asInvoker; Windows 10. |
 | `Lexer/Lexer.cs` | Tokeniser. |
 | `Lexer/Token.cs`, `Lexer/TokenType.cs` | `Token` record (+ `HasLeadingSpace`) and token kinds. |
 | `Lexer/LexException.cs` | Lex error; `Incomplete` flag drives REPL continuation. |
@@ -41,11 +42,11 @@
 | `Evaluator/GnuDate.cs` | `GnuDate.TryParse`: GNU `-d` grammar subset (ISO/RFC/`Mon D YYYY`/`@epoch`/times/zones/relative items/weekdays), shared by `date -d` and `touch -d`. |
 | `Evaluator/Builtins.Proc.cs` | Minimal procps: `pgrep`/`pkill` (`-f -x -l -a -c -n -o -v -P -d`, signals accepted and forceful; self excluded, `pkill` also skips loudly this shell's ancestors and any process whose command line carries the pkill invocation itself) and `ps` (`-e/-ef/aux`, `-p`, `-o pid,ppid,comm,args`). Process list via Toolhelp32, command lines via `NtQueryInformationProcess(ProcessCommandLineInformation)`. |
 | `Evaluator/Printf.cs` | `PrintfFormatter`: bash `printf` semantics (flags/width/precision, `%q` `%b`, escapes, argument recycling); also used by `echo -e`. |
-| `Evaluator/FileTests.cs` | The file/string primaries shared by `test`/`[` and `[[ ]]` (paths translated; device files are character devices). |
+| `Evaluator/FileTests.cs` | The file/string primaries shared by `test`/`[` and `[[ ]]` (paths translated; device files are character devices). `IsProgramExtension` (.com .exe .bat .cmd) and `IsExecutable` (that, `.sh`, or `#!`): the one notion of "a program" for `-x`, the PATH search, `ls -F`, `find -executable`. |
 | `Evaluator/ShellFile.cs` | Every file the shell opens, shared as POSIX shares it (no locking out readers, writers or `rm`); and Linux's device files (`/dev/null`, `zero`, `random`, `urandom`, `stdin`, `stdout`, `stderr`, `fd/N`, `tty`): `Device`, `OpenInput`, `Exists`; `OpenTty`: `/dev/tty` only when the console has a window (`TtyAvailable`), else "No such device or address" (Claude Code's windowless console). |
 | `Evaluator/Timing.cs` | The performance review's timing switch: with `BASH_TIMING_LOG` set, marks (Main, console, evaluator, ready, done; `source`, `eval` and external-program regions) appended to that file at exit, in ms since process creation; read by `tests/bench/claudecall.sh`. Off: one environment read. |
 | `Evaluator/CommandMap.cs` | The persistent command map behind `ResolveOnPath`: hits and misses per PATH value (with PATHEXT) in `~/.bash/commands/<fnv64>.map` (`HOME`, else the Windows profile) (format line, PATH, PATHEXT, then `name<TAB>path`, empty path = a remembered miss); read on the first lookup; hits from every lookup (`Hit`), misses recorded and obeyed by `hash name` alone (`ResolveOnPath(..., probe: true)`; `EarlierMiss` ignores this process's own), final until `hash -r`/`-d`; not kept for a relative PATH entry; writes re-read, apply one change and rename a temp file; a map read is touched at most hourly, and one unused for 30 days is pruned when a new map is made. Process-wide, locked. |
-| `Evaluator/ChildLauncher.cs` | The one way an external program starts: exactly the three std handles chosen (a file, NUL, a pipe end, the shell's own; a file the shell reads is shared at its offset), nothing else inherited (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`); MSYS-program detection; file-pointer helpers. |
+| `Evaluator/ChildLauncher.cs` | The one way an external program starts: exactly the three std handles chosen (a file, NUL, a pipe end, the shell's own; a file the shell reads is shared at its offset), nothing else inherited (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`); MSYS-program detection; file-pointer helpers; `WritableForMsys` (an inherited append-only std handle reopened for writing at the end for an MSYS child). The program's path goes on the command line with backslashes (cmd.exe misread a `/` path). |
 | `Evaluator/Builtins.Jq.cs`, `JqParser.cs`, `JqInterp.cs`, `JqJson.cs` | The in-process `jq` subset (jq 1.6 behaviour): option handling and inputs; the filter lexer/parser; the generator interpreter with path-based assignment; ordered JSON values and the reader/writer. Outside the subset: a PATH jq, or a loud refusal. |
 | `Evaluator/Glob.cs` | Shell pattern → regex (`*` `?` `[…]` classes), `Match`, and the pathname-expansion walker (`dotglob`/`nullglob`/`nocaseglob`/`globstar`). |
 | `Evaluator/ConsoleMux.cs` | `ConsoleMux` (per-thread console slots + `Capture`/`Apply`), `PipeBuffer` (managed pipe with back-pressure, EOF and `BrokenPipeException`), `ChildJobs` (kill-on-close job object), `HiddenConsole` (a console-less shell -- Claude Code's Bash tool -- starts children with `CreateNoWindow` and attaches to the first one's hidden console, so no child ever opens a visible window; `StartInherited` starts a child with NO stream redirected through `CreateProcessW` + `STARTF_USESTDHANDLES` on the shell's own three std handles, because `Process.Start` would hand it its new console's handles and its output would be lost). |
@@ -58,7 +59,7 @@
 | `IO/LineEditor.cs` | Interactive key-by-key line editor. |
 | `IO/History.cs` | Command history (`~/.bash_history`). |
 | `IO/CompletionEngine.cs` | Tab completion. |
-| `IO/PromptExpander.cs` | `PS1`/`PS2` prompt escapes. |
+| `IO/PromptExpander.cs` | `PS1`/`PS2` prompt escapes; `DecodeForExpansion` for PS4 (decoded values protected from the expansion that follows). |
 | `AstPrinter.cs` | Debug AST dumper. |
 
 ### Module dependencies
@@ -165,10 +166,12 @@ looping.
 | `Lexer.EscapeMark` | U+FDD0 (a noncharacter) precedes a backslash-escaped `* ? [ { } , ~` in a word token; `Parser.ParseWordParts` emits each marked character as a `SingleQuotedPart`, so `echo \*` and `find -name \*.txt` do not glob. Glob/brace quoting is still tracked per FIELD (`fieldGlob`), a known limitation (DECISIONS 2026-10-03). |
 | `Builtins.Files.StampNow` | A copy made without `-p` gets mtime and atime = now (Windows' `File.Copy` keeps the source's). |
 | `WordExpander.ExpandOperand` | Expands the pattern and replacement of `${x#pat}` `${x%pat}` `${x/pat/rep}` by scanning their RAW `${…}` text: backslash escapes kept, quoted parts glob-escaped (`Glob.Escape`), unquoted expansions stay patterns; replacement gets quote removal. Segment parses are cached. `FindPatternSlash` ends the pattern at the first `/` outside quotes and expansions. Literal patterns take `Glob.TryLiteral`'s plain-string path; replacement regexes are cached. |
-| `ShellEnvironment.Cwd` / `Active` / `TranslatePath` | Each shell's own working directory. The shell itself (`OwnsProcessCwd`) keeps the process cwd equal to it; a pipeline stage's copy never moves it. `Active` (thread-static) names the shell a thread runs. `TranslatePath` resolves a relative path against `Active.Cwd` only for a stage that has moved off its starting directory. Dup-redirect targets are fd numbers: test the raw word, never the translated one. |
-| `ExecExternal` | Self-contained fd-map + `Process.Start`; `HiddenConsole.NeedsHiding` before the start (every stream inherited AND console-less or under `2>&1`: `HiddenConsole.StartInherited` instead of `Process.Start`), `ChildJobs.Attach` then `HiddenConsole.Adopt` after it. |
-| `ResolveOnPath` / `HashClear` / `HashSetPath` / `HashTable` | PATH(+PATHEXT) cache (the `hash` table); behind it the persistent `CommandMap` (`HashReset` = `hash -r`, `HashDelete` = `hash -d`, `MissNote` for a remembered miss's "not found"). |
-| `TryResolveScriptFile` / `ResolveInterpreter` / `RunScriptInProcess` | Shebang dispatch. |
+| `ShellEnvironment.Cwd` / `Active` / `TranslatePath` | Each shell's own working directory. The shell itself (`OwnsProcessCwd`) keeps the process cwd equal to it; a pipeline stage's copy never moves it. `Active` (thread-static) names the shell a thread runs. `TranslatePath` resolves a relative path against `Active.Cwd` only for a stage that has moved off its starting directory, and always for a `Detached` shell (a `&` job or `setsid -f` fork, inherited by its stages, subshells and in-process scripts: `Detach`, `CloneForSubshell`, `AdoptCwd`). `FullAgainst` resolves `\x` and `C:x` against a shell's own directory; `WithoutEmptyPathEntries` keeps empty PATH entries from Windows (the process PATH at startup and on every `Set("PATH")`). Dup-redirect targets are fd numbers: test the raw word, never the translated one. |
+| `ExecExternal` | Self-contained fd-map + `Process.Start`; `HiddenConsole.NeedsHiding` before the start (every stream inherited AND console-less or under `2>&1`: `HiddenConsole.StartInherited` instead of `Process.Start`), `ChildJobs.Attach` then `HiddenConsole.Adopt` after it. A bare name `ResolveOnPath` misses: `FallbackProgram` (C#Bash's folder, System32, Windows) else `NotFound`, 127, never Windows' launcher search. A child's environment is exactly the exported variables (PATH cleaned of empty entries, the shell's PATH winning any casing). bash's messages for a path through a file / a directory (126), a missing interpreter (126, env's 127), the 260-character Windows limits (126). |
+| `ResolveOnPath` / `HashClear` / `HashSetPath` / `HashTable` | PATH(+PATHEXT) cache (the `hash` table); behind it the persistent `CommandMap` (`HashReset` = `hash -r`, `HashDelete` = `hash -d`, `MissNote` for a remembered miss's "not found"). A bare match counts if `FileTests.IsExecutable`, else the first that cannot run (hashed, not mapped); only program extensions of PATHEXT are tried; an `IsPathName` (slash, backslash, drive) is never searched, a colon name never found. `PathEntry` decides each entry once (`~` = `$HOME`, `/f/x` translated; relative, `\x`, `C:x` answered as written and never cached); `AllOnPath` lists every runnable match (`type -a`). |
+| `TryResolveScriptFile` / `ResolveInterpreter` / `RunScriptInProcess` / `IsProgramFile` | Shebang dispatch: a path, or a bare name's PATH match that is no program file (never the current directory); `$0` is the path found; the interpreter chain is capped (`MaxInterpreterDepth`). |
+| `XtracePrefix` / `Xtrace` / `XtraceWord` / `XtraceDepth` / `CondTrace` | set -x as bash: PS4 decoded and expanded, its first character repeated per command-substitution level; words quoted (sh_contains_shell_metas); assignments, `[[ ]]` primaries, `(( ))`, for/arith-for/case heads traced. |
+| `EnterSubshell` / `DropSubshellRedirects` / `LeaveSubshell` | An in-process `( )`, `$( )`, `<( )`: the `exec` redirects it made are disposed as it ends (after its EXIT trap). |
 | `RunCommand(name,args)` | Re-entrant builtin→function→external dispatch (used by `xargs`). |
 
 **Compound commands**: `ExecList`, `ExecIf`, `ExecWhile`, `ExecFor`, `ExecCase`,
@@ -192,8 +195,9 @@ looping.
 reports `bash: origin: line N: …`. `ExecSubshell` uses `ShellEnvironment.TakeSnapshot`/`RestoreSnapshot`.
 `ExecExternal` routes a child's stdio through swapped `Console` streams when an in-process redirect
 is in effect (`$( )` capture, `{ … } >file`, heredoc on a loop) — the `_origOut/_origErr/_origIn`
-comparison — and reports `command not found` (127) / `Permission denied` (126) to wherever the
-command's stderr was sent.
+comparison — and reports `command not found` (127; "No such file or directory" for a path name) /
+`Permission denied` (126) to wherever the command's stderr was sent. A path name is launched by its full path
+(`FromShellCwd`: relative ones joined to the shell's cwd), so Windows' launcher never searches for it.
 
 ---
 
@@ -268,7 +272,7 @@ arrays `DeclareArray`/`SetArrayElement`/`GetArrayValues`/`GetArrayKeys`/`GetArra
 | `LineEditor` | `ReadLine(prompt)`; `DoComplete()`; key handling + self-correcting redraw. |
 | `History` | `Add`, `Clear`, `Count`, indexer, `Items`, `MaxEntries`. |
 | `CompletionEngine` | `Complete(buffer,cursor)` → `CompletionResult(Start,Length,Matches,…)`. |
-| `PromptExpander` | `Expand(ps)` for `PS1`/`PS2` escapes (history/command numbers via callbacks). |
+| `PromptExpander` | `Expand(ps)` for `PS1`/`PS2` escapes (history/command numbers via callbacks); `DecodeForExpansion(ps)` for PS4. |
 
 `Program.cs` wires these together in REPL mode and owns flag parsing + startup sourcing
 (`SourceLogin`, `SourceInteractiveRc`, `EndsWithLineContinuation`).
