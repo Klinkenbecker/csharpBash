@@ -195,8 +195,10 @@ public sealed class ShellEncoding : Encoding
 	// encode direction cannot use a fallback — an EncoderFallback may only emit characters to be
 	// re-encoded, never raw bytes — so both directions live here for symmetry.
 
-	private static readonly Encoding Strict = Encoding.GetEncoding("utf-8",
-		EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+	// throwOnInvalidBytes: exception fallbacks both ways. Not Encoding.GetEncoding("utf-8", …): looking an
+	// encoding up by name lower-cases the name through TextInfo, which loads ICU (~0.7 ms) on every start
+	// (2026-10-18, review R4).
+	private static readonly Encoding Strict = new UTF8Encoding(false, true);
 
 	public override int GetCharCount(byte[] bytes, int index, int count) =>
 		GetCharCount(new ReadOnlySpan<byte>(bytes, index, count));

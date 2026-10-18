@@ -869,7 +869,7 @@ public sealed class Evaluator
 		var specs = new List<string>();
 		foreach (var a in args)
 			{
-			if (a.StartsWith('-') && a.Length > 1 && !a.StartsWith("-%"))
+			if (a.StartsWith('-') && a.Length > 1 && !a.StartsWith("-%", StringComparison.Ordinal))
 				foreach (var c in a[1..]) { if (c == 'a') all = true; else if (c == 'r') running = true; else if (c == 'h') keep = true;
 				                            else { Console.Error.WriteLine($"{ErrorPrefix}disown: -{c}: invalid option"); Builtins.PrintUsage("disown"); return 2; } }
 			else specs.Add(a);
@@ -923,7 +923,7 @@ public sealed class Evaluator
 		if (percent) spec = spec[1..];
 		if ((percent && spec.Length == 0) || spec is "%" or "+") return jobs.LastOrDefault();
 		if (spec == "-") return jobs.Count >= 2 ? jobs[^2] : null;
-		if (int.TryParse(spec, out var n))
+		if (int.TryParse(spec, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n))
 			{
 			if (BackgroundJob.IsSyntheticPid(n)) n = BackgroundJob.JobIdFromPid(n);
 			return jobs.FirstOrDefault(j => j.Id == n);
@@ -1039,7 +1039,7 @@ public sealed class Evaluator
 			{
 			var a = args[i];
 			if (a == "--") { specs.AddRange(args.Skip(i + 1)); break; }
-			if (specs.Count == 0 && a.Length > 1 && a[0] == '-' && !int.TryParse(a, out _))
+			if (specs.Count == 0 && a.Length > 1 && a[0] == '-' && !int.TryParse(a, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _))
 				{
 				foreach (char c in a.AsSpan(1))
 					if (c == 'n') next = true;
@@ -1088,11 +1088,11 @@ public sealed class Evaluator
 			{
 			foreach (var spec in specs)
 				{
-				if (spec.StartsWith('-') && !int.TryParse(spec, out _)) continue;   // -f: no job control, nothing to do
+				if (spec.StartsWith('-') && !int.TryParse(spec, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _)) continue;   // -f: no job control, nothing to do
 				var j = FindJob(spec, "wait");
 				if (j is null)
 					{
-					if (int.TryParse(spec.TrimStart('%'), out var pid) && !BackgroundJob.IsSyntheticPid(pid))
+					if (int.TryParse(spec.TrimStart('%'), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var pid) && !BackgroundJob.IsSyntheticPid(pid))
 						{
 						// a real pid: wait for that process if it is still around
 						try { System.Diagnostics.Process.GetProcessById(pid).WaitForExit(); code = 0; continue; }
@@ -1771,7 +1771,7 @@ public sealed class Evaluator
 	internal static (string At, bool Relative) PathEntry(string d)
 		{
 		// `~` in a PATH entry is $HOME, as bash expands it at search time (TranslateForm's `~` is the profile)
-		if ((d == "~" || d.StartsWith("~/") || d.StartsWith("~\\")) && ShellEnvironment.Active?.Get("HOME") is { Length: > 0 } home)
+		if ((d == "~" || d.StartsWith("~/", StringComparison.Ordinal) || d.StartsWith("~\\", StringComparison.Ordinal)) && ShellEnvironment.Active?.Get("HOME") is { Length: > 0 } home)
 			d = ShellEnvironment.ToShellPath(ShellEnvironment.TranslateForm(home)) + d[1..];
 		var form = d.Length > 0 && d[0] is '~' or '/' ? ShellEnvironment.TranslateForm(d) : d;
 		bool rel = !Path.IsPathFullyQualified(form);
@@ -1977,7 +1977,7 @@ public sealed class Evaluator
 		try { using var sr = new System.IO.StreamReader(p, ShellEncoding.Utf8); first = sr.ReadLine() ?? ""; }
 		catch { return false; }
 
-		bool hasShebang = first.StartsWith("#!");
+		bool hasShebang = first.StartsWith("#!", StringComparison.Ordinal);
 		bool isShExt    = p.EndsWith(".sh", StringComparison.OrdinalIgnoreCase);
 		if (!hasShebang && !isShExt) return false;
 
@@ -2266,7 +2266,7 @@ public sealed class Evaluator
 						if (fd > 2) break;
 						// the target of a dup is an fd number or "-": test the RAW word (see ApplyRedirects)
 						if (raw == "-") { fds[fd] = new HandleFd(Nul()); break; }   // n>&- closes n; NUL is the nearest a Windows child has
-						if (!int.TryParse(raw, out int src)) throw new RedirectException($"{raw}: ambiguous redirect");
+						if (!int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) throw new RedirectException($"{raw}: ambiguous redirect");
 						if (src <= 2) { fds[fd] = src == 0 ? Stdin() : fds[src]; break; }
 						if (!_fds.TryGetValue(src, out var s) || s is null) throw new RedirectException($"{src}: Bad file descriptor");
 						fds[fd] = fd == 0 ? new InPumpFd(s, null, null)
@@ -2725,7 +2725,7 @@ public sealed class Evaluator
 						else scope.TrackFd(_fds, ofd, null);
 						break;
 						}
-					if (!int.TryParse(rawTarget, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
+					if (!int.TryParse(rawTarget, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
 					if (ofd == 1 && src == 2) { scope.SaveOut(); ConsoleMux.SetOut(ConsoleMux.Err); break; }          // 1>&2
 					if (ofd == 2 && src == 1) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); break; }          // 2>&1
 					if (ofd > 2 && src <= 2)
@@ -2766,7 +2766,7 @@ public sealed class Evaluator
 						else scope.TrackFd(_fds, ifd, null);
 						break;
 						}
-					if (!int.TryParse(rawTarget, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
+					if (!int.TryParse(rawTarget, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
 					if (ifd == 2 && src == 1) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); break; }          // 2<&1 (defensive)
 					if (ifd > 2 && src <= 2) { scope.TrackFd(_fds, ifd, StdStream(src), shared: true); break; }      // 3<&0: a copy, as 3>&1
 					if (ifd == 0 && src > 2)
@@ -3026,18 +3026,19 @@ public sealed class Evaluator
 		CondAnd a    => EvalCondExpr(a.Left) && EvalCondExpr(a.Right),
 		CondOr  o    => EvalCondExpr(o.Left) || EvalCondExpr(o.Right),
 		CondNot n    => !EvalCondNot(n),
-		CondUnary u  => EvalCondUnary(u.Op, CondTraced(u.Op + " ", _expander.ExpandToString(u.Operand))),
+		CondUnary u  => EvalCondUnary(u.Op, CondTraced(u.Op, _expander.ExpandToString(u.Operand))),
 		CondBinary b => EvalCondBinary(b),
-		CondWord w   => CondTraced("-n ", _expander.ExpandToString(w.Value)).Length > 0,   // bash traces a lone word as -n
+		CondWord w   => CondTraced("-n", _expander.ExpandToString(w.Value)).Length > 0,   // bash traces a lone word as -n
 		CondGroup g  => EvalCondExpr(g.Inner),
 		_ => false
 		};
 
 	/// <summary>set -x traces each `[[ ]]` test as it is evaluated, its operands expanded (bash: `+ [[ a b == a* ]]`,
-	/// one line per primary); `[[ ]]` was not traced (2026-10-17).</summary>
-	private void CondTrace(string test)
+	/// one line per primary); `[[ ]]` was not traced (2026-10-17). The line is built only under set -x: every
+	/// `[[ ]]` test passes through here (2026-10-18, review R4).</summary>
+	private void CondTrace(string a, string b, string? c = null)
 		{
-		if (Options.XTrace) Xtrace($"[[ {_condNot}{test} ]]");
+		if (Options.XTrace) Xtrace(c is null ? $"[[ {_condNot}{a} {b} ]]" : $"[[ {_condNot}{a} {b} {c} ]]");
 		_condNot = "";
 		}
 
@@ -3051,7 +3052,7 @@ public sealed class Evaluator
 		finally { _condNot = ""; }
 		}
 
-	private string CondTraced(string op, string val) { CondTrace(op + val); return val; }
+	private string CondTraced(string op, string val) { CondTrace(op, val); return val; }
 
 	private bool EvalCondUnary(string op, string val)
 		{
@@ -3085,13 +3086,13 @@ public sealed class Evaluator
 				{
 				var shown = Options.XTrace ? new System.Text.StringBuilder() : null;
 				var glob = _expander.ExpandToPattern(b.Right, shown);
-				CondTrace($"{left} {b.Op} {shown}");
+				CondTrace(left, b.Op, shown?.ToString() ?? "");
 				return Glob.Match(glob, left, Options.NoCaseMatch) == (b.Op != "!=");
 				}
 			case "=~":
 				{
 				var pattern = _expander.ExpandToRegex(b.Right);
-				CondTrace($"{left} {b.Op} {pattern}");
+				CondTrace(left, b.Op, pattern);
 				System.Text.RegularExpressions.Match m;
 				try
 					{
@@ -3110,7 +3111,7 @@ public sealed class Evaluator
 				}
 			}
 		string right = _expander.ExpandToString(b.Right);
-		CondTrace($"{left} {b.Op} {right}");
+		CondTrace(left, b.Op, right);
 		switch (b.Op)
 			{
 			case "<": return string.Compare(left, right, StringComparison.Ordinal) < 0;

@@ -6,10 +6,11 @@
 > LIMITATIONS, SETTLED, DO NOT undo, machine facts) is kept.
 >
 > **TRUE STATE (verified 2026-10-18):**
-> - `dist/Bash.exe` = rev 316 (`1.0.0+hg.32784b3827fd 316`, by tools/deploy.sh 2026-10-18; rollback
->   `dist/Bash.exe.rev302`). Suite 156/156 both modes on that AOT binary; battery 226/237. Told: gps-time-2c,
->   adc-framework-d8, msp430-a2, nupkg-28, guy-b3, koliada-net-7c, daq-fe, guy-97, ananta-f5.
-> - GitHub main = git `0b67afa` = hg rev 289; the publish of 316 is under way (the architect, 2026-10-18: "deploy,
+> - `dist/Bash.exe` = rev 320 (`1.0.0+hg.8ae72c3b647d 320`, by tools/deploy.sh 2026-10-18; rollback
+>   `dist/Bash.exe.rev316`). Suite 157/157 both modes on that AOT binary; battery 226/237. Told: gps-time-2c,
+>   adc-framework-d8, msp430-a2, nupkg-28, guy-b3, koliada-net-7c, daq-fe, guy-97, ananta-f5. A Claude call
+>   ~11.5 ms (rev 316: ~13, back to back); compare3 startup 9.5 ms.
+> - GitHub main = git `e13485f` = hg rev 317 (published 2026-10-18 by tools/publish.sh: the architect, "deploy,
 >   notify and publish (push)"). hg is clean apart from the untracked `The Windows Shell Tax.url` (not ours, leave it).
 > - The architect starts Claude Code through a start file (README "Start Claude Code with no PATH of its own"):
 >   `BASH_PATH=%PATH%`, `CLAUDE_CODE_GIT_BASH_PATH=F:/Koliada/Tools/bash/dist/Bash.exe`, `PATH=F:/Koliada/Tools/bash/dist`.
@@ -40,10 +41,11 @@
 > lexical; the shell's `$PATH` keeps empty entries as given.
 >
 > **AWAITING THE ARCHITECT (do NOT derive; Claude's positions are proposals):**
-> 1. NEXT, greenlit (the architect: "You can finish performance review after we have no issues left?"): review R2
->    (throughput), R3 (parse), R4 (ranked report); measurement only, NO optimisation code before the architect picks
->    from R4. Candidates so far: ICU ~0.7 ms a launch (a behaviour change: sort order); unmeasured: building a child's
->    environment from the exported variables on every launch (rev 309).
+> 1. The performance review is DONE (R2, R3, R4 in DECISIONS 2026-10-18). The architect picked R4's 1-3 ("1, 2, 3
+>    concur; go, deploy, notify, publish"): BUILT (DECISIONS "BUILT (R4 picks 1-3)"): icu.dll loads only when needed,
+>    the `[[ ]]` trace text only under set -x, the start-up split. AWAITING the architect: R4's 4-9, and the split's
+>    three new candidates (the Git-tools probe 0.66 ms with an unreachable `mingw64/bin` branch, PPID 0.47 ms,
+>    OutputEncoding 0.25 ms); the U+2212 minus found on the way. NO optimisation code before a pick.
 > 2. Parked, not greenlit: serial I/O (COMn as a device file + `stty`, "to discuss"); `compgen -c` scanning PATH;
 >    the battery's reference moved to GNU.
 > 3. Not raised (measured 2026-10-12): bash keeps finished jobs in its table until it reports them (`jobs` lists
@@ -430,7 +432,9 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   2026-10-03). `-Detached` starts every case as Claude Code starts its shell: DETACHED_PROCESS, no
   console, stdin NUL, stdout to a file. That is the only way to exercise the console-less spawn
   path; a run from a console cannot reach it. `-Interpreter` tests a given exe, such as the AOT
-  publish or `dist/`. The runner prints the interpreter and build it tested.
+  publish or `dist/`. The runner prints the interpreter and build it tested. A case registered
+  `AotOnly = $true` (icu_lazy, 2026-10-18) runs only on the Native AOT build (no `Bash.dll` beside the
+  exe) and is reported "SKIP" on a line of its own otherwise; tools/deploy.sh runs the suite on the AOT build.
   Self-checking runner. Builds Release, runs each
   script-mode test, compares STDOUT (stderr discarded) line-by-line against
   `tests/expected/<name>.out`, prints PASS/FAIL, exits non-zero on any failure.

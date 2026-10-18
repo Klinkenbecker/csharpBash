@@ -62,12 +62,12 @@ public static class ShellFile
 		"/dev/stdin" => "fd:0",
 		"/dev/stdout" => "fd:1",
 		"/dev/stderr" => "fd:2",
-		_ when path.StartsWith("/dev/fd/") && int.TryParse(path.AsSpan(8), out int n) && n >= 0 => $"fd:{n}",
+		_ when path.StartsWith("/dev/fd/", StringComparison.Ordinal) && int.TryParse(path.AsSpan(8), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n) && n >= 0 => $"fd:{n}",
 		_ => null,
 		};
 
 	/// <summary>The descriptor number of a /dev/fd/N, /dev/stdin, /dev/stdout or /dev/stderr, else -1.</summary>
-	public static int DeviceFd(string path) => Device(path) is { } d && d.StartsWith("fd:") ? int.Parse(d.AsSpan(3)) : -1;
+	public static int DeviceFd(string path) => Device(path) is { } d && d.StartsWith("fd:", StringComparison.Ordinal) ? int.Parse(d.AsSpan(3), System.Globalization.CultureInfo.InvariantCulture) : -1;
 
 	/// <summary>The path with its file name as it is on disk: a PATHEXT match spells it `git.EXE`, the file
 	/// is `git.exe`. The directory part is kept as given; an unreadable directory leaves the path as it is.</summary>

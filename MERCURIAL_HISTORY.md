@@ -12,11 +12,15 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 318 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 322 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 321 | 2026-10-18 | Deployed rev 320 (notified); measured back to back: a Claude call ~1.6 ms faster, compare3 startup 9.5 ms; doc review for the publish (README table and figures from the deployed run, ARCHITECTURE 9.4 no culture unless it is the point) |
+| 320 | 2026-10-18 | R4 picks 1-3: icu.dll loads only when needed (ordinal prefix tests, invariant integer parses, the command map's file time, the SID's RID, $( )'s writer); the [[ ]] trace text only under set -x; start-up split marks; case icu_lazy (AotOnly) |
+| 319 | 2026-10-18 | Performance review R2-R4 recorded (measurement only): rev 316 not slower than 286, README's table from the quiet run; R4's ranked candidates await the architect |
+| 318 | 2026-10-18 | Published: GitHub main = git e13485f = hg rev 317 by tools/publish.sh |
 | 317 | 2026-10-18 | Doc review before publishing rev 316: README's benchmark table and figures from the deployed build's compare3 run |
 | 316 | 2026-10-18 | Only what Windows' launcher starts is a program: a zz.js before zz.exe on PATH is passed over (as Git Bash) |
 | 315 | 2026-10-18 | Ruled: .. after a junction stays lexical (the architect: "2/ ok") |

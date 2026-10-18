@@ -1,0 +1,22 @@
+exit 0                                        no
+true                                          no
+ls                                            no
+cat f.txt | head -1                           no
+grep -rn two .                                no
+cd / && pwd                                   no
+x=$(echo a); [[ $x == a ]] && echo "$x"       no
+set -- p q; echo "$2 $# $UID $PPID $SHLVL"    no
+exit 3                                        no
+echo x 2> /dev/null                           no
+f() { local v=1; return 0; }; f               no
+whoami.exe                                    no
+echo a | cat                                  no
+cat <(echo a)                                 no
+printf "%d %s %5.2f\n" 5 a 1.5                no
+for i in 1 2; do (( i > 1 )) && echo $i; done no
+case a in a) echo y;; esac                    no
+read -r v w <<< "x y"; echo "$w"              no
+echo $(( 7 * 6 ))                             no
+== positive controls
+x=é; echo ${x^^}                              yes
+date                                          yes

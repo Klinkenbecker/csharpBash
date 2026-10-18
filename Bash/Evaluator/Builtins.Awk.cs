@@ -128,7 +128,7 @@ public sealed partial class Builtins
 			// integral values print as integers at any magnitude (gawk-verified: 1e30 prints all digits)
 			if (n == Math.Floor(n)) return Math.Abs(n) < 9e18 ? ((long)n).ToString(CultureInfo.InvariantCulture) : n.ToString("F0", CultureInfo.InvariantCulture);
 			var g = Regex.Match(convfmt, @"^%\.(\d+)g$");
-			if (g.Success) return FormatG(n, int.Parse(g.Groups[1].Value));
+			if (g.Success) return FormatG(n, int.Parse(g.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
 			return AwkFormat(convfmt, [Num(n)], "%.6g");
 			}
 		}

@@ -152,7 +152,9 @@ public static class CommandMap
 		try
 			{
 			using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-			written = File.GetLastWriteTimeUtc(fs.SafeFileHandle);
+			// GetFileTime, not File.GetLastWriteTimeUtc: .NET makes that local time first, and TimeZoneInfo's set-up
+			// loads ICU (~0.7 ms) on every call that looks a command up (2026-10-18, review R4)
+			if (GetFileTime(fs.SafeFileHandle, IntPtr.Zero, IntPtr.Zero, out long ft)) written = DateTime.FromFileTimeUtc(ft);
 			using var sr = new StreamReader(fs, _utf8);
 			text = sr.ReadToEnd();
 			}
@@ -199,6 +201,9 @@ public static class CommandMap
 			}
 		catch { }
 		}
+
+	[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+	private static extern bool GetFileTime(Microsoft.Win32.SafeHandles.SafeFileHandle file, IntPtr creation, IntPtr lastAccess, out long lastWrite);
 
 	/// <summary>FNV-1a, 64-bit: stable across processes (string.GetHashCode is randomised per process).</summary>
 	private static ulong Fnv1a(string s)

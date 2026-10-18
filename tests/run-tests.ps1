@@ -37,6 +37,8 @@ $testsDir = $PSScriptRoot
 $proj     = Join-Path $testsDir '..\Bash'
 $exe      = Join-Path $proj 'bin\Release\net8.0\Bash.exe'
 if ($Interpreter) { $exe = $Interpreter; $NoBuild = $true }
+# the Native AOT build (the shipped one, tested by tools/deploy.sh) has no Bash.dll beside it; AotOnly cases skip otherwise
+$aot = -not (Test-Path (Join-Path (Split-Path $exe) 'Bash.dll'))
 
 if ($Detached) {
 Add-Type -TypeDefinition @'
@@ -207,6 +209,7 @@ $tests = @(
     @{ Name = 'path_lookup';        Script = 'cases\path_lookup.sh';        Args = @() }   # 2026-10-11: lookup follows the shell's PATH: assignment resets the hash, a temporary PATH= is searched, a subshell's PATH stays in it (authored)
     @{ Name = 'path_script';        Script = 'cases\path_script.sh';        Args = @() }   # 2026-10-17: a #! or .sh script found on PATH runs (it was "Permission denied"), $0 the path found; a match that cannot run is passed over, or named when it is the only one; a bare name never runs a script from the cwd (a planted git ran) (expected = GNU via WSL)
     @{ Name = 'pathext_programs';   Script = 'cases\pathext_programs.sh';   Args = @() }   # 2026-10-18: only .com/.exe/.bat/.cmd (and .sh, #!) are programs: a zz.js before zz.exe is passed over, -x of a .js is false, a .js with #! is a script (authored: Windows-specific)
+    @{ Name = 'icu_lazy';           Script = 'cases\icu_lazy.sh';           Args = @(); AotOnly = $true }   # 2026-10-18 (review R4): icu.dll loads at the first culture-sensitive operation, not on every start (StartsWith, integer parses, ToLowerInvariant, the SID text, a file's local time); controls ${x^^} and sort load it (authored; Native AOT only: the JIT runtime loads ICU itself)
     @{ Name = 'long_paths';         Script = 'cases\long_paths.sh';         Args = @() }   # 2026-10-17: cd into a directory over 260 characters (longPathAware manifest); a program from there, or with a long path of its own: the Windows limit said, 126 (authored: Windows-specific)
     @{ Name = 'xtrace_compound';    Script = 'cases\xtrace_compound.sh';    Args = @() }   # 2026-10-17: set -x traces [[ ]] tests (operands expanded, -n for a lone word, ! kept, quoted pattern chars backslashed), (( )), for heads per turn, arithmetic-for parts, case heads (expected = GNU via WSL)
     @{ Name = 'xtrace_fidelity';    Script = 'cases\xtrace_fidelity.sh';    Args = @() }   # 2026-10-17: set -x as bash: assignments traced, `++` levels per command substitution, words quoted, PS4 prompt escapes decoded (expected = GNU via WSL)
@@ -255,9 +258,10 @@ $tests = @(
 )
 
 Push-Location $testsDir
-$pass = 0; $fail = 0; $failed = @()
+$pass = 0; $fail = 0; $skip = 0; $failed = @()
 try {
     foreach ($t in $tests) {
+        if ($t.AotOnly -and -not $aot) { Write-Host ("SKIP  {0}  (Native AOT only)" -f $t.Name) -ForegroundColor Yellow; $skip++; continue }
         $expectedPath = Join-Path $testsDir "expected\$($t.Name).out"
         if (-not (Test-Path $expectedPath)) { Write-Host ("MISS  {0}  (no expected file)" -f $t.Name) -ForegroundColor Yellow; $fail++; $failed += $t.Name; continue }
 
@@ -294,5 +298,6 @@ finally { Pop-Location }
 Write-Host ""
 $summaryColor = if ($fail -eq 0) { 'Green' } else { 'Red' }
 Write-Host ("{0} passed, {1} failed" -f $pass, $fail) -ForegroundColor $summaryColor
+if ($skip -gt 0) { Write-Host ("{0} skipped (Native AOT only; tools/deploy.sh runs them)" -f $skip) -ForegroundColor Yellow }   # its own line: deploy.sh reads "N passed, N failed"
 if ($fail -gt 0) { Write-Host ("Failed: {0}" -f ($failed -join ', ')) -ForegroundColor Red; exit 1 }
 exit 0

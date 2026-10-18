@@ -351,9 +351,9 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		{
 		var nums = new List<long>();
 		var ops = args.Where(a => !a.StartsWith('-')).ToList();
-		if (ops.Count > 0) foreach (var a in ops) { if (long.TryParse(a, out var v)) nums.Add(v); }
+		if (ops.Count > 0) foreach (var a in ops) { if (long.TryParse(a, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v)) nums.Add(v); }
 		else { string? line; while ((line = ShellEncoding.ReadLine(Console.In)) is not null)
-			foreach (var t in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)) if (long.TryParse(t, out var v)) nums.Add(v); }
+			foreach (var t in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)) if (long.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v)) nums.Add(v); }
 		foreach (var orig in nums)
 			{
 			var sb = new System.Text.StringBuilder($"{orig}:");
@@ -489,7 +489,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		}
 
 	private static bool ExprTruthy(string s) => s.Length > 0 && s != "0";
-	private static long ExprInt(string s) => long.TryParse(s, out var v) ? v : throw new Exception("non-integer argument");
+	private static long ExprInt(string s) => long.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : throw new Exception("non-integer argument");
 
 	private static string ExprOr(List<string> a, ref int i)
 		{
@@ -509,7 +509,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		while (i < a.Count && a[i] is "=" or "!=" or "<" or "<=" or ">" or ">=")
 			{
 			var op = a[i++]; var r = ExprAdd(a, ref i);
-			int c = long.TryParse(l, out var li) && long.TryParse(r, out var ri)
+			int c = long.TryParse(l, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var li) && long.TryParse(r, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var ri)
 				? li.CompareTo(ri) : string.CompareOrdinal(l, r);
 			bool ok = op switch { "=" => c == 0, "!=" => c != 0, "<" => c < 0, "<=" => c <= 0, ">" => c > 0, ">=" => c >= 0, _ => false };
 			l = ok ? "1" : "0";
@@ -577,7 +577,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 	// cal: current month (no args) or a given `month year` (2 args). Whole-year not supported.
 	private static int Cal(List<string> args)
 		{
-		var nums = args.Where(a => int.TryParse(a, out _)).Select(int.Parse).ToList();
+		var nums = args.Where(a => int.TryParse(a, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _)).Select(a => int.Parse(a, System.Globalization.CultureInfo.InvariantCulture)).ToList();
 		var now = DateTime.Now;
 		int month = now.Month, year = now.Year;
 		if (nums.Count >= 2) { month = nums[0]; year = nums[1]; }
@@ -767,15 +767,15 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 	private static string? CanonSignal(string s)
 		{
 		var u = s.ToUpperInvariant();
-		if (u.StartsWith("SIG"))
-			return u[3..] is var name && !(name is "EXIT" or "DEBUG" or "ERR" or "RETURN" || name.StartsWith("SIG") || name.All(char.IsAsciiDigit)) ? CanonSignal(name) : null;
+		if (u.StartsWith("SIG", StringComparison.Ordinal))
+			return u[3..] is var name && !(name is "EXIT" or "DEBUG" or "ERR" or "RETURN" || name.StartsWith("SIG", StringComparison.Ordinal) || name.All(char.IsAsciiDigit)) ? CanonSignal(name) : null;
 		if (u is "EXIT" or "0") return "EXIT";
 		if (u is "DEBUG" or "ERR" or "RETURN") return u;
 		if (u.Length > 0 && u.All(char.IsAsciiDigit))
-			return int.TryParse(u, out int n) && n is >= 1 and <= 64 ? LinuxSignals[n] : null;
+			return int.TryParse(u, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n) && n is >= 1 and <= 64 ? LinuxSignals[n] : null;
 		// RTMIN+n (n 0-30) and RTMAX-n (n 0-29, as bash's decode_signal) name a number
-		if (u.StartsWith("RTMIN+") && int.TryParse(u[6..], out int a) && a is >= 0 and <= 30) return LinuxSignals[34 + a];
-		if (u.StartsWith("RTMAX-") && int.TryParse(u[6..], out int b) && b is >= 0 and < 30) return LinuxSignals[64 - b];
+		if (u.StartsWith("RTMIN+", StringComparison.Ordinal) && int.TryParse(u[6..], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int a) && a is >= 0 and <= 30) return LinuxSignals[34 + a];
+		if (u.StartsWith("RTMAX-", StringComparison.Ordinal) && int.TryParse(u[6..], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int b) && b is >= 0 and < 30) return LinuxSignals[64 - b];
 		int i = Array.IndexOf(LinuxSignals, u);
 		return i >= 1 && u is not ("32" or "33") ? u : null;
 		}
@@ -797,7 +797,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		var items = hist.Items;
 		int show = items.Count;
 		// history N : show only the last N entries.
-		if (args.Count > 0 && int.TryParse(args[0], out var n) && n >= 0)
+		if (args.Count > 0 && int.TryParse(args[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) && n >= 0)
 			show = Math.Min(n, items.Count);
 
 		int start = items.Count - show;

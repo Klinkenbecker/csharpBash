@@ -1086,7 +1086,7 @@ public sealed class Parser
 
 		// optional fd digit immediately (no space) before a redirect operator
 		if (Peek().Type == TokenType.Digit && IsFdDigit())
-			fd = int.Parse(Advance().Value);
+			fd = int.Parse(Advance().Value, System.Globalization.CultureInfo.InvariantCulture);
 
 		if (!IsRedirectOp(Peek().Type))
 			return null;
@@ -1205,7 +1205,7 @@ public sealed class Parser
 					break;
 					}
 				// Tilde expansion: leading ~ or ~/
-				if (t.Value == "~" || t.Value.StartsWith("~/") || t.Value.StartsWith("~\\"))
+				if (t.Value == "~" || t.Value.StartsWith("~/", StringComparison.Ordinal) || t.Value.StartsWith("~\\", StringComparison.Ordinal))
 					{
 					var suffix = t.Value.Length > 1 ? t.Value[1..] : "";
 					yield return new TildePart(suffix);

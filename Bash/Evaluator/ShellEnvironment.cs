@@ -140,6 +140,7 @@ public sealed class ShellEnvironment
 				_frames[0][key] = new Var { Value = val, Exported = true };
 				}
 			}
+		Timing.Mark("env.import");   // the timing switch splits the "evaluator" segment (review R4, 2026-10-18)
 
 		// BASH_PATH: a launcher that keeps its own PATH narrow (claude.exe) hands the shell its PATH here
 		// (DECISIONS 2026-10-16 "RATIFIED: the tool-lookup plan"). Taken once and removed, from the process
@@ -151,7 +152,9 @@ public sealed class ShellEnvironment
 			}
 
 		AugmentPathWithGitTools();
+		Timing.Mark("env.git");
 		AppendOwnDirectoryToPath();
+		Timing.Mark("env.own");
 
 		// an empty PATH entry inside the list (`;;`) is the current directory to Windows' launcher, which searches
 		// this PROCESS's PATH for a name C#Bash did not find, NoDefaultCurrentDirectoryInExePath notwithstanding: a
@@ -173,28 +176,33 @@ public sealed class ShellEnvironment
 		// the shell's paths are forward slash (DECISIONS 2026-09-11/12): HOME arrived as C:\Users\x,
 		// so $HOME, ~ and cd's default were backslash paths until 2026-10-08
 		if (Get("HOME").Contains('\\')) Target("HOME").Value = ToShellPath(Get("HOME"));
+		Timing.Mark("env.home");
 
 		// bash-standard shell variables (not exported unless inherited)
 		var exe = ToShellPath(Environment.ProcessPath ?? "bash");
 		SetIfUnset("OSTYPE",   "msys");                 // DECISIONS 2026-09-04 (1)
 		SetIfUnset("MACHTYPE", "x86_64-pc-msys");
 		SetIfUnset("HOSTTYPE", "x86_64");
-		SetIfUnset("HOSTNAME", Environment.MachineName.ToLowerInvariant());
+		SetIfUnset("HOSTNAME", LowerInvariant(Environment.MachineName));
 		SetIfUnset("IFS",      " \t\n");
 		SetIfUnset("BASH",     exe);
 		SetIfUnset("OPTIND",   "1");
 		SetIfUnset("OPTERR",   "1");
 		SetIfUnset("PS4",      "+ ");
 		if (Get("SHELL").Length == 0) { Set("SHELL", exe); Export("SHELL"); }
-		int shlvl = int.TryParse(Get("SHLVL"), out var lv) ? lv + 1 : 1;
+		// invariant: the current culture loads ICU (~0.7 ms) on every start (2026-10-18)
+		int shlvl = int.TryParse(Get("SHLVL"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var lv) ? lv + 1 : 1;
 		Set("SHLVL", shlvl.ToString()); Export("SHLVL");
 		var uid = WindowsUid();
+		Timing.Mark("env.uid");
 		Set("UID", uid.ToString()); Set("EUID", uid.ToString());
 		MarkReadonly("UID"); MarkReadonly("EUID");
 		Set("PPID", ParentPid().ToString()); MarkReadonly("PPID");
+		Timing.Mark("env.ppid");
 		Set("PWD", Cwd); Export("PWD");
 		SetArrayFromList("BASH_VERSINFO", ["5", "1", "0", "0", "release", "x86_64-pc-msys"]);
 		MarkReadonly("BASH_VERSINFO");
+		Timing.Mark("env.done");
 		}
 
 	private void SetIfUnset(string name, string value) { if (Get(name).Length == 0) Set(name, value); }
@@ -298,7 +306,7 @@ public sealed class ShellEnvironment
 			if (!Array.Exists(Environment.GetLogicalDrives(), r => r.Length > 0 && char.ToUpperInvariant(r[0]) == d)) return arg;
 			return d + ":/" + arg[3..];
 			}
-		if (arg == "/tmp" || arg.StartsWith("/tmp/"))
+		if (arg == "/tmp" || arg.StartsWith("/tmp/", StringComparison.Ordinal))
 			{
 			var temp = ToShellPath(Path.TrimEndingDirectorySeparator(Path.GetTempPath()));
 			return arg.Length == 4 ? temp : temp + arg[4..];
@@ -327,7 +335,7 @@ public sealed class ShellEnvironment
 		{
 		if (path.Length == 0) return path;
 
-		if (path == "~" || path.StartsWith("~/") || path.StartsWith("~\\"))
+		if (path == "~" || path.StartsWith("~/", StringComparison.Ordinal) || path.StartsWith("~\\", StringComparison.Ordinal))
 			{
 			var home = ToShellPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 			return path.Length == 1 ? home : home + "/" + ToShellPath(path[2..]);
@@ -335,7 +343,7 @@ public sealed class ShellEnvironment
 
 		if (Path.DirectorySeparatorChar != '\\') return path;
 
-		if (path.StartsWith("/dev/")) return path;
+		if (path.StartsWith("/dev/", StringComparison.Ordinal)) return path;
 
 		// /c, /c/, /c/Users/...  (drive letter, any case) → C:/Users/...
 		if (path.Length >= 2 && path[0] == '/' && char.IsAsciiLetter(path[1])
@@ -346,7 +354,7 @@ public sealed class ShellEnvironment
 			}
 
 		// /tmp, /tmp/...
-		if (path == "/tmp" || path.StartsWith("/tmp/") || path.StartsWith("/tmp\\"))
+		if (path == "/tmp" || path.StartsWith("/tmp/", StringComparison.Ordinal) || path.StartsWith("/tmp\\", StringComparison.Ordinal))
 			{
 			var temp = ToShellPath(Path.TrimEndingDirectorySeparator(Path.GetTempPath()));
 			return path.Length == 4 ? temp : temp + "/" + ToShellPath(path[5..]);
@@ -481,7 +489,7 @@ public sealed class ShellEnvironment
 				}
 			}
 
-		if (int.TryParse(name, out int idx))
+		if (TryPositional(name, out int idx))
 			{
 			var pos = _positionals.TryPeek(out var pp) ? pp : [];
 			return idx > 0 && idx <= pos.Length ? pos[idx - 1] : "";
@@ -497,6 +505,20 @@ public sealed class ShellEnvironment
 		return "";   // declared with no value (`local x`): it hides an outer x but is unset
 		}
 
+	// ToLowerInvariant without TextInfo, which loads ICU (~0.7 ms) on every start; a non-ASCII string still uses it
+	private static string LowerInvariant(string s)
+		{
+		if (!System.Text.Ascii.IsValid(s)) return s.ToLowerInvariant();
+		var chars = new char[s.Length];
+		System.Text.Ascii.ToLower(s, chars, out _);
+		return new string(chars);
+		}
+
+	// `$1`, `$12`: digits only. Not int.TryParse(name): that parses through the current culture, which loads ICU
+	// (~0.7 ms) at start-up and runs on every read of an upper-case name (2026-10-18, review R4).
+	private static bool TryPositional(string name, out int idx) =>
+		int.TryParse(name, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out idx);
+
 	/// <summary>What joins `$*` and `${a[*]}` where they make one string ("$*", an assignment, `[[ ]]`,
 	/// a here-string, `case`): IFS's first character, nothing when IFS is empty, a space when it is
 	/// unset (bash). A space whatever IFS held until 2026-10-12.</summary>
@@ -508,7 +530,7 @@ public sealed class ShellEnvironment
 		{
 		if (name.Length == 1 && "?$!-#@*0".IndexOf(name[0]) >= 0) return true;
 		if (name is "RANDOM" or "SECONDS" or "LINENO" or "BASHPID" or "EPOCHSECONDS" or "EPOCHREALTIME" or "SRANDOM" or "BASH_COMMAND") return true;
-		if (int.TryParse(name, out int idx))
+		if (TryPositional(name, out int idx))
 			{
 			var pos = _positionals.TryPeek(out var pp) ? pp : [];
 			return idx > 0 && idx <= pos.Length;
@@ -608,7 +630,7 @@ public sealed class ShellEnvironment
 		{
 		if (IsInteger(name) && ArithEval is not null)
 			{
-			long cur = long.TryParse(Get(name), out var c) ? c : 0;
+			long cur = long.TryParse(Get(name), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var c) ? c : 0;
 			long add; try { add = ArithEval(value); } catch (EvalException) { add = 0; }
 			Set(name, (cur + add).ToString());
 			return;
@@ -725,7 +747,7 @@ public sealed class ShellEnvironment
 	private string Appended(string name, string current, string value)
 		{
 		if (!IsInteger(name) || ArithEval is null) return current + value;
-		long cur = long.TryParse(current, out var c) ? c : 0;
+		long cur = long.TryParse(current, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var c) ? c : 0;
 		long add; try { add = ArithEval(value); } catch (EvalException) { add = 0; }
 		return (cur + add).ToString();
 		}
@@ -943,10 +965,11 @@ public sealed class ShellEnvironment
 			try
 				{
 				if (!File.Exists(Path.Combine(dir, "git.exe"))) continue;
-				var leaf = Path.GetFileName(dir.TrimEnd('\\', '/')).ToLowerInvariant();
+				// compared ordinally, not ToLowerInvariant(): TextInfo loads ICU (~0.7 ms) on every start (2026-10-18)
+				var leaf = Path.GetFileName(dir.TrimEnd('\\', '/'));
 				var parent = Path.GetDirectoryName(dir.TrimEnd('\\', '/'));
 				if (parent is null) continue;
-				if (leaf is "cmd" or "bin") candidate = parent;
+				if (leaf.Equals("cmd", StringComparison.OrdinalIgnoreCase) || leaf.Equals("bin", StringComparison.OrdinalIgnoreCase)) candidate = parent;
 				else if (leaf == "bin" || (leaf == "bin" && parent.EndsWith("mingw64", StringComparison.OrdinalIgnoreCase))) candidate = Path.GetDirectoryName(parent);
 				else if (parent.EndsWith("mingw64", StringComparison.OrdinalIgnoreCase)) candidate = Path.GetDirectoryName(parent);
 				}
@@ -989,10 +1012,21 @@ public sealed class ShellEnvironment
 		try
 			{
 			if (!OperatingSystem.IsWindows()) return 1000;
-			var sid = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "";
-			int dash = sid.LastIndexOf('-');
-			if (dash > 0 && long.TryParse(sid[(dash + 1)..], out var rid))
-				return sid.StartsWith("S-1-5-21-") ? 0x30000 + rid : 0x10000 + rid;
+			// From the SID's binary form, not its text: SecurityIdentifier.Value upper-cases through TextInfo, which
+			// loads ICU (~0.7 ms) on every start (2026-10-18). Revision, sub-authority count n, a 6-byte big-endian
+			// authority, then n little-endian 32-bit sub-authorities; the RID is the last.
+			var user = System.Security.Principal.WindowsIdentity.GetCurrent().User;
+			if (user is null) return 1000;
+			var b = new byte[user.BinaryLength];
+			user.GetBinaryForm(b, 0);
+			int n = b[1];
+			uint Sub(int i) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(8 + 4 * i));
+			if (n > 0)
+				{
+				long rid = Sub(n - 1);
+				bool s1521 = n > 1 && b[2] == 0 && b[3] == 0 && b[4] == 0 && b[5] == 0 && b[6] == 0 && b[7] == 5 && Sub(0) == 21;
+				return s1521 ? 0x30000 + rid : 0x10000 + rid;   // S-1-5-21-…: a local or domain account
+				}
 			}
 		catch { }
 		return 1000;

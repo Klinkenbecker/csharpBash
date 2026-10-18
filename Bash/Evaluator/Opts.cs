@@ -46,7 +46,7 @@ public sealed class Opts
 	public int GetInt(char c, int def)
 		{
 		var v = Get(c);
-		return v is not null && int.TryParse(v, out var n) ? n : def;
+		return v is not null && int.TryParse(v, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : def;
 		}
 
 	/// <param name="tool">Tool name for messages.</param>
@@ -78,7 +78,7 @@ public sealed class Opts
 				var name = l; char? alias = null;
 				int colon = name.IndexOf(':');
 				if (colon >= 0) { alias = name[colon + 1]; name = name[..colon]; }
-				bool optional = name.EndsWith("=?");   // value only via --name=value
+				bool optional = name.EndsWith("=?", StringComparison.Ordinal);   // value only via --name=value
 					if (optional) name = name[..^2];
 					bool value = !optional && name.EndsWith('=');
 				if (value) name = name[..^1];
@@ -97,7 +97,7 @@ public sealed class Opts
 				continue;
 				}
 			if (a == "--") { endOfOptions = true; continue; }
-			if (a.StartsWith("--"))
+			if (a.StartsWith("--", StringComparison.Ordinal))
 				{
 				var body = a[2..];
 				string name = body; string? val = null;

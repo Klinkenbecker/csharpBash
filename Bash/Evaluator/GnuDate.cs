@@ -44,10 +44,10 @@ public static class GnuDate
 			Match m;
 			// @epoch, with a fraction as GNU takes it (`@1700000000.5`; `@-1.5` is 1.5 s before the epoch).
 			// Only whole seconds until 2026-10-08. .NET keeps 100 ns: digits past the 7th are dropped.
-			if (t[0] == '@' && (m = Regex.Match(t, @"^@(-?)(\d+)(?:\.(\d+))?$")).Success && long.TryParse(m.Groups[2].Value, out var ep))
+			if (t[0] == '@' && (m = Regex.Match(t, @"^@(-?)(\d+)(?:\.(\d+))?$")).Success && long.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var ep))
 				{
 				var frac = m.Groups[3].Success ? m.Groups[3].Value : "";
-				long ticks = ep * TimeSpan.TicksPerSecond + (frac.Length == 0 ? 0 : long.Parse(frac.Length >= 7 ? frac[..7] : frac.PadRight(7, '0')));
+				long ticks = ep * TimeSpan.TicksPerSecond + (frac.Length == 0 ? 0 : long.Parse(frac.Length >= 7 ? frac[..7] : frac.PadRight(7, '0'), System.Globalization.CultureInfo.InvariantCulture));
 				epochTicks = m.Groups[1].Value == "-" ? -ticks : ticks;
 				continue;
 				}
@@ -59,41 +59,41 @@ public static class GnuDate
 			// ISO date, optionally joined to a time with 't'
 			if ((m = Regex.Match(t, @"^(\d{4})-(\d{1,2})-(\d{1,2})(?:t(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(z|[+-]\d{2}:?\d{2})?)?$")).Success)
 				{
-				year = int.Parse(m.Groups[1].Value); month = int.Parse(m.Groups[2].Value); day = int.Parse(m.Groups[3].Value);
+				year = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture); month = int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); day = int.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
 				if (m.Groups[4].Success)
 					{
-					hour = int.Parse(m.Groups[4].Value); minute = int.Parse(m.Groups[5].Value); second = m.Groups[6].Success ? int.Parse(m.Groups[6].Value) : 0;
+					hour = int.Parse(m.Groups[4].Value, System.Globalization.CultureInfo.InvariantCulture); minute = int.Parse(m.Groups[5].Value, System.Globalization.CultureInfo.InvariantCulture); second = m.Groups[6].Success ? int.Parse(m.Groups[6].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
 					if (m.Groups[7].Success) zone = ParseZone(m.Groups[7].Value);
 					}
 				continue;
 				}
 			if ((m = Regex.Match(t, @"^(\d{4})(\d{2})(\d{2})$")).Success)
-				{ year = int.Parse(m.Groups[1].Value); month = int.Parse(m.Groups[2].Value); day = int.Parse(m.Groups[3].Value); continue; }
+				{ year = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture); month = int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); day = int.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture); continue; }
 			if ((m = Regex.Match(t, @"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?$")).Success)
 				{
-				month = int.Parse(m.Groups[1].Value); day = int.Parse(m.Groups[2].Value);
-				if (m.Groups[3].Success) { year = int.Parse(m.Groups[3].Value); if (year < 100) year += year < 69 ? 2000 : 1900; }
+				month = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture); day = int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+				if (m.Groups[3].Success) { year = int.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture); if (year < 100) year += year < 69 ? 2000 : 1900; }
 				continue;
 				}
 			// time: HH:MM[:SS[.frac]][am|pm][z|+hhmm]
 			if ((m = Regex.Match(t, @"^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(am|pm)?(z|[+-]\d{2}:?\d{2})?$")).Success)
 				{
-				hour = int.Parse(m.Groups[1].Value); minute = int.Parse(m.Groups[2].Value); second = m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0;
+				hour = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture); minute = int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); second = m.Groups[3].Success ? int.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
 				if (m.Groups[4].Success) hour = Meridian(hour.Value, m.Groups[4].Value);
 				else if (i + 1 < toks.Count && toks[i + 1] is "am" or "pm" or "a.m." or "p.m.") { hour = Meridian(hour.Value, toks[++i][..2].Replace(".", "")); }
 				if (m.Groups[5].Success) zone = ParseZone(m.Groups[5].Value);
 				continue;
 				}
 			if ((m = Regex.Match(t, @"^(\d{1,2})(am|pm)$")).Success)
-				{ hour = Meridian(int.Parse(m.Groups[1].Value), m.Groups[2].Value); minute = 0; second = 0; continue; }
+				{ hour = Meridian(int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), m.Groups[2].Value); minute = 0; second = 0; continue; }
 			// zone offset token
 			if ((m = Regex.Match(t, @"^[+-]\d{2}:?\d{2}$")).Success && (hour is not null || year is not null))
 				{ zone = ParseZone(t); continue; }
 			// relative: [+-]N unit | next/last/this unit | unit alone
 			if ((m = Regex.Match(t, @"^([+-]?\d+)$")).Success && i + 1 < toks.Count && UnitOf(toks[i + 1]) is char u1)
-				{ rel.Add((u1, int.Parse(m.Groups[1].Value))); i++; continue; }
+				{ rel.Add((u1, int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))); i++; continue; }
 			if ((m = Regex.Match(t, @"^([+-]?\d+)([a-z]+)$")).Success && UnitOf(m.Groups[2].Value) is char u2)
-				{ rel.Add((u2, int.Parse(m.Groups[1].Value))); continue; }
+				{ rel.Add((u2, int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))); continue; }
 			if (t is "next" or "last" or "this" or "first" or "third" or "fourth" or "fifth")
 				{
 				int n = t switch { "next" or "first" => 1, "last" => -1, "this" => 0, "third" => 3, "fourth" => 4, _ => 5 };
@@ -115,17 +115,17 @@ public static class GnuDate
 			if (MonthOf(t) is int mo)
 				{
 				month = mo;
-				if (i + 1 < toks.Count && Regex.IsMatch(toks[i + 1], @"^\d{1,2}(st|nd|rd|th)?$")) { day = int.Parse(Regex.Match(toks[++i], @"\d+").Value); }
-				if (i + 1 < toks.Count && Regex.IsMatch(toks[i + 1], @"^\d{4}$")) { year = int.Parse(toks[++i]); }
+				if (i + 1 < toks.Count && Regex.IsMatch(toks[i + 1], @"^\d{1,2}(st|nd|rd|th)?$")) { day = int.Parse(Regex.Match(toks[++i], @"\d+").Value, System.Globalization.CultureInfo.InvariantCulture); }
+				if (i + 1 < toks.Count && Regex.IsMatch(toks[i + 1], @"^\d{4}$")) { year = int.Parse(toks[++i], System.Globalization.CultureInfo.InvariantCulture); }
 				continue;
 				}
 			if (Regex.IsMatch(t, @"^\d{1,2}$") && i + 1 < toks.Count && MonthOf(toks[i + 1]) is int mo2)
 				{
-				day = int.Parse(t); month = mo2; i++;
-				if (i + 1 < toks.Count && Regex.IsMatch(toks[i + 1], @"^\d{4}$")) { year = int.Parse(toks[++i]); }
+				day = int.Parse(t, System.Globalization.CultureInfo.InvariantCulture); month = mo2; i++;
+				if (i + 1 < toks.Count && Regex.IsMatch(toks[i + 1], @"^\d{4}$")) { year = int.Parse(toks[++i], System.Globalization.CultureInfo.InvariantCulture); }
 				continue;
 				}
-			if (Regex.IsMatch(t, @"^\d{4}$") && month is not null && year is null) { year = int.Parse(t); continue; }
+			if (Regex.IsMatch(t, @"^\d{4}$") && month is not null && year is null) { year = int.Parse(t, System.Globalization.CultureInfo.InvariantCulture); continue; }
 			return false;
 			}
 
@@ -177,7 +177,7 @@ public static class GnuDate
 		if (z == "z") return TimeSpan.Zero;
 		int sign = z[0] == '-' ? -1 : 1;
 		var digits = z[1..].Replace(":", "");
-		int hh = int.Parse(digits[..2]), mm = int.Parse(digits[2..]);
+		int hh = int.Parse(digits[..2], System.Globalization.CultureInfo.InvariantCulture), mm = int.Parse(digits[2..], System.Globalization.CultureInfo.InvariantCulture);
 		return TimeSpan.FromMinutes(sign * (hh * 60 + mm));
 		}
 

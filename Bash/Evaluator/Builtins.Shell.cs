@@ -64,7 +64,7 @@ public sealed partial class Builtins
 		string? target = null;
 		int i = 0;
 		if (args.Count > 0 && args[0] == "-v" && args.Count > 1) { target = args[1]; i = 2; }
-		else if (args.Count > 0 && args[0].StartsWith("-v") && args[0].Length > 2) { target = args[0][2..]; i = 1; }
+		else if (args.Count > 0 && args[0].StartsWith("-v", StringComparison.Ordinal) && args[0].Length > 2) { target = args[0][2..]; i = 1; }
 		else if (args.Count == 1 && args[0] == "-v") return BadOption("-v", "option requires an argument");
 		if (i < args.Count && args[i] == "--") i++;
 		// a format that starts with `-` is an option, as in bash (`printf '-%s'` is `-%`: invalid option)
@@ -72,7 +72,7 @@ public sealed partial class Builtins
 		if (i >= args.Count) { PrintUsage("printf"); return 2; }
 		// the formatter's messages (`printf: zz: invalid number`) get the builtin's prefix; seq -f
 		// shares the formatter and, standing in for a program, has none
-		var errors = new StringWriter();
+		var errors = new StringWriter(System.Globalization.CultureInfo.InvariantCulture);
 		int rc = PrintfFormatter.Format(args[i], args.Skip(i + 1).ToList(), errors, out var text);
 		foreach (var line in errors.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries))
 			Console.Error.WriteLine(Err + line.TrimEnd('\r'));
@@ -494,7 +494,7 @@ public sealed partial class Builtins
 	private int Shift(List<string> args)
 		{
 		int n = 1;
-		if (args.Count > 0 && !int.TryParse(args[0], out n))
+		if (args.Count > 0 && !int.TryParse(args[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out n))
 			{ Console.Error.WriteLine($"{Err}shift: {args[0]}: numeric argument required"); return 1; }
 		var pos = _env.GetPositionals();
 		if (n < 0 || n > pos.Count)
@@ -581,10 +581,10 @@ public sealed partial class Builtins
 					case 'i': OptArg(); break;
 					case 'a': arrayName = OptArg(); break;
 					case 'd': { var d = OptArg(); delim = d is null || d.Length == 0 ? "\0" : d[..1]; break; }
-					case 'n': case 'N': { var v = OptArg(); nchars = int.TryParse(v, out var nn) ? nn : 0; break; }
+					case 'n': case 'N': { var v = OptArg(); nchars = int.TryParse(v, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var nn) ? nn : 0; break; }
 					case 'p': prompt = OptArg(); break;
 					case 't': OptArg(); break;     // timeouts: accepted, not enforced on redirected input
-					case 'u': { var v = OptArg(); int.TryParse(v, out fd); break; }
+					case 'u': { var v = OptArg(); int.TryParse(v, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out fd); break; }
 					default: return BadOption($"-{o}");
 					}
 				}
@@ -663,9 +663,9 @@ public sealed partial class Builtins
 				{
 				case "-t": trim = true; break;
 				case "-d": { var d = Next(); delim = d.Length == 0 ? "\0" : d[..1]; break; }
-				case "-n": int.TryParse(Next(), out count); break;
-				case "-O": int.TryParse(Next(), out origin); break;
-				case "-s": int.TryParse(Next(), out skip); break;
+				case "-n": int.TryParse(Next(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out count); break;
+				case "-O": int.TryParse(Next(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out origin); break;
+				case "-s": int.TryParse(Next(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out skip); break;
 				case "-u": case "-C": case "-c": Next(); break;
 				case "--": break;
 				default:
@@ -710,7 +710,7 @@ public sealed partial class Builtins
 		var argv = args.Count > 2 ? args.Skip(2).ToList() : _env.GetPositionals();
 		bool silent = optstring.StartsWith(':');
 		if (silent) optstring = optstring[1..];
-		int optind = int.TryParse(_env.Get("OPTIND"), out var oi) ? oi : 1;
+		int optind = int.TryParse(_env.Get("OPTIND"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var oi) ? oi : 1;
 		if (optind < 1) optind = 1;
 		if (optind != _getoptsLastOptind) _getoptsCharIdx = 0;
 
@@ -1300,7 +1300,7 @@ public sealed partial class Builtins
 		}
 
 	private static long TestInt(string s) =>
-		long.TryParse(s.Trim(), out var v) ? v : throw new EvalException($"test: {s}: integer expression expected");
+		long.TryParse(s.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : throw new EvalException($"test: {s}: integer expression expected");
 
 	// ── exit / return / break / continue ─────────────────────────────────────
 
@@ -1309,7 +1309,7 @@ public sealed partial class Builtins
 		int code = _env.LastExitCode;
 		if (args.Count > 0)
 			{
-			if (!int.TryParse(args[0], out code)) { Console.Error.WriteLine($"{Err}exit: {args[0]}: numeric argument required"); code = 2; }
+			if (!int.TryParse(args[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out code)) { Console.Error.WriteLine($"{Err}exit: {args[0]}: numeric argument required"); code = 2; }
 			code &= 0xFF;
 			}
 		throw new ExitException(code);
@@ -1320,7 +1320,7 @@ public sealed partial class Builtins
 		int code = _env.LastExitCode;
 		if (args.Count > 0)
 			{
-			if (!int.TryParse(args[0], out code)) { Console.Error.WriteLine($"{Err}return: {args[0]}: numeric argument required"); code = 2; }
+			if (!int.TryParse(args[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out code)) { Console.Error.WriteLine($"{Err}return: {args[0]}: numeric argument required"); code = 2; }
 			code &= 0xFF;
 			}
 		throw new ReturnException(code);
@@ -1328,13 +1328,13 @@ public sealed partial class Builtins
 
 	private static int DoBreak(List<string> args)
 		{
-		int levels = args.Count > 0 && int.TryParse(args[0], out var c) ? c : 1;
+		int levels = args.Count > 0 && int.TryParse(args[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var c) ? c : 1;
 		throw new BreakException(levels);
 		}
 
 	private static int DoContinue(List<string> args)
 		{
-		int levels = args.Count > 0 && int.TryParse(args[0], out var c) ? c : 1;
+		int levels = args.Count > 0 && int.TryParse(args[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var c) ? c : 1;
 		throw new ContinueException(levels);
 		}
 
@@ -1380,7 +1380,7 @@ public sealed partial class Builtins
 		{
 		rc = 0;
 		if (a.Length == 0 || a[0] is not ('+' or '-')) return null;
-		if (long.TryParse(a.AsSpan(1), out long n)) return n;
+		if (long.TryParse(a.AsSpan(1), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long n)) return n;
 		rc = BadOption(a, "invalid number");
 		return null;
 		}
@@ -1571,7 +1571,7 @@ public sealed partial class Builtins
 			int lrc = 0;
 			foreach (var t in targets)
 				{
-				if (int.TryParse(t, out int n))
+				if (int.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n))
 					{
 					if (n > 128) n -= 128;
 					if (n is < 0 or > 64) lrc = BadSignal(t);
@@ -1590,13 +1590,13 @@ public sealed partial class Builtins
 		int rc = 0;
 		foreach (var t in targets)
 			{
-			if (t.StartsWith('%') || (int.TryParse(t, out var maybe) && BackgroundJob.IsSyntheticPid(maybe)))
+			if (t.StartsWith('%') || (int.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var maybe) && BackgroundJob.IsSyntheticPid(maybe)))
 				{
 				if (sigZero) continue;
 				if (_eval.KillJob(t, out var err) != 0) { Console.Error.WriteLine($"{Err}kill: {err}"); rc = 1; }
 				continue;
 				}
-			if (!int.TryParse(t, out var pid)) { Console.Error.WriteLine($"{Err}kill: {t}: arguments must be process or job IDs"); rc = 1; continue; }
+			if (!int.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var pid)) { Console.Error.WriteLine($"{Err}kill: {t}: arguments must be process or job IDs"); rc = 1; continue; }
 			try
 				{
 				var proc = System.Diagnostics.Process.GetProcessById(pid);
@@ -1626,8 +1626,8 @@ public sealed partial class Builtins
 			var a = args[i];
 			if (a is "-i" or "--ignore-environment" or "-") clear = true;
 			else if (a is "-u" or "--unset" && i + 1 < args.Count) unset.Add(args[++i]);
-			else if (a.StartsWith("--unset=")) unset.Add(a["--unset=".Length..]);
-			else if (a.StartsWith("-u") && a.Length > 2) unset.Add(a[2..]);
+			else if (a.StartsWith("--unset=", StringComparison.Ordinal)) unset.Add(a["--unset=".Length..]);
+			else if (a.StartsWith("-u", StringComparison.Ordinal) && a.Length > 2) unset.Add(a[2..]);
 			else if (a is "-0" or "--null") nul = true;
 			else if (a == "--") { i++; break; }
 			else if (a.StartsWith('-') && a.Length > 1) { Console.Error.WriteLine($"env: invalid option -- '{a[1..]}'"); return 125; }

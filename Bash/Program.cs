@@ -11,7 +11,9 @@ using Bash.IO;
 Timing.Begin();              // the performance review's timing switch: nothing unless BASH_TIMING_LOG is set
 bool consoleUtf8 = true;
 try { Console.OutputEncoding = ShellEncoding.Utf8; } catch (Exception) { consoleUtf8 = false; }   // byte-transparent (2026-09-12)
+Timing.Mark("console.out");   // the timing switch splits the "console" segment (review R4, 2026-10-18)
 try { Console.InputEncoding  = ShellEncoding.Utf8; } catch (Exception) { }
+Timing.Mark("console.in");
 if (!consoleUtf8)
 	{
 	Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), ShellEncoding.Utf8) { AutoFlush = true });
@@ -19,6 +21,7 @@ if (!consoleUtf8)
 	}
 Console.Out.NewLine = "\n";    // bash emits LF, not Windows CRLF (installed writers set it too)
 Console.Error.NewLine = "\n";
+Timing.Mark("console.writers");
 ConsoleMux.Install();          // per-thread console streams (pipeline stages, captures, jobs)
 Timing.Mark("console");
 
@@ -33,7 +36,8 @@ static string BuildStamp() => BuildInfo.Stamp;
 static int BuildRev()
 	{
 	var last = BuildStamp().Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
-	return int.TryParse(last.TrimEnd('+'), out var r) ? r : 0;
+	// invariant: the current culture loads ICU (~0.7 ms) on every start (2026-10-18)
+	return int.TryParse(last.TrimEnd('+'), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var r) ? r : 0;
 	}
 
 // ── command-line flag parsing (bash style: options in any order before the first
@@ -60,7 +64,7 @@ for (; ai < args.Length; ai++)
 	if (a == "-")  { readStdin = true; ai++; break; }           // "-" = end of options, read stdin
 	if (a.Length < 2 || (a[0] != '-' && a[0] != '+')) break;    // first non-option
 
-	if (a.StartsWith("--"))
+	if (a.StartsWith("--", StringComparison.Ordinal))   // ordinal: culture-sensitive loads ICU on every start
 		{
 		switch (a)
 			{
@@ -231,7 +235,7 @@ evaluator.Env.SetPositionals(positionals);
 if (login) SourceLogin(evaluator, noprofile);
 else if (!norc) SourceInteractiveRc(evaluator, rcFile);
 
-int histSize = int.TryParse(evaluator.Env.Get("HISTSIZE"), out var hs) && hs > 0 ? hs : 500;
+int histSize = int.TryParse(evaluator.Env.Get("HISTSIZE"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var hs) && hs > 0 ? hs : 500;
 var historyFile = Path.Combine(
 	Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".bash_history");
 var history    = new History(historyFile, histSize);

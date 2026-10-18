@@ -7205,3 +7205,155 @@ rev 277 and was judged noise): carried to review R2, to be measured with alterna
 the rev 286/302 rollback copies, or the R1 timing switch). These rows run `while [ $i -lt N ]` loops, so the one
 waste found by reading does NOT explain them: the `[[ ]]` trace strings of rev 312 are built before the xtrace check
 on every `[[ ]]` test (`CondTrace($"…")`, `op + val`), an allocation per test with set -x off. Listed for R4.
+
+## 2026-10-18 -- PUBLISHED: GitHub main = git e13485f = hg rev 317
+**Status:** Active. The architect: "… and publish (push)". By `tools/publish.sh`: the benchmark of the deployed build
+(rev 316) found in results.md; the doc review committed (rev 317); MERCURIAL_HISTORY.md (318 changesets) and
+mercurial-history.hg (verified by unbundling) written; git staged exactly hg's tracked files (the untracked
+`The Windows Shell Tax.url` left out); pushed 0b67afa..e13485f; remote main = HEAD; no auth header left in git config.
+
+## 2026-10-18 -- BENCHMARK CORRECTION: rev 316 is not slower; the first run after the deploy was
+**Status:** Active (corrects the "possible slowdown" in "BENCHMARK of deployed rev 316", which stands as written).
+Four `compare3.sh` runs back to back, 07:40-08:02 (results.md), loop / func / loop_big / startup: rev 286 0.160 /
+0.213 / 1.411 / 14.1 ms; rev 302 0.162 / 0.213 / 1.408 / 14.3; rev 296 0.160 / 0.214 / 1.428 / 14.1; deployed 316
+0.155 / 0.212 / 1.414 / 14.4. Every row of 316 is within -5% to +2% of 286. The in-process tools agree (R2 below). The
+slow run (loop 0.185, startup 18.3 ms) started two minutes after the deploy wrote the new binary: probably the virus
+scanner [inferred, not traced]. README's table now carries the 08:02 run plus a sentence on this; GitHub shows the slow
+run until the next push.
+
+## 2026-10-18 -- REVIEW R2 RESULT: what an iteration of the interpreter rows costs, and what it is made of
+**Status:** Active (a measurement; no code changed). `tools/bench.csx` and `tools/attrib.csx` as their headers say (JIT
+Release build of rev 316's code), alternating two rounds with the same tools built on rev 286 (copies differing only in
+`#r`). 316 and 286 agree within 3% on every row, with identical allocation: no interpreter regression in revs 287-316.
+Per iteration (316); shares from attrib's per-command rows, the rest by subtraction:
+- loop 472 ns, 916 B: `[ $i -lt N ]` 194 ns (41%), `i=$((i + 1))` 200 ns (42%), the `while` itself ~80 ns (17%).
+- arith 775 ns, 1299 B: `sum=$((sum + i * 2 - 1))` ~300 ns (39%, by subtraction), `i=$((i + 1))` (26%), `[` (25%).
+- func 1432 ns, 3497 B: the call `add $i 7` with its two body commands ~960 ns and 2.6 KB (67%, by subtraction; no
+  tool splits it further), `[` (14%), `i=` (14%).
+- Components: `:` 79 ns / 272 B (the fixed cost of any simple command); `j=5` 54 / 208; `j=$i` 86 / 264; `[ 5 -lt N ]`
+  168 / 584 (`$i` adds 26 ns); evaluating `i + 1` 113 ns / 88 B, re-scanned and re-parsed every time
+  (`ArithParser.Evaluate` parses as it evaluates; there is no parsed form to keep); lexing `i=$((i + 1))` 221 ns /
+  1320 B (110 B per character), lexing and parsing it 556 ns / 2560 B.
+The criterion (time, allocation and top three contributors per row) is met for loop, arith and func; loop_big is the
+loop script at 2,000,000 iterations. NOT met for coreutils, pipeline and find (no in-process tool covers file and
+process work) or startup (R1's anatomy is its breakdown).
+
+## 2026-10-18 -- REVIEW R3 RESULT: a statement parses in ~0.95 us; the snapshot's parse is ~0.5 ms of a call
+**Status:** Active (a measurement). The 2026-09-13 method (`-n` parses without running: parse = (t(-n f) - t(bare)) / N,
+run = (t(f) - t(-n f)) / N), whole launches of dist/Bash.exe rev 316 by tools/benchtimer, median of 5 samples of 20
+launches, the measures alternating within each sample.
+- 40,000 lines of `x=1` (160 KB): parse 0.95 us a statement, 237 ns a byte (4.2 MB/s); running one 0.23 us, so a
+  statement must run ~4 times before running it has cost what parsing it did. 2026-09-13 (rev 80, under load): ~1.2 us,
+  ~300 ns a byte, crossover 1.5-3.6.
+- Claude Code's live snapshot (5.3 KB, 110 lines): parse 0.47 ms (11 MB/s; long function bodies parse faster per byte
+  than many short statements, as on 09-13); sourcing it (parse and run) 1.36 ms. Bare launch in the same samples
+  10.6 ms, so the parse is ~4% of a bare launch and ~3% of the ~16 ms call of "RESULT (T3)". T3 timed the whole
+  snapshot at 0.6 ms with the timing switch; 1.36 ms here is a whole-launch difference: not reconciled. The 09-13
+  "38% of a call" was a 58 KB snapshot Claude Code no longer writes; the 15 ms `hash rg` miss went with the command map.
+Not explained: this bare launch (10.6 ms) is below compare3's startup row (14.4 ms); the callers differ (a Claude
+call's environment vs compare3 run from Git Bash), not investigated.
+
+## 2026-10-18 -- REVIEW R4 REPORT: ranked candidates (AWAITING THE ARCHITECT; no optimisation code before the pick)
+**Status:** AWAITING THE ARCHITECT. Ranked by what a Claude Code call pays (every call is a launch; calls rarely loop),
+then by saving for the risk. All "main" (streamlining the same bash) unless said.
+1. Lazy ICU: find what loads icu.dll at start-up and defer it to the first culture-sensitive operation. Cost 0.7 ms a
+   launch, measured (~5% of startup). Saving up to that on calls that never compare by culture [unmeasured which].
+   Effort small to find, unknown to remove; risk low, no behaviour change. The variant `InvariantGlobalization` saves
+   it everywhere but changes `sort`, `ls` and glob order and non-ASCII case mapping: a behaviour change.
+2. Split R1's unsplit start-up segments: "evaluator (environment, PATH)" 1.6 ms and "console" 0.7 ms (rev 273, before
+   the command map), the largest C#Bash-own start-up items. A measurement with the timing switch, not code.
+3. The `[[ ]]` trace text (rev 312) is built for every `[[ ]]` primary with set -x off (`CondTrace($"...")`, `op +
+   val`). Cost unmeasured (no tool row runs `[[ ]]`). A guard on `Options.XTrace`: trivial, no risk; a fix of waste.
+4. The `[` / `test` builtin: 115 ns and 312 B beyond `:` for three arguments, 41% of the loop row. Saving unmeasured;
+   effort small to medium; risk low (suite and battery cover test).
+5. The fixed cost of a simple command: 79 ns and 272 B for `:`, paid by every command. Saving unmeasured; effort medium
+   (find the allocations); risk low to medium.
+6. Arithmetic parsed once: every `$(( ))` re-parses its text (113 ns of `i + 1`, ~a quarter of the loop row). A kept
+   parsed form saves part of that [unmeasured], only for expressions with no `$` inside (their text changes). Effort
+   medium to large (a new representation in ArithParser); risk medium (short-circuit, assignment, side-effect order).
+   Main by the scope line, but near the edge: the architect's call.
+7. A function call: ~960 ns and 2.6 KB with its body, 67% of the func row. Needs a split before any choice.
+8. Lexer and parser allocation (110 B per character lexed, 0.95 us a statement): matters for large scripts run once,
+   ~3% of a Claude call. Effort large; steroids if it becomes a parser rewrite.
+9. A child's environment built per launch (rev 309): unmeasured; by reading a loop over the exported variables per
+   process creation, which itself costs milliseconds [unmeasured estimate: microseconds].
+**Claude's recommendation:** 3 as a fix; then 1 and the measurement 2, because every Claude call pays them; hold 4-8,
+since the interpreter rows are already 9-11x Git Bash and 2.4-2.8x WSL and Claude Code's calls are start-up bound.
+**Falsifier:** if the architect's workloads are long scripts (loops, large sourced libraries) rather than Claude calls,
+the order becomes 4, 6, 5, 8.
+
+## 2026-10-18 -- BUILT (R4 picks 1-3): icu.dll only when needed, the `[[ ]]` trace text only under set -x, the start-up split
+**Status:** Active. The architect, on "REVIEW R4 REPORT": "1, 2, 3 concur; go, deploy, notify, publish".
+
+**3, the `[[ ]]` trace:** `CondTrace(a, b, c)` builds its line only under set -x (it was an interpolated string per
+primary, set -x or not). The xtrace cases are unchanged.
+
+**1, lazy ICU:** found with cdb (Windows SDK Debugging Tools) on a symbol-carrying AOT build in the scratchpad, breaking
+on icu.dll's load (`sxe ld:icu`), fixed one trigger at a time until none of tests/bench/claudecall.sh's seven calls
+(its wrapper and snapshot: bare, true, ls, cat | head, grep -rn, git status, cd && pwd) loaded it. Each of these loaded
+ICU in every call:
+- start-up: `ShellEncoding.Strict` by `Encoding.GetEncoding("utf-8", …)` (a by-name lookup lower-cases through
+  TextInfo; now `new UTF8Encoding(false, true)`, the same decoder); `a.StartsWith("--")` (culture); the positional
+  test `int.TryParse(name)` on every read of an upper-case name (now digits only, invariant); `ToLowerInvariant` in
+  the Git-tools probe and for HOSTNAME (ASCII now by System.Text.Ascii, non-ASCII still through TextInfo); SHLVL's
+  and the build stamp's parses; `SecurityIdentifier.Value` for UID (its text is upper-cased through TextInfo; now the
+  RID from the binary form: UID 197609 before and after);
+- every call: the parser's `StartsWith("~/")` and its kind: all 36 single-literal `StartsWith`/`EndsWith` now ordinal
+  (plus grep's `StartsWith(name + "=")`); all 87 integer parses without a culture now invariant (`NumberStyles.Integer`,
+  the default style); the command map's file time (`File.GetLastWriteTimeUtc` goes through local time, and
+  TimeZoneInfo's set-up asks the UI culture for UTC's display name: now `GetFileTime`); `$( )`'s StringWriter (the
+  one-argument constructor takes CurrentCulture) and two other StringWriters, now invariant.
+Behaviour: none on this machine (user locale en-US). Ordinal is bash's byte comparison; the invariant integer parse
+accepts what a user culture's does (sv-SE, whose minus is U+2212, also accepts `-`: verified in-process). ICU still
+loads where culture is the point: non-ASCII case mapping (`${x^^}`), local time (`date`, `ls -l`), and once when a
+new PATH value's command map prunes old maps (FileSystemInfo times).
+**Guard:** the timing switch writes `icu yes|no` at exit, read before its own formatting (which loads ICU); case
+icu_lazy: 19 everyday commands "no", the controls `${x^^}` of é and `date` "yes". It failed on the way (`$( )`), so it
+can fail. It is `AotOnly`: the JIT build's CoreCLR loads ICU at start-up (`exit 0` measured "yes"), so the runner
+reports it SKIP there, on a line of its own (deploy.sh reads "N passed, N failed").
+
+**2, the split** (new marks `console.out/in/writers`, `env.import/git/own/home/uid/ppid/done`; read from the switch's
+log with claudecall.sh's averaging: 5 x 20 launches of `-c 'exit 0'`, every launch after the warm-up): console set-up
+0.57 -> 0.34 ms (OutputEncoding 0.25, each other part < 0.07); evaluator 1.58 -> 1.32 ms, of which Git tools on PATH
+0.66 and PPID 0.47, each other part < 0.08.
+**New candidates from the split (NOT built; the architect's pick):**
+- Git tools on PATH, 0.66 ms here: `git.exe` is in PATH entry 2 (`PortableGit/mingw64/bin`), but a `mingw64/bin` leaf
+  is never taken as Git's root (its branch is unreachable: `leaf is "cmd" or "bin"` catches it first), so the probe
+  runs on to entry 37 (`PortableGit/bin`), then finds both directories already on PATH and adds nothing. Fixing the
+  branch would stop at entry 2 [saving unmeasured].
+- PPID, 0.47 ms: `Process.GetCurrentProcess()` is built only for its handle; the pseudo-handle would do [unmeasured].
+- `Console.OutputEncoding`, 0.25 ms: not examined.
+**Found on the way (not fixed, the architect's to schedule):** numbers are formatted with the current culture
+(`long.ToString()`, e.g. every `$(( ))` result), so on a machine whose culture's minus is U+2212 (sv-SE and others:
+-5 formats as U+2212 5, verified in-process) `echo $((-5))` would print U+2212. Negative numbers only; this machine
+is unaffected.
+
+**Verified:** suite 157/157 on the AOT build with a console and `-Detached`; JIT build 156 passed, icu_lazy skipped;
+battery 226/237 (as rev 316). The measured saving follows the deploy.
+
+## 2026-10-18 -- DEPLOYED rev 320; notice to the nine sessions; measured: a Claude call ~1.6 ms faster
+**Status:** Active. The architect: "go, deploy, notify, publish".
+
+**Deployed by `tools/deploy.sh`:** `dist/Bash.exe` = `1.0.0+hg.8ae72c3b647d 320`; suite 157/157 on that AOT binary with
+a console and `-Detached` (icu_lazy runs there); battery 226/237 against 225; rollback `dist/Bash.exe.rev316`. Live,
+from a Claude Code call: rev 320, `icu no` for a call, set -x traces `[[ a == a ]]`. Notice (behaviour changes: none
+expected; ICU only when needed, ordinal tests, invariant parses; the trace; the timing log's new lines) delivered to
+gps-time-2c, adc-framework-d8, msp430-a2, nupkg-28, guy-b3, koliada-net-7c, daq-fe, guy-97, ananta-f5.
+
+**Measured, back to back (rev 320, then a scratch copy of rev 316 as `Bash.exe`: the `.rev316` name is not a
+program to `[ -x ]` since rev 316):** `tests/bench/claudecall.sh` (and `--cs`), ms: bare 10.2 / 10.6, true 11.4 /
+13.0, ls 11.5 / 13.1, cat | head 11.9 / 13.1, grep -rn 20.2 / 21.6, git status 25.1 / 26.1, cd && pwd 11.0 / 12.9.
+The snapshot segment 0.56 / 1.41 ms: its `hash rg` reached the command map's local file time, which set up
+TimeZoneInfo and the user culture as well as ICU, so the saving is more than ICU's 0.7 ms. That reconciles R3's
+snapshot (1.36 ms) with T3's (0.6 ms): the ICU load fell inside the snapshot. compare3 (from Git Bash): startup 9.5 /
+10.6 ms, every other row within 4%.
+**Unexplained:** the same rev 316 binary's compare3 startup was 14.4 ms at 08:02 and 10.6 ms at 09:21, while Git
+Bash's was 14.9 and 14.6: C#Bash's start-up varies with something in the machine's state that Git Bash's does not.
+Not the Git-tools probe's drives (entries 3-36 are local fixed C: and F:; the network X: entries are 45-46, past
+where it stops). Not investigated further. It also accounts for R3's other open note (bare 10.6 against compare3's
+14.4 at 08:02: the same at 09:21).
+
+**Doc review for the publish:** README's table from the 09:15 run of rev 320 (startup 9.5 ms, Git Bash 14.8); its
+sentences (startup "~10 ms against Git Bash's ~15", pipeline level with Git Bash at 0.9-1.2x across today's runs,
+the call's anatomy from rev 320, icu.dll only when needed, the startup-variance caveat, 157 cases); ARCHITECTURE
+9.4 "No culture unless culture is the point"; IMPLEMENTATION's timing-switch line.

@@ -197,7 +197,7 @@ public sealed partial class Builtins
 		{
 		var o = Opts.Parse("nproc", args, "", ["all", "ignore="]);
 		int n = Environment.ProcessorCount;
-		if (o.GetLong("ignore") is string ig && int.TryParse(ig, out var k)) n = Math.Max(1, n - k);
+		if (o.GetLong("ignore") is string ig && int.TryParse(ig, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var k)) n = Math.Max(1, n - k);
 		Console.WriteLine(n);
 		return 0;
 		}
@@ -322,7 +322,7 @@ public sealed partial class Builtins
 				units = DfBlockSpec(val!, out var err);
 				if (units is null)
 					{
-					string which = args.Any(a => a.StartsWith("--block-size")) ? "--block-size" : "-B";
+					string which = args.Any(a => a.StartsWith("--block-size", StringComparison.Ordinal)) ? "--block-size" : "-B";
 					Console.Error.WriteLine(err switch
 						{
 						"suffix" => $"df: invalid suffix in {which} argument '{val}'",

@@ -1040,7 +1040,7 @@ internal sealed class JqInterp(JObj env)
 					sb.Append(s, pos, m.Index - pos);
 					var captures = new JObj();
 					foreach (var g in rx.GetGroupNames())
-						if (!int.TryParse(g, out _)) captures.Set(g, m.Groups[g].Success ? m.Groups[g].Value : null);
+						if (!int.TryParse(g, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _)) captures.Set(g, m.Groups[g].Success ? m.Groups[g].Value : null);
 					var rep = Eval(a[1], captures, vars).FirstOrDefault();
 					if (rep is not string rs) throw new JqError($"{Json.TypeName(rep)} ({Json.Brief(rep)}) cannot be added to a string");
 					sb.Append(rs);

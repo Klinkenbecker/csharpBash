@@ -45,6 +45,8 @@ public static class Timing
 		try
 			{
 			long end = Stopwatch.GetTimestamp();
+			// before anything below: formatting a double and the process's local start time load ICU themselves
+			bool icu = GetModuleHandleW("icu.dll") != IntPtr.Zero;
 			// the OS's creation time of this process: Main's own offset from it is the runtime's start-up
 			double main = (_mainUtc - Process.GetCurrentProcess().StartTime.ToUniversalTime()).TotalMilliseconds;
 			double Ms(long ticks) => main + (ticks - _t0) * 1000.0 / Stopwatch.Frequency;
@@ -52,9 +54,15 @@ public static class Timing
 			sb.Append("pid ").Append(Environment.ProcessId).Append('\n');
 			sb.Append(main.ToString("F3")).Append(" main\n");
 			lock (_marks) foreach (var (at, what) in _marks) sb.Append(Ms(at).ToString("F3")).Append(' ').Append(what).Append('\n');
+			// whether icu.dll (~0.7 ms a launch) was needed: it loads at the first culture-sensitive operation, and
+			// a plain call has none (2026-10-18, review R4; case icu_lazy)
+			sb.Append("icu ").Append(icu ? "yes" : "no").Append('\n');
 			sb.Append(Ms(end).ToString("F3")).Append(" exit\n");
 			File.AppendAllText(_log, sb.ToString());
 			}
 		catch (Exception) { }   // a timing log must never change how the shell exits
 		}
+
+	[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+	private static extern IntPtr GetModuleHandleW(string module);
 	}

@@ -131,11 +131,11 @@ public sealed partial class Builtins
 				var body = a[1..];
 				if (body.All(char.IsAsciiDigit)) continue;
 				var up = body.ToUpperInvariant();
-				if (up.StartsWith("SIG")) up = up[3..];
+				if (up.StartsWith("SIG", StringComparison.Ordinal)) up = up[3..];
 				if (SignalWords.Contains(up)) continue;
 				}
 			if (kill && a == "--signal" && i + 1 < args.Count) { i++; continue; }
-			if (kill && a.StartsWith("--signal=")) continue;
+			if (kill && a.StartsWith("--signal=", StringComparison.Ordinal)) continue;
 			norm.Add(a);
 			}
 		var o = Opts.Parse(tool, norm, "fxlacnovP:d:ie",
@@ -148,7 +148,7 @@ public sealed partial class Builtins
 		int? parent = null;
 		if (o.Get('P') is string ps)
 			{
-			if (!int.TryParse(ps, out var pp)) { Console.Error.WriteLine($"{tool}: invalid parent pid '{ps}'"); return 2; }
+			if (!int.TryParse(ps, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var pp)) { Console.Error.WriteLine($"{tool}: invalid parent pid '{ps}'"); return 2; }
 			parent = pp;
 			}
 		if (pattern is null && parent is null) { Console.Error.WriteLine($"{tool}: no matching criteria specified"); return 2; }
@@ -287,7 +287,7 @@ public sealed partial class Builtins
 			only = [];
 			foreach (var s in plist.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries))
 				{
-				if (!int.TryParse(s, out var pid)) { Console.Error.WriteLine($"ps: invalid pid '{s}'"); return 1; }
+				if (!int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var pid)) { Console.Error.WriteLine($"ps: invalid pid '{s}'"); return 1; }
 				only.Add(pid);
 				}
 			}

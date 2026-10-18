@@ -845,7 +845,7 @@ public sealed partial class Builtins
 		var rest = new List<string>(); string? mode = null;
 		foreach (var a in args)
 			{
-			if (mode is null && (a.StartsWith('+') || (a.StartsWith('-') && a.Length > 1 && "rwxXstugoa".IndexOf(a[1]) >= 0 && !a.StartsWith("-R") && !a.StartsWith("-v") && !a.StartsWith("-c") && !a.StartsWith("-f")) || (a.Length > 0 && char.IsDigit(a[0])) || (a.Length > 0 && "ugoa".IndexOf(a[0]) >= 0 && a.IndexOfAny(['+', '-', '=']) > 0)))
+			if (mode is null && (a.StartsWith('+') || (a.StartsWith('-') && a.Length > 1 && "rwxXstugoa".IndexOf(a[1]) >= 0 && !a.StartsWith("-R", StringComparison.Ordinal) && !a.StartsWith("-v", StringComparison.Ordinal) && !a.StartsWith("-c", StringComparison.Ordinal) && !a.StartsWith("-f", StringComparison.Ordinal)) || (a.Length > 0 && char.IsDigit(a[0])) || (a.Length > 0 && "ugoa".IndexOf(a[0]) >= 0 && a.IndexOfAny(['+', '-', '=']) > 0)))
 				{ mode = a; continue; }
 			rest.Add(a);
 			}

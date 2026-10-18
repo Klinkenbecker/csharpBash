@@ -54,7 +54,7 @@ public sealed partial class Builtins
 			{
 			if (args[i] == "-L") st.FollowLinks = true;
 			else if (args[i] is "-H" or "-P") { }
-			else if (args[i].StartsWith("-O")) { }
+			else if (args[i].StartsWith("-O", StringComparison.Ordinal)) { }
 			else break;
 			}
 		for (; i < args.Count && !args[i].StartsWith('-') && args[i] != "!" && args[i] != "(" && args[i] != ","; i++)
@@ -171,7 +171,7 @@ public sealed partial class Builtins
 				}
 			case "-path": case "-wholename": case "-ipath": case "-iwholename":
 				{
-				var pat = FindArg(a, ref i, t); bool ic = t.StartsWith("-i");
+				var pat = FindArg(a, ref i, t); bool ic = t.StartsWith("-i", StringComparison.Ordinal);
 				return new FindPred((e, s, b) => Glob.Match(pat, e.Display, ic) || Glob.Match(pat, e.Display.Replace('\\', '/'), ic));
 				}
 			case "-regex": case "-iregex":
@@ -190,8 +190,8 @@ public sealed partial class Builtins
 					_ => false,
 					}));
 				}
-			case "-maxdepth": st.MaxDepth = int.Parse(FindArg(a, ref i, t)); return new FindPred((e, s, b) => true);
-			case "-mindepth": st.MinDepth = int.Parse(FindArg(a, ref i, t)); return new FindPred((e, s, b) => true);
+			case "-maxdepth": st.MaxDepth = int.Parse(FindArg(a, ref i, t), System.Globalization.CultureInfo.InvariantCulture); return new FindPred((e, s, b) => true);
+			case "-mindepth": st.MinDepth = int.Parse(FindArg(a, ref i, t), System.Globalization.CultureInfo.InvariantCulture); return new FindPred((e, s, b) => true);
 			case "-depth": st.PostOrder = true; return new FindPred((e, s, b) => true);
 			case "-follow": st.FollowLinks = true; return new FindPred((e, s, b) => true);
 			case "-mount": case "-xdev": case "-noleaf": case "-daystart": case "-ignore_readdir_race": case "-noignore_readdir_race":
@@ -340,7 +340,7 @@ public sealed partial class Builtins
 		char cmp = '=';
 		if (s.StartsWith('+')) { cmp = '+'; s = s[1..]; }
 		else if (s.StartsWith('-')) { cmp = '-'; s = s[1..]; }
-		if (!long.TryParse(s, out var n)) throw new Exception($"invalid argument `{s}'");
+		if (!long.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)) throw new Exception($"invalid argument `{s}'");
 		return (cmp, n);
 		}
 
@@ -418,7 +418,7 @@ public sealed partial class Builtins
 		if (o.Has('c') || o.Has('C')) throw new UnsupportedOptionException("diff", "-c", "context format is not implemented (use -u)");
 		if (o.Operands.Count < 2) { Console.Error.WriteLine(o.Operands.Count == 0 ? "diff: missing operand" : $"diff: missing operand after '{o.Operands[0]}'"); return 2; }
 		bool unified = o.Has('u') || o.Has('U');
-		int context = o.Get('U') is string uc && int.TryParse(uc, out var ucn) ? ucn : 3;
+		int context = o.Get('U') is string uc && int.TryParse(uc, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var ucn) ? ucn : 3;
 		var opt = new DiffOptions
 			{
 			Unified = unified, Context = context, Brief = o.Has('q'), ReportIdentical = o.Has('s'), IgnoreCase = o.Has('i'),

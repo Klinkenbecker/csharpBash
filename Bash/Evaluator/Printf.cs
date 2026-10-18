@@ -63,14 +63,14 @@ public static class PrintfFormatter
 			if (i < fmt.Length && fmt[i] == '*')
 				{ i++; width = (int)ToLong(NextArg(args, ref ai), err, ref rc); if (width < 0) { left = true; width = -width; } }
 			else
-				{ int s = i; while (i < fmt.Length && char.IsAsciiDigit(fmt[i])) i++; if (i > s) width = int.Parse(fmt.AsSpan(s, i - s)); }
+				{ int s = i; while (i < fmt.Length && char.IsAsciiDigit(fmt[i])) i++; if (i > s) width = int.Parse(fmt.AsSpan(s, i - s), System.Globalization.CultureInfo.InvariantCulture); }
 			// precision
 			int prec = -1;
 			if (i < fmt.Length && fmt[i] == '.')
 				{
 				i++;
 				if (i < fmt.Length && fmt[i] == '*') { i++; prec = (int)ToLong(NextArg(args, ref ai), err, ref rc); }
-				else { int s = i; while (i < fmt.Length && char.IsAsciiDigit(fmt[i])) i++; prec = i > s ? int.Parse(fmt.AsSpan(s, i - s)) : 0; }
+				else { int s = i; while (i < fmt.Length && char.IsAsciiDigit(fmt[i])) i++; prec = i > s ? int.Parse(fmt.AsSpan(s, i - s), System.Globalization.CultureInfo.InvariantCulture) : 0; }
 				}
 			// length modifiers (ignored; note `q` is a conversion, not a modifier)
 			while (i < fmt.Length && "hlLjzt".IndexOf(fmt[i]) >= 0) i++;
@@ -246,7 +246,7 @@ public static class PrintfFormatter
 			{
 			// bash prints the leading numeric prefix's value and warns
 			int k = 0; while (k < t.Length && char.IsAsciiDigit(t[k])) k++;
-			long.TryParse(k > 0 ? t[..k] : "0", out v);
+			long.TryParse(k > 0 ? t[..k] : "0", System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out v);
 			err.WriteLine($"printf: {a}: invalid number");
 			rc = 1;
 			}

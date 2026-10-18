@@ -121,3 +121,81 @@ process exit (after the mark)            7.09       7.08       7.61       7.66  
 whole call (switch on)                  17.94      17.89      18.82      25.88      35.61      18.33
 criterion: exit <= 10%            UNACCOUNTEDUNACCOUNTEDUNACCOUNTEDUNACCOUNTEDUNACCOUNTEDUNACCOUNTED
 ```
+
+## 2026-10-18 09:14 claudecall.sh
+
+```
+date     : 2026-10-18 09:14:08
+C#Bash   : F:/Koliada/Tools/bash/dist/Bash.exe   [dist (deployed)]
+           C#Bash build 1.0.0+hg.8ae72c3b647d 320
+method   : Claude Code's -c wrapper with the snapshot fixture, launched by tools/benchtimer from the repo root;
+           each row the median of 5 samples of 20 launches (mean per launch), builds in alternating rounds
+
+call           C#Bash
+------------------------------------------
+bare            10.2ms
+true            11.4ms
+ls              11.5ms
+cat-head        11.9ms
+grep-rn         20.2ms
+git-status      25.1ms
+cd-pwd          11.0ms
+
+anatomy (ms, mean of 20 launches with BASH_TIMING_LOG set):
+segment                                  true         ls   cat-head    grep-rn git-status     cd-pwd
+---------------------------------------------------------------------------------------------
+runtime start (creation to Main)         7.10       6.65       6.66       6.97       6.78       6.82
+console set-up                           0.29       0.28       0.26       0.28       0.27       0.28
+evaluator (environment, PATH)            1.33       1.23       1.21       1.28       1.24       1.24
+options, startup files                   0.14       0.13       0.13       0.13       0.14       0.13
+parse the call, reach source             0.11       0.12       0.11       0.12       0.12       0.11
+snapshot (source)                        0.56       0.53       0.55       0.54       0.57       0.54
+wrapper builtins                         0.01       0.01       0.01       0.01       0.01       0.01
+the command (eval)                       0.00       0.12       0.29       8.00      12.80       0.04
+  of which external programs             0.00       0.00       0.00       0.00      12.65       0.00
+cwd write-back (pwd -P >|)               0.62       0.62       0.62       0.60       0.62       0.59
+exit handler                             0.00       0.00       0.00       0.00       0.00       0.00
+= the exit mark                         10.16       9.69       9.85      17.92      22.56       9.77
+process exit (after the mark)            3.97       3.73       3.72       4.29       3.86       3.79
+whole call (switch on)                  14.14      13.43      13.58      22.22      26.42      13.57
+criterion: exit <= 10%            UNACCOUNTEDUNACCOUNTEDUNACCOUNTEDUNACCOUNTEDUNACCOUNTEDUNACCOUNTED
+```
+
+## 2026-10-18 09:15 claudecall.sh
+
+```
+date     : 2026-10-18 09:14:55
+C#Bash   : F:/TEMP/claude/F--Koliada-Tools-bash/a6218fb2-86a7-48c3-bedd-2cb7a1a89778/scratchpad/rev316/Bash.exe   [--cs F:/TEMP/claude/F--Koliada-Tools-bash/a6218fb2-86a7-48c3-bedd-2cb7a1a89778/scratchpad/rev316/Bash.exe]
+           C#Bash build 1.0.0+hg.32784b3827fd 316
+method   : Claude Code's -c wrapper with the snapshot fixture, launched by tools/benchtimer from the repo root;
+           each row the median of 5 samples of 20 launches (mean per launch), builds in alternating rounds
+
+call           C#Bash
+------------------------------------------
+bare            10.6ms
+true            13.0ms
+ls              13.1ms
+cat-head        13.1ms
+grep-rn         21.6ms
+git-status      26.1ms
+cd-pwd          12.9ms
+
+anatomy (ms, mean of 20 launches with BASH_TIMING_LOG set):
+segment                                  true         ls   cat-head    grep-rn git-status     cd-pwd
+---------------------------------------------------------------------------------------------
+runtime start (creation to Main)         6.99       6.86       7.12       7.16       7.08       6.91
+console set-up                           0.66       0.64       0.65       0.69       0.70       0.64
+evaluator (environment, PATH)            1.64       1.63       1.64       1.65       1.78       1.60
+options, startup files                   0.18       0.17       0.17       0.17       0.18       0.17
+parse the call, reach source             0.16       0.15       0.15       0.15       0.17       0.15
+snapshot (source)                        1.41       1.41       1.38       1.40       1.47       1.43
+wrapper builtins                         0.01       0.01       0.02       0.01       0.02       0.01
+the command (eval)                       0.00       0.14       0.35       7.83      12.40       0.04
+  of which external programs             0.00       0.00       0.00       0.00      12.13       0.00
+cwd write-back (pwd -P >|)               0.58       0.58       0.62       0.61       0.64       0.59
+exit handler                             0.00       0.00       0.00       0.00       0.00       0.00
+= the exit mark                         11.63      11.59      12.09      19.66      24.44      11.56
+process exit (after the mark)            2.29       2.20       2.24       2.68       2.35       2.19
+whole call (switch on)                  13.92      13.79      14.33      22.34      26.80      13.75
+criterion: exit <= 10%            UNACCOUNTEDUNACCOUNTEDUNACCOUNTEDUNACCOUNTED        metUNACCOUNTED
+```

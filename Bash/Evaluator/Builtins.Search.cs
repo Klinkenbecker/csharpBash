@@ -229,10 +229,10 @@ public sealed partial class Builtins
 		     wordMatch = o.Has('w'), lineMatch = o.Has('x'), fixedStr = o.Has('F'), ere = o.Has('E'), pcre = o.Has('P'), recursive = o.Has('r') || o.Has('R'),
 		     quiet = o.Has('q'), noMessages = o.Has('s'), noFilename = o.Has('h'), withFilename = o.Has('H'), onlyMatching = o.Has('o'), text = o.Has('a'),
 		     byteOffset = o.Has('b'), nullData = o.Has('z'), nullAfterName = o.Has('Z');
-		int maxCount = o.Get('m') is string ms ? int.Parse(ms) : -1;
+		int maxCount = o.Get('m') is string ms ? int.Parse(ms, System.Globalization.CultureInfo.InvariantCulture) : -1;
 		int after = o.GetInt('A', 0), before = o.GetInt('B', 0);
-		if (o.Get('C') is string cs) { after = before = int.Parse(cs); }
-		if (o.Numeric is not null) { after = before = int.Parse(o.Numeric); }
+		if (o.Get('C') is string cs) { after = before = int.Parse(cs, System.Globalization.CultureInfo.InvariantCulture); }
+		if (o.Numeric is not null) { after = before = int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture); }
 		bool skipBinary = o.Has('I') || o.GetLong("binary-files") == "without-match";
 		string groupSep = o.HasLong("no-group-separator") ? "" : (o.GetLong("group-separator") ?? "--");
 		var includes = o.All('\0').ToList(); // placeholder, filled below
@@ -380,7 +380,7 @@ public sealed partial class Builtins
 		for (int i = 0; i < args.Count; i++)
 			{
 			if (args[i] == "--") break;
-			if (args[i].StartsWith(name + "=")) list.Add(args[i][(name.Length + 1)..]);
+			if (args[i].StartsWith(name + "=", StringComparison.Ordinal)) list.Add(args[i][(name.Length + 1)..]);
 			else if (args[i] == name && i + 1 < args.Count) list.Add(args[++i]);
 			}
 		return list;
@@ -504,7 +504,7 @@ public sealed partial class Builtins
 				catch (Exception ex) { Console.Error.WriteLine($"sed: can't read {f}: {IoError(ex)}"); rc = 2; continue; }
 				var outSb = new StringBuilder();
 				int code;
-				using (var w = new StringWriter(outSb) { NewLine = "\n" })
+				using (var w = new StringWriter(outSb, System.Globalization.CultureInfo.InvariantCulture) { NewLine = "\n" })
 					code = SedRun(prog, lines, w, noAuto, nullData, f, mnl);
 				try
 					{

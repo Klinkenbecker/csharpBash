@@ -294,6 +294,19 @@ Builtins that must emit exact bytes (e.g. `cat`, `od`) bypass the text `Console`
 `$( )`. Console newlines are forced to LF, not CRLF. *(DECISIONS: 2026-06-14 — Byte-faithful
 stdout for builtins.)*
 
+### 9.4 No culture unless culture is the point
+
+bash compares bytes and reads integers the same way in every locale, so the shell's string tests are
+ordinal (`StringComparison.Ordinal`, `IndexOf(char)`) and its integer parses use the invariant culture,
+as do the writers it formats into (`$( )`'s `StringWriter`). Culture data is used only where it is the
+behaviour: non-ASCII case mapping (`${x^^}`) and local time (`date`, `ls -l`). This keeps `icu.dll`
+(Windows' ICU) out of an ordinary call: it loads at the first culture-sensitive operation, and a call
+that has none no longer pays ~1.6 ms for it. Watch for the quiet culture paths: a one-argument
+`StartsWith`/`EndsWith`/`IndexOf(string)`, `int.TryParse(s, out …)`, `ToLowerInvariant` (TextInfo),
+`File.GetLastWriteTimeUtc` (local time first) and `new StringWriter(sb)`. Case `icu_lazy` (Native AOT)
+fails when one reaches a common command. Number *formatting* still uses the current culture (an open
+item: a culture whose minus is U+2212). *(DECISIONS: 2026-10-18 — BUILT (R4 picks 1-3).)*
+
 ---
 
 ## 10. In-process coreutils

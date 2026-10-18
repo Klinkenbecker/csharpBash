@@ -22,7 +22,7 @@ public static class FileTests
 			return op switch
 				{
 				"-e" or "-a" or "-r" or "-w" or "-O" or "-G" => true,
-				"-c" => !dev.StartsWith("fd:") || FdIsCharDevice(ShellFile.DeviceFd(p)),
+				"-c" => !dev.StartsWith("fd:", StringComparison.Ordinal) || FdIsCharDevice(ShellFile.DeviceFd(p)),
 				"-f" or "-d" or "-s" or "-x" or "-L" or "-h" or "-p" or "-S" or "-b" or "-k" or "-u" or "-g" or "-N" => false,
 				_ => null,
 				};
@@ -45,7 +45,7 @@ public static class FileTests
 			case "-O": case "-G": return isFile || isDir;
 			case "-t":
 				{
-				if (!int.TryParse(val, out var fd)) return false;
+				if (!int.TryParse(val, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var fd)) return false;
 				return fd switch
 					{
 					0 => !Console.IsInputRedirected,

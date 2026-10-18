@@ -334,8 +334,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			elems = joined.Length == 0 ? [] : joined.Split(' ').ToList();
 			return true;
 			}
-		if      (body.EndsWith("[@]")) star = false;
-		else if (body.EndsWith("[*]")) star = true;
+		if      (body.EndsWith("[@]", StringComparison.Ordinal)) star = false;
+		else if (body.EndsWith("[*]", StringComparison.Ordinal)) star = true;
 		else return false;
 		var name = body[..^3];
 		if (name.Length == 0) return false;
@@ -475,7 +475,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		if (raw[0] == '#' && raw.Length > 1)
 			{
 			var body = raw[1..];
-			if (body.EndsWith("[@]") || body.EndsWith("[*]"))
+			if (body.EndsWith("[@]", StringComparison.Ordinal) || body.EndsWith("[*]", StringComparison.Ordinal))
 				{
 				var n = body[..^3];
 				if (_env.IsArray(n)) return _env.GetArrayLength(n).ToString();
@@ -493,10 +493,10 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		if (raw[0] == '!' && raw.Length > 1)
 			{
 			var body = raw[1..];
-			if (body.EndsWith("[@]") || body.EndsWith("[*]"))
+			if (body.EndsWith("[@]", StringComparison.Ordinal) || body.EndsWith("[*]", StringComparison.Ordinal))
 				{
 				var n = body[..^3];
-				var keySep = body.EndsWith("[*]") ? StarJoin : " ";   // ${!a[*]} joins as ${a[*]} does
+				var keySep = body.EndsWith("[*]", StringComparison.Ordinal) ? StarJoin : " ";   // ${!a[*]} joins as ${a[*]} does
 				if (_env.IsArray(n)) return string.Join(keySep, _env.GetArrayKeys(n));
 				if (_env.IsAssoc(n)) return string.Join(keySep, _env.GetAssocKeys(n));
 				return "";
@@ -735,7 +735,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		string param = raw[..opStart], op = raw[opStart..];
 		int k = op[0] == ':' ? 1 : 0;
 		if (op.Length <= k || op[k] is not ('-' or '+')) return false;
-		if (param.EndsWith("[@]") || param.EndsWith("[*]")) return false;
+		if (param.EndsWith("[@]", StringComparison.Ordinal) || param.EndsWith("[*]", StringComparison.Ordinal)) return false;
 		// the value without set -u's check: these operators are how a script tests for unset
 		int lb = param.IndexOf('[');
 		string val = lb > 0 && param.EndsWith(']') ? ElementValue(param[..lb], param[(lb + 1)..^1]) : _env.Get(param);
@@ -1063,11 +1063,11 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	private static List<string>? ExpandRange(string[] parts)
 		{
 		string from = parts[0], to = parts[1];
-		int step = parts.Length >= 3 && int.TryParse(parts[2], out var s) ? Math.Abs(s) : 1;
+		int step = parts.Length >= 3 && int.TryParse(parts[2], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var s) ? Math.Abs(s) : 1;
 		if (step == 0) step = 1;
 
 		// Numeric range
-		if (long.TryParse(from, out var iFrom) && long.TryParse(to, out var iTo))
+		if (long.TryParse(from, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var iFrom) && long.TryParse(to, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var iTo))
 			{
 			var result = new List<string>();
 			int width = Math.Max(from.Length, to.Length);
@@ -1144,7 +1144,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		var oldOut = ConsoleMux.OutSlot;
 		var oldRaw = ConsoleMux.Raw;
 		bool oldCap = ConsoleMux.Capturing;
-		using var sw = new System.IO.StringWriter(captured) { NewLine = "\n" };
+		using var sw = new System.IO.StringWriter(captured, System.Globalization.CultureInfo.InvariantCulture) { NewLine = "\n" };   // invariant: the current culture loads ICU in every $( )
 		var snap = _env.TakeSnapshot();
 		var mark = _eval.EnterSubshell();   // functions, options, traps, aliases it sets vanish with it
 		bool debugOff = _eval.SuspendDebug();   // DEBUG and RETURN stay outside unless -T
@@ -1288,7 +1288,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				}
 			else val = _o.GetChecked(name);   // set -u: an unset name in arithmetic is an error too
 			if (val.Length == 0) return 0;
-			if (long.TryParse(val, out var n)) return n;
+			if (long.TryParse(val, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)) return n;
 			// bash evaluates a non-numeric value as an expression itself (x="y+1")
 			if (_depth > 8) return 0;
 			_depth++;

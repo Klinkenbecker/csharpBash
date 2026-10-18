@@ -65,16 +65,16 @@ public sealed partial class Builtins
 		// GNU size suffixes: b=512, k/K=1024, m/M, g/G, and kB/MB (1000-based)
 		var s = v.Trim();
 		long mult = 1;
-		if (s.EndsWith("kB")) { mult = 1000; s = s[..^2]; }
-		else if (s.EndsWith("MB")) { mult = 1000_000; s = s[..^2]; }
-		else if (s.EndsWith("GB")) { mult = 1000_000_000; s = s[..^2]; }
+		if (s.EndsWith("kB", StringComparison.Ordinal)) { mult = 1000; s = s[..^2]; }
+		else if (s.EndsWith("MB", StringComparison.Ordinal)) { mult = 1000_000; s = s[..^2]; }
+		else if (s.EndsWith("GB", StringComparison.Ordinal)) { mult = 1000_000_000; s = s[..^2]; }
 		else if (s.Length > 0 && char.IsLetter(s[^1]))
 			{
 			mult = char.ToLowerInvariant(s[^1]) switch { 'b' => 512, 'k' => 1024, 'm' => 1024L * 1024, 'g' => 1024L * 1024 * 1024, _ => -1 };
 			if (mult < 0) throw new UnsupportedOptionException(tool, $"-{opt} {v}", "invalid number");
 			s = s[..^1];
 			}
-		if (!long.TryParse(s, out var n)) throw new UnsupportedOptionException(tool, $"-{opt} {v}", "invalid number");
+		if (!long.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)) throw new UnsupportedOptionException(tool, $"-{opt} {v}", "invalid number");
 		return n * mult;
 		}
 
@@ -169,7 +169,7 @@ public sealed partial class Builtins
 		var o = Opts.Parse("head", args, "n:c:qvz", ["lines=:n", "bytes=:c", "quiet:q", "silent:q", "verbose:v", "zero-terminated:z"], allowNumeric: true);
 		var files = FilesOrStdin(o);
 		long count = 10; bool bytes = false, fromEnd = false;
-		if (o.Numeric is not null) count = long.Parse(o.Numeric);
+		if (o.Numeric is not null) count = long.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture);
 		if (o.Get('n') is string nv) { fromEnd = nv.StartsWith('-'); count = ParseCount("head", nv.TrimStart('-', '+'), 'n'); }
 		if (o.Get('c') is string cv) { bytes = true; fromEnd = cv.StartsWith('-'); count = ParseCount("head", cv.TrimStart('-', '+'), 'c'); }
 		bool header = o.Has('v') || (files.Count > 1 && !o.Has('q'));
@@ -257,7 +257,7 @@ public sealed partial class Builtins
 		var o = Opts.Parse("tail", args, "n:c:qvfFs:z", ["lines=:n", "bytes=:c", "quiet:q", "silent:q", "verbose:v", "follow:f", "sleep-interval=:s", "zero-terminated:z"], allowNumeric: true);
 		var files = FilesOrStdin(o);
 		long count = 10; bool bytes = false, fromStart = false;
-		if (o.Numeric is not null) count = long.Parse(o.Numeric);
+		if (o.Numeric is not null) count = long.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture);
 		if (o.Get('n') is string nv) { fromStart = nv.StartsWith('+'); count = ParseCount("tail", nv.TrimStart('-', '+'), 'n'); }
 		if (o.Get('c') is string cv) { bytes = true; fromStart = cv.StartsWith('+'); count = ParseCount("tail", cv.TrimStart('-', '+'), 'c'); }
 		bool follow = o.Has('f') || o.Has('F');
@@ -536,7 +536,7 @@ public sealed partial class Builtins
 				if (end > 0)
 					{
 					var spec = s[(i + 3)..end];
-					int n = int.TryParse(spec, out var nn) ? nn : 1;
+					int n = int.TryParse(spec, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var nn) ? nn : 1;
 					sb.Append(s[i + 1], Math.Max(1, n));
 					i = end + 1;
 					}
@@ -624,11 +624,11 @@ public sealed partial class Builtins
 			{
 			if (part.Length == 0) continue;
 			int dash = part.IndexOf('-');
-			if (dash < 0) { if (int.TryParse(part, out var v)) r.Add((v, v)); }
+			if (dash < 0) { if (int.TryParse(part, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v)) r.Add((v, v)); }
 			else
 				{
-				int lo = dash == 0 ? 1 : int.Parse(part[..dash]);
-				int hi = dash == part.Length - 1 ? int.MaxValue : int.Parse(part[(dash + 1)..]);
+				int lo = dash == 0 ? 1 : int.Parse(part[..dash], System.Globalization.CultureInfo.InvariantCulture);
+				int hi = dash == part.Length - 1 ? int.MaxValue : int.Parse(part[(dash + 1)..], System.Globalization.CultureInfo.InvariantCulture);
 				r.Add((lo, hi));
 				}
 			}
@@ -732,7 +732,7 @@ public sealed partial class Builtins
 	private static int Fold(List<string> args)
 		{
 		var o = Opts.Parse("fold", args, "w:sb", ["width=:w", "spaces:s", "bytes:b"], allowNumeric: true);
-		int width = o.Numeric is not null ? int.Parse(o.Numeric) : o.GetInt('w', 80);
+		int width = o.Numeric is not null ? int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture) : o.GetInt('w', 80);
 		bool breakSpaces = o.Has('s'), countBytes = o.Has('b');
 		if (width < 1) width = 1;
 		var rout = Evaluator.CurrentRawStdout();
@@ -974,9 +974,9 @@ public sealed partial class Builtins
 				{
 				int p = 0; var num = new StringBuilder();
 				while (p < spec.Length && char.IsDigit(spec[p])) num.Append(spec[p++]);
-				int field = num.Length > 0 ? int.Parse(num.ToString()) : 0;
+				int field = num.Length > 0 ? int.Parse(num.ToString(), System.Globalization.CultureInfo.InvariantCulture) : 0;
 				int ch = 0;
-				if (p < spec.Length && spec[p] == '.') { p++; var cn = new StringBuilder(); while (p < spec.Length && char.IsDigit(spec[p])) cn.Append(spec[p++]); ch = cn.Length > 0 ? int.Parse(cn.ToString()) : 0; }
+				if (p < spec.Length && spec[p] == '.') { p++; var cn = new StringBuilder(); while (p < spec.Length && char.IsDigit(spec[p])) cn.Append(spec[p++]); ch = cn.Length > 0 ? int.Parse(cn.ToString(), System.Globalization.CultureInfo.InvariantCulture) : 0; }
 				return (field, ch, spec[p..]);
 				}
 			var (sf, sc, so) = ParseSpec(parts[0]);
@@ -1138,7 +1138,7 @@ public sealed partial class Builtins
 	private static int Split(List<string> args)
 		{
 		var o = Opts.Parse("split", args, "l:b:a:dn:e", ["lines=:l", "bytes=:b", "suffix-length=:a", "numeric-suffixes:d", "additional-suffix=", "elide-empty-files:e", "number=:n"], allowNumeric: true);
-		int lines = o.Numeric is not null ? int.Parse(o.Numeric) : o.GetInt('l', 1000);
+		int lines = o.Numeric is not null ? int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture) : o.GetInt('l', 1000);
 		long byteSize = o.Get('b') is string bs ? ParseCount("split", bs, 'b') : 0;
 		if (o.Get('n') is not null) throw new UnsupportedOptionException("split", "-n", "chunk mode is not implemented");
 		int suffixLen = o.GetInt('a', 2);
@@ -1457,7 +1457,7 @@ public sealed partial class Builtins
 			if (!StrToUl(nv, out var v)) { Console.Error.WriteLine($"strings: invalid integer argument {nv}"); return 1; }
 			min = v > int.MaxValue ? int.MaxValue : (int)v;
 			}
-		else if (o.Numeric is { } digits) min = int.TryParse(digits, out var d) ? d : int.MaxValue;
+		else if (o.Numeric is { } digits) min = int.TryParse(digits, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : int.MaxValue;
 		if (min < 1) { Console.Error.WriteLine($"strings: invalid minimum string length {min}"); return 1; }
 		int radix = 0;   // the last of -t / -o wins
 		foreach (var (opt, val) in o.Sequence)
