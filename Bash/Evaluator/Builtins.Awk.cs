@@ -44,9 +44,10 @@ public sealed partial class Builtins
 			}
 		// gawk's location prefix: "cmd. line:N:" for a program operand, "FILE:N:" for -f
 		var source = progFiles.Count > 0 ? progFiles[0] : "cmd. line";
+		AwkInterp? interp = null;
 		try
 			{
-			var interp = new AwkInterp { Source = source };
+			interp = new AwkInterp { Source = source };
 			foreach (var a in o.All('v'))
 				{
 				if (!interp.AssignOperand(a)) { Console.Error.WriteLine($"awk: invalid -v argument '{a}'"); return 2; }
@@ -59,6 +60,16 @@ public sealed partial class Builtins
 			// an error gawk also reports (and exits 2 for): not a subset gap, so no fall-through
 			try { Console.Out.Flush(); } catch { }
 			Console.Error.WriteLine($"awk: {source}:{ex.Line}: fatal: {ex.Message}");
+			return 2;
+			}
+		catch (AwkUnsupportedException ex) when (interp is { Running: true })
+			{
+			// met only while the program ran (a format or RS that is not a literal): handed to the PATH awk it would run
+			// again from the start, after this run's output, stdin reads and system() calls ("first" printed twice,
+			// 2026-10-18). Loud instead, as decision 2 has it with no awk to fall through to.
+			try { Console.Out.Flush(); } catch { }
+			Console.Error.WriteLine($"awk: unsupported: {ex.Message}");
+			Console.Error.WriteLine("awk: (C#Bash: met while the program ran, so not handed to an external awk, which would run it again; BASH_COREUTILS=external runs the PATH awk from the start)");
 			return 2;
 			}
 		catch (AwkUnsupportedException ex) { throw new UnsupportedOptionException("awk", "unsupported", ex.Message); }
@@ -123,8 +134,7 @@ public sealed partial class Builtins
 
 		public static string NumToString(double n, string convfmt)
 			{
-			if (double.IsNaN(n)) return "nan";
-			if (double.IsInfinity(n)) return n > 0 ? "inf" : "-inf";
+			if (!double.IsFinite(n)) return NonFinite(n, false);
 			// integral values print as integers at any magnitude (gawk-verified: 1e30 prints all digits)
 			if (n == Math.Floor(n)) return Math.Abs(n) < 9e18 ? ((long)n).ToString(CultureInfo.InvariantCulture) : n.ToString("F0", CultureInfo.InvariantCulture);
 			var g = Regex.Match(convfmt, @"^%\.(\d+)g$");
@@ -136,6 +146,42 @@ public sealed partial class Builtins
 	// ═══════════════════════════════════════════════════════════════════════════
 	// printf / number formatting (C semantics for the supported conversions)
 	// ═══════════════════════════════════════════════════════════════════════════
+
+	/// <summary>gawk 5's spelling of an out-of-range value, everywhere a number becomes text (print, CONVFMT, OFMT,
+	/// every numeric printf conversion, which takes no width): +inf, -inf, and nan signed by its sign bit (`inf - inf` is
+	/// -nan on this hardware, as in gawk); capitals for %X and %F. It was inf, nan, 0 (%d) and Infinity (%f), 2026-10-18.</summary>
+	private static string NonFinite(double v, bool upper)
+		{
+		string s = double.IsNaN(v) ? (double.IsNegative(v) ? "-nan" : "+nan") : v > 0 ? "+inf" : "-inf";
+		return upper ? (s[0] + (double.IsNaN(v) ? "NAN" : "INF")) : s;
+		}
+
+	/// <summary>The first conversion <see cref="AwkFormat"/> refuses, in a format known when the program is parsed
+	/// (`printf "%e"`, `sprintf("%g", x)`), or null. Refused then, the PATH awk runs the program once (DECISIONS
+	/// 2026-09-04: "parse-time … loud"); found only when the format ran, after output, the PATH awk ran it all again
+	/// ("first" printed twice, 2026-10-18).</summary>
+	private static string? UnsupportedConversion(string fmt)
+		{
+		for (int i = 0; i < fmt.Length; i++)
+			{
+			if (fmt[i] != '%') continue;
+			if (i + 1 >= fmt.Length) break;
+			if (fmt[i + 1] == '%') { i++; continue; }
+			int j = i + 1;
+			while (j < fmt.Length && "-+ 0#".IndexOf(fmt[j]) >= 0) j++;
+			if (j < fmt.Length && fmt[j] == '*') j++; else while (j < fmt.Length && char.IsAsciiDigit(fmt[j])) j++;
+			if (j < fmt.Length && fmt[j] == '.')
+				{
+				j++;
+				if (j < fmt.Length && fmt[j] == '*') j++; else while (j < fmt.Length && char.IsAsciiDigit(fmt[j])) j++;
+				}
+			while (j < fmt.Length && "hlLqjzt".IndexOf(fmt[j]) >= 0) j++;
+			if (j >= fmt.Length) break;
+			if ("diouxXfFcs".IndexOf(fmt[j]) < 0) return $"printf %{fmt[j]}";
+			i = j;
+			}
+		return null;
+		}
 
 	private static string AwkFormat(string fmt, List<AwkVal> args, string convfmt)
 		{
@@ -174,7 +220,7 @@ public sealed partial class Builtins
 				case 'd' or 'i':
 					{
 					double d = Next().Number;
-					if (double.IsNaN(d) || double.IsInfinity(d)) d = 0;
+					if (!double.IsFinite(d)) { body = NonFinite(d, false); break; }   // gawk: +inf, no width (was 0)
 					d = Math.Truncate(d);
 					var digits = Math.Abs(d) < 9e18 ? Math.Abs((long)d).ToString(CultureInfo.InvariantCulture) : Math.Abs(d).ToString("F0", CultureInfo.InvariantCulture);
 					if (prec >= 0) { digits = digits.PadLeft(prec, '0'); if (prec == 0 && d == 0) digits = ""; }
@@ -185,6 +231,7 @@ public sealed partial class Builtins
 				case 'o' or 'x' or 'X' or 'u':
 					{
 					double d = Next().Number;
+					if (!double.IsFinite(d)) { body = NonFinite(d, conv == 'X'); break; }
 					ulong v = d < 0 ? unchecked((ulong)(long)Math.Truncate(d)) : (ulong)Math.Truncate(d);
 					var digits = conv switch { 'o' => Convert.ToString((long)v, 8), 'x' => v.ToString("x"), 'X' => v.ToString("X"), _ => v.ToString(CultureInfo.InvariantCulture) };
 					if (prec >= 0) { digits = digits.PadLeft(prec, '0'); if (prec == 0 && v == 0) digits = ""; }
@@ -195,6 +242,7 @@ public sealed partial class Builtins
 				case 'f' or 'F':
 					{
 					double d = Next().Number;
+					if (!double.IsFinite(d)) { body = NonFinite(d, conv == 'F'); break; }   // was .NET's "Infinity"
 					var digits = Math.Abs(d).ToString("F" + (prec < 0 ? 6 : prec), CultureInfo.InvariantCulture);
 					if (alt && prec == 0) digits += ".";
 					string sign = d < 0 || (d == 0 && double.IsNegative(d)) ? "-" : plus ? "+" : space ? " " : "";
@@ -240,8 +288,7 @@ public sealed partial class Builtins
 		{
 		if (prec == 0) prec = 1;
 		if (v == 0) return "0";
-		if (double.IsNaN(v)) return "nan";
-		if (double.IsInfinity(v)) return v > 0 ? "inf" : "-inf";
+		if (!double.IsFinite(v)) return NonFinite(v, false);
 		var sci = Math.Abs(v).ToString("E" + (prec - 1), CultureInfo.InvariantCulture);   // d.dddE+ddd
 		int ePos = sci.IndexOf('E');
 		int exp = int.Parse(sci[(ePos + 1)..], CultureInfo.InvariantCulture);
@@ -707,6 +754,8 @@ public sealed partial class Builtins
 						if (IsOp("|")) throw new AwkUnsupportedException("print piped to a command");
 						EndSimple();
 						if (formatted && args.Count == 0) throw new AwkSyntaxException("printf: no format");
+						// a literal format is checked now, before anything runs (see UnsupportedConversion)
+						if (formatted && args[0] is AStr fs && UnsupportedConversion(fs.V) is { } badFormat) throw new AwkUnsupportedException(badFormat);
 						return new APrint(args, formatted, target, append, kwTok.Line);
 						}
 					}
@@ -743,6 +792,8 @@ public sealed partial class Builtins
 				{
 				var op = Advance().Text; SkipNl();
 				var v = ParseTernary();
+				// a literal RS is checked now, before anything runs (it was refused only when the assignment ran)
+				if (c is AVar { Name: "RS" } && op == "=" && v is AStr { V: not "\n" }) throw new AwkUnsupportedException("RS other than newline");
 				return new AAssign(c, op, v);
 				}
 			return c;
@@ -948,6 +999,8 @@ public sealed partial class Builtins
 					var args = ParseExprList(")");
 					SkipNl(); Expect(")");
 					_noGt = saveGt; _noIn = saveIn;
+					if (t.Text == "sprintf" && args.Count > 0 && args[0] is AStr sf && UnsupportedConversion(sf.V) is { } badFormat)
+						throw new AwkUnsupportedException(badFormat);   // checked before anything runs
 					return new ACall(t.Text, args, t.Line);
 					}
 				case AT.Name:
@@ -1813,9 +1866,13 @@ public sealed partial class Builtins
 
 		// ── driver ─────────────────────────────────────────────────────────────
 
+		/// <summary>The program has started: output written, stdin read, system() run.</summary>
+		public bool Running { get; private set; }
+
 		public int Run(string program, List<string> operands)
 			{
 			var prog = new AwkParser(AwkLex(program)).ParseProgram();
+			Running = true;   // from here a refusal is not handed to the PATH awk (see Awk)
 			_funcs = prog.Funcs;
 			_mainOps = operands;   // BEGIN's `getline` reads it too
 			var rangeActive = new bool[prog.Rules.Count];

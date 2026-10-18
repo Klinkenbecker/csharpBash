@@ -7357,3 +7357,90 @@ where it stops). Not investigated further. It also accounts for R3's other open 
 sentences (startup "~10 ms against Git Bash's ~15", pipeline level with Git Bash at 0.9-1.2x across today's runs,
 the call's anatomy from rev 320, icu.dll only when needed, the startup-variance caveat, 157 cases); ARCHITECTURE
 9.4 "No culture unless culture is the point"; IMPLEMENTATION's timing-switch line.
+
+## 2026-10-18 -- PUBLISHED: GitHub main = git 32ad493 = hg rev 321
+**Status:** Active. The architect: "… deploy, notify, publish". By `tools/publish.sh`: the benchmark of the deployed
+build (rev 320) found in results.md; the doc review committed (rev 321); MERCURIAL_HISTORY.md (322 changesets) and
+mercurial-history.hg (verified) written; git staged exactly hg's tracked files (`The Windows Shell Tax.url` left
+out); pushed e13485f..32ad493; remote main = HEAD; no auth header in git config (checked again by hand).
+
+## 2026-10-18 -- BUILT (the split's candidates, Claude's recommendation): the Git-tools probe, PPID, numbers in the invariant culture; printf's inf and nan
+**Status:** Active, NOT deployed (no "deploy" given). The architect, on the recommendation (the probe and PPID, then
+the negative-number formatting): "ok, your recommendations; go". The other candidates stay held.
+
+- **Git-tools probe** (`AugmentPathWithGitTools`): a `<root>/mingw64/bin` entry now names Git's root (that test came
+  after `leaf is "bin"` and was never reached), so a PATH with only mingw64/bin gets usr/bin, and here the probe stops
+  at PATH entry 2 instead of 37. "Already on PATH" now ignores slash direction (`Path.Combine` writes `\`; an entry
+  exported from the shell as `F:/…` was added a second time: seen failing by restoring the old comparison).
+- **PPID** from the current-process pseudo-handle, not `Process.GetCurrentProcess()`.
+- **Numbers in the invariant culture:** `ShellCulture.Pin()`, first in Main, sets `DefaultThreadCurrentCulture` only.
+  Measured in-process: a thread that never set its own culture takes the default over the user's (fresh threads:
+  en-US -> sv-SE -> invariant as the default changes); also setting `CultureInfo.CurrentCulture` cost ~0.13 ms more.
+  Verified through the shell's own WordExpander under sv-SE: `$((-5 * 3))` gave U+2212 1 5 unpinned, `-15` pinned (a
+  new thread too). Nothing in the shell used the user's culture on purpose (surveyed: no explicit CurrentCulture, no
+  culture casing, collation or Compare calls; dates already invariant but four `find -printf` patterns, now so too).
+  Rev 320's `echo $((-5))` loaded ICU (the user culture's NumberFormatInfo): icu_lazy now checks it ("yes" on 320).
+- **printf's non-finite values, found on the way (in this item: number formatting with wrong output):** `%g` of an
+  infinity threw ("length ('-1') must be a non-negative value", leaked as the message); inf and nan printed as .NET's
+  "Infinity" and "NaN"; "inf" was refused. Now as C and GNU: inf, -inf, nan, -nan (INF, NAN for %F %E %G %A), sign
+  flags kept, precision ignored, spaces not zeros under `0`; the words read in any case, signed (.NET's NaN has its
+  sign bit set, which printed -nan: an explicit positive NaN). Case printf_nonfinite (expected = GNU via WSL; rev 320
+  differs on every non-finite line). Not imitated: `1e400` is a finite long double to bash, infinite to C#Bash.
+**Measured** (the timing switch's split, 5 x 20 launches back to back with rev 320): Git tools on PATH 0.66 -> 0.08
+ms, PPID 0.47 -> 0.02, evaluator 1.29 -> 0.28; console set-up +0.1 (the pin); the exit mark 9.06 -> 7.94 ms.
+**Verified:** suite 159/159 on the AOT build with a console and -Detached; JIT 158 passed, icu_lazy skipped; battery
+226/237; startup_env (new) red on 320 for the mingw64/bin entries.
+
+**RAISED (a fork, AWAITING THE ARCHITECT): the in-process awk re-runs a program after output.** The 2026-09-04
+decision lists `printf %e/%g` as unsupported and "parse-time … loud per the contract", so the fall-through to a PATH
+awk happens before anything runs. The code refuses `%e %E %g %G` (and an unknown conversion) in the formatter, at
+run time, as it does an `RS` assignment and an unknown function: by then output may be written, and the PATH awk
+runs the whole program again. Measured: `awk 'BEGIN { print "first"; printf "%e\n", 1 }'` prints "first" twice; a
+`system()` or a `print > file` before the refusal would run twice too. Also seen: the in-process awk prints `inf`
+and `nan` where gawk 5.1 prints `+inf`, `-nan`/`+nan`, and `%d`/`%f` of an infinity give `0`/`Infinity` (gawk `+inf`).
+Choices: (1) refuse literal formats and `RS` values at parse time (the decision's intent) and, for one only known at
+run time, after output, fail loud (`awk: unsupported: printf %e`, 2) instead of re-running; (2) support `%e %g` in
+the subset (an extension: the architect's call by decision 7); (3) both. Claude: (1), because it restores the
+contract (never a partial run, never a silent approximation) whatever the subset holds; (2) only if Claude's own
+calls are seen sending `%e`/`%g`. Falsifier: a script that needs the fall-through after output, which (1) would
+break where today it works by repeating output.
+
+## 2026-10-18 -- RULED + BUILT: the in-process awk never runs a program twice; out-of-range numbers as gawk 5.1
+**Status:** Active. Resolves "RAISED (a fork …): the in-process awk re-runs a program after output" in the entry
+"BUILT (the split's candidates …)". The architect: "Awk - your way" (Claude's (1)).
+
+**Built:** a literal `printf` or `sprintf` format is checked for conversions the subset refuses (`UnsupportedConversion`:
+anything but d i o u x X f F c s %%) and a literal `RS = "…"` other than newline is refused, both at parse time, so the
+PATH awk runs the program once, before anything ran. `AwkInterp.Running` is set when the program starts; a refusal
+after that (a format or RS held in a variable) is loud: `awk: unsupported: printf %e`, a C#Bash line saying it was
+met while the program ran and naming `BASH_COREUTILS=external`, status 2. "Started", not "printed something": a
+main-input program has also read stdin, which a second run would not see. The unknown-function refusal at run time
+is unreachable (every built-in name is implemented or refused at parse time).
+**Also (in the same contract, the architect's "your way" covered the fork's text):** out-of-range numbers as gawk 5.1
+everywhere a number becomes text (`NonFinite`): `+inf`, `-inf`, `-nan`/`+nan` by the sign bit (`inf - inf` is `-nan`,
+as gawk), capitals for %X %F, no width for a numeric conversion; they were `inf`, `nan`, `0` (%d) and `Infinity` (%f).
+**Verified:** case awk_unsupported_once (authored, needs Git's awk; its number lines identical to gawk 5.1 via WSL):
+rev 320 printed "first" twice for a literal %e, a literal sprintf %G and a literal RS, ran the variable format
+through gawk (status 0), and spelled every out-of-range line differently. Suite 160/160 on the AOT build with a console
+and -Detached; JIT 159 + icu_lazy skipped, both modes; battery 226/237.
+
+## 2026-10-18 -- DEPLOYED rev 324; notice to the eight sessions; measured back to back with rev 320
+**Status:** Active. The architect: "Yes, deploy and publish" (the notice is part of every deploy).
+
+**Deployed by `tools/deploy.sh`:** `dist/Bash.exe` = `1.0.0+hg.7b2c529cd84f 324`; suite 160/160 on that AOT binary
+with a console and `-Detached`; battery 226/237 against 225; rollback `dist/Bash.exe.rev320`. Live, from a Claude
+Code call: rev 324, `echo $((-5))` is -5, `printf '%g|%f' -inf nan` is `-inf|nan`, the literal-%e awk program prints
+"first" once. Notice (behaviour first: awk never runs a program twice, a refusal while running is loud, 2; then
+out-of-range numbers, the invariant culture, the Git-tools probe) delivered to gps-time-2c, adc-framework-d8,
+msp430-a2, nupkg-28, koliada-net-7c, daq-fe, guy-97, ananta-f5 (guy-b3 has ended).
+
+**Measured, back to back (rev 324, then a scratch copy of rev 320 as `Bash.exe`):** claudecall.sh, ms: bare 9.6 /
+11.1, true 10.9 / 11.9, ls 11.0 / 12.9, cat | head 11.7 / 13.2, grep -rn 20.6 / 20.9, git status 26.1 / 26.2, cd &&
+pwd 10.9 / 12.0; the evaluator segment 0.25 / 1.41. compare3 (from Git Bash): the first run of 324 (11:44) gave loop
+0.169, loop_big 1.458, pipeline 0.260 against 320's 0.155, 1.395, 0.245 (11:49), startup 9.2 / 9.8; a second run of
+324 (11:55) gave 0.156, 1.400, 0.238, startup 8.5 ms: the first run after a deploy was slower again (twice today),
+not a regression. Git Bash's own loop_big moved 15.2 s (09:15) -> 19.3-20.0 s (11:44-11:55).
+**Doc review for the publish:** README's table from the 11:55 run (startup 8.5 ms, Git Bash 14.5); its sentences
+(throughput 9-14x Git Bash, startup "~9 ms"; a call ~11 ms, ~12 for rev 320, ~13 for rev 316; the anatomy from rev
+324: start-up ~0.9 ms; the after-deploy and startup-variance caveats; Git Bash's loop_big spread; 160 cases);
+ARCHITECTURE section 10's awk paragraph (never twice); PROJECT_CONTEXT's limitation line.

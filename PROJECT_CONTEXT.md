@@ -6,12 +6,12 @@
 > LIMITATIONS, SETTLED, DO NOT undo, machine facts) is kept.
 >
 > **TRUE STATE (verified 2026-10-18):**
-> - `dist/Bash.exe` = rev 320 (`1.0.0+hg.8ae72c3b647d 320`, by tools/deploy.sh 2026-10-18; rollback
->   `dist/Bash.exe.rev316`). Suite 157/157 both modes on that AOT binary; battery 226/237. Told: gps-time-2c,
->   adc-framework-d8, msp430-a2, nupkg-28, guy-b3, koliada-net-7c, daq-fe, guy-97, ananta-f5. A Claude call
->   ~11.5 ms (rev 316: ~13, back to back); compare3 startup 9.5 ms.
-> - GitHub main = git `e13485f` = hg rev 317 (published 2026-10-18 by tools/publish.sh: the architect, "deploy,
->   notify and publish (push)"). hg is clean apart from the untracked `The Windows Shell Tax.url` (not ours, leave it).
+> - `dist/Bash.exe` = rev 324 (`1.0.0+hg.7b2c529cd84f 324`, by tools/deploy.sh 2026-10-18; rollback
+>   `dist/Bash.exe.rev320`). Suite 160/160 both modes on that AOT binary; battery 226/237. Told: gps-time-2c,
+>   adc-framework-d8, msp430-a2, nupkg-28, koliada-net-7c, daq-fe, guy-97, ananta-f5. A Claude call ~11 ms
+>   (rev 320 ~12, rev 316 ~13, back to back); compare3 startup 8.5 ms.
+> - GitHub main = git `32ad493` = hg rev 321 (published 2026-10-18 by tools/publish.sh: the architect, "go, deploy,
+>   notify, publish"). hg is clean apart from the untracked `The Windows Shell Tax.url` (not ours, leave it).
 > - The architect starts Claude Code through a start file (README "Start Claude Code with no PATH of its own"):
 >   `BASH_PATH=%PATH%`, `CLAUDE_CODE_GIT_BASH_PATH=F:/Koliada/Tools/bash/dist/Bash.exe`, `PATH=F:/Koliada/Tools/bash/dist`.
 >   claude.exe's PATH is `dist`; the shell's is the full Windows PATH. A session whose Bash PATH is `dist` alone was
@@ -43,9 +43,13 @@
 > **AWAITING THE ARCHITECT (do NOT derive; Claude's positions are proposals):**
 > 1. The performance review is DONE (R2, R3, R4 in DECISIONS 2026-10-18). The architect picked R4's 1-3 ("1, 2, 3
 >    concur; go, deploy, notify, publish"): BUILT (DECISIONS "BUILT (R4 picks 1-3)"): icu.dll loads only when needed,
->    the `[[ ]]` trace text only under set -x, the start-up split. AWAITING the architect: R4's 4-9, and the split's
->    three new candidates (the Git-tools probe 0.66 ms with an unreachable `mingw64/bin` branch, PPID 0.47 ms,
->    OutputEncoding 0.25 ms); the U+2212 minus found on the way. NO optimisation code before a pick.
+>    the `[[ ]]` trace text only under set -x, the start-up split; deployed rev 320, published rev 321. Then ("ok,
+>    your recommendations; go") BUILT, NOT DEPLOYED (DECISIONS "BUILT (the split's candidates…)"): the Git-tools probe
+>    (mingw64/bin, slash-blind compare), PPID's pseudo-handle, the invariant culture (U+2212), printf's inf/nan.
+>    Then ("Awk - your way") BUILT: the in-process awk never runs a program twice (literal formats and RS refused at
+>    parse time, a refusal while running loud, 2) and out-of-range numbers as gawk 5.1 (DECISIONS "RULED + BUILT: the
+>    in-process awk never runs a program twice"). AWAITING the architect: R4's 4-9 (held: calls are start-up bound)
+>    and OutputEncoding 0.25 ms. NO optimisation code before a pick.
 > 2. Parked, not greenlit: serial I/O (COMn as a device file + `stty`, "to discuss"); `compgen -c` scanning PATH;
 >    the battery's reference moved to GNU.
 > 3. Not raised (measured 2026-10-12): bash keeps finished jobs in its table until it reports them (`jobs` lists
@@ -76,7 +80,8 @@
 > - With no console, a child reading `CONIN$` waits invisibly (accepted 2026-09-14). The GUI-child
 >   100 ms attach spin is unmeasured.
 > - Loud by design: `>( )` is rejected at parse time; awk outside its subset, unsupported options and
->   `ps` fields beyond pid/ppid/comm/args fail loudly or fall through to a PATH tool.
+>   `ps` fields beyond pid/ppid/comm/args fail loudly or fall through to a PATH tool; awk falls through only
+>   before its program starts (a refusal met while it runs is loud, 2: never a second run, 2026-10-18).
 > - A UNC path to a local drive is correct but very slow for tools doing many file operations (2026-09-11).
 > - CRLF in script text is tolerated, on purpose.
 > - The compat battery has no Git reference while Git's `bash.exe` is renamed: pass

@@ -79,6 +79,7 @@ public static class PrintfFormatter
 			hasConv = true;
 
 			string body;
+			bool nonFinite = false;   // inf and nan are padded with spaces, never zeros (C)
 			switch (conv)
 				{
 				case 'd': case 'i':
@@ -114,6 +115,7 @@ public static class PrintfFormatter
 					{
 					double d = ToDouble(NextArg(args, ref ai), err, ref rc);
 					body = FormatDouble(d, conv, prec, plus, space, alt);
+					nonFinite = !double.IsFinite(d);
 					break;
 					}
 				case 'c':
@@ -155,7 +157,7 @@ public static class PrintfFormatter
 					body = "";
 					break;
 				}
-			bool zeroPad = zero && !left && conv is 'd' or 'i' or 'u' or 'o' or 'x' or 'X' or 'f' or 'F' or 'e' or 'E' or 'g' or 'G';
+			bool zeroPad = zero && !left && !nonFinite && conv is 'd' or 'i' or 'u' or 'o' or 'x' or 'X' or 'f' or 'F' or 'e' or 'E' or 'g' or 'G';
 			sb.Append(Pad(body, width, left, zeroPad));
 			}
 		return hasConv;
@@ -184,6 +186,14 @@ public static class PrintfFormatter
 
 	private static string FormatDouble(double d, char conv, int prec, bool plus, bool space, bool alt)
 		{
+		if (!double.IsFinite(d))
+			{
+			// C's spelling, the precision ignored: inf, -inf, nan (INF, NAN for %F %E %G %A). It was .NET's Infinity and
+			// NaN, and %g of an infinity threw ("length ('-1') must be a non-negative value"), 2026-10-18
+			bool upper = char.IsAsciiLetterUpper(conv);
+			string word = double.IsNaN(d) ? (upper ? "NAN" : "nan") : (upper ? "INF" : "inf");
+			return (double.IsNegative(d) ? "-" : plus ? "+" : space ? " " : "") + word;
+			}
 		if (prec < 0) prec = 6;
 		string s;
 		switch (conv)
@@ -257,7 +267,16 @@ public static class PrintfFormatter
 		{
 		if (a.Length == 0) return 0;
 		if ((a[0] == '\'' || a[0] == '"') && a.Length >= 2) return a[1];
-		if (double.TryParse(a.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d)) return d;
+		// strtod's words in any case, signed: inf, infinity, nan (.NET's parse takes only Infinity and NaN, and its NaN
+		// has the sign bit set, which printed -nan), 2026-10-18
+		var t = a.Trim();
+		bool neg = t.StartsWith('-');
+		var w = t.Length > 0 && t[0] is '+' or '-' ? t[1..] : t;
+		if (w.Equals("inf", StringComparison.OrdinalIgnoreCase) || w.Equals("infinity", StringComparison.OrdinalIgnoreCase))
+			return neg ? double.NegativeInfinity : double.PositiveInfinity;
+		if (w.Equals("nan", StringComparison.OrdinalIgnoreCase))
+			return BitConverter.Int64BitsToDouble(neg ? unchecked((long)0xFFF8000000000000) : 0x7FF8000000000000);
+		if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)) return d;
 		err.WriteLine($"printf: {a}: invalid number");
 		rc = 1;
 		return 0;

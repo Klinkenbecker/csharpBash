@@ -1,0 +1,15 @@
+literal %e               first x1
+literal sprintf %G       first x1
+literal RS               first x1
+system()                 first x1
+== a format known only while running
+first
+awk: unsupported: printf %e
+awk: (C#Bash: ...)
+status 2
+== out-of-range numbers
+[+inf][+inf][+inf][+inf][+inf][-inf][-nan][-nan]
+[+inf][-inf][-nan][+INF][ +inf][+inf][+NAN]
++inf -inf -nan +nan
++inf -nan
++inf 4

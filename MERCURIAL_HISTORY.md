@@ -12,11 +12,15 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 322 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 326 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 325 | 2026-10-18 | Deployed rev 324 (notified); measured back to back with rev 320 (a call ~11 ms, compare3 startup 8.5 ms; the first run after the deploy slower again); doc review for the publish |
+| 324 | 2026-10-18 | awk never runs a program twice: literal printf/sprintf formats and RS refused at parse time (the PATH awk runs it once), a refusal while running loud (2); out-of-range numbers as gawk 5.1 (+inf, -nan); case awk_unsupported_once |
+| 323 | 2026-10-18 | The split's candidates: a mingw64/bin entry names Git's root and the PATH compare ignores slash direction (probe 0.66 -> 0.08 ms); PPID from the pseudo-handle (0.47 -> 0.02 ms); the invariant culture as every thread's default ($((-5)) printed U+2212 under sv-SE); printf inf/nan as C (%g of inf threw); cases startup_env, printf_nonfinite; awk re-run after output RAISED |
+| 322 | 2026-10-18 | Published: GitHub main = git 32ad493 = hg rev 321 by tools/publish.sh |
 | 321 | 2026-10-18 | Deployed rev 320 (notified); measured back to back: a Claude call ~1.6 ms faster, compare3 startup 9.5 ms; doc review for the publish (README table and figures from the deployed run, ARCHITECTURE 9.4 no culture unless it is the point) |
 | 320 | 2026-10-18 | R4 picks 1-3: icu.dll loads only when needed (ordinal prefix tests, invariant integer parses, the command map's file time, the SID's RID, $( )'s writer); the [[ ]] trace text only under set -x; start-up split marks; case icu_lazy (AotOnly) |
 | 319 | 2026-10-18 | Performance review R2-R4 recorded (measurement only): rev 316 not slower than 286, README's table from the quiet run; R4's ranked candidates await the architect |

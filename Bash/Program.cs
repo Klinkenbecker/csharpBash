@@ -9,6 +9,7 @@ using Bash.IO;
 // (measured 2026-10-05; DECISIONS). So without a console, stdout and stderr get UTF-8 writers of
 // our own, before ConsoleMux captures them as the real streams.
 Timing.Begin();              // the performance review's timing switch: nothing unless BASH_TIMING_LOG is set
+ShellCulture.Pin();          // numbers and dates as bash's C locale, whatever the user's culture (U+2212 minus, 2026-10-18)
 bool consoleUtf8 = true;
 try { Console.OutputEncoding = ShellEncoding.Utf8; } catch (Exception) { consoleUtf8 = false; }   // byte-transparent (2026-09-12)
 Timing.Mark("console.out");   // the timing switch splits the "console" segment (review R4, 2026-10-18)

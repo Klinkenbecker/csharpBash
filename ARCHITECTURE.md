@@ -304,8 +304,11 @@ behaviour: non-ASCII case mapping (`${x^^}`) and local time (`date`, `ls -l`). T
 that has none no longer pays ~1.6 ms for it. Watch for the quiet culture paths: a one-argument
 `StartsWith`/`EndsWith`/`IndexOf(string)`, `int.TryParse(s, out …)`, `ToLowerInvariant` (TextInfo),
 `File.GetLastWriteTimeUtc` (local time first) and `new StringWriter(sb)`. Case `icu_lazy` (Native AOT)
-fails when one reaches a common command. Number *formatting* still uses the current culture (an open
-item: a culture whose minus is U+2212). *(DECISIONS: 2026-10-18 — BUILT (R4 picks 1-3).)*
+fails when one reaches a common command. The process runs in the invariant culture (`ShellCulture.Pin`,
+first in Main: the default for every thread), so numbers and dates are formatted as in bash's C locale
+whatever the Windows user's culture (a culture whose minus is U+2212 printed `$((-5))` as "−5"); code
+that formats with no culture named is therefore invariant too. *(DECISIONS: 2026-10-18 — BUILT (R4
+picks 1-3), BUILT (the split's candidates).)*
 
 ---
 
@@ -343,7 +346,12 @@ Two model points:
   overflow), `print > file` / `>> file`, `getline [var] < file`, `close`, `fflush`, 3-argument
   `match`; 2026-10-12, main-input `getline` / `getline var` (one reader shared with the rule loop).
   Pipes (`print | cmd`, `cmd | getline`) and `system()` stay loud. A program that still goes to the
-  PATH awk (Git's gawk) gets `-v BINMODE=3`, so CR survives as on Linux.
+  PATH awk (Git's gawk) gets `-v BINMODE=3`, so CR survives as on Linux. **A program never runs
+  twice (2026-10-18):** what the text shows (a literal `printf`/`sprintf` format with `%e`/`%g`, a
+  literal `RS`) is refused at parse time, so the PATH awk runs it once; a refusal met only while the
+  program runs (`AwkInterp.Running`) is loud, status 2, since the PATH awk would start again after
+  this run's output, stdin reads and `system()` calls. Out-of-range numbers print as gawk 5.1's
+  `+inf`/`-nan`.
 - **Processes without procps.** `pgrep`/`pkill`/`ps` are in-process (Toolhelp32 for the list,
   `NtQueryInformationProcess` for command lines), because a Git-less Windows PATH has none and
   Claude Code's own `pkill` shim ends in `command pkill`. Names match case-insensitively; the

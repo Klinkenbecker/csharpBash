@@ -10,14 +10,14 @@ A standalone **bash interpreter for Windows, written in C#** — no WSL, no msys
 
 | benchmark (seconds) | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.158** | 1.547 | 0.440 | 9.8× | 2.8× |
-| `arith` — 200 k `$(( ))` evaluations | **0.242** | 2.098 | 0.629 | 8.7× | 2.6× |
-| `func` — 100 k function calls | **0.212** | 2.324 | 0.571 | 11.0× | 2.7× |
-| `loop_big` — 2 M iterations | **1.410** | 15.204 | 3.494 | 10.8× | 2.5× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.056** | 13.448 | 0.848 | **240×** | 15.1× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.244 | 0.220 | **0.116** | 0.9× | 0.5× |
-| `find` — walk 400 files | **0.018** | 0.117 | 0.227 | 6.5× | 12.6× |
-| startup — `bash -c 'exit 0'` | **0.0095** | 0.0148 | 0.111 | 1.6× | 11.7× |
+| `loop` — 200 k `while` iterations | **0.156** | 1.503 | 0.418 | 9.6× | 2.7× |
+| `arith` — 200 k `$(( ))` evaluations | **0.239** | 2.082 | 0.635 | 8.7× | 2.7× |
+| `func` — 100 k function calls | **0.209** | 2.296 | 0.582 | 11.0× | 2.8× |
+| `loop_big` — 2 M iterations | **1.400** | 19.287 | 3.495 | 13.8× | 2.5× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.056** | 13.594 | 0.834 | **243×** | 14.9× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | 0.238 | 0.225 | **0.109** | 0.9× | 0.5× |
+| `find` — walk 400 files | **0.017** | 0.119 | 0.207 | 7.0× | 12.2× |
+| startup — `bash -c 'exit 0'` | **0.0085** | 0.0145 | 0.106 | 1.7× | 12.4× |
 
 Every row's output is identical in all three shells. How it was measured, where it loses, and what a Claude Code call costs: [Performance](#performance).
 
@@ -77,7 +77,7 @@ Claude Code on Windows needs *a* `bash.exe`; it finds Git for Windows by default
    ```cmd
    tools\publish-aot.cmd            REM -> dist\Bash.exe, ~6.9 MB
    ```
-   One static executable. No .NET runtime on the target, and **~10 ms startup, against Git Bash's ~15 ms** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
+   One static executable. No .NET runtime on the target, and **~9 ms startup, against Git Bash's ~15 ms** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
 
    The managed alternatives, if you cannot or would rather not build AOT:
    ```sh
@@ -126,20 +126,20 @@ Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracki
 
 ## Performance
 
-The table at the top was measured on 2026-10-18 (build rev 320) on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched directly with `CreateProcess`, the way Claude Code launches one, and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the median of five samples, each the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
+The table at the top was measured on 2026-10-18 (build rev 324) on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched directly with `CreateProcess`, the way Claude Code launches one, and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the median of five samples, each the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
 
-**Where it wins, and why.** Interpreter throughput is 9–11× Git Bash and 2.5–2.8× native Linux bash. Startup is a third under Git Bash's (9.5 ms against 14.8 ms in this run) and eleven times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
+**Where it wins, and why.** Interpreter throughput is 9–14× Git Bash and 2.5–2.8× native Linux bash. Startup is 40 % under Git Bash's (8.5 ms against 14.5 ms in this run) and twelve times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
 
 **Where it loses, and why.** One row: a long streaming text pipeline against WSL, where native C `grep`/`sed`/`sort` beat managed implementations per line. Against Git Bash it is level: 0.9–1.2× in the runs of 2026-10-18, within their spread. C#Bash is fastest where a script does *many small things*; a pipe pushing 50 k lines through five real tools is not that shape.
 
-**What a Claude Code call costs.** Every Bash tool call is a new shell running Claude Code's wrapper and sourcing its snapshot. `tests/bench/claudecall.sh` makes that exact call: a trivial one (`true`, `ls`, `cd && pwd`) takes **~11.5 ms** with a 50-entry PATH, against ~13 ms for rev 316 measured back to back, and ~31 ms before lookups were remembered. Where it goes (the timing switch, rev 320):
+**What a Claude Code call costs.** Every Bash tool call is a new shell running Claude Code's wrapper and sourcing its snapshot. `tests/bench/claudecall.sh` makes that exact call: a trivial one (`true`, `ls`, `cd && pwd`) takes **~11 ms** with a 50-entry PATH, against ~12 ms for rev 320 and ~13 ms for rev 316, each measured back to back with the next, and ~31 ms before lookups were remembered. Where it goes (the timing switch, rev 324):
 - **~7 ms from process creation to the shell's first line**, mostly the runtime's own start (an empty Native AOT program: 5.8–7.0 ms).
-- **~1.9 ms is C#Bash's own start-up**: the console 0.3, the environment and PATH 1.3, the options and parsing the call 0.25.
+- **~0.9 ms is C#Bash's own start-up**: the console 0.4, the environment and PATH 0.25, the options and parsing the call 0.25.
 - **~0.6 ms is the snapshot.** It was 15 ms: the snapshot's `hash rg` misses on every call (`rg` lives inside `claude.exe`), and that miss searched every PATH entry with every extension, 8.8 ms of it two entries on a slow drive. The miss is now remembered, so **PATH length no longer matters per call**.
 - **~0.6 ms writes the working directory back** (the wrapper's `pwd -P >| file`); the rest is ending the process.
 - **No Windows DLL loads that the call does not use.** Networking and security bind on first use, and `icu.dll` (Windows' Unicode library) loads only when a command needs culture data, such as `${x^^}` on non-ASCII text or a local time: a trivial call no longer pays for it (~1.6 ms a call, rev 320).
 
-**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment beyond the startup row: a single total of 100 launches moves by about ±1.5 ms from run to run on this machine, so that row is the median of five such totals, and a difference of a millisecond between two runs is still noise. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. A run started two minutes after a deploy measured the same C#Bash binary 5–20 % slower on the loop rows and 18 ms at startup (a freshly written program's first launches are slower here, probably the virus scanner). And C#Bash's startup moves with the machine's state: the same binary (rev 316) measured 14.4 ms at 08:02 and 10.6 ms at 09:21 that day while Git Bash's stayed at 15 ms, cause not found, so compare startup figures only between runs made back to back (rev 316 against 320 that way: 10.6 against 9.5 ms). The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. Git Bash's own times move between runs (`loop_big` took 18.9 s on 2026-10-03, 15.2 s on 2026-10-16 and 15.2 s here), and the "vs Git" ratios move with them. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
+**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment beyond the startup row: a single total of 100 launches moves by about ±1.5 ms from run to run on this machine, so that row is the median of five such totals, and a difference of a millisecond between two runs is still noise. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. A run started soon after a deploy measured the same C#Bash binary 5–20 % slower on the loop rows, twice on 2026-10-18 (a freshly written program's first launches are slower here, probably the virus scanner); this table is the second run of rev 324. And C#Bash's startup moves with the machine's state: the same binary (rev 316) measured 14.4 ms at 08:02 and 10.6 ms at 09:21 that day while Git Bash's stayed at 15 ms, cause not found, so compare startup figures only between runs made back to back (that way rev 316 against 320: 10.6 against 9.5 ms; rev 320 against 324: 9.8 against 8.5). The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. Git Bash's own times move between runs (`loop_big` took 18.9 s on 2026-10-03, 15.2 s on 2026-10-16, and 15.2 s at 09:15 and 19.3 s at 11:55 on 2026-10-18), and the "vs Git" ratios move with them. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
 
 ## Architecture
 
@@ -157,7 +157,7 @@ A classic four-stage pipeline: **lexer → parser → AST → tree-walking evalu
 ```sh
 dotnet build -c Release            # builds Bash.sln (.NET 8 SDK)
 Bash/bin/Release/net8.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-pwsh tests/run-tests.ps1           # 157 self-checking cases (one needs the Native AOT build: -Interpreter <exe>)
+pwsh tests/run-tests.ps1           # 160 self-checking cases (one needs the Native AOT build: -Interpreter <exe>)
 pwsh tests/compat/run-compat.ps1   # 237-probe differential battery against a reference bash
 ```
 

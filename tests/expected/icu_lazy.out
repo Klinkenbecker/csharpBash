@@ -17,6 +17,7 @@ for i in 1 2; do (( i > 1 )) && echo $i; done no
 case a in a) echo y;; esac                    no
 read -r v w <<< "x y"; echo "$w"              no
 echo $(( 7 * 6 ))                             no
+echo $((-5)) $((3 - 9))                       no
 == positive controls
 x=é; echo ${x^^}                              yes
 date                                          yes

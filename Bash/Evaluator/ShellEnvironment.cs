@@ -969,19 +969,22 @@ public sealed class ShellEnvironment
 				var leaf = Path.GetFileName(dir.TrimEnd('\\', '/'));
 				var parent = Path.GetDirectoryName(dir.TrimEnd('\\', '/'));
 				if (parent is null) continue;
-				if (leaf.Equals("cmd", StringComparison.OrdinalIgnoreCase) || leaf.Equals("bin", StringComparison.OrdinalIgnoreCase)) candidate = parent;
-				else if (leaf == "bin" || (leaf == "bin" && parent.EndsWith("mingw64", StringComparison.OrdinalIgnoreCase))) candidate = Path.GetDirectoryName(parent);
-				else if (parent.EndsWith("mingw64", StringComparison.OrdinalIgnoreCase)) candidate = Path.GetDirectoryName(parent);
+				// <root>/mingw64/bin first: it came after the `bin` test and was never reached, so a PATH with only
+				// mingw64/bin got no usr/bin and the probe ran on through every later entry (2026-10-18)
+				if (Path.GetFileName(parent).Equals("mingw64", StringComparison.OrdinalIgnoreCase)) candidate = Path.GetDirectoryName(parent);
+				else if (leaf.Equals("cmd", StringComparison.OrdinalIgnoreCase) || leaf.Equals("bin", StringComparison.OrdinalIgnoreCase)) candidate = parent;
 				}
 			catch { continue; }
 			if (candidate is not null && Directory.Exists(Path.Combine(candidate, "usr", "bin"))) { root = candidate; break; }
 			}
 		if (root is null) return;
 		var extra = new List<string>();
+		// either slash: Path.Combine writes `\`, an entry exported from the shell may say `/` (it was added twice)
+		static string Plain(string p) => p.Replace('/', '\\').TrimEnd('\\');
 		foreach (var sub in new[] { Path.Combine(root, "usr", "bin"), Path.Combine(root, "mingw64", "bin") })
 			{
 			if (!Directory.Exists(sub)) continue;
-			if (entries.Any(e => string.Equals(e.TrimEnd('\\'), sub, StringComparison.OrdinalIgnoreCase))) continue;
+			if (entries.Any(e => string.Equals(Plain(e), Plain(sub), StringComparison.OrdinalIgnoreCase))) continue;
 			extra.Add(sub);
 			}
 		if (extra.Count == 0) return;
@@ -1048,8 +1051,9 @@ public sealed class ShellEnvironment
 			{
 			if (!OperatingSystem.IsWindows()) return 1;
 			var pbi = new ProcessBasicInformation();
-			using var me = System.Diagnostics.Process.GetCurrentProcess();
-			int rc = NtQueryInformationProcess(me.Handle, 0, ref pbi, Marshal.SizeOf<ProcessBasicInformation>(), out _);
+			// the current-process pseudo-handle: Process.GetCurrentProcess() cost ~0.45 ms a start only to supply it
+			// (the timing switch's split, 2026-10-18)
+			int rc = NtQueryInformationProcess(new IntPtr(-1), 0, ref pbi, Marshal.SizeOf<ProcessBasicInformation>(), out _);
 			if (rc == 0) return pbi.InheritedFromUniqueProcessId.ToInt64();
 			}
 		catch { }
