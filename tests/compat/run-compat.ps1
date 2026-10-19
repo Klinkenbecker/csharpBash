@@ -15,7 +15,7 @@
 
   The reference bash is found from -Reference, else $env:CLAUDE_CODE_GIT_BASH_PATH,
   else the bash of the Git that owns git.exe (bin\bash.exe, usr\bin\bash.exe, or
-  usr\bin\_bash.exe where bash.exe was renamed so Claude Code finds C#Bash), else
+  usr\bin\_bash.exe, its name on this machine from 2026-09-13 to 2026-10-19), else
   C:\Program Files\Git, else the first bash.exe on PATH. Each candidate is RUN to
   identify it: one that is C#Bash (any build: its BASH_VERSION says koliada) or that
   does not start is skipped, and an explicit -Reference that is C#Bash is an error.

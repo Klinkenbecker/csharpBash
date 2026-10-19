@@ -12,11 +12,15 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 330 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 334 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 333 | 2026-10-19 | Benchmark provenance: compare3 times Git Bash through <Git>/bin/bash.exe as Claude Code starts it (no LANG, rev 332); README "Benchmark provenance" (rev 139 carried two changes; the article's Git Bash was started by another Git Bash); table from the 2026-10-19 run; deploy.sh's battery takes that Git Bash as reference; stale _bash.exe launch lines fixed |
+| 332 | 2026-10-18 | compare3: no LANG/LC_* reaches any shell (the architect: time Git Bash as Claude Code runs it, a non-login bash -c without LANG); the result no longer depends on how the script is started |
+| 331 | 2026-10-18 | Correction: Claude Code's per-call Git Bash is not a login shell and has no LANG (README's claim at rev 329 was unverified); the benchmark's Git Bash form is the architect's call |
+| 330 | 2026-10-18 | Published: GitHub main = git b9067c8 = hg rev 329 by tools/publish.sh |
 | 329 | 2026-10-18 | Correction: Git Bash's pipeline row moved with the launch form (no LANG in a non-login Git Bash), not a cache; README's table from a run in compare3's documented login form |
 | 328 | 2026-10-18 | Published: GitHub main = git a8a90e2 = hg rev 327 by tools/publish.sh; on a break |
 | 327 | 2026-10-18 | Resume note: on a break until a bug is filed (the architect); nothing greenlit |

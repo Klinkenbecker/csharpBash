@@ -7477,3 +7477,81 @@ locale. C#Bash (which reads no LANG) is unchanged: 0.243-0.252. C#Bash's startup
 Bash's 0.282 (1.1x); its sentences (ahead of Git Bash 1.0-1.2x as the harness runs it; ~10 % slower for Git Bash
 without LANG, measured); "Reproduce … from a login Git Bash". Claude's error: running the contract tool in a form its
 header does not give. compare3 is to be run only as its header shows.
+
+## 2026-10-18 -- PUBLISHED: GitHub main = git b9067c8 = hg rev 329 (README's benchmark corrected)
+**Status:** Active. The architect: "Yes" (to publishing the correction). By `tools/publish.sh`: README's table from
+the 17:30 run (deployed rev 324, compare3's documented login launch); MERCURIAL_HISTORY.md (330 changesets) and
+mercurial-history.hg (verified); pushed a8a90e2..b9067c8; remote main = HEAD; no auth header in git config.
+
+## 2026-10-18 -- CORRECTION to "CORRECTION: Git Bash's pipeline row moved…": Claude Code runs Git Bash WITHOUT LANG
+**Status:** Active. Corrects one claim of that entry and of README as published at rev 329 ("Claude Code starts Git
+Bash that way too", i.e. as a login shell), which Claude wrote without checking. The architect asked what form of
+Git Bash Claude Code typically runs.
+
+**Verified:** the recorded contract (memory claude-code-bash-contract, from the live process command line,
+2026-09-03): each call is `<Git>\bin\bash.exe -c "<wrapper>"`, no `-l`; only the once-per-session snapshot is made
+with `-c -l`, and it replays functions, options, aliases and `export PATH=` (the fixture has no LANG). claude.exe's
+environment here has no LANG (this session: unset). Git's `bin\bash.exe` wrapper sets MSYSTEM, PATH, HOME,
+PLINK_PROTOCOL (its strings name those, EXEPATH and MINIMAL_PATH; no LANG or LC_*; no etc/git-bash.config here; it
+cannot be run here, both bash.exe files being renamed). LANG comes only from /etc/profile.d/lang.sh, a login shell's.
+So a typical Claude Code call runs Git Bash's GNU tools in the C locale: the faster form (Git Bash pipeline 0.231 s,
+C#Bash 0.9x), not the login form compare3's header documents (0.262-0.282 s, 1.1x). Which form the benchmark uses is
+a method question: AWAITING THE ARCHITECT (Claude's proposal in the chat of 2026-10-18).
+
+## 2026-10-19 -- METHOD + CORRECTION: the benchmark times Git Bash as Claude Code starts it (the `bin/bash.exe` redirect); its provenance in the README
+**Status:** Active. The architect, step by step on 2026-10-19 (each change directed; the README section "Benchmark
+provenance" written with and edited by the architect). Supersedes the launch documented in compare3's header from
+rev 231 (a login Git Bash running `usr/bin/_bash.exe`). Working notes with every figure: `BENCHMARK-PROVENANCE.md`
+(untracked, not committed).
+
+**Machine:** the architect removed Git (`F:\Tools\PortableGit\bin`) from the Windows PATH; Git's two `bash.exe`
+(`bin/`, the redirect, and `usr/bin/`) were renamed back from `_bash.exe`, permanently. They had been renamed on
+2026-09-13/14, the workaround for Claude Code issue #94077, which is when Claude Code's shell here became C#Bash.
+
+**Found (measured unless marked):**
+- Claude Code runs Git Bash as `<Git>\bin\bash.exe -c "<wrapper>"` from claude.exe: the redirect, which starts
+  `usr\bin\bash.exe` (setting MSYSTEM, PATH, HOME, PLINK_PROTOCOL; no LANG). Through it: `BASH=/usr/bin/bash`,
+  `MSYSTEM=MINGW64`, LANG unset.
+- The benchmark never timed the redirect before 2026-10-19. Revs 73-137 timed `"$BASH"` (`/usr/bin/bash`), started by
+  the harness's own Git Bash through its `time` (a fork/exec by the direct path); revs 138-332 timed
+  `usr/bin/_bash.exe` directly (by benchtimer from rev 139). Inside a Git Bash the name `bash` resolves to
+  `/usr/bin/bash` (the redirect puts `/mingw64/bin:/usr/bin` first).
+- A Git Bash started by another Git Bash pays ~5-8 ms more for every program it starts; rows that start no programs
+  do not move. Rev 80's harness, re-run unchanged on 2026-10-19 through the redirect, reproduces the article's Git
+  Bash (coreutils 20.027 s, pipeline 0.387 s, find 0.159 s; the article 20.303, 0.353, 0.226); the current harness
+  gives 13.8 s and 0.230 s (direct) / 0.253 s (redirect). Why, inside MSYS, is not established.
+- The redirect costs ~8 ms per start: Git Bash startup 23.3 ms (2026-10-19 04:15) against 15.0 ms started directly
+  (2026-10-18 18:21); two runs, not back to back.
+- The first table published after the article (measured with rev 139's harness, published as hg 140, git `738ec92`)
+  carried two changes at once: LANG, from the login launch used since the switch to C#Bash (first logged 2026-10-06
+  04:02 under rev 136: Git Bash pipeline 0.439 s, coreutils 20.87 s), and benchtimer (C#Bash 42 -> 11 ms per launch
+  that day; Git Bash coreutils 20.9 -> 13.7 s, pipeline 0.437 -> 0.310 s). Every compare3 launch in the sessions of
+  2026-10-07 to 10-17 was the login form (transcripts); none survives from September.
+- Of the tables published on 2026-10-18: hg 321, 325, 327 (git `32ad493`, `9943884`, `a8a90e2`) were measured without
+  LANG, unknowingly (0.9x); hg 329 (`b9067c8`) with LANG (1.1x) and the false claim that Claude Code starts Git Bash
+  as a login shell (already corrected by the entry above).
+
+**Method (hg rev 333):** compare3's Git Bash is `F:/Tools/PortableGit/bin/bash.exe`, started by benchtimer, with no
+LANG or LC_* (rev 332); the header says to run it through the same redirect. README's table is the 2026-10-19 04:15
+run of the deployed rev 324: Git Bash pipeline 0.253 s against C#Bash 0.240 s (1.1x), startup 23.3 against 8.7 ms.
+The stale launch lines naming `usr/bin/_bash.exe` (tests/corpus/run-n.sh, tests/df/compare-wsl.sh, a comment in
+tests/compat/run-compat.ps1) and PROJECT_CONTEXT's machine facts updated to match. tools/deploy.sh now passes the
+battery `-Reference F:/Tools/PortableGit/bin/bash.exe`: with Git off the Windows PATH the battery's own search
+(git on PATH, Program Files, bash.exe on PATH) finds no reference in a session started since, and the deploy would
+stop ("no reference bash found", exit 2). Verified: the battery against that reference, 225 pass, 12 diff of 237,
+baseline 225, exit 0 (226 with the old `usr/bin/_bash.exe` reference; probe 172, recorded as environment-dependent,
+is the likely one [inferred]).
+
+**GitHub and hg:** `main` was force-pushed back to git `e13485f` (hg rev 317) on 2026-10-19, on the architect's
+word, with the reason to be given when the recent changes are pushed back; publishing rev 333 is a fast-forward from
+the local git history and restores the removed commits, followed by the README section. The architect rolled hg back
+to rev 332 (the old rev 333, a comment fix, survived in the working copy).
+
+**On the way (Claude's errors, recorded):** Claude sent the live sessions an unrequested notice that, after the
+rename, `bash` by name would run Git Bash 4.4 in sessions started before the PATH change; three measured C#Bash
+instead, and the notice was withdrawn. They also found that `type -a bash` lists Git's `usr/bin/bash.exe` first
+while `bash` runs C#Bash (not investigated), and msp430-a2 that a `#!/usr/bin/env bash` script ran under an
+unidentified shell (MINGW64 `uname`, BASH_VERSION unset).
+
+**Open:** why an MSYS bash started by another MSYS bash costs more per program; the 11:44-17:37 window on 2026-10-18
+(Git Bash `loop_big` 18.7-20.0 s instead of ~15 s); the `type -a bash` / `bash` mismatch.

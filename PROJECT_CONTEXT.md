@@ -5,16 +5,24 @@
 > `PROJECT_CONTEXT.md`, and every item in it is resolved with a DECISIONS entry or carried below. The tail (KNOWN
 > LIMITATIONS, SETTLED, DO NOT undo, machine facts) is kept.
 >
-> **TRUE STATE (verified 2026-10-18):**
-> - ON A BREAK (the architect, 2026-10-18: "lets publish and we can take a break until someone files a bug"):
->   nothing is greenlit. The next work starts from a bug report (a peer session's or the architect's); the held
->   items below stay held.
+> **TRUE STATE (verified 2026-10-19):**
+> - IN PROGRESS (2026-10-19, the architect directing each step; do ONLY what is asked): the benchmark's provenance.
+>   GitHub `main` was force-pushed back to git `e13485f` (hg rev 317) on purpose, until hg rev 333 is published:
+>   README "Benchmark provenance", compare3 timing Git Bash through `<Git>/bin/bash.exe` (DECISIONS 2026-10-19
+>   "METHOD + CORRECTION"). That publish is a fast-forward from the local git history (`b9067c8` and earlier) and
+>   puts the removed commits back. The architect rolled hg back to rev 332; rev 333 is being rebuilt in the working
+>   copy, NOT committed until the architect says so. Working notes: untracked `BENCHMARK-PROVENANCE.md` (not to be
+>   committed).
+> - ON A BREAK otherwise (the architect, 2026-10-18: "lets publish and we can take a break until someone files a
+>   bug"): nothing else is greenlit; the held items below stay held.
 > - `dist/Bash.exe` = rev 324 (`1.0.0+hg.7b2c529cd84f 324`, by tools/deploy.sh 2026-10-18; rollback
 >   `dist/Bash.exe.rev320`). Suite 160/160 both modes on that AOT binary; battery 226/237. Told: gps-time-2c,
 >   adc-framework-d8, msp430-a2, nupkg-28, koliada-net-7c, daq-fe, guy-97, ananta-f5. A Claude call ~11 ms
 >   (rev 320 ~12, rev 316 ~13, back to back); compare3 startup 8.5 ms.
-> - GitHub main = git `a8a90e2` = hg rev 327 (published 2026-10-18 by tools/publish.sh: the architect, "lets publish
->   and we can take a break"). hg is clean apart from the untracked `The Windows Shell Tax.url` (not ours, leave it).
+> - GitHub main = git `e13485f` = hg rev 317 since the force-push of 2026-10-19 (see IN PROGRESS); the local git
+>   history still holds up to `b9067c8` (hg rev 329, published 2026-10-18). hg tip is rev 332, with rev 333's
+>   changes uncommitted in the working copy; untracked: `BENCHMARK-PROVENANCE.md` and `The Windows Shell Tax.url`
+>   (not ours, leave it).
 > - The architect starts Claude Code through a start file (README "Start Claude Code with no PATH of its own"):
 >   `BASH_PATH=%PATH%`, `CLAUDE_CODE_GIT_BASH_PATH=F:/Koliada/Tools/bash/dist/Bash.exe`, `PATH=F:/Koliada/Tools/bash/dist`.
 >   claude.exe's PATH is `dist`; the shell's is the full Windows PATH. A session whose Bash PATH is `dist` alone was
@@ -87,8 +95,9 @@
 >   before its program starts (a refusal met while it runs is loud, 2: never a second run, 2026-10-18).
 > - A UNC path to a local drive is correct but very slow for tools doing many file operations (2026-09-11).
 > - CRLF in script text is tolerated, on purpose.
-> - The compat battery has no Git reference while Git's `bash.exe` is renamed: pass
->   `-Reference F:/Tools/PortableGit/usr/bin/_bash.exe`.
+> - The compat battery's own search finds its Git reference through `git` on PATH, which is off the Windows PATH
+>   since 2026-10-19: tools/deploy.sh passes `-Reference F:/Tools/PortableGit/bin/bash.exe` (verified 2026-10-19:
+>   225 pass, baseline 225); run it by hand the same way.
 >
 > **SETTLED, do NOT re-litigate:**
 > - Goal order (DECISIONS 2026-10-03): 1 C#Bash for itself, on Windows; 2 no PowerShell for anything
@@ -124,12 +133,13 @@
 >   translated target (`2>&1` broke that way).
 > - `ExpandOperand` works from the RAW text; the word parser loses `\*`.
 >
-> **Machine facts (do NOT "fix"):** Git's `bash.exe` is renamed `_bash.exe` (Git Bash is
-> `F:/Tools/PortableGit/usr/bin/_bash.exe`; the `bin/` stub is broken by the rename: re-verified 2026-10-16, it
-> looks for `usr/bin/bash.exe`), and
-> `System32\bash.exe` (WSL) was moved away, both so nothing pre-empts C#Bash. Reach WSL with
-> `wsl.exe -e bash`. Run Git Bash scripts as `"$BASH" script` from `_bash.exe -l`. Claude Code sets
-> `NoDefaultCurrentDirectoryInExePath=1`.
+> **Machine facts (do NOT "fix"):** Since 2026-10-19 Git's two `bash.exe` files have their real names again
+> (`F:/Tools/PortableGit/bin/bash.exe`, the redirect Claude Code starts, and `usr/bin/bash.exe`), and Git
+> (`F:\Tools\PortableGit\bin`) is off the Windows PATH (the architect), so nothing pre-empts C#Bash by name in a
+> process started since; a session started before keeps Git's folders on its PATH. From 2026-09-13/14 to 2026-10-19
+> both were renamed `_bash.exe` (the workaround for Claude Code issue #94077). `System32\bash.exe` (WSL) was moved
+> away: reach WSL with `wsl.exe -e bash`. Run Git Bash scripts through the redirect:
+> `F:/Tools/PortableGit/bin/bash.exe script`. Claude Code sets `NoDefaultCurrentDirectoryInExePath=1`.
 >
 > **The global CLAUDE.md is CLAUDE'S file** (the architect, 2026-10-17: "it is _not_ my file, it is
 > 'claudes'"): fix a stale line there directly and commit it (`~/.claude` is a git repo). Done

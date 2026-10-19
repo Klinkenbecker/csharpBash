@@ -4,7 +4,7 @@
 #   tests/corpus/run-n.sh [--no-build] [--cs <exe>] [--update-baseline] [--update-manifest]
 #                                                                       (run it FROM Git Bash)
 # On the development machine:
-#   CHERE_INVOKING=1 F:/Tools/PortableGit/usr/bin/_bash.exe -l -c 'cd /f/Koliada/Tools/bash && "$BASH" tests/corpus/run-n.sh'
+#   CHERE_INVOKING=1 F:/Tools/PortableGit/bin/bash.exe -l -c 'cd /f/Koliada/Tools/bash && "$BASH" tests/corpus/run-n.sh'
 #
 # THIS IS A CONTRACT TOOL (2026-10-12, the architect: "repetitive tools here need to be contracts,
 # period"). It ran from a scratch directory and a command recovered from a transcript until then.

@@ -7,7 +7,7 @@
 #
 # Run it from Git Bash, the reference shell, not from C#Bash (whose own defects would then be in
 # the harness). On this machine:
-#   F:/Tools/PortableGit/usr/bin/_bash.exe -lc '"$BASH" /f/Koliada/Tools/bash/tests/df/compare-wsl.sh [exe]'
+#   F:/Tools/PortableGit/bin/bash.exe -lc '"$BASH" /f/Koliada/Tools/bash/tests/df/compare-wsl.sh [exe]'
 #
 # Drives: quiet local NTFS volumes (DF_DRIVES, default "g u w z"), so the numbers do not move
 # between the two runs; if a case differs only in a number, run it again before believing it.

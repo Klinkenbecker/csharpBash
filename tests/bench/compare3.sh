@@ -6,8 +6,9 @@
 #                                        the deployed build: THE way to measure an undeployed rev
 #   tests/bench/compare3.sh --cs <exe>   some other existing build
 #
-# On the development machine Git's bash.exe is renamed _bash.exe so Claude Code finds C#Bash, so:
-#   CHERE_INVOKING=1 F:/Tools/PortableGit/usr/bin/_bash.exe -l -c 'cd /f/Koliada/Tools/bash && "$BASH" tests/bench/compare3.sh --build'
+# Run it from the repository root through Git's bin/bash.exe redirect, the program it times as Git Bash:
+#   F:/Tools/PortableGit/bin/bash.exe tests/bench/compare3.sh --build
+# How it is started no longer changes the result: no LANG or LC_* reaches a timed shell (see below).
 #
 # THIS IS THE BENCHMARK, and it runs one way (frozen 2026-10-06, DECISIONS.md "The benchmark is
 # one fixed command"). The method lives here, not in the caller:
@@ -44,7 +45,14 @@
 #  * pipeline.sh writes its input to $TMPDIR, which for WSL is ext4 INSIDE the VM and for the other
 #    two is the Windows temp directory — so that row gives WSL a filesystem advantage as well as a
 #    tool-speed one.
+#  * No locale reaches a shell from here (2026-10-18, the architect: time Git Bash the way Claude Code runs it).
+#    Claude Code runs each call as `bash.exe -c "<wrapper>"`, not a login shell, and its snapshot carries PATH but
+#    not LANG, so Git Bash's GNU tools work byte-wise in the C locale, as C#Bash's do. The login Git Bash this
+#    script was started from until 2026-10-19 had LANG=en_US.UTF-8 (/etc/profile.d/lang.sh), which made Git
+#    Bash's pipeline row 11-22 % slower (DECISIONS 2026-10-18 "CORRECTION to …"); a non-login start had none,
+#    so the row depended on how the script was started.
 set -u
+unset LANG LC_ALL LC_CTYPE LC_COLLATE LC_MESSAGES LC_MONETARY LC_NUMERIC LC_TIME
 # Under C#Bash, "Git Bash" below would be C#Bash itself and the harness's own `time` would be ours.
 case "${BASH_VERSION:-}" in *koliada*) echo "compare3: run me under Git Bash, not C#Bash (see the header)" >&2; exit 2 ;; esac
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -92,9 +100,10 @@ fi
 [ -x "$cs" ] || { echo "compare3: no C#Bash build at $cs" >&2; exit 2; }
 
 # ── the other two shells ─────────────────────────────────────────────────────
-# Git Bash is configured, never searched for. Its bash.exe is renamed _bash.exe on this machine,
-# which also breaks the bin/ launcher stub, so this is the real binary under usr/bin.
-GITBASH=F:/Tools/PortableGit/usr/bin/_bash.exe
+# Git Bash is configured, never searched for: Git's bin/bash.exe redirect, the program Claude Code starts when it
+# uses Git Bash. The redirect starts usr/bin/bash.exe and costs ~8 ms per start, which every such Claude Code call
+# pays. Until 2026-10-19 this was usr/bin/_bash.exe, started directly (README "Benchmark provenance").
+GITBASH=F:/Tools/PortableGit/bin/bash.exe
 [ -x "$GITBASH" ] || { echo "compare3: FATAL: Git Bash not found at $GITBASH (configured at the top of this script)" >&2; exit 2; }
 gitbash="$GITBASH"
 
@@ -198,6 +207,7 @@ report() {
   [ -n "$wsl" ] && "${wslcmd[@]}" -c 'echo "           bash $BASH_VERSION on $(uname -sr)"' 2>/dev/null
   echo "method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)"
   echo "           rows = best of $CS_ROUNDS (C#Bash) / best of $OTHER_ROUNDS (Git Bash, WSL); startup = median of $STARTUP_SAMPLES samples, each total of $STARTUP_N launches / $STARTUP_N"
+  echo "           no LANG or LC_* passed to any shell (Git Bash as Claude Code runs it: C locale)"
   echo
 
   if [ -n "$deployed" ]; then
