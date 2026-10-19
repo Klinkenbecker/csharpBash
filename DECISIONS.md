@@ -7444,3 +7444,9 @@ not a regression. Git Bash's own loop_big moved 15.2 s (09:15) -> 19.3-20.0 s (1
 (throughput 9-14x Git Bash, startup "~9 ms"; a call ~11 ms, ~12 for rev 320, ~13 for rev 316; the anatomy from rev
 324: start-up ~0.9 ms; the after-deploy and startup-variance caveats; Git Bash's loop_big spread; 160 cases);
 ARCHITECTURE section 10's awk paragraph (never twice); PROJECT_CONTEXT's limitation line.
+
+## 2026-10-18 -- PUBLISHED: GitHub main = git 9943884 = hg rev 325
+**Status:** Active. The architect: "Yes, deploy and publish". By `tools/publish.sh`: the benchmark of the deployed
+build (rev 324, the 11:55 run) found in results.md; the doc review committed (rev 325); MERCURIAL_HISTORY.md (326
+changesets) and mercurial-history.hg (verified) written; git staged exactly hg's tracked files (`The Windows Shell
+Tax.url` left out); pushed 32ad493..9943884; remote main = HEAD; no auth header in git config (checked again by hand).

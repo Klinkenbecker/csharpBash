@@ -12,11 +12,13 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 326 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 328 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 327 | 2026-10-18 | Resume note: on a break until a bug is filed (the architect); nothing greenlit |
+| 326 | 2026-10-18 | Published: GitHub main = git 9943884 = hg rev 325 by tools/publish.sh |
 | 325 | 2026-10-18 | Deployed rev 324 (notified); measured back to back with rev 320 (a call ~11 ms, compare3 startup 8.5 ms; the first run after the deploy slower again); doc review for the publish |
 | 324 | 2026-10-18 | awk never runs a program twice: literal printf/sprintf formats and RS refused at parse time (the PATH awk runs it once), a refusal while running loud (2); out-of-range numbers as gawk 5.1 (+inf, -nan); case awk_unsupported_once |
 | 323 | 2026-10-18 | The split's candidates: a mingw64/bin entry names Git's root and the PATH compare ignores slash direction (probe 0.66 -> 0.08 ms); PPID from the pseudo-handle (0.47 -> 0.02 ms); the invariant culture as every thread's default ($((-5)) printed U+2212 under sv-SE); printf inf/nan as C (%g of inf threw); cases startup_env, printf_nonfinite; awk re-run after output RAISED |

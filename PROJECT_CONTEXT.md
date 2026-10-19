@@ -6,12 +6,15 @@
 > LIMITATIONS, SETTLED, DO NOT undo, machine facts) is kept.
 >
 > **TRUE STATE (verified 2026-10-18):**
+> - ON A BREAK (the architect, 2026-10-18: "lets publish and we can take a break until someone files a bug"):
+>   nothing is greenlit. The next work starts from a bug report (a peer session's or the architect's); the held
+>   items below stay held.
 > - `dist/Bash.exe` = rev 324 (`1.0.0+hg.7b2c529cd84f 324`, by tools/deploy.sh 2026-10-18; rollback
 >   `dist/Bash.exe.rev320`). Suite 160/160 both modes on that AOT binary; battery 226/237. Told: gps-time-2c,
 >   adc-framework-d8, msp430-a2, nupkg-28, koliada-net-7c, daq-fe, guy-97, ananta-f5. A Claude call ~11 ms
 >   (rev 320 ~12, rev 316 ~13, back to back); compare3 startup 8.5 ms.
-> - GitHub main = git `32ad493` = hg rev 321 (published 2026-10-18 by tools/publish.sh: the architect, "go, deploy,
->   notify, publish"). hg is clean apart from the untracked `The Windows Shell Tax.url` (not ours, leave it).
+> - GitHub main = git `9943884` = hg rev 325 (published 2026-10-18 by tools/publish.sh: the architect, "Yes, deploy
+>   and publish"). hg is clean apart from the untracked `The Windows Shell Tax.url` (not ours, leave it).
 > - The architect starts Claude Code through a start file (README "Start Claude Code with no PATH of its own"):
 >   `BASH_PATH=%PATH%`, `CLAUDE_CODE_GIT_BASH_PATH=F:/Koliada/Tools/bash/dist/Bash.exe`, `PATH=F:/Koliada/Tools/bash/dist`.
 >   claude.exe's PATH is `dist`; the shell's is the full Windows PATH. A session whose Bash PATH is `dist` alone was
