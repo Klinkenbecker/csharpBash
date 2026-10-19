@@ -7450,3 +7450,30 @@ ARCHITECTURE section 10's awk paragraph (never twice); PROJECT_CONTEXT's limitat
 build (rev 324, the 11:55 run) found in results.md; the doc review committed (rev 325); MERCURIAL_HISTORY.md (326
 changesets) and mercurial-history.hg (verified) written; git staged exactly hg's tracked files (`The Windows Shell
 Tax.url` left out); pushed 32ad493..9943884; remote main = HEAD; no auth header in git config (checked again by hand).
+
+## 2026-10-18 -- PUBLISHED: GitHub main = git a8a90e2 = hg rev 327; on a break until a bug is filed
+**Status:** Active. The architect: "lets publish and we can take a break until someone files a bug". By
+`tools/publish.sh`: records only since rev 325 (the publish record, the resume note); the deployed build is still rev
+324; MERCURIAL_HISTORY.md (328 changesets) and mercurial-history.hg (verified); pushed 9943884..a8a90e2; remote main
+= HEAD; no auth header in git config. Nothing is greenlit; the next work starts from a bug report.
+
+## 2026-10-18 -- CORRECTION: Git Bash's pipeline row moved because Claude launched compare3 another way (LANG), not Git Bash or a cache
+**Status:** Active. Corrects the `pipeline` figure and sentence in README as published at hg rev 325 (from the 11:55
+run) and the "level with Git Bash, 0.9-1.2x" wording of "DEPLOYED rev 320"/"DEPLOYED rev 324" (those entries stand as
+written). The architect asked why Git Bash's time dropped, whether it was silently cached, and what shell runs the
+script.
+
+**Found (the transcript; measured):** compare3's header gives its launch: `CHERE_INVOKING=1 _bash.exe -l -c '…
+"$BASH" tests/bench/compare3.sh'`, a LOGIN Git Bash. Today's runs before 08:00 used it; every run from 09:15 was
+Claude's `_bash.exe tests/bench/compare3.sh` from inside the Claude call's C#Bash (not a login shell). Both forms
+give the shells under test the same TEMP/TMPDIR, the same cached input (`F:/TEMP/bench-nums.txt`, written once by
+pipeline.sh, identical either way: the only caching) and the same /usr/bin tools; they differ in PATH (57 entries
+against 50) and in what Git's profile exports, LANG among them (`en_US.UTF-8`). Back to back on deployed rev 324
+(compare3 unmodified): Git Bash pipeline login 0.262, Claude's form 0.231, login 0.282; Claude's form with only
+`LANG=en_US.UTF-8` added 0.257. So LANG is the cause: without it GNU grep/sed/sort/uniq/awk work byte-wise in the C
+locale. C#Bash (which reads no LANG) is unchanged: 0.243-0.252. C#Bash's startup is the same in both forms (8.9 / 8.9
+/ 9.1 ms), so the launch form does NOT explain rev 316's 14.4 ms at 08:02: that stays unexplained.
+**Corrected:** README's table from the 17:30 run (deployed rev 324, the header's form): pipeline 0.247 against Git
+Bash's 0.282 (1.1x); its sentences (ahead of Git Bash 1.0-1.2x as the harness runs it; ~10 % slower for Git Bash
+without LANG, measured); "Reproduce … from a login Git Bash". Claude's error: running the contract tool in a form its
+header does not give. compare3 is to be run only as its header shows.

@@ -12,11 +12,13 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 328 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 330 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 329 | 2026-10-18 | Correction: Git Bash's pipeline row moved with the launch form (no LANG in a non-login Git Bash), not a cache; README's table from a run in compare3's documented login form |
+| 328 | 2026-10-18 | Published: GitHub main = git a8a90e2 = hg rev 327 by tools/publish.sh; on a break |
 | 327 | 2026-10-18 | Resume note: on a break until a bug is filed (the architect); nothing greenlit |
 | 326 | 2026-10-18 | Published: GitHub main = git 9943884 = hg rev 325 by tools/publish.sh |
 | 325 | 2026-10-18 | Deployed rev 324 (notified); measured back to back with rev 320 (a call ~11 ms, compare3 startup 8.5 ms; the first run after the deploy slower again); doc review for the publish |
