@@ -1,0 +1,8 @@
+x='1+' in $(( )): an error
+x='1+' in (( )): fails
+x='1+' in let: fails
+expression recursion level exceeded
+y+1: 7
+z: 4
+chain of 60: 5
+empty: 1

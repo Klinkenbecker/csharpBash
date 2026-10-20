@@ -28,13 +28,49 @@ public static class ShellFile
 
 	[System.Runtime.InteropServices.DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
 
-	public static FileStream OpenRead(string path) => new(path, FileMode.Open, FileAccess.Read, Share);
+	public static FileStream OpenRead(string path) => NotADirectory(path, () => new(path, FileMode.Open, FileAccess.Read, Share));
 
 	/// <summary>`&gt; file`: created, or truncated.</summary>
-	public static FileStream Create(string path) => new(path, FileMode.Create, FileAccess.Write, Share);
+	public static FileStream Create(string path) => NotADirectory(path, () => new(path, FileMode.Create, FileAccess.Write, Share));
+
+	/// <summary>True when a directory on the way to <paramref name="path"/> is a file (bash's ENOTDIR).</summary>
+	public static bool ThroughAFile(string path)
+		{
+		try
+			{
+			for (var p = Path.GetDirectoryName(path); !string.IsNullOrEmpty(p); p = Path.GetDirectoryName(p))
+				if (File.Exists(p)) return true;
+			}
+		catch { }
+		return false;
+		}
+
+	/// <summary>An open whose path runs through a file fails as bash's does, "Not a directory"; .NET says the directory
+	/// is not found, reported as "No such file or directory": `cat file/x` (red team F13, 2026-10-19).</summary>
+	private static FileStream NotADirectory(string path, Func<FileStream> open)
+		{
+		// `file/.` and `file/..` open `file` and its folder, Windows dropping the dots: asked first
+		if (Path.GetFileName(path) is "." or ".." && ThroughAFile(path)) throw new IOException("Not a directory");
+		try { return open(); }
+		catch (DirectoryNotFoundException) when (ThroughAFile(path)) { throw new IOException("Not a directory"); }
+		}
 
 	/// <summary>`&gt;&gt; file`: created if missing, written at the end.</summary>
-	public static FileStream Append(string path) => new(path, FileMode.Append, FileAccess.Write, Share);
+	/// <summary>`>>`: every write lands at the end, whoever else is appending (O_APPEND): the handle has FILE_APPEND_DATA and
+	/// not FILE_WRITE_DATA, as a child's `>>` handle (ChildLauncher.Access.Append). An ordinary write stream opened at the
+	/// end wrote at its own offset, so two shells appending to one file wrote over each other (3000 of 6000 lines were
+	/// left; red team, 2026-10-19). Unbuffered: a line is one write.</summary>
+	public static FileStream Append(string path)
+		{
+		var fs = NotADirectory(path, () => new FileStream(ChildLauncher.Open(path, ChildLauncher.Access.Append), FileAccess.Write, bufferSize: 0));
+		s_paths.AddOrUpdate(fs, Path.GetFullPath(path));
+		return fs;
+		}
+
+	/// <summary>The file a stream writes: its Name, or for a stream made from a handle (Append) the path it was opened
+	/// with; .NET names such a stream "[Unknown]", and a child's handle reopened by that name went to a new file.</summary>
+	public static string PathOf(FileStream fs) => s_paths.TryGetValue(fs, out var p) ? p : fs.Name;
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FileStream, string> s_paths = new();
 
 	public static byte[] ReadAllBytes(string path)
 		{

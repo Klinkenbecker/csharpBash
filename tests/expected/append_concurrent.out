@@ -1,0 +1,3 @@
+loop redirect: 6000 lines, A 3000, B 3000
+per command: 3000 lines, C 1500, D 1500
+fd 3 and >>: 4000 lines, E 2000, F 2000

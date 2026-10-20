@@ -436,7 +436,7 @@ public sealed class Parser
 				if (name is null && args.Count == 0 && IsArrayElementAssign(word, out var aeName, out var aeIdx, out var aeVal, out bool aeAppend))
 					{
 					while (true) { var tr = TryParseRedirect(); if (tr is null) break; redirects.Add(tr); }
-					return new ArrayElementAssign(aeName!, aeIdx!, aeVal!, redirects) { Append = aeAppend, Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
+					return new ArrayElementAssign(aeName!, aeIdx!, aeVal!, redirects) { Append = aeAppend, Line = line, Span = SpanFrom(firstTok, _heredocEnd), IndexText = RawSubscript(word) };
 					}
 
 				// NAME=VALUE scalar assignment before the command name
@@ -637,6 +637,23 @@ public sealed class Parser
 		}
 
 	/// <summary>Detects arr[expr]=val and arr[expr]+=val (<paramref name="append"/>).</summary>
+	/// <summary>The subscript of `name[sub]=v` as written, for set -x (bash traces `a[$i]=zero`); null when the source
+	/// text is unknown.</summary>
+	private static string? RawSubscript(Word word)
+		{
+		if (word.Raw is not { } raw) return null;
+		int open = raw.IndexOf('['), depth = 0;
+		if (open < 0) return null;
+		for (int i = open + 1; i < raw.Length; i++)
+			{
+			char c = raw[i];
+			if (c == '\\') { i++; continue; }
+			if (c == '[') depth++;
+			else if (c == ']') { if (depth == 0) return raw[(open + 1)..i]; depth--; }
+			}
+		return null;
+		}
+
 	private bool IsArrayElementAssign(Word word, out string? arrayName, out Word? index, out Word? value, out bool append)
 		{
 		arrayName = null; index = null; value = null; append = false;

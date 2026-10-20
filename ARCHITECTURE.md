@@ -459,7 +459,9 @@ Two pieces of machinery sit in front of `Process.Start`:
 because its parent's `cd` moves the process cwd under it. A pipeline stage keeps paths relative until it
 moves (its parent waits for it). *(DECISIONS: 2026-10-03 — each shell's own cwd; 2026-10-17 — background job.)*
 
-**`TranslatePath`** maps `~`/`~user` and forward-slash paths to Windows paths. A general Unix
+**`TranslatePath`** maps forward-slash and MSYS-form paths to Windows paths. A `~` in a path is a name, as in
+bash: the shell expands an unquoted one (`TildeHome`: $HOME, else the profile) before a command sees it (until
+2026-10-19 a quoted `~` was the profile, whatever $HOME said; DECISIONS "FIXED (red team F5)"). A general Unix
 root mapping (`/tmp`, `/usr`, `/etc`, configurable `BASH_ROOT`) is a **deferred** design
 decision — see [`DECISIONS.md`](DECISIONS.md) "DEFERRED — Unix root path mapping" and
 [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) "Open Questions".

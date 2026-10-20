@@ -56,10 +56,9 @@ for mode in console -Detached; do
   [[ "$res" == *" 0 failed" ]] || die "the suite failed on $new ($mode); not deployed"
 done
 
-# 4. the battery, against Git's bin/bash.exe redirect: the Git Bash compare3 times, configured, not searched for
-#    (Git is off the Windows PATH since 2026-10-19, so the battery's own search finds no reference in a session
-#    started since)
-bat=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$root/tests/compat/run-compat.ps1")" -Reference "$(cygpath -w F:/Tools/PortableGit/bin/bash.exe)" 2>&1)
+# 4. the battery, against WSL's GNU bash (its reference since 2026-10-19: Git is reached nowhere but the benchmark
+#    and the publish script)
+bat=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$root/tests/compat/run-compat.ps1")" 2>&1)
 bat_rc=$?
 echo "deploy: battery: $(grep -E 'pass, [0-9]+ diff' <<< "$bat" | tail -1)"
 [ $bat_rc -eq 0 ] || { grep -E 'REGRESS|FAIL' <<< "$bat" >&2; die "the battery regressed; not deployed"; }

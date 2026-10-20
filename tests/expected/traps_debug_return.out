@@ -79,11 +79,9 @@ hd
 D<x=1 y=2>
 D<echo "q" 'r' 's'>
 q r s
+D<TIMEFORMAT=timed>
 D<true>
-
-real	0m0.000s
-user	0m0.000s
-sys	0m0.000s
+timed
 D<echo $((1+2)) ${x:-d}>
 3 1
 ===== r1

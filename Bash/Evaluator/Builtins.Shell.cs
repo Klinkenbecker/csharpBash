@@ -122,7 +122,7 @@ public sealed partial class Builtins
 		string? target = first < args.Count ? args[first] : null;
 		bool printDir = false;
 		string dest;
-		if (target is null || target == "~")
+		if (target is null)   // a quoted `~` is a directory named ~, as in bash (red team F5, 2026-10-19)
 			{
 			var home = _env.Get("HOME");
 			dest = home.Length > 0 ? ShellEnvironment.TranslatePath(home) : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -192,7 +192,13 @@ public sealed partial class Builtins
 		int rc = 0;
 		foreach (var spec in names)
 			{
-			if (funcs) continue;                        // exported functions: accepted, no effect
+			if (funcs)
+				{
+				// a child gets it as bash passes it (BASH_FUNC_name%%); it was accepted and did nothing (2026-10-19)
+				if (!_eval.HasFunction(spec)) { Console.Error.WriteLine($"{Err}export: {spec}: not a function"); rc = 1; continue; }
+				_eval.ExportFunction(spec, !unexport);
+				continue;
+				}
 			int eq = spec.IndexOf('=');
 			var name = eq < 0 ? spec : spec[..eq];
 			bool append = name.EndsWith('+');
@@ -551,7 +557,6 @@ public sealed partial class Builtins
 
 	// One reader per numbered descriptor, so successive `read -u 3` calls continue where
 	// the previous one stopped instead of re-buffering from the stream.
-	private readonly Dictionary<Stream, StreamReader> _fdReaders = new(ReferenceEqualityComparer.Instance);
 
 	private int Read(List<string> args)
 		{
@@ -598,7 +603,9 @@ public sealed partial class Builtins
 			{
 			var s = _eval.GetFd(fd);
 			if (s is null) { Console.Error.WriteLine($"{Err}read: {fd}: invalid file descriptor: Bad file descriptor"); return 1; }
-			input = _fdReaders.TryGetValue(s, out var rd) ? rd : (_fdReaders[s] = new StreamReader(s, ShellEncoding.Utf8, false, 1024, leaveOpen: true));
+			// kept between reads; what it reads ahead goes back to a file before any other use of the descriptor
+			// (LfReader.Release), so `cat <&8`, `head <&8`, `echo >&8` start just after the line (red team F2)
+			input = LfReader.ForDescriptor(s);
 			}
 
 		var sb = new StringBuilder();
@@ -785,7 +792,8 @@ public sealed partial class Builtins
 				if (File.Exists(cand)) { path = cand; file = cand; break; }
 				}
 			}
-		if (!File.Exists(path)) { Console.Error.WriteLine($"{Err}{file}: No such file or directory"); return 1; }
+		// a device (/dev/null, /dev/stdin, /dev/fd/N) is read by SourceFile, which also refuses the endless ones
+		if (!File.Exists(path) && ShellFile.Device(file) is null) { Console.Error.WriteLine($"{Err}{file}: No such file or directory"); return 1; }
 		// named as given (BASH_SOURCE, the error prefix), as bash does; SourceFile translates it
 		return _eval.SourceFile(file, silentIfMissing: false, positionals: args.Count > 1 ? args.Skip(1) : null);
 		}
@@ -942,6 +950,15 @@ public sealed partial class Builtins
 			return trc;
 			}
 
+		// `declare -fx NAME` / `declare -f +x NAME`: export (or no longer) the function, nothing printed, as bash
+		if ((export || unexport) && funcOn && specs.Count > 0 && !print)
+			{
+			int xrc = 0;
+			foreach (var n in specs)
+				if (_eval.HasFunction(n)) _eval.ExportFunction(n, export); else xrc = 1;
+			return xrc;
+			}
+
 		// ── function listing ──
 		if (funcs || funcNames)
 			{
@@ -951,8 +968,10 @@ public sealed partial class Builtins
 				{
 				var fd = _eval.GetFunction(n);
 				if (fd is null) { frc = 1; continue; }
-				if (funcNames) Console.WriteLine(specs.Count > 0 ? n : $"declare -f {n}");
-				else Console.WriteLine(FunctionText(fd));
+				// an exported function shows as -fx; in the full listing (no names) its text is followed by that line (bash)
+				bool x = _eval.IsFunctionExported(n);
+				if (funcNames) Console.WriteLine(specs.Count > 0 ? n : $"declare -f{(x ? "x" : "")} {n}");
+				else { Console.WriteLine(FunctionText(fd)); if (x && specs.Count == 0) Console.WriteLine($"declare -fx {n}"); }
 				}
 			return frc;
 			}
@@ -1645,6 +1664,7 @@ public sealed partial class Builtins
 		if (i >= args.Count)
 			{
 			var env = clear ? new Dictionary<string, string>(StringComparer.Ordinal) : _env.GetExportedVars();
+			if (!clear) foreach (var (k, v) in _eval.ExportedFunctionVars()) env[k] = v;   // as a child's environment has them
 			foreach (var u in unset) env.Remove(u);
 			foreach (var (k, v) in assigns) env[k] = v;
 			string term = nul ? "\0" : "\n";

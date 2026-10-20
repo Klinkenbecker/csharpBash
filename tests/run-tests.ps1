@@ -3,7 +3,7 @@
   Self-checking test runner for the Bash interpreter.
 
   Runs each script-mode test against the built Release exe, captures STDOUT only
-  (stderr is discarded — job-id notices, prompts, and error text live there), and
+  (stderr is discarded - job-id notices, prompts, and error text live there), and
   compares line-by-line against tests/expected/<name>.out. Reports PASS/FAIL and
   exits non-zero if any test fails.
 
@@ -84,7 +84,7 @@ public static class DetachedRun {
 
 if (-not $NoBuild) {
     # Clear any stale interpreter instance under this project (a hung test process
-    # locks Bash.exe and fails the copy step). Match on resolved path — ours only.
+    # locks Bash.exe and fails the copy step). Match on resolved path - ours only.
     $projFull = (Resolve-Path $proj).Path
     Get-Process -Name Bash -ErrorAction SilentlyContinue |
         Where-Object { $_.Path -and $_.Path.StartsWith($projFull, [System.StringComparison]::OrdinalIgnoreCase) } |
@@ -126,7 +126,7 @@ $tests = @(
     @{ Name = 'od';          Script = 'cases\od.sh';          Args = @() }   # od -c / -tx1 / -An
     @{ Name = 'sort';        Script = 'cases\sort.sh';        Args = @() }   # sort -n / -r / -u / -k -t
     @{ Name = 'redirect_ext';Script = 'cases\redirect_ext.sh';Args = @() }   # external-cmd >file/2>file/2>/dev/null (no-crash regression)
-    @{ Name = 'split';       Script = 'cases\split.sh';       Args = @() }   # split -l / -b → prefix+aa/ab/...
+    @{ Name = 'split';       Script = 'cases\split.sh';       Args = @() }   # split -l / -b -> prefix+aa/ab/...
     @{ Name = 'find';        Script = 'cases\find.sh';        Args = @() }   # find -name/-type/-maxdepth (pre-order walk)
     @{ Name = 'ls';          Script = 'cases\ls.sh';          Args = @() }   # ls -a/-A/-r/-d (scoped: one-per-line, no -l)
     @{ Name = 'xargs';       Script = 'cases\xargs.sh';       Args = @() }   # xargs default/-n/-I (dispatches via _eval)
@@ -137,8 +137,8 @@ $tests = @(
     @{ Name = 'claude_wrapper'; Script = 'cases\claude_wrapper.sh'; Args = @() }   # P1: Claude Code's exact per-command wrapper (MSYS paths, snapshot, eval, pwd >|)
     @{ Name = 'flags';       Script = 'cases\flags.sh';       Args = @() }   # P1: -c -l order, -lc, --version, -o, -e, stdin script, $-, exit codes
     @{ Name = 'shellbuiltins'; Script = 'cases\shellbuiltins.sh'; Args = @() } # P1: shopt/alias/command/type/builtin/declare/readonly/let/pushd/set/read/mapfile/getopts/printf/test/[[ ]]/fd3
-    @{ Name = 'specialvars'; Script = 'cases\specialvars.sh'; Args = @() }   # P1: OSTYPE PPID RANDOM UID BASH_VERSINFO LINENO PIPESTATUS $! $- FUNCNAME BASH_SOURCE, $(…) status
-    @{ Name = 'heredoc';     Script = 'cases\heredoc.sh';     Args = @() }   # P1: heredoc/herestring, &>, 2>&1 >f order, /tmp & /c/ paths, nested $( ), "…" escapes, ${x:n:m} etc.
+    @{ Name = 'specialvars'; Script = 'cases\specialvars.sh'; Args = @() }   # P1: OSTYPE PPID RANDOM UID BASH_VERSINFO LINENO PIPESTATUS $! $- FUNCNAME BASH_SOURCE, $(...) status
+    @{ Name = 'heredoc';     Script = 'cases\heredoc.sh';     Args = @() }   # P1: heredoc/herestring, &>, 2>&1 >f order, /tmp & /c/ paths, nested $( ), "..." escapes, ${x:n:m} etc.
     @{ Name = 'pipes2';      Script = 'cases\pipes2.sh';      Args = @() }   # P2: threaded pipelines over managed pipes; yes|head, big producer|head -1, ext|builtin|builtin, captures, pipefail
     @{ Name = 'awk';         Script = 'cases\awk.sh';         Args = @() }   # P4: in-process awk subset (decision 7) vs gawk; loud boundary
     @{ Name = 'procsub';     Script = 'cases\procsub.sh';     Args = @() }   # P4: <( ) temp-file emulation (decision 6), |&, trap ERR (+errtrace), timeout
@@ -200,7 +200,7 @@ $tests = @(
     @{ Name = 'jobs_list';          Script = 'cases\jobs_list.sh';          Args = @() }   # 2026-10-10: jobs in bash's format with -l -p -r -s and job specs; a pipeline stage lists the parent's jobs (expected = GNU via WSL)
     @{ Name = 'native_args';        Script = 'cases\native_args.sh';        Args = @() }   # 2026-10-10: a Windows program gets /c/x and /tmp/x at the start of an argument as C:/x and the temp dir (as Git Bash); MSYS programs and the off switches untouched (authored: Windows-specific)
     @{ Name = 'python_utf8';        Script = 'cases\python_utf8.sh';        Args = @() }   # 2026-10-10: PYTHONIOENCODING=utf-8 exported unless set (piped py crashed on non-cp1252 text); not HGENCODING (authored: Windows-specific)
-    @{ Name = 'utf8_bytes';         Script = 'cases\utf8_bytes.sh';         Args = @() }   # 2026-10-10: carried bytes spelling a UTF-8 char are that char ($'\xc3\xa9' is é: length, ==, case, file names, ${x^^}) (expected = GNU via WSL)
+    @{ Name = 'utf8_bytes';         Script = 'cases\utf8_bytes.sh';         Args = @() }   # 2026-10-10: carried bytes spelling a UTF-8 char are that char ($'\xc3\xa9' is e-acute: length, ==, case, file names, ${x^^}) (expected = GNU via WSL)
     @{ Name = 'awk_extended';       Script = 'cases\awk_extended.sh';       Args = @() }   # 2026-10-10: awk user functions, print > / >> file, getline [var] < file, close, fflush, 3-arg match, --version; BASH_COREUTILS=builtin (expected = gawk 5.1 via WSL)
     @{ Name = 'awk_escapes';        Script = 'cases\awk_escapes.sh';        Args = @() }   # 2026-10-10: awk "\xNN" / "\NNN" above 0x7F are bytes; bytes spelling a UTF-8 char are that char, across concatenation too (expected = gawk 5.1 via WSL)
     @{ Name = 'jq_raw_input';       Script = 'cases\jq_raw_input.sh';       Args = @() }   # 2026-10-10: jq -R (each line a string) and -Rs (whole input one string); inputs are one text; errors at file:line (expected = jq 1.6 via WSL)
@@ -257,7 +257,27 @@ $tests = @(
     @{ Name = 'coreutils_external'; Script = 'cases\coreutils_external.sh'; Args = @() }   # 2026-10-11: BASH_COREUTILS=external runs the PATH program (it recursed builtin -> RunCommand -> builtin until a stack overflow killed the shell); needs Git (authored)
     @{ Name = 'restricted_mode';    Script = 'cases\restricted_mode.sh';    Args = @() }   # 2026-10-11: -r / --restricted / -cr refuse to start, set -r ends the shell (2), with a prefilled-issue link carrying no command text (authored: no GNU oracle)
     @{ Name = 'umask_times_fc';     Script = 'cases\umask_times_fc.sh';     Args = @() }   # 2026-10-10: umask (octal, symbolic, -p, -S, per shell), times, fc (option check, then not supported) are builtins; fc ran fc.exe (expected = GNU via WSL)
-    @{ Name = 'subshell_isolation'; Script = 'cases\subshell_isolation.sh'; Args = @() }   # 2026-10-04: options, shopts, traps (own EXIT trap fires at subshell end), aliases stay in the subshell (expected = GNU via WSL)   # 2026-10-03: \* \? \[ \{ \, \~ stay quoted (echo \*, find -name \*.txt globbed) (expected = GNU via WSL)   # 2026-10-03: a copy without -p gets the current mtime (expected = GNU via WSL)   # 2026-10-03: ${x#"$p"} ${x//$o/$n} ${x%%"lit"}: expansions + quotes in pattern/replacement (expected = GNU via WSL)   # 2026-10-03: each shell's own cwd: stages, subshells, in-process scripts (expected = GNU via WSL)   # 2026-10-03: arr[$k]=v / m+=(["$k"]=v) with an expanded index (expected = GNU via WSL)   # 2026-10-03: each pipeline stage is a subshell (own vars/functions/options/traps) (expected = GNU via WSL)   # 2026-10-03: text then byte readers on one stdin; head -c streams N bytes (yes|head -c hung) (expected = GNU via WSL)   # 2026-10-03: CR is data in every line tool, a lone CR ends no line, no BOM sniffing (expected = GNU via WSL)   # 2026-10-03: first external with inherited stdio in a console-less shell lost its output (meaningful under -Detached)   # 2026-09-12: byte transparency — printf/$'' escapes emit BYTES; non-UTF-8 survives variables, $( ), pipes, files
+    @{ Name = 'bat_args';           Script = 'cases\bat_args.sh';           Args = @() }   # 2026-10-19 (red team F4): a .bat/.cmd argument is data: cmd re-parsed the command line, so `"&echo INJECTED` ran and %OS% expanded (BatBadBut); quoted as Rust's std does, a line break refused (authored: GNU runs no batch files)
+    @{ Name = 'tilde_literal';      Script = 'cases\tilde_literal.sh';      Args = @() }   # 2026-10-19 (red team F5): a quoted or data `~` is a name; it was the Windows profile whatever $HOME said (mkdir "~" said File exists, writes landed in the profile); an unquoted ~ is $HOME (expected = GNU via WSL)
+    @{ Name = 'subshell_fd_close';  Script = 'cases\subshell_fd_close.sh';  Args = @() }   # 2026-10-19 (red team F1): a descriptor closed in ( ), $( ), a pipeline stage, a job or a piped { } stays open in the parent (its stream was disposed: "Bad file descriptor", lines lost) (expected = GNU via WSL)
+    @{ Name = 'read_fd_offset';     Script = 'cases\read_fd_offset.sh';     Args = @() }   # 2026-10-19 (red team F2): after `read -u N` the descriptor's next reader or writer starts just after the line (cat <&8 printed nothing, head took the rest, echo >&8 wrote at the end); a pipe's readers share one buffer (expected = GNU via WSL)
+    @{ Name = 'append_concurrent';  Script = 'cases\append_concurrent.sh';  Args = @() }   # 2026-10-19 (red team, older): two shells appending to one file keep every line (O_APPEND: an append-only handle); C#Bash's own >> wrote at its own offset, 3000 of 6000 lines left (expected = GNU via WSL)
+    @{ Name = 'msys_append_shared'; Script = 'cases\msys_append_shared.sh'; Args = @() }   # 2026-10-19 (red team F3): an MSYS program's `>> o 2>> o` (direct, in a group, or a nested shell's) keeps both lines whole: one write handle per file (two at the same end overwrote); needs MSYS2 at F:/Tools/msys64 (authored)
+    @{ Name = 'fallback_not_windows'; Script = 'cases\fallback_not_windows.sh'; Args = @() }   # 2026-10-19 (red team): a builtin's unsupported option hands over to the PATH program of that name, never Windows' own (System32's find.exe ran: FIND: Parameter format not correct) (authored)
+    @{ Name = 'readlink_canon';     Script = 'cases\readlink_canon.sh';     Args = @() }   # 2026-10-19 (red team F6): realpath and readlink -f/-e/-m check each component as GNU does and drop a trailing slash (nothing was checked: readlink -f nodir/x printed a path, rc 0) (expected = GNU coreutils via WSL)
+    @{ Name = 'find_execdir';       Script = 'cases\find_execdir.sh';       Args = @() }   # 2026-10-19 (red team F7): -execdir takes a starting point as written (. ran in the parent, proj/ inside proj) and refuses a PATH with the current directory or a relative entry, as GNU (a planted program ran) (expected = GNU findutils via WSL)
+    @{ Name = 'which_program';      Script = 'cases\which_program.sh';      Args = @() }   # 2026-10-19 (red team F8): which reports only what can run (a .js with no #! and a .txt were reported) (expected = GNU which via WSL)
+    @{ Name = 'shebang_options';    Script = 'cases\shebang_options.sh';    Args = @() }   # 2026-10-19 (red team F9, and beside it): a script run as a command takes its #! options (#!/bin/bash -e went on past a failure) and env -S (127) (expected = GNU via WSL)
+    @{ Name = 'cwd_limit';          Script = 'cases\cwd_limit.sh';          Args = @() }   # 2026-10-19 (red team F10): a program started from a directory of 259 characters or more: the stated Windows limit, 126 (at exactly 259 Windows' own text with 127); 258 runs (authored)
+    @{ Name = 'source_devices';     Script = 'cases\source_devices.sh';     Args = @() }   # 2026-10-19 (red team, older): source reads /dev/null, /dev/stdin (here-string, pipe) and /dev/fd/N as bash does (No such file or directory, 1) (expected = GNU via WSL)
+    @{ Name = 'export_function';    Script = 'cases\export_function.sh';    Args = @() }   # 2026-10-19 (red team, older): export -f / declare -fx reach a child as BASH_FUNC_name%% and are imported; a forged definition never runs (export -f did nothing) (expected = GNU via WSL)
+    @{ Name = 'arith_bad_value';    Script = 'cases\arith_bad_value.sh';    Args = @() }   # 2026-10-19 (red team, older): a variable whose value is no valid arithmetic expression is an error, not 0; self-reference is the recursion error (cut off as 0 at depth 8) (expected = GNU via WSL)
+    @{ Name = 'path_through_file';  Script = 'cases\path_through_file.sh';  Args = @() }   # 2026-10-19 (red team F13): a path through a file is Not a directory for a command (hostname.exe/. ran), cat, ls and a redirect (expected = GNU via WSL)
+    @{ Name = 'mktemp_suffix';      Script = 'cases\mktemp_suffix.sh';      Args = @() }   # 2026-10-19 (red team F16): a mktemp template not ending in X has an implied suffix (aXXXXb was the literal name); too few X's and --suffix errors as GNU (expected = GNU coreutils via WSL)
+    @{ Name = 'xtrace_details';     Script = 'cases\xtrace_details.sh';     Args = @() }   # 2026-10-19 (red team F11): set -x as bash: octal control characters (and printf %q), export/readonly assignments, a subscript as written, eval one level deeper, BASH_XTRACEFD (expected = GNU via WSL)
+    @{ Name = 'sed_brackets_text';  Script = 'cases\sed_brackets_text.sh';  Args = @() }   # 2026-10-19 (found beside red team F11): in sed only a regex has bracket expressions; a `[` in the replacement or y swallowed the delimiter (expected = GNU sed via WSL)
+    @{ Name = 'xtrace_expanded';    Script = 'cases\xtrace_expanded.sh';    Args = @() }   # 2026-10-19 (red team F12): set -x shows (( )) and arithmetic for expanded (once), an empty for-part as (( 1 )), for i as for i in "$@", an empty [[ ]] operand as '', a tilde pattern quoted (and matched literally) (expected = GNU via WSL)
+    @{ Name = 'subshell_isolation'; Script = 'cases\subshell_isolation.sh'; Args = @() }   # 2026-10-04: options, shopts, traps (own EXIT trap fires at subshell end), aliases stay in the subshell (expected = GNU via WSL)   # 2026-10-03: \* \? \[ \{ \, \~ stay quoted (echo \*, find -name \*.txt globbed) (expected = GNU via WSL)   # 2026-10-03: a copy without -p gets the current mtime (expected = GNU via WSL)   # 2026-10-03: ${x#"$p"} ${x//$o/$n} ${x%%"lit"}: expansions + quotes in pattern/replacement (expected = GNU via WSL)   # 2026-10-03: each shell's own cwd: stages, subshells, in-process scripts (expected = GNU via WSL)   # 2026-10-03: arr[$k]=v / m+=(["$k"]=v) with an expanded index (expected = GNU via WSL)   # 2026-10-03: each pipeline stage is a subshell (own vars/functions/options/traps) (expected = GNU via WSL)   # 2026-10-03: text then byte readers on one stdin; head -c streams N bytes (yes|head -c hung) (expected = GNU via WSL)   # 2026-10-03: CR is data in every line tool, a lone CR ends no line, no BOM sniffing (expected = GNU via WSL)   # 2026-10-03: first external with inherited stdio in a console-less shell lost its output (meaningful under -Detached)   # 2026-09-12: byte transparency - printf/$'' escapes emit BYTES; non-UTF-8 survives variables, $( ), pipes, files
 )
 
 Push-Location $testsDir

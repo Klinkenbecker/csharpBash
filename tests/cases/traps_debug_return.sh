@@ -56,6 +56,7 @@ hd
 EOT
 x=1 y=2
 echo "q" 'r' $'s'
+TIMEFORMAT=timed
 time true
 f() { :; }
 echo $((1+2)) ${x:-d}

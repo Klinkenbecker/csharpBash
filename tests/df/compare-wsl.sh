@@ -5,9 +5,11 @@
 #
 #   tests/df/compare-wsl.sh [C#Bash exe]        (default: dist/Bash.exe)
 #
-# Run it from Git Bash, the reference shell, not from C#Bash (whose own defects would then be in
-# the harness). On this machine:
-#   F:/Tools/PortableGit/bin/bash.exe -lc '"$BASH" /f/Koliada/Tools/bash/tests/df/compare-wsl.sh [exe]'
+# Run it in WSL's bash, beside GNU df; C#Bash is started through WSL's interop, so a path handed to
+# it is given in Windows form. Never from C#Bash (whose own defects would then be in the harness),
+# nor from Git Bash, where it ran until 2026-10-19 (Git is reached nowhere but the benchmark and the
+# publish script). From a Claude Code Bash call, in the repository:
+#   wsl.exe -e bash tests/df/compare-wsl.sh [exe]        (exe as F:/... or /mnt/f/...)
 #
 # Drives: quiet local NTFS volumes (DF_DRIVES, default "g u w z"), so the numbers do not move
 # between the two runs; if a case differs only in a number, run it again before believing it.
@@ -18,9 +20,10 @@
 # Not comparable this way: -l (GNU counts a source containing ':' as remote), network and
 # removable drives (WSL mounts neither), and --output file columns that are not last.
 
-export MSYS2_ARG_CONV_EXCL='*'   # Git Bash must pass /mnt/g, /nope and G:/ to native programs as written
+command -v wslpath > /dev/null || { echo "compare-wsl: run me in WSL's bash (see the header)" >&2; exit 2; }
 here=$(cd "$(dirname "$0")" && pwd)
 CS=${1:-$here/../../dist/Bash.exe}
+case "$CS" in [A-Za-z]:*) CS=$(wslpath -u "$CS") ;; esac
 read -r -a drives <<< "${DF_DRIVES:-g u w z}"
 gnuD="" csD=""
 for d in "${drives[@]}"; do
@@ -64,10 +67,10 @@ run() {   # $1 = env assignment (may be empty), $2 = case
 	local envs=$1 c=$2 g s
 	g=${c//@D/$gnuD}; g=${g//@T/9p}
 	s=${c//@D/$csD};  s=${s//@T/ntfs}
-	wsl.exe -e bash -c "cd / && env LC_ALL=C $envs df $g" > "$tmp/g.out" 2> "$tmp/g.err" < /dev/null; local grc=$?
+	bash -c "cd / && env LC_ALL=C $envs df $g" > "$tmp/g.out" 2> "$tmp/g.err" < /dev/null; local grc=$?
 	"$CS" -c "${envs:+export $envs; }df $s" > "$tmp/c.out" 2> "$tmp/c.err" < /dev/null; local crc=$?
 	norm < "$tmp/g.out" > "$tmp/g.norm"
-	grep -v '^wsl: ' "$tmp/g.err" | norm > "$tmp/g.errn"   # wsl.exe's own "Failed to translate" startup noise
+	norm < "$tmp/g.err" > "$tmp/g.errn"
 	if cmp -s "$tmp/g.norm" "$tmp/c.out" && cmp -s "$tmp/g.errn" "$tmp/c.err" && [ "$grc" = "$crc" ]; then
 		pass=$((pass + 1)); echo "ok    ${envs:+$envs }df $c"
 	else

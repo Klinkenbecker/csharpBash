@@ -656,7 +656,7 @@ public sealed partial class Builtins
 					if (p >= s.Length) throw new Exception("unterminated `s' command");
 					char delim = s[p++];
 					string pat = SedReadDelim(s, ref p, delim);
-					cmd.SRepl = SedReadDelim(s, ref p, delim);
+					cmd.SRepl = SedReadDelim(s, ref p, delim, regex: false);
 					bool ic = false, multiline = false;
 					while (p < s.Length && s[p] is not (';' or '\n' or '}' or ' ' or '\t' or '#'))
 						{
@@ -678,8 +678,8 @@ public sealed partial class Builtins
 				case 'y':
 					{
 					char delim = s[p++];
-					cmd.YFrom = SedUnescapeText(SedReadDelim(s, ref p, delim));
-					cmd.YTo = SedUnescapeText(SedReadDelim(s, ref p, delim));
+					cmd.YFrom = SedUnescapeText(SedReadDelim(s, ref p, delim, regex: false));
+					cmd.YTo = SedUnescapeText(SedReadDelim(s, ref p, delim, regex: false));
 					if (cmd.YFrom.Length != cmd.YTo.Length) throw new Exception("strings for `y' command are different lengths");
 					break;
 					}
@@ -741,7 +741,9 @@ public sealed partial class Builtins
 
 	// Read up to (and consume) the next unescaped delim; \<delim> becomes a literal delim,
 	// \n stays as a newline escape for the regex, other backslash escapes are preserved.
-	private static string SedReadDelim(string s, ref int p, char delim)
+	// Only a REGEX has bracket expressions: the replacement and y's two parts are text, where `[` is a character
+	// (`s/^/[/;s/$/]/` read `[/;s/$/]` as one bracket expression, and two -e scripts ran together: 2026-10-19).
+	private static string SedReadDelim(string s, ref int p, char delim, bool regex = true)
 		{
 		var sb = new StringBuilder();
 		while (p < s.Length && s[p] != delim)
@@ -752,7 +754,7 @@ public sealed partial class Builtins
 				if (s[p + 1] == '\n') { sb.Append('\n'); p += 2; continue; }
 				sb.Append(s[p]).Append(s[p + 1]); p += 2; continue;
 				}
-			if (s[p] == '[' && delim != '[')
+			if (regex && s[p] == '[' && delim != '[')
 				{
 				// a bracket expression may contain the delimiter: copy it whole
 				int close = s.IndexOf(']', p + 1);

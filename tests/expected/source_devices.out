@@ -1,0 +1,8 @@
+null rc=0
+dot rc=0
+from stdin x=1
+stdin rc=0 x=1
+piped y=2
+args: a b
+fd3 z=3
+fd4 rc=5 w=4

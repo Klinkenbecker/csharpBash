@@ -21,6 +21,7 @@ public sealed partial class Builtins
 		public FileSystemInfo Info = null!;
 		public int Depth;
 		public string Start = "";         // the starting point this entry belongs to
+		public string Given = "";         // a starting point as written (depth 0 only): -execdir's directory and {}
 		public bool IsDir => Info is DirectoryInfo;
 		public bool IsLink => Info.LinkTarget is not null;
 		public long Size => Info is FileInfo fi ? fi.Length : 0;
@@ -35,6 +36,7 @@ public sealed partial class Builtins
 		public List<string> ExecPlusBatch = [];
 		public List<string>? ExecPlusCmd;
 		public string? ExecPlusDir;   // -execdir: the directory the batch runs from
+		public bool ExecDir;          // the expression has -execdir: PATH must be safe for it
 		public DateTime Now = DateTime.Now;
 		}
 
@@ -66,6 +68,7 @@ public sealed partial class Builtins
 		catch (UnsupportedOptionException) { throw; }
 		catch (Exception ex) { Console.Error.WriteLine($"find: {ex.Message}"); return 1; }
 		if (i < args.Count) { Console.Error.WriteLine($"find: unexpected extra operand '{args[i]}'"); return 1; }
+		if (st.ExecDir && UnsafePathForExecDir(_env.Get("PATH")) is { } unsafePath) { Console.Error.WriteLine(unsafePath); return 1; }
 		if (!st.AnyAction)
 			{
 			// implicit -print
@@ -81,7 +84,7 @@ public sealed partial class Builtins
 				FileSystemInfo? info = Directory.Exists(fs) ? new DirectoryInfo(fs) : File.Exists(fs) ? new FileInfo(fs) : null;
 				if (info is null) { Console.Error.WriteLine($"find: '{p}': No such file or directory"); st.Rc = 1; continue; }
 				var display = p.Length > 1 ? p.TrimEnd('/', '\\') : p;
-				FindWalk(new FindEntry { Display = display, Fs = fs, Info = info, Depth = 0, Start = display }, expr!, st);
+				FindWalk(new FindEntry { Display = display, Fs = fs, Info = info, Depth = 0, Start = display, Given = p }, expr!, st);
 				if (st.Quit) break;
 				}
 			}
@@ -273,6 +276,7 @@ public sealed partial class Builtins
 				// -execdir runs from the file's own directory with `{}` as ./name, a `+` batch per directory (GNU); it
 				// ran as -exec, from the shell's directory with the path as printed (2026-10-17)
 				bool inDir = t == "-execdir";
+				if (inDir) st.ExecDir = true;
 				if (plus)
 					{
 					return new FindPred((e, s, b) =>
@@ -312,12 +316,41 @@ public sealed partial class Builtins
 		if (rc != 0) s.Rc = 1;
 		}
 
-	/// <summary>-execdir's working directory and `{}`: the entry's own directory, and ./name.</summary>
+	/// <summary>-execdir's working directory and `{}`: the entry's own directory, and ./name. A starting point is taken as
+	/// written, as GNU takes it: `.` runs in `.` as `./.`, `proj/` in `.` as `./proj/`, `./a/b` in `./a` as `./b`. From
+	/// its full path, `.` ran in the parent directory (red team F7, 2026-10-19).</summary>
 	private static (string? Dir, string Arg) ExecDirOf(FindEntry e)
 		{
+		if (e.Depth == 0 && e.Given.Length > 0)
+			{
+			var core = e.Given.TrimEnd('/', '\\');
+			int cut = core.LastIndexOfAny(['/', '\\']);
+			if (core.Length == 0) return (e.Given, "./");   // `/`
+			return cut < 0 ? (".", "./" + e.Given)
+			     : (cut == 0 ? core[..1] : core[..cut], "./" + e.Given[(cut + 1)..]);
+			}
 		var full = Path.GetFullPath(e.Fs);
 		return (Path.GetDirectoryName(full) ?? full, "./" + Path.GetFileName(full.TrimEnd('/', '\\')));
 		}
+
+	/// <summary>GNU find's refusal of -execdir when PATH holds the current directory (`.`, an empty entry) or a relative
+	/// entry: the command is looked up from each file's directory, so a program planted beside a file would run (it
+	/// did: red team F7, 2026-10-19). The first such entry, as GNU reports it (`;` is this PATH's separator), or null.
+	/// Absolute here: a `/` or `\` start (`/c/x` is a drive), or a drive with its slash (`C:/x`).</summary>
+	private static string? UnsafePathForExecDir(string path)
+		{
+		foreach (var d in path.Split(Path.PathSeparator))
+			{
+			if (d is "" or ".")
+				return "find: The current directory is included in the PATH environment variable, which is insecure in combination with the -execdir action of find.  "
+				     + $"Please remove the current directory from your $PATH (that is, remove \".\", doubled {Sep}s, or leading or trailing {Sep}s)";
+			bool absolute = d[0] is '/' or '\\' || (d.Length >= 3 && char.IsAsciiLetter(d[0]) && d[1] == ':' && d[2] is '/' or '\\');
+			if (!absolute)
+				return $"find: The relative path '{d}' is included in the PATH environment variable, which is insecure in combination with the -execdir action of find.  Please remove that entry from $PATH";
+			}
+		return null;
+		}
+	private static string Sep => Path.PathSeparator == ';' ? "semicolon" : "colon";
 
 	/// <summary>Run a -exec/-execdir command, from <paramref name="dir"/> when given (the shell's cwd comes back).</summary>
 	private int FindRunIn(string? dir, List<string> line)

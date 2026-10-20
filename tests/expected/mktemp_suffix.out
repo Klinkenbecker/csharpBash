@@ -1,0 +1,13 @@
+aXXXXb: rc=0 ok
+aXXXX.txt: rc=0 ok
+a.XXXXXX: rc=0 ok
+XXXb: rc=0 ok
+aXXXbXXX: rc=0 ok
+mktemp: too few X's in template 'aXXb'
+aXXb: rc=1
+mktemp: too few X's in template 'aXXbX'
+aXXbX: rc=1
+--suffix: ok
+mktemp: with --suffix, template 'aXXXXb' must end in X
+--suffix on aXXXXb: rc=1
+created as the pattern

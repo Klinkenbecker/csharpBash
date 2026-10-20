@@ -191,6 +191,8 @@ public sealed record ArrayElementAssign(
 	List<Redirect> Redirects) : Node
 	{
 	public bool Append { get; init; }
+	/// <summary>The subscript as written (set -x shows it so); null when unknown.</summary>
+	public string? IndexText { get; init; }
 	}
 
 /// <summary>Compound array assignment: arr=(a b c) — or arr+=(…) when Append.</summary>

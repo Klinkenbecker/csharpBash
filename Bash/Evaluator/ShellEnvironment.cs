@@ -248,7 +248,7 @@ public sealed class ShellEnvironment
 	/// Translate a shell-side path to the form the filesystem APIs get. SYMMETRIC with
 	/// <see cref="ToShellPath"/> (ratified 2026-09-12): the shell's path form is FORWARD SLASH
 	/// in both directions, so a path that goes out through `pwd` and comes back in as an
-	/// argument is the same string. `~`/`~/x` → the profile dir; `/c/x` (MSYS drive form) →
+	/// argument is the same string. A `~` is a name (the shell expands an unquoted one); `/c/x` (MSYS drive form) →
 	/// `C:/x`; `/tmp[/x]` → the temp dir; and any backslashes in the input are normalised to
 	/// forward slashes. .NET's file APIs accept forward slashes everywhere, so nothing needs the
 	/// backslash form. `/dev/...` is left alone (the redirect layer interprets it). The general
@@ -335,11 +335,9 @@ public sealed class ShellEnvironment
 		{
 		if (path.Length == 0) return path;
 
-		if (path == "~" || path.StartsWith("~/", StringComparison.Ordinal) || path.StartsWith("~\\", StringComparison.Ordinal))
-			{
-			var home = ToShellPath(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-			return path.Length == 1 ? home : home + "/" + ToShellPath(path[2..]);
-			}
+		// A `~` here is a name, as in bash: the shell expands an unquoted one before (TildeHome). Until 2026-10-19 it was
+		// the profile, whatever $HOME said: `d='~'; mkdir "$d"` said "File exists", `echo x > "$d/f"` wrote into the
+		// profile, and `rm -rf "$d"` would have aimed at it (red team F5).
 
 		if (Path.DirectorySeparatorChar != '\\') return path;
 
@@ -378,6 +376,11 @@ public sealed class ShellEnvironment
 	/// straight character swap), and a bare root `E:\` becomes `E:/`.
 	/// </summary>
 	public static string ToShellPath(string path) => path.Replace('\\', '/');
+
+	/// <summary>`~` as bash expands it: the value of HOME (<paramref name="home"/>), or the profile when it is unset or
+	/// empty (bash takes the account's home directory then), in shell form.</summary>
+	public static string TildeHome(string home) =>
+		ToShellPath(home.Length > 0 ? home : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 
 	/// <summary>`Path.GetFullPath` in shell form — .NET hands back backslashes whatever it was
 	/// given, so every absolute path the shell computes is normalised here (2026-09-12).</summary>

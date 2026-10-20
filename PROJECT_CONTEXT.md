@@ -5,24 +5,58 @@
 > `PROJECT_CONTEXT.md`, and every item in it is resolved with a DECISIONS entry or carried below. The tail (KNOWN
 > LIMITATIONS, SETTLED, DO NOT undo, machine facts) is kept.
 >
-> **TRUE STATE (verified 2026-10-19):**
-> - IN PROGRESS (2026-10-19, the architect directing each step; do ONLY what is asked): the benchmark's provenance.
->   GitHub `main` was force-pushed back to git `e13485f` (hg rev 317) on purpose, until hg rev 333 is published:
->   README "Benchmark provenance", compare3 timing Git Bash through `<Git>/bin/bash.exe` (DECISIONS 2026-10-19
->   "METHOD + CORRECTION"). That publish is a fast-forward from the local git history (`b9067c8` and earlier) and
->   puts the removed commits back. The architect rolled hg back to rev 332; rev 333 is being rebuilt in the working
->   copy, NOT committed until the architect says so. Working notes: untracked `BENCHMARK-PROVENANCE.md` (not to be
->   committed).
-> - ON A BREAK otherwise (the architect, 2026-10-18: "lets publish and we can take a break until someone files a
->   bug"): nothing else is greenlit; the held items below stay held.
-> - `dist/Bash.exe` = rev 324 (`1.0.0+hg.7b2c529cd84f 324`, by tools/deploy.sh 2026-10-18; rollback
->   `dist/Bash.exe.rev320`). Suite 160/160 both modes on that AOT binary; battery 226/237. Told: gps-time-2c,
->   adc-framework-d8, msp430-a2, nupkg-28, koliada-net-7c, daq-fe, guy-97, ananta-f5. A Claude call ~11 ms
->   (rev 320 ~12, rev 316 ~13, back to back); compare3 startup 8.5 ms.
-> - GitHub main = git `e13485f` = hg rev 317 since the force-push of 2026-10-19 (see IN PROGRESS); the local git
->   history still holds up to `b9067c8` (hg rev 329, published 2026-10-18). hg tip is rev 332, with rev 333's
->   changes uncommitted in the working copy; untracked: `BENCHMARK-PROVENANCE.md` and `The Windows Shell Tax.url`
->   (not ours, leave it).
+> **TRUE STATE (verified 2026-10-19 at the end of the session; the architect is RESTARTING it):**
+> - **hg tip = rev 365 (361 this anchor, 362 ARCHITECTURE/IMPLEMENTATION/README for today's fixes, 363 anchor, 364
+>   run-tests.ps1 ASCII-only again, 365 these lines), working tree clean.** Outside the repo: the global
+>   `C:/Users/guy/.claude/CLAUDE.md`'s C#Bash `hash -r` line (now "after installing any tool"), committed in its git
+>   repository as `65ecb3b` (the architect allowed git there, 2026-10-19; three other changes in that repository are
+>   not ours, left alone). Untracked, leave both: `BENCHMARK-PROVENANCE.md` (not to be committed),
+>   `The Windows Shell Tax.url` (not ours). **NOT deployed:** `dist/Bash.exe` = rev 324 (`1.0.0+hg.7b2c529cd84f 324`;
+>   rollback `dist/Bash.exe.rev320`). **NOT published:** GitHub main = git `0b5ece5` = hg rev 333. Revs 334-360 are new.
+>   Deploy only on "deploy and notify", publish only on "publish"/"push"; neither was asked.
+> - DONE 2026-10-19 before the red team (the architect directing each step): the benchmark's provenance (README
+>   "Benchmark provenance", rev 333); rev 335 (Git reached only by compare3 and publish.sh: the battery against WSL's
+>   GNU bash, the `-n` corpus and the df check run in WSL's bash); outside the repo: the no-windows hook's false
+>   positives (`~/.claude/hooks/no-windows`, its own hg rev 4; RULED "hook - keep it": an exe path handed to a SCRIPT
+>   stays flagged, `headless-exe` vouches) and the user Path's trailing `;` (removed; the old value is in the old
+>   session's scratchpad, `userpath-before.txt`). DECISIONS has each.
+> - **THE RED TEAM ON REVS 307-316** (DECISIONS 2026-10-19 "RED TEAM (revs 307-316…)": findings, repros; probe scripts
+>   in the old session's scratchpad `F:/TEMP/claude/F--Koliada-Tools-bash/a6218fb2-86a7-48c3-bedd-2cb7a1a89778/scratchpad/redteam/work/`).
+>   RULED (the architect): "work through the HIGH list (in your order), then the rest. each fix and commit in turn; go".
+>   DONE, one commit and one suite case each (do NOT re-open; DECISIONS has each): HIGH F4 `.bat` arguments 337, F5
+>   quoted `~` 338, F1 a subshell's `n>&-` 339, F2 `read -u` read-ahead 340, concurrent `>>` 342, F3 MSYS `>> f 2>> f`
+>   343, `find` falling back to find.exe 344; MED F6 readlink/realpath 346, F7 find -execdir 347, F8 which 348, F9
+>   env -S and `#!` options 349, F10 cwd of 259 350, source devices 351, export -f 352, `$((x))` with x='1+' 353; LOW
+>   F13 path through a file 355, F16 mktemp suffix 356, F11 set -x details 358, F12 set -x compound 360. Also: 341
+>   (case files 337-340 had missed `hg add`), 357 (flaky `traps_debug_return`: CPU-time figures), 359 (sed: a `[` in
+>   a replacement swallowed the delimiter; found beside F11).
+> - **REMAINING of that list (greenlit as "the rest", but the architect PAUSED at "1/" on 2026-10-19 and will steer
+>   after the restart: do NOT resume without that steer):** F14 `hash -t`/`-d` against a relative PATH entry; F15 a
+>   directory as `#!` interpreter ("No such file", GNU "Permission denied"); the older LOWs: `hash -p /abs name` not
+>   obeyed; `{fd}>` and `4>&3-` unsupported; a text file named `.exe` gives 127 with a literal `%1` (bash 126).
+> - **AWAITING THE ARCHITECT (do NOT derive, do NOT start):**
+>   (a) **the `awk` suite HANG** (DECISIONS rev 360 entry, "HANG, OPEN"): one console-mode suite run hung ~2.5 h on
+>   `cases\awk.sh` (no child process); 80 direct runs (this build, 324) never hung. Put to the architect, who took only
+>   "1/" (commit F12). Open: a console-mode per-case timeout in run-tests.ps1 (a contract tool: the architect's call);
+>   a reproduction loop under the runner's conditions with a stack dump (dotnet-dump is not installed: ask first).
+>   (b) **arithmetic error parity** (DECISIONS rev 353 entry): the message wording, GNU abandoning the rest of the line,
+>   `(( 1+ ))` 2 here against 1, errors escaping a redirected subshell or group. Claude: fix as one item.
+>   (c) **Git-dependent tests:** with Git off the Windows PATH, 6 suite cases (detach_builtins, msys_redirects,
+>   awk_unsupported_once, awk_getline, msys_arguments, coreutils_external) and 6 battery probes (20, 160, 162, 170,
+>   185, 210) fail in every new session, so **tools/deploy.sh would refuse** (DECISIONS "FIXED (red team F4…)", OPEN).
+>   Claude: MSYS cases to F:/Tools/msys64 (an MSYS2 install), the rest skip when their tool is absent, the battery's
+>   baseline re-taken without Git. To settle before the next deploy.
+> - **Verification, as done for every fix (keep it):** a case, red on deployed 324, GNU bash via WSL as the expected
+>   where possible; check the case NAME IS FREE first (a Write overwrote `xtrace_compound.sh` once; restored) and `hg
+>   add` it; `dotnet build -c Release Bash`; suite `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+>   tests/run-tests.ps1 -NoBuild` and again with `-Detached`; battery `tests/compat/run-compat.ps1 -NoBuild`; a DECISIONS
+>   entry; commit. Expected now: suite 173 passed, the 6 Git-dependent failures, 1 skipped (AOT only), of 180;
+>   battery 216/237 (the 6 Git probes below its baseline of 222).
+> - **After the restart, check first:** `type -a bash` names dist/Bash.exe first and no PortableGit entry is on PATH.
+>   The old session began before Git left the Windows PATH: its bare `bash` was Git Bash 4.4 and `perl`/`tar` Git's,
+>   so it stripped PortableGit from PATH in every call; a session started after needs none of that.
+> - `dist/Bash.exe` (rev 324) was told to: gps-time-2c, adc-framework-d8, msp430-a2, nupkg-28, koliada-net-7c, daq-fe,
+>   guy-97, ananta-f5. A Claude call ~11 ms; compare3 startup 8.7 ms against Git Bash's 23.3 ms (2026-10-19).
 > - The architect starts Claude Code through a start file (README "Start Claude Code with no PATH of its own"):
 >   `BASH_PATH=%PATH%`, `CLAUDE_CODE_GIT_BASH_PATH=F:/Koliada/Tools/bash/dist/Bash.exe`, `PATH=F:/Koliada/Tools/bash/dist`.
 >   claude.exe's PATH is `dist`; the shell's is the full Windows PATH. A session whose Bash PATH is `dist` alone was
@@ -51,31 +85,43 @@
 > Windows limit said) · RULED: only .com .exe .bat .cmd (and .sh, #!) are programs; `..` after a junction stays
 > lexical; the shell's `$PATH` keeps empty entries as given.
 >
+> **GREENLIT (the architect, 2026-10-19: "your next, go"; "add 'Recorded' and 'finished jobs' to list"), in order:**
+> 1. DONE (documented, 2026-10-19): `type -a bash` listed Git's `usr/bin/bash.exe` first while `bash` ran C#Bash: a
+>    remembered hit hides a same-named program added later earlier on PATH until `hash -r`. README says so; no code
+>    fix unless documenting proves insufficient (DECISIONS 2026-10-19 "DOCUMENTED: a remembered hit").
+> 2. The recorded items (item 4 below), the architect's order "commit, no-windows hook, trailing ';' and then
+>    red-team - go": DONE the hook (its hg rev 4; DECISIONS 2026-10-19 "FIXED (outside the repo)"); DONE the user
+>    Path's trailing `;`; DONE the red-team pass on revs 307-316 (its findings: TRUE STATE above). RULED (the
+>    architect, "hook - keep it"): an exe path given to a SCRIPT stays flagged by the hook; `headless-exe` vouches.
+> 3. Finished jobs kept in the table until reported, as bash (item 3 below).
+> Settled 2026-10-19 (the architect): Git Bash's own oddities are not ours; transient slowdowns are most likely other
+> load on the machine; the LinkedIn article stays as published (it links to the code).
+>
 > **AWAITING THE ARCHITECT (do NOT derive; Claude's positions are proposals):**
 > 1. The performance review is DONE (R2, R3, R4 in DECISIONS 2026-10-18). The architect picked R4's 1-3 ("1, 2, 3
 >    concur; go, deploy, notify, publish"): BUILT (DECISIONS "BUILT (R4 picks 1-3)"): icu.dll loads only when needed,
 >    the `[[ ]]` trace text only under set -x, the start-up split; deployed rev 320, published rev 321. Then ("ok,
->    your recommendations; go") BUILT, NOT DEPLOYED (DECISIONS "BUILT (the split's candidates…)"): the Git-tools probe
+>    your recommendations; go") BUILT and deployed in rev 324 (DECISIONS "BUILT (the split's candidates…)"): the Git-tools probe
 >    (mingw64/bin, slash-blind compare), PPID's pseudo-handle, the invariant culture (U+2212), printf's inf/nan.
 >    Then ("Awk - your way") BUILT: the in-process awk never runs a program twice (literal formats and RS refused at
 >    parse time, a refusal while running loud, 2) and out-of-range numbers as gawk 5.1 (DECISIONS "RULED + BUILT: the
 >    in-process awk never runs a program twice"). AWAITING the architect: R4's 4-9 (held: calls are start-up bound)
 >    and OutputEncoding 0.25 ms. NO optimisation code before a pick.
-> 2. Parked, not greenlit: serial I/O (COMn as a device file + `stty`, "to discuss"); `compgen -c` scanning PATH;
->    the battery's reference moved to GNU.
+> 2. Parked, not greenlit: serial I/O (COMn as a device file + `stty`, "to discuss"); `compgen -c` scanning PATH.
+>    (The battery's reference moved to GNU: DONE 2026-10-19, WSL's bash.)
 > 3. Not raised (measured 2026-10-12): bash keeps finished jobs in its table until it reports them (`jobs` lists
 >    them as Done, numbers keep counting); C#Bash's `wait` removes them.
 >
-> 4. Not done, recorded (the architect's to schedule): an independent red-team pass on revs 307-316 (the subshell
->    `exec`, the eight GNU differences, set -x, long paths, the MSYS append handle, PATHEXT, and the fixes to the red
->    team's own findings); the no-windows hook's false positive (`Start-Process … -NoNewWindow` flagged when the flag
->    follows a `$( )`); the user Path's trailing `;` (tidiness only, harmless: measured).
+> 4. DONE 2026-10-19: the independent red-team pass on revs 307-316 (its findings and their fixes: TRUE STATE above);
+>    the no-windows hook's false positive (`Start-Process … -NoNewWindow` flagged when the flag follows a `$( )`) and
+>    the user Path's trailing `;`.
 >
 > **RULES:** deploy only on "deploy and notify"; publish only on "publish" / "push".
 >
 > **KNOWN LIMITATIONS (documented, not raised for action):**
-> - Windows starts no program whose path, or whose working directory, is over 260 characters (cmd neither): C#Bash
->   says so, 126; the shell itself can `cd` there (longPathAware manifest, 2026-10-17). Win32 drops a trailing dot or
+> - Windows starts no program whose path is over 260 characters, or whose working directory is over 258 (cmd
+>   neither): C#Bash says so, 126 (the 259 case fixed 2026-10-19, rev 350); the shell itself can `cd` there
+>   (longPathAware manifest, 2026-10-17). Win32 drops a trailing dot or
 >   space from a file name: command lookup refuses `s1.`, but `cat s1.` reads `s1` (every file operation).
 > - Glob and brace quoting is tracked per field, not per character: `{x\,y,z}`, `"*"*` and `\**`
 >   treat the quoted metacharacter as live. A fix needs its own escape marker, not backslash.
@@ -95,9 +141,10 @@
 >   before its program starts (a refusal met while it runs is loud, 2: never a second run, 2026-10-18).
 > - A UNC path to a local drive is correct but very slow for tools doing many file operations (2026-09-11).
 > - CRLF in script text is tolerated, on purpose.
-> - The compat battery's own search finds its Git reference through `git` on PATH, which is off the Windows PATH
->   since 2026-10-19: tools/deploy.sh passes `-Reference F:/Tools/PortableGit/bin/bash.exe` (verified 2026-10-19:
->   225 pass, baseline 225); run it by hand the same way.
+> - The compat battery's reference is WSL's GNU bash (`wsl.exe -e bash`) since 2026-10-19 (the architect: Git is
+>   reached nowhere but the benchmark and `tools/publish.sh`): 222 pass, 15 differ of 237, new baseline 222. The 15
+>   are Windows against Linux (`$OSTYPE`, drive and UNC paths, `dotnet`, TEMP, a CRLF `bc.exe` on PATH) or C#Bash
+>   gaps; the probes about Windows itself (1, 125-127, 131-133, 161, 227, 233) can no longer pass by construction.
 >
 > **SETTLED, do NOT re-litigate:**
 > - Goal order (DECISIONS 2026-10-03): 1 C#Bash for itself, on Windows; 2 no PowerShell for anything
@@ -117,7 +164,9 @@
 >   suite both modes + battery on it, rename-and-swap into dist, rollback `dist/Bash.exe.rev<old>`),
 >   `tools/publish.sh <msg> <token-file>` (on "push": needs a compare3 run on the deployed build and
 >   the committed doc review; regenerates the history files, stages exactly hg's files, pushes,
->   verifies). All run from Git Bash or PowerShell as their headers say.
+>   verifies). All run as their headers say: run-n.sh and tests/df/compare-wsl.sh in WSL's bash
+>   (`wsl.exe -e bash <script>`), the .ps1 tools in PowerShell, compare3.sh in Git Bash (the one place
+>   Git's bash is reached), deploy.sh and publish.sh in any bash.
 > - The benchmark is `tests/bench/compare3.sh`, run unmodified from Git Bash; its startup
 >   row is the median of 5 samples since 2026-10-10 (ratified: "Median of 5 sounds fair"). Method
 >   changes are the architect's call.
@@ -474,14 +523,14 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   positional) through a reference bash and through C#Bash in identical fresh fixture dirs, and
   passes a probe only when stdout + exit code are byte-identical. `baseline.txt` is the ratchet:
   any listed probe that stops passing fails the run; newly passing probes are reported and
-  folded in with `-UpdateBaseline`. Reference bash: `-Reference`, `CLAUDE_CODE_GIT_BASH_PATH`,
-  the Git that owns `git.exe` on PATH (portable installs included; its root is the first ancestor
-  with `usr\bin`, and `usr\bin\_bash.exe` counts), Program Files, or PATH —
-  never `System32\bash.exe` (WSL, a different OS; it silently became the reference once when
-  the battery was launched from PowerShell). Each candidate is RUN: C#Bash (any build) or one that
-  does not start is skipped, and `-Reference` naming C#Bash is an error (2026-10-12: with
+  folded in with `-UpdateBaseline`. Reference bash: WSL's GNU bash (`wsl.exe -e bash`, each probe
+  started in its fixture directory, seen as `/mnt/<drive>/...`) since 2026-10-19, or `-Reference <bash.exe>`.
+  It is RUN to identify it, and C#Bash (any build) is refused (2026-10-12: with
   `CLAUDE_CODE_GIT_BASH_PATH` naming the deployed C#Bash the battery had compared C#Bash with itself).
-- **`tests/corpus/run-n.sh`** (from Git Bash) — the `-n` corpus: C#Bash's `bash -n` verdict against GNU's
+  Until 2026-10-19 the reference was Git for Windows' bash, found through `git.exe` on PATH, and WSL was
+  refused as a different OS; the move rebuilt the baseline (DECISIONS 2026-10-19 "the battery's reference").
+  `-UpdateBaseline` writes the file with CRLF line endings; it is kept LF (convert before committing).
+- **`tests/corpus/run-n.sh`** (in WSL's bash: `wsl.exe -e bash tests/corpus/run-n.sh`) — the `-n` corpus: C#Bash's `bash -n` verdict against GNU's
   on WSL's 912 bash-completion scripts (fetched each run into `tests/corpus/files`, ignored: third-party
   files are not committed). `manifest.txt` pins each file's sha256 and GNU's verdict (drift stops the run,
   exit 2); `baseline.txt` is the ratchet (844 at rev 230; a lost agreement is exit 1). Builds Release

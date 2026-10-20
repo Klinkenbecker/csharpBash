@@ -1,0 +1,22 @@
++ ((  x = 5 + 1  ))
+++ echo 2
++ ((  x = 2 * 3  ))
++ (( i=5 ))
++ (( i<5+1 ))
++ :
++ (( i++  ))
++ (( i<5+1 ))
++ (( 1 ))
++ (( 1 ))
++ break
++ f a
++ for i in "$@"
++ :
++ [[ -z '' ]]
++ [[ -n 5 ]]
++ [[ x == \/\h\/\x ]]
++ [[ 5 == 5 ]]
++ [[ a b != c ]]
++ set +x
+under set -x each $( ) ran 2 times in all (once each)
+a tilde pattern matches literally

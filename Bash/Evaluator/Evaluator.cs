@@ -34,9 +34,63 @@ public sealed class Evaluator
 		{
 		if (!_functions.ContainsKey(name)) return false;
 		SaveFunctionsForSubshell();
+		_exportedFunctions.Remove(name);
 		return _functions.Remove(name);
 		}
 	public bool HasFunction(string name) => _functions.ContainsKey(name);
+
+	/// <summary>Functions exported (`export -f`, `declare -fx`): every external child gets them as bash passes them,
+	/// `BASH_FUNC_name%%=() { ... }`, and a C#Bash child imports them (<see cref="ImportFunctions"/>), as does a script run
+	/// in-process. `export -f` was accepted and did nothing: a child said "command not found" (red team, 2026-10-19).</summary>
+	private readonly HashSet<string> _exportedFunctions = new(StringComparer.Ordinal);
+	public void ExportFunction(string name, bool on) { if (on) _exportedFunctions.Add(name); else _exportedFunctions.Remove(name); }
+	public bool IsFunctionExported(string name) => _exportedFunctions.Contains(name);
+
+	/// <summary>The exported functions as environment variables, as a child gets them.</summary>
+	public IEnumerable<(string Name, string Value)> ExportedFunctionVars() =>
+		_exportedFunctions.Where(_functions.ContainsKey).Select(n => ("BASH_FUNC_" + n + "%%", ExportedFunctionValue(_functions[n])));
+
+	/// <summary>A function as bash passes it in the environment: `() { body }`, under BASH_FUNC_name%%.</summary>
+	private static string ExportedFunctionValue(FunctionDef fd)
+		{
+		var text = CommandPrinter.Function(fd);
+		int i = text.IndexOf("()", StringComparison.Ordinal);
+		var rest = i < 0 ? text : text[(i + 2)..].TrimStart();
+		return "() " + (rest.StartsWith('{') ? rest : "{ " + rest + "\n}");
+		}
+
+	/// <summary>Import the functions this shell's environment carries (`BASH_FUNC_name%%=() { ... }`), exported; the
+	/// variable goes either way. The value must parse to exactly that one function definition and nothing after it
+	/// (bash's rule since Shellshock, CVE-2014-6271): anything else is dropped, never run.</summary>
+	public void ImportFunctions()
+		{
+		foreach (var (name, value) in _env.GetExportedVars().ToList())
+			{
+			if (!name.StartsWith("BASH_FUNC_", StringComparison.Ordinal) || !name.EndsWith("%%", StringComparison.Ordinal)) continue;
+			_env.Unset(name);
+			var fname = name["BASH_FUNC_".Length..^2];
+			if (fname.Length == 0 || !value.StartsWith("() {", StringComparison.Ordinal)) continue;
+			var text = fname + " " + value;
+			try
+				{
+				var parser = new Parser.Parser(new Lexer.Lexer(text), text);
+				if (parser.ParseNext() is { } node && SingleFunction(node) is { } fd && fd.Name == fname && parser.ParseNext() is null)
+					{
+					_functions[fname] = fd with { DefinedIn = "environment" };
+					_exportedFunctions.Add(fname);
+					}
+				}
+			catch (Exception) { }   // not a function definition: dropped, never run
+			}
+
+		static FunctionDef? SingleFunction(Node n) => n switch
+			{
+			FunctionDef fd => fd,
+			Pipeline { Commands.Count: 1, Negated: false } p => SingleFunction(p.Commands[0].Command),
+			List { Items.Count: 1 } l when l.Items[0].Op is null or ListOperator.Sequential => SingleFunction(l.Items[0].Pipeline),
+			_ => null,
+			};
+		}
 
 	// ── isolation for in-process subshells ────────────────────────────────────
 	// `( )`, `$( )` and `<( )` run on this interpreter with the variables snapshotted
@@ -61,12 +115,25 @@ public sealed class Evaluator
 		internal readonly int Depth;
 		internal readonly ShellOptions.State Options;
 		internal readonly int PermanentScopes;   // `exec` redirects that were in place when it started
-		internal SubshellMark(int depth, ShellOptions.State options, int permanentScopes) { Depth = depth; Options = options; PermanentScopes = permanentScopes; }
+		internal readonly object Token;          // the enclosing shell's ShellToken, back when it ends
+		internal readonly string[] Exported;     // its exported functions: `( export -f f )` must not export f outside
+		internal SubshellMark(int depth, ShellOptions.State options, int permanentScopes, object token, string[] exported) { Depth = depth; Options = options; PermanentScopes = permanentScopes; Token = token; Exported = exported; }
 		}
+
+	/// <summary>This shell instance: the evaluator, or the in-process subshell it is running (a new token each
+	/// <see cref="EnterSubshell"/>). A stream a redirect opens belongs to it, and `n&gt;&amp;-` closes a stream only in the
+	/// shell that opened it (<see cref="RedirectScope.TrackFd"/>).</summary>
+	internal object ShellToken { get; private set; } = new();
 
 	/// <summary>Enter an in-process subshell. Pair with <see cref="SubshellExitTrap"/> (while its
 	/// output is still redirected), <see cref="DropSubshellRedirects"/>, and then <see cref="LeaveSubshell"/>.</summary>
-	internal SubshellMark EnterSubshell() => new(++_subshellDepth, Options.Save(), _permanentScopes.Count);
+	internal SubshellMark EnterSubshell()
+		{
+		var mark = new SubshellMark(++_subshellDepth, Options.Save(), _permanentScopes.Count, ShellToken,
+		                            _exportedFunctions.Count == 0 ? [] : [.. _exportedFunctions]);
+		ShellToken = new object();
+		return mark;
+		}
 
 	/// <summary>Undo the `exec` redirects the subshell <paramref name="mark"/> made: they are its own. `( exec > f );
 	/// echo after` sent "after", and everything after it, into f (2026-10-17). Called after its EXIT trap, which still
@@ -105,6 +172,8 @@ public sealed class Evaluator
 			}
 		Options.Restore(mark.Options);
 		_subshellDepth = mark.Depth - 1;
+		ShellToken = mark.Token;
+		if (_exportedFunctions.Count > 0 || mark.Exported.Length > 0) { _exportedFunctions.Clear(); _exportedFunctions.UnionWith(mark.Exported); }
 
 		static void Refill<T>(Dictionary<string, T> table, Dictionary<string, T> saved)
 			{
@@ -209,10 +278,12 @@ public sealed class Evaluator
 	public int RunEval(string src)
 		{
 		int old = EnterLineBase();
+		// set -x traces what eval runs one level deeper, as bash (`++ echo ev`; nested `+++`); it showed `+` (red team F11)
+		XtraceDepth++;
 		// a syntax error is status 2, as anywhere else (bash 5.1, measured 2026-10-11: 14 kinds); only an
 		// unclosed array literal is 1, which its ParseException carries. It was 1 for all of them.
 		try { return RunString(src, origin: "eval"); }
-		finally { LeaveLineBase(old); }
+		finally { XtraceDepth--; LeaveLineBase(old); }
 		}
 
 	/// <summary>A script file's bottom frame ("main", the script as named, line 0).</summary>
@@ -253,6 +324,15 @@ public sealed class Evaluator
 	// File descriptors 3+ opened by `exec 3>file` / `cmd 3<file` for in-process commands
 	private readonly Dictionary<int, System.IO.Stream> _fds = [];
 	public System.IO.Stream? GetFd(int fd) => _fds.TryGetValue(fd, out var s) ? s : null;
+
+	/// <summary>Descriptor <paramref name="fd"/> for a use other than `read -u` (/dev/fd/N): a file at the offset `read -u`
+	/// used (<see cref="LfReader.Release"/>).</summary>
+	private System.IO.Stream? FdForOtherUse(int fd)
+		{
+		var s = GetFd(fd);
+		if (s is not null) LfReader.Release(s);
+		return s;
+		}
 
 	// errexit is suppressed inside && / || lists, if/while conditions, and negations
 	private int _errexitSuppress;
@@ -414,7 +494,7 @@ public sealed class Evaluator
 		_env.ArithEval     = e => _expander.EvalArithmetic(e);
 		_env.RefreshCallStack = PublishFrames;
 		_env.ErrorPrefixProvider = () => ErrorPrefix;
-		_env.FdStream = n => n switch { 1 => ConsoleMux.Raw ?? Console.OpenStandardOutput(), 2 => Console.OpenStandardError(), _ => GetFd(n) };
+		_env.FdStream = n => n switch { 1 => ConsoleMux.Raw ?? Console.OpenStandardOutput(), 2 => Console.OpenStandardError(), _ => FdForOtherUse(n) };
 		}
 
 	/// <summary>
@@ -443,13 +523,14 @@ public sealed class Evaluator
 		_env.ArithEval     = e => _expander.EvalArithmetic(e);
 		_env.RefreshCallStack = PublishFrames;
 		_env.ErrorPrefixProvider = () => ErrorPrefix;
-		_env.FdStream = n => n switch { 1 => ConsoleMux.Raw ?? Console.OpenStandardOutput(), 2 => Console.OpenStandardError(), _ => GetFd(n) };
+		_env.FdStream = n => n switch { 1 => ConsoleMux.Raw ?? Console.OpenStandardOutput(), 2 => Console.OpenStandardError(), _ => FdForOtherUse(n) };
 		// a subshell (a pipeline stage, a background job) inherits DEBUG and RETURN only with -T
 		_debugOff = parent._debugOff + (parent.Options.FuncTrace ? 0 : 1);
 		_callSeq = parent._callSeq; _callId = parent._callId; _returnTrapCall = parent._returnTrapCall;
 		_commandNode = parent._commandNode; _commandText = parent._commandText;
 		_builtins.InheritFrom(parent._builtins);
 		foreach (var kv in parent._functions) _functions[kv.Key] = kv.Value;
+		_exportedFunctions.UnionWith(parent._exportedFunctions);
 		foreach (var kv in parent.Aliases)    Aliases[kv.Key]    = kv.Value;
 		foreach (var kv in parent._traps)     _traps[kv.Key]     = kv.Value;
 		_tracedFunctions.UnionWith(parent._tracedFunctions);
@@ -626,7 +707,20 @@ public sealed class Evaluator
 	public int SourceFile(string path, bool silentIfMissing = false, IEnumerable<string>? positionals = null)
 		{
 		var translated = ShellEnvironment.TranslatePath(path);
-		if (!File.Exists(translated))
+		// a device, read as bash reads a file: /dev/null is empty, /dev/stdin this command's stdin (`source /dev/stdin
+		// <<< 'x=1'`, `... | source /dev/stdin`), /dev/fd/N a descriptor, left open. They were "No such file or
+		// directory", 1 (red team, 2026-10-19). /dev/zero and /dev/random would never end: still refused.
+		string? deviceText = null;
+		if (ShellFile.Device(path) is { } dev && (dev == "null" || dev.StartsWith("fd:", StringComparison.Ordinal)))
+			{
+			try
+				{
+				if (dev == "fd:0") deviceText = Console.In.ReadToEnd();
+				else using (var r = new StreamReader(ShellFile.OpenInput(path), ShellEncoding.Utf8, false, 4096, leaveOpen: true)) deviceText = r.ReadToEnd();
+				}
+			catch (IOException ex) { Console.Error.WriteLine($"{ErrorPrefix}{path}: {ex.Message}"); return 1; }
+			}
+		else if (!File.Exists(translated))
 			{
 			if (silentIfMissing) return 0;
 			Console.Error.WriteLine($"{ErrorPrefix}{path}: No such file or directory");
@@ -640,7 +734,7 @@ public sealed class Evaluator
 		int rc;
 		try
 			{
-			try { rc = RunString(ShellEncoding.ReadAllText(translated), origin: path); }
+			try { rc = RunString(deviceText ?? ShellEncoding.ReadAllText(translated), origin: path); }
 			catch (ReturnException r) { rc = r.Code; }      // `return` at file level ends the source
 			// a locked/blocked/vanished source file is an error, not a dead shell (2026-09-12)
 			catch (Exception ex) when (ex is IOException and not BrokenPipeException
@@ -1361,7 +1455,8 @@ public sealed class Evaluator
 		{
 		var idxStr = _expander.ExpandToString(ae.Index);
 		var val    = _expander.ExpandToString(ae.Value);
-		if (Options.XTrace) Xtrace($"{ae.ArrayName}[{idxStr}]{(ae.Append ? "+=" : "=")}{XtraceValue(val)}");
+		// the subscript as written (`a[$i]=zero`), the value expanded, as bash; the subscript showed expanded (red team F11)
+		if (Options.XTrace) Xtrace($"{ae.ArrayName}[{ae.IndexText ?? idxStr}]{(ae.Append ? "+=" : "=")}{XtraceValue(val)}");
 
 		if (_env.IsAssoc(ae.ArrayName))
 			{
@@ -1408,7 +1503,14 @@ public sealed class Evaluator
 	private int ExecArithmeticCommand(ArithmeticCommand am)
 		{
 		using var scope = am.Redirects.Count > 0 ? ApplyRedirects(am.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
-		if (Options.XTrace) Xtrace($"(( {am.Expression} ))");   // bash: `((  1 + 2  ))`, the text as written
+		// set -x shows the expression after its expansions, which run once (bash: `((  x = 5 + 1  ))`, after a `$( )`'s own
+		// trace); it showed the text as written, `$y` and all (red team F12, 2026-10-19)
+		if (Options.XTrace)
+			{
+			var expanded = _expander.ExpandArithText(am.Expression);
+			Xtrace($"(( {expanded} ))");
+			return _expander.EvalExpandedArithmetic(expanded) != 0 ? 0 : 1;
+			}
 		long v = _expander.EvalArithmetic(am.Expression);
 		return v != 0 ? 0 : 1;
 		}
@@ -1549,7 +1651,15 @@ public sealed class Evaluator
 
 		// -x: xtrace
 		if (Options.XTrace)
+			{
 			Xtrace(string.Join(" ", args.Prepend(namStr).Select(a => XtraceWord(a.Replace(Bash.Lexer.Lexer.ArrayLiteralMark.ToString(), "")))));   // never show the parser's array mark
+			// `export` and `readonly` trace each assignment they make too, as bash (`+ export 'e1=x y'` then
+			// `+ e1='x y'`); `declare` and `local` do not (red team F11, 2026-10-19)
+			if (namStr is "export" or "readonly")
+				foreach (var a in args)
+					if (a.IndexOf('=') is > 0 and var eq && IsAssignmentName(a[..eq].TrimEnd('+')))
+						Xtrace($"{a[..eq]}={XtraceValue(a[(eq + 1)..])}");
+			}
 
 		// `exec` with only redirects makes them permanent for the rest of the shell;
 		// `exec cmd` replaces the shell: run it and exit with its status.
@@ -1686,8 +1796,23 @@ public sealed class Evaluator
 		finally { Options.XTrace = true; _env.LastExitCode = status; }
 		}
 
-	/// <summary>One line of set -x output, under PS4.</summary>
-	private void Xtrace(string text) => Console.Error.WriteLine(XtracePrefix() + text);
+	/// <summary>One line of set -x output, under PS4: to the descriptor BASH_XTRACEFD names when it is open, else stderr,
+	/// as bash (it was ignored: red team F11, 2026-10-19).</summary>
+	private void Xtrace(string text)
+		{
+		var line = XtracePrefix() + text;
+		if (_env.Get("BASH_XTRACEFD") is { Length: > 0 } fdText
+		    && int.TryParse(fdText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int fd) && fd != 2)
+			{
+			if (fd == 1) { Console.Out.WriteLine(line); return; }
+			if (fd > 2 && FdForOtherUse(fd) is { CanWrite: true } s)
+				{
+				try { s.Write(ShellEncoding.Utf8.GetBytes(line + "\n")); s.Flush(); return; }
+				catch (IOException) { }
+				}
+			}
+		Console.Error.WriteLine(line);
+		}
 
 	/// <summary>A word as bash's xtrace prints it: '' when empty; single quotes when it holds a shell metacharacter (bash's
 	/// sh_contains_shell_metas: blanks, quotes, backslash, `|&amp;;()&lt;&gt;!{}*[?]^$` and backquote, `~` first or after
@@ -1716,6 +1841,10 @@ public sealed class Evaluator
 	/// <summary>An assignment's value as xtrace prints it (bash's xtrace_print_assignment): empty stays empty.</summary>
 	private static string XtraceValue(string v) => v.Length == 0 ? "" : XtraceWord(v);
 
+	/// <summary>A variable name (letters, digits, `_`, not starting with a digit).</summary>
+	private static bool IsAssignmentName(string s) =>
+		s.Length > 0 && (char.IsAsciiLetter(s[0]) || s[0] == '_') && s.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
+
 	/// <summary>A command name that is a path, never searched on PATH: a slash, a backslash, or a drive (`F:x` is in
 	/// F:'s current directory: Path.Combine dropped the PATH entry, and the map kept `F:x`, 2026-10-17). Any other
 	/// colon is no path: `ads:bar.exe` is an NTFS stream, and taken as a path it ran from the cwd (red team).</summary>
@@ -1724,27 +1853,18 @@ public sealed class Evaluator
 
 	/// <summary>"command not found" (127) for a name that never reaches the launcher, its redirects made first, as
 	/// bash's child makes them before it reports (`nope > f` creates f).</summary>
-	private int NotFound(string name, List<Redirect> redirects, string what = "command not found")
+	private int NotFound(string name, List<Redirect> redirects, string what = "command not found", int status = 127)
 		{
 		using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
 		Console.Error.WriteLine($"{ErrorPrefix}{name}: {what}");
-		return 127;
+		return status;
 		}
 
 	/// <summary>A file name Win32 cannot hold as written: it drops a trailing dot or space, so `s1.` opened s1.</summary>
 	private static bool DotOrSpaceEnding(string leaf) => leaf.Length > 0 && leaf is not "." and not ".." && leaf[^1] is '.' or ' ';
 
 	/// <summary>True when a directory on the way to <paramref name="path"/> is a file (bash's ENOTDIR).</summary>
-	private static bool RunsThroughAFile(string path)
-		{
-		try
-			{
-			for (var p = Path.GetDirectoryName(path); !string.IsNullOrEmpty(p); p = Path.GetDirectoryName(p))
-				if (File.Exists(p)) return true;
-			}
-		catch { }
-		return false;
-		}
+	private static bool RunsThroughAFile(string path) => ShellFile.ThroughAFile(path);
 
 	/// <summary>Where a bare name C#Bash did not find on PATH may still be: C#Bash's own folder, System32 and the
 	/// Windows folder, `.exe` appended as Windows' launcher did (which also searched the cwd and the process PATH:
@@ -1770,10 +1890,10 @@ public sealed class Evaluator
 	/// was looked up as F:\f\x (red team, 2026-10-17).</summary>
 	internal static (string At, bool Relative) PathEntry(string d)
 		{
-		// `~` in a PATH entry is $HOME, as bash expands it at search time (TranslateForm's `~` is the profile)
-		if ((d == "~" || d.StartsWith("~/", StringComparison.Ordinal) || d.StartsWith("~\\", StringComparison.Ordinal)) && ShellEnvironment.Active?.Get("HOME") is { Length: > 0 } home)
-			d = ShellEnvironment.ToShellPath(ShellEnvironment.TranslateForm(home)) + d[1..];
-		var form = d.Length > 0 && d[0] is '~' or '/' ? ShellEnvironment.TranslateForm(d) : d;
+		// `~` in a PATH entry is $HOME (the profile when HOME is unset or empty), as bash expands it at search time
+		if (d == "~" || d.StartsWith("~/", StringComparison.Ordinal) || d.StartsWith("~\\", StringComparison.Ordinal))
+			d = ShellEnvironment.TranslateForm(ShellEnvironment.TildeHome(ShellEnvironment.Active?.Get("HOME") ?? "")) + d[1..];
+		var form = d.Length > 0 && d[0] == '/' ? ShellEnvironment.TranslateForm(d) : d;
 		bool rel = !Path.IsPathFullyQualified(form);
 		return (rel ? ShellEnvironment.TranslatePath(d) : form, rel);
 		}
@@ -1993,19 +2113,51 @@ public sealed class Evaluator
 		if (shebang.Length == 0) return ("", []);
 		var parts = shebang.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 		if (Path.GetFileName(parts[0]) == "env" && parts.Length > 1)
-			return (parts[1], [.. parts[2..]]);
+			{
+			// env's -S (split string; the line is split into words here already): `#!/usr/bin/env -S bash -e` took `-S`
+			// for the interpreter, "/usr/bin/env: '-S': No such file or directory", 127 (red team F9, 2026-10-19)
+			int k = 1;
+			if (parts[1] is "-S" or "--split-string") k = 2;
+			else if (parts[1].StartsWith("--split-string=", StringComparison.Ordinal)) parts[1] = parts[1]["--split-string=".Length..];
+			else if (parts[1].StartsWith("-S", StringComparison.Ordinal)) parts[1] = parts[1][2..];
+			if (k < parts.Length && parts[k].Length > 0) return (parts[k], [.. parts[(k + 1)..]]);
+			}
 		return (parts[0], [.. parts[1..]]);
+		}
+
+	/// <summary>What a `#!` line's options tell bash or sh (`#!/bin/bash -e`, `#!/usr/bin/env -S bash -eu`, `-o pipefail`,
+	/// `-O extglob`), as `set` and `shopt` arguments; invocation-only ones (--norc, -l, -i) mean nothing here. They were
+	/// dropped: a `#!/bin/bash -e` script run as a command went on past a failure, rc 0 (2026-10-19, beside red team F9).</summary>
+	private static (List<string> Set, List<string> Shopt) ShebangOptions(List<string> args)
+		{
+		var set = new List<string>(); var shopt = new List<string>();
+		for (int i = 0; i < args.Count; i++)
+			{
+			var a = args[i];
+			if (a is "-o" or "+o" && i + 1 < args.Count) { set.Add(a); set.Add(args[++i]); }
+			else if (a is "-O" or "+O" && i + 1 < args.Count) { shopt.Add(a == "-O" ? "-s" : "-u"); shopt.Add(args[++i]); }
+			else if (a.Length > 1 && a[0] is '-' or '+' && a[1..].All(c => "abefhkmnptuvxBCEHPT".Contains(c))) set.Add(a);
+			}
+		return (set, shopt);
 		}
 
 	/// <summary>Run a bash/sh script in a fresh child shell (approximates a forked
 	/// subprocess: inherits exported vars, isolated mutations). <c>exit</c> ends the
 	/// script, not us.</summary>
-	private int RunScriptInProcess(string arg0, string path, List<string> args)
+	private int RunScriptInProcess(string arg0, string path, List<string> args, List<string>? shebangArgs = null)
 		{
 		var child = new Evaluator();
 		foreach (var (k, v) in _env.GetExportedVars()) { child._env.Set(k, v); child._env.Export(k); }
+		foreach (var n in _exportedFunctions)   // what a bash child gets through its environment
+			if (_functions.TryGetValue(n, out var fd)) { child._functions[n] = fd; child._exportedFunctions.Add(n); }
 		child._env.SetArg0(arg0);
 		child._env.SetPositionals(args);
+		if (shebangArgs is { Count: > 0 })
+			{
+			var (set, shopt) = ShebangOptions(shebangArgs);
+			if (set.Count > 0) child.RunBuiltin("set", set);
+			for (int i = 0; i + 1 < shopt.Count; i += 2) child.RunBuiltin("shopt", [shopt[i], shopt[i + 1]]);
+			}
 		child.EnterScriptFile(arg0);
 		child._env.AdoptCwd(_env);   // starts where we are; its `cd` must not move us (it did, 2026-10-03)
 		child._env.Set("PWD", child._env.Cwd);
@@ -2033,6 +2185,10 @@ public sealed class Evaluator
 		if (bare && name.Contains(':')) return NotFound(name, redirects);
 		// Win32 drops a trailing dot or space: `s1.` and `./s1.` ran s1, where bash finds no such file (2026-10-17)
 		if (!bare && DotOrSpaceEnding(Path.GetFileName(name.TrimEnd('/', '\\')))) return NotFound(name, redirects, "No such file or directory");
+		// a path through a file is bash's ENOTDIR, asked before anything runs: Windows drops a trailing `/.`, so
+		// `hostname.exe/.` ran, and `./s.sh/.` read s.sh (red team F13, 2026-10-19)
+		if (!bare && ShellEnvironment.TranslatePath(name) is var given && RunsThroughAFile(Path.IsPathRooted(given) ? given : Path.Join(_env.Cwd, given)))
+			return NotFound(name, redirects, "Not a directory", 126);   // joined, not normalized: normalizing drops the `/.`
 		// a bare name not on PATH: C#Bash's own folder, System32 and the Windows folder only (so `cmd` runs on an
 		// empty PATH), else not found. Windows' launcher searched for it, the current directory included in an
 		// ordinary terminal (and under Claude Code through an empty PATH entry): a planted `.exe` ran (2026-10-17)
@@ -2055,7 +2211,7 @@ public sealed class Evaluator
 				// dropped: `./s.sh > out` printed to the terminal, `FOO=1 ./s.sh` saw no FOO (2026-10-04)
 				using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
 				using var temp  = ApplyTempAssignments(tempAssign);
-				return RunScriptInProcess(bare ? ShellEnvironment.ToShellPath(found!) : name, scriptPath, args);   // bash's $0: the path it found
+				return RunScriptInProcess(bare ? ShellEnvironment.ToShellPath(found!) : name, scriptPath, args, interpArgs);   // bash's $0: the path it found
 				}
 			// External interpreter: <interp> [shebang args] <script> <args...>,
 			// using the basename so PATH resolves it (Unix interpreter paths won't exist).
@@ -2101,7 +2257,17 @@ public sealed class Evaluator
 		IntPtr MsysWritable(IntPtr h)
 			{
 			if (msysReopened.TryGetValue(h, out var w)) return w;
-			return msysReopened[h] = ChildLauncher.WritableForMsys(h) is { } reopened ? Keep(reopened).DangerousGetHandle() : h;
+			return msysReopened[h] = ChildLauncher.WritableForMsys(h) is { } reopened ? OneMsysAppend(reopened).DangerousGetHandle() : h;
+			}
+		// and ONE such handle per file: two (`>> f 2>> f`, or a nested shell's two append handles on f) both started at
+		// the end and the second write overwrote the first ("ls: cannot..." lost its first 10 bytes; red team F3,
+		// 2026-10-19). One handle appends in the order the child writes.
+		var msysAppend = new Dictionary<(uint, ulong), SafeFileHandle>();
+		SafeFileHandle OneMsysAppend(SafeFileHandle h)
+			{
+			if (ChildLauncher.FileId(h.DangerousGetHandle()) is not { } id) return Keep(h);
+			if (msysAppend.TryGetValue(id, out var first)) { h.Dispose(); return first; }
+			return msysAppend[id] = Keep(h);
 			}
 		var psi = new ProcessStartInfo
 			{
@@ -2136,6 +2302,8 @@ public sealed class Evaluator
 				psi.Environment["PATH"] = _env.Get("PATH");
 				}
 			}
+		if (!clearEnv)
+			foreach (var (k, v) in ExportedFunctionVars()) psi.Environment[k] = v;
 		foreach (var (k, v) in tempAssign)
 			psi.Environment[k] = v;
 		if (unsetEnv is not null)
@@ -2169,7 +2337,8 @@ public sealed class Evaluator
 			try
 				{
 				text?.Flush(); fs.Flush();
-				var h = Keep(ChildLauncher.Open(fs.Name, appendAccess));
+				var opened1 = ChildLauncher.Open(ShellFile.PathOf(fs), appendAccess);
+				var h = msysChild ? OneMsysAppend(opened1) : Keep(opened1);
 				handedOff.Add(fs);
 				return new HandleFd(h);
 				}
@@ -2199,7 +2368,11 @@ public sealed class Evaluator
 
 		ChildFd OpenTarget(string raw, string target, ChildLauncher.Access how)
 			{
-			try { return new HandleFd(Keep(ChildLauncher.Open(target, how))); }
+			try
+				{
+				var h = ChildLauncher.Open(target, how);
+				return new HandleFd(how == ChildLauncher.Access.AppendAtEnd ? OneMsysAppend(h) : Keep(h));
+				}
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 				{ throw new RedirectException($"{raw}: {RedirectMessage(target, ex)}"); }
 			}
@@ -2269,7 +2442,8 @@ public sealed class Evaluator
 						if (!int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) throw new RedirectException($"{raw}: ambiguous redirect");
 						if (src <= 2) { fds[fd] = src == 0 ? Stdin() : fds[src]; break; }
 						if (!_fds.TryGetValue(src, out var s) || s is null) throw new RedirectException($"{src}: Bad file descriptor");
-						fds[fd] = fd == 0 ? new InPumpFd(s, null, null)
+						var piped = LfReader.Release(s);   // a file: from where `read -u` stopped; a pipe: on through its reader
+						fds[fd] = fd == 0 ? (piped is not null ? new InPumpFd(null, piped, null) : new InPumpFd(s, null, null))
 						        : (s is FileStream sfs ? HandOff(sfs, null) : null) ?? new OutPumpFd(s, null, false);
 						break;
 						}
@@ -2320,9 +2494,14 @@ public sealed class Evaluator
 			string? notRunnable = bare ? null : Directory.Exists(fileName) ? "Is a directory" : RunsThroughAFile(fileName) ? "Not a directory" : null;
 			// Windows starts no program whose working directory is over MAX_PATH (error 267, "The directory name is
 			// invalid"), though the shell itself can be there (longPathAware, 2026-10-17): say so, 126
-			if (ex.NativeErrorCode == 267 && _env.Cwd.Length >= 260) notRunnable = "cannot start a program in a directory over 260 characters (a Windows limit)";
+			// (the directory, its trailing `\` and the NUL in 260: over 258 characters). The test was `>= 260`, so at exactly
+			// 259 Windows' own text came out with 127, "command not found" to a script (red team F10, 2026-10-19); error 267
+			// while the shell's directory exists can only be the length
+			if (ex.NativeErrorCode == 267 && Directory.Exists(_env.Cwd)) notRunnable = "cannot start a program in a directory over 258 characters (a Windows limit)";
 			// nor one whose own path is (error 206, "The filename or extension is too long"; cmd cannot either)
 			if (ex.NativeErrorCode == 206) notRunnable = "cannot start a program whose path is over 260 characters (a Windows limit)";
+			// a refusal of ChildLauncher's own (a batch file's argument it cannot pass safely): its message, 126
+			if (ex.NativeErrorCode == ChildLauncher.ErrorBadArguments) notRunnable = ex.Message;
 			bool denied = notRunnable is not null || ex.NativeErrorCode is 5 or 193;
 			ReportTo(fds[2], notRunnable is not null ? $"{ErrorPrefix}{name}: {notRunnable}"
 			                 : ex.NativeErrorCode is 2 or 3 ? $"{ErrorPrefix}{name}: {(bare ? "command not found" : "No such file or directory")}"
@@ -2502,6 +2681,7 @@ public sealed class Evaluator
 	private static string RedirectMessage(string target, Exception ex)
 		{
 		try { if (Directory.Exists(target)) return "Is a directory"; } catch { }
+		if (ex is DirectoryNotFoundException && ShellFile.ThroughAFile(target)) return "Not a directory";   // a child's own redirect
 		return Builtins.IoError(ex);
 		}
 
@@ -2648,7 +2828,7 @@ public sealed class Evaluator
 						System.IO.FileStream nfs;
 						try { nfs = append ? ShellFile.Append(target) : ShellFile.Create(target); }
 						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
-						scope.TrackFd(_fds, fd, nfs);
+						scope.TrackFd(_fds, ShellToken,fd, nfs);
 						break;
 						}
 
@@ -2673,7 +2853,7 @@ public sealed class Evaluator
 					System.IO.FileStream rws;
 					try { rws = new System.IO.FileStream(target, System.IO.FileMode.OpenOrCreate, System.IO.FileAccess.ReadWrite, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete); }
 					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
-					if (rfd > 2) { scope.TrackFd(_fds, rfd, rws); break; }
+					if (rfd > 2) { scope.TrackFd(_fds, ShellToken,rfd, rws); break; }
 					if (rfd == 0)
 						{
 						scope.SaveIn(); scope.SaveRawIn();
@@ -2697,7 +2877,7 @@ public sealed class Evaluator
 						System.IO.Stream ifs;
 						try { ifs = ShellFile.OpenInput(target); }   // a file or a device (`3< /dev/zero`)
 						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
-						scope.TrackFd(_fds, ifd, ifs);
+						scope.TrackFd(_fds, ShellToken,ifd, ifs);
 						break;
 						}
 					scope.SaveIn(); scope.SaveRawIn();
@@ -2722,7 +2902,7 @@ public sealed class Evaluator
 						// n>&- closes n
 						if (ofd == 1) { scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(System.IO.TextWriter.Null); ConsoleMux.Raw = System.IO.Stream.Null; }
 						else if (ofd == 2) { scope.SaveErr(); ConsoleMux.SetErr(System.IO.TextWriter.Null); }
-						else scope.TrackFd(_fds, ofd, null);
+						else scope.TrackFd(_fds, ShellToken,ofd, null);
 						break;
 						}
 					if (!int.TryParse(rawTarget, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
@@ -2733,13 +2913,14 @@ public sealed class Evaluator
 						// 3>&1, 4>&2: descriptor N is a copy of where fd 1 or 2 points NOW, so a later
 						// `exec >f` leaves it where it was (`exec 3>&1; out=$(cmd 2>&1 >&3)`). It was not
 						// made at all until 2026-10-10, and `>&3` said "Bad file descriptor".
-						scope.TrackFd(_fds, ofd, StdStream(src), shared: true);
+						scope.TrackFd(_fds, ShellToken,ofd, StdStream(src), shared: true);
 						break;
 						}
 					if (src > 2)
 						{
 						if (!_fds.TryGetValue(src, out var s)) { throw RedirectFailed(scope, $"{src}: Bad file descriptor"); }
 						if (ofd <= 2 && !s.CanWrite) { throw RedirectFailed(scope, $"{src}: Bad file descriptor"); }   // was an unhandled exception
+						LfReader.Release(s);   // a write lands just after what `read -u` used (red team F2)
 						if (ofd <= 2) RedirectScope.MarkShared(s);   // fd 1 or 2 writes through it now: `exec 1>&3 3>&-` keeps it
 						if (ofd == 1)
 							{
@@ -2753,7 +2934,7 @@ public sealed class Evaluator
 							scope.TrackInstalled(w);
 							scope.SaveErr(); ConsoleMux.SetErr(w);
 							}
-						else scope.TrackFd(_fds, ofd, s, shared: true);      // 4>&3
+						else scope.TrackFd(_fds, ShellToken,ofd, s, shared: true);      // 4>&3
 						}
 					break;
 					}
@@ -2763,17 +2944,21 @@ public sealed class Evaluator
 					if (rawTarget == "-")   // an fd number or "-", never a path (see OutputDup)
 						{
 						if (ifd == 0) { scope.SaveIn(); scope.SaveRawIn(); ConsoleMux.SetIn(new System.IO.StringReader("")); ConsoleMux.RawIn = System.IO.Stream.Null; }
-						else scope.TrackFd(_fds, ifd, null);
+						else scope.TrackFd(_fds, ShellToken,ifd, null);
 						break;
 						}
 					if (!int.TryParse(rawTarget, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
 					if (ifd == 2 && src == 1) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); break; }          // 2<&1 (defensive)
-					if (ifd > 2 && src <= 2) { scope.TrackFd(_fds, ifd, StdStream(src), shared: true); break; }      // 3<&0: a copy, as 3>&1
+					if (ifd > 2 && src <= 2) { scope.TrackFd(_fds, ShellToken,ifd, StdStream(src), shared: true); break; }      // 3<&0: a copy, as 3>&1
 					if (ifd == 0 && src > 2)
 						{
 						if (!_fds.TryGetValue(src, out var s)) { throw RedirectFailed(scope, $"{src}: Bad file descriptor"); }
-						var rd = new LfReader(s, leaveOpen: true);
-						scope.TrackInstalled(rd);
+						// a file: from where `read -u` stopped, through this command's own reader, which gives back what
+						// it read ahead when the scope ends (`head -n1 <&8; read -u 8` as bash); a pipe: through the
+						// descriptor's one reader (red team F2)
+						LfReader.Release(s);
+						var rd = s.CanSeek ? new LfReader(s, leaveOpen: true) : LfReader.ForDescriptor(s);
+						if (s.CanSeek) scope.TrackInstalled(rd);
 						scope.SaveIn(); scope.SaveRawIn(); ConsoleMux.SetIn(rd); ConsoleMux.RawIn = s;
 						}
 					break;
@@ -2897,26 +3082,32 @@ public sealed class Evaluator
 	private int ExecArithFor(ArithForCommand af)
 		{
 		using var scope = af.Redirects.Count > 0 ? ApplyRedirects(af.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
-		// DEBUG before the init, each test and each step, as `((part))` (bash)
-		void Head(int part)
+		// DEBUG before the init, each test and each step, as `((part))` (bash); then the part is evaluated (1 when empty)
+		long Part(int part, string expr)
 			{
-			// set -x: `(( j=0 ))`, `(( j<2 ))`, `(( j++  ))`, as bash (the part with its front trimmed)
-			if (Options.XTrace && af.Heads[part].Length > 4) Xtrace($"(( {af.Heads[part][2..^2]} ))");
+			// set -x: `(( j=0 ))`, `(( j<2 ))`, `(( j++  ))`, as bash (the part with its front trimmed), expanded once (`(( i=5
+			// ))` for `i=$y`), an empty part `(( 1 ))`; it showed `$y` as written and nothing for an empty part (red team F12)
+			string? expanded = null;
+			if (Options.XTrace)
+				{
+				var text = af.Heads[part].Length > 4 ? af.Heads[part][2..^2] : "";
+				expanded = text.Trim().Length == 0 ? "1" : _expander.ExpandArithText(text);
+				Xtrace($"(( {expanded} ))");
+				}
 			if (_traps.Count != 0) { SetCommand(af.Heads[part]); DebugTrap(null); }
+			if (expr.Length == 0) return 1;
+			return expanded is not null ? _expander.EvalExpandedArithmetic(expanded) : _expander.EvalArithmetic(expr);
 			}
-		Head(0);
-		if (af.Init.Length > 0) _expander.EvalArithmetic(af.Init);
+		Part(0, af.Init);
 		int code = 0;
 		while (true)
 			{
 			CheckInterrupt();
-			Head(1);
-			if (af.Condition.Length > 0 && _expander.EvalArithmetic(af.Condition) == 0) break;
+			if (Part(1, af.Condition) == 0) break;
 			try   { code = Execute(af.Body); }
 			catch (BreakException b)    { if (b.Levels <= 1) break;    throw new BreakException(b.Levels - 1); }
 			catch (ContinueException c) { if (c.Levels > 1) throw new ContinueException(c.Levels - 1); }
-			Head(2);
-			if (af.Step.Length > 0) _expander.EvalArithmetic(af.Step);
+			Part(2, af.Step);
 			}
 		return code;
 		}
@@ -2957,6 +3148,9 @@ public sealed class Evaluator
 		return code;
 		}
 
+	private static string ForHead(ForCommand fc) =>
+		fc.Words.Count == 0 ? $"for {fc.Variable} in \"$@\"" : Bash.Parser.CommandText.Render(fc.Span);
+
 	private int ExecFor(ForCommand fc)
 		{
 		using var scope = fc.Redirects.Count > 0 ? ApplyRedirects(fc.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
@@ -2969,10 +3163,11 @@ public sealed class Evaluator
 		foreach (var word in words)
 			{
 			CheckInterrupt();
-			if (Options.XTrace) Xtrace(head ??= Bash.Parser.CommandText.Render(fc.Span));   // each turn, as written (bash)
+			// each turn, as written (bash); with no list, the list it means: `for i in "$@"` (it showed `for i`, red team F12)
+			if (Options.XTrace) Xtrace(head ??= ForHead(fc));
 			if (_traps.Count != 0)
 				{
-				SetCommand(head ??= Bash.Parser.CommandText.Render(fc.Span));
+				SetCommand(head ??= ForHead(fc));
 				DebugTrap(null);
 				}
 			_env.Set(fc.Variable, word);
@@ -3038,7 +3233,9 @@ public sealed class Evaluator
 	/// `[[ ]]` test passes through here (2026-10-18, review R4).</summary>
 	private void CondTrace(string a, string b, string? c = null)
 		{
-		if (Options.XTrace) Xtrace(c is null ? $"[[ {_condNot}{a} {b} ]]" : $"[[ {_condNot}{a} {b} {c} ]]");
+		// an empty operand shows as '' (`[[ -z '' ]]`), as bash; it showed as nothing (red team F12)
+		static string E(string s) => s.Length == 0 ? "''" : s;
+		if (Options.XTrace) Xtrace(c is null ? $"[[ {_condNot}{E(a)} {E(b)} ]]" : $"[[ {_condNot}{E(a)} {E(b)} {E(c)} ]]");
 		_condNot = "";
 		}
 
@@ -3157,22 +3354,31 @@ internal sealed class RedirectScope : IDisposable
 
 	/// <summary>Install <paramref name="stream"/> as descriptor <paramref name="fd"/> (null
 	/// closes it). The previous stream comes back when the scope is disposed; the new one
-	/// is closed then, unless <paramref name="shared"/> (a dup of another descriptor).</summary>
-	public void TrackFd(Dictionary<int, System.IO.Stream> table, int fd, System.IO.Stream? stream, bool shared = false)
+	/// is closed then, unless <paramref name="shared"/> (a dup of another descriptor).
+	/// <paramref name="shell"/> is the shell doing it (Evaluator.ShellToken): a stream it opens is its own.</summary>
+	public void TrackFd(Dictionary<int, System.IO.Stream> table, object shell, int fd, System.IO.Stream? stream, bool shared = false)
 		{
 		table.TryGetValue(fd, out var prev);
 		_fds.Add((table, fd, prev, stream, shared));
 		if (stream is not null && shared) MarkShared(stream);
+		if (stream is not null && !shared) s_owner.AddOrUpdate(stream, shell);
 		if (stream is null)
 			{
 			// n>&- : close the descriptor now (its owner scope may be permanent). A stream another
 			// descriptor also uses (a copy: `exec 3>&1`, or `exec 1>&3`) stays open, as closing one of
-			// two dup'd fds does: disposing it broke fd 1 after `exec 1>&3 3>&-` (2026-10-10).
+			// two dup'd fds does: disposing it broke fd 1 after `exec 1>&3 3>&-` (2026-10-10). So does one
+			// an enclosing shell opened (a subshell, pipeline stage or job closing an inherited descriptor):
+			// only the descriptor goes, back when this scope ends. Disposing it lost the parent's later
+			// `echo A >&3` ("Bad file descriptor") and `read -u 3` (red team F1, 2026-10-19).
 			table.Remove(fd);
-			if (prev is not null && !IsShared(prev)) { try { prev.Flush(); prev.Dispose(); } catch { } }
+			if (prev is not null && !IsShared(prev) && (!s_owner.TryGetValue(prev, out var owner) || ReferenceEquals(owner, shell)))
+				{ try { prev.Flush(); prev.Dispose(); } catch { } }
 			}
 		else table[fd] = stream;
 		}
+
+	/// <summary>The shell that opened each descriptor's stream (TrackFd).</summary>
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<System.IO.Stream, object> s_owner = new();
 
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<System.IO.Stream, object> s_shared = new();
 	/// <summary>The stream is used by more than one descriptor: closing one leaves it open.</summary>

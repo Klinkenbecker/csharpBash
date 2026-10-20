@@ -1,0 +1,11 @@
+no ~ yet
+cd ~ (quoted): no such directory
+x
+f
+D/~
+f g 
+D/home
+D/home D/home/x
+D/home/y
+removed ./~
+home

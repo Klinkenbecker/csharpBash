@@ -34,14 +34,19 @@ public static class ChildLauncher
 		{
 		var cmd = new StringBuilder();
 		var file = psi.FileName.Trim();
-		bool quoted = file.Length >= 2 && file[0] == '"' && file[^1] == '"';
-		if (!quoted) cmd.Append('"');
-		// the program's path with backslashes: cmd.exe given `C:/Windows/System32/cmd.exe /c …` read the `/`s of its own
-		// path as switches ("The system cannot find the path specified"); Git Bash passes backslashes too (2026-10-17)
-		cmd.Append(file.Replace('/', '\\'));
-		if (!quoted) cmd.Append('"');
-		bool msys = IsMsysProgram(file.Trim('"'));
-		foreach (var arg in psi.ArgumentList) { cmd.Append(' '); AppendArgument(cmd, arg, msys); }
+		if (IsBatchFile(file.Trim('"')))
+			AppendBatchCommandLine(cmd, file.Trim('"'), psi.ArgumentList);
+		else
+			{
+			bool quoted = file.Length >= 2 && file[0] == '"' && file[^1] == '"';
+			if (!quoted) cmd.Append('"');
+			// the program's path with backslashes: cmd.exe given `C:/Windows/System32/cmd.exe /c …` read the `/`s of its own
+			// path as switches ("The system cannot find the path specified"); Git Bash passes backslashes too (2026-10-17)
+			cmd.Append(file.Replace('/', '\\'));
+			if (!quoted) cmd.Append('"');
+			bool msys = IsMsysProgram(file.Trim('"'));
+			foreach (var arg in psi.ArgumentList) { cmd.Append(' '); AppendArgument(cmd, arg, msys); }
+			}
 
 		var keys = new List<string>(psi.Environment.Keys);
 		keys.Sort(StringComparer.OrdinalIgnoreCase);
@@ -170,7 +175,7 @@ public static class ChildLauncher
 			Access.Read     => (GENERIC_READ, OPEN_EXISTING),
 			Access.Truncate => (GENERIC_WRITE, OPEN_ALWAYS),
 			Access.Append   => (FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE, OPEN_ALWAYS),
-			Access.AppendAtEnd => (GENERIC_WRITE, OPEN_ALWAYS),
+			Access.AppendAtEnd => (GENERIC_WRITE | FILE_READ_ATTRIBUTES, OPEN_ALWAYS),   // FileId reads it
 			Access.ReadWrite => (GENERIC_READ | GENERIC_WRITE, OPEN_ALWAYS),   // `<>`: created if missing, not truncated
 			_               => (GENERIC_READ | GENERIC_WRITE, OPEN_EXISTING),
 			};
@@ -256,6 +261,56 @@ public static class ChildLauncher
 		sb.Append('"');
 		}
 
+	/// <summary>The NativeErrorCode of a refusal to start (ERROR_BAD_ARGUMENTS): the message says why; the shell reports 126.</summary>
+	public const int ErrorBadArguments = 160;
+
+	private static bool IsBatchFile(string path)
+		{
+		var ext = Path.GetExtension(path);
+		return ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) || ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase);
+		}
+
+	/// <summary>
+	/// A .bat or .cmd: Windows runs one through cmd.exe, which parses the whole command line again, so `&amp;` `|` `%VAR%`
+	/// `"` in an argument acted ("BatBadBut", CVE-2024-24576; the red team, 2026-10-19: `./t.bat '"&amp;echo INJECTED'` ran
+	/// echo). As Rust's std does since that fix: cmd.exe started explicitly (/d no AutoRun, /v:OFF no !VAR!, /e:ON), the
+	/// script quoted, each argument quoted for cmd (<see cref="AppendBatchArgument"/>). A line break cannot be passed (cmd
+	/// ends the command there): refused with <see cref="ErrorBadArguments"/>.
+	/// </summary>
+	private static void AppendBatchCommandLine(StringBuilder sb, string script, IList<string> args)
+		{
+		foreach (var a in args)
+			if (a.AsSpan().IndexOfAny('\r', '\n') >= 0)
+				throw new Win32Exception(ErrorBadArguments, "cannot pass an argument holding a line break to a batch file (cmd would end the command there)");
+		sb.Append('"').Append(Path.Combine(System.Environment.SystemDirectory, "cmd.exe")).Append("\" /e:ON /v:OFF /d /c \"\"")
+		  .Append(script.Replace('/', '\\')).Append('"');
+		foreach (var a in args) { sb.Append(' '); AppendBatchArgument(sb, a); }
+		sb.Append('"');
+		}
+
+	/// <summary>One argument on a batch file's command line, as Rust's std writes it: quoted unless it is only letters, digits
+	/// and <c>#$*+-./:?@\_</c> (cmd also splits at `=` `,` `;`), and when empty or ending in a backslash; a `"` doubled (cmd's
+	/// escape inside quotes) after doubling the backslashes before it; every `%` written <c>%%cd:~,%</c>, an empty substring
+	/// of %cd% before it, so cmd expands no %VAR%.</summary>
+	private static void AppendBatchArgument(StringBuilder sb, string arg)
+		{
+		bool quote = arg.Length == 0 || arg[^1] == '\\';
+		foreach (var c in arg)
+			if (c < 128 ? !(char.IsAsciiLetterOrDigit(c) || "#$*+-./:?@\\_".IndexOf(c) >= 0) : char.IsControl(c))
+				{ quote = true; break; }
+		if (quote) sb.Append('"');
+		int backslashes = 0;
+		foreach (var c in arg)
+			{
+			if (c == '\\') { backslashes++; sb.Append(c); continue; }
+			if (c == '"') sb.Append('\\', backslashes).Append('"');
+			else if (c == '%') sb.Append("%%cd:~,");
+			backslashes = 0;
+			sb.Append(c);
+			}
+		if (quote) sb.Append('\\', backslashes).Append('"');
+		}
+
 	// ── Win32 ───────────────────────────────────────────────────────────────────
 
 	[StructLayout(LayoutKind.Sequential)]
@@ -311,11 +366,28 @@ public static class ChildLauncher
 		if (h == IntPtr.Zero || h == InvalidHandle || GetFileType(h) != FILE_TYPE_DISK) return null;
 		var info = new byte[56];   // OBJECT_BASIC_INFORMATION: Attributes, GrantedAccess, ...
 		if (NtQueryObject(h, 0, info, info.Length, out _) != 0 || (BitConverter.ToUInt32(info, 4) & FILE_WRITE_DATA) != 0) return null;
-		var w = ReOpenFile(h, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
+		var w = ReOpenFile(h, GENERIC_WRITE | FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0);
 		if (w.IsInvalid || !SetFilePointerEx(w, 0, IntPtr.Zero, FILE_END)) { w.Dispose(); return null; }
 		return w;
 		}
 	private const uint FILE_BEGIN = 0, FILE_CURRENT = 1, FILE_END = 2, FILE_TYPE_DISK = 1;
+
+	/// <summary>The file a handle is open on (its volume and file index), or null: not a disk file, or no
+	/// FILE_READ_ATTRIBUTES access. Two handles on one file have the same id, whatever path opened them.</summary>
+	public static (uint Volume, ulong Index)? FileId(IntPtr h)
+		{
+		if (!GetFileInformationByHandle(h, out var info)) return null;
+		return (info.VolumeSerialNumber, ((ulong)info.FileIndexHigh << 32) | info.FileIndexLow);
+		}
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct ByHandleFileInformation
+		{
+		public uint FileAttributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh,
+		            VolumeSerialNumber, FileSizeHigh, FileSizeLow, NumberOfLinks, FileIndexHigh, FileIndexLow;
+		}
+	[DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool GetFileInformationByHandle(IntPtr hFile, out ByHandleFileInformation info);
 
 	/// <summary>Move a handle's OS file pointer, which a child given the handle reads from. Relative
 	/// to the current pointer when <paramref name="fromCurrent"/>.</summary>

@@ -29,6 +29,10 @@ set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root" || exit 2
 die() { echo "publish: $*" >&2; exit 2; }
+# Git is configured, never searched for: it is on no PATH (the architect, 2026-10-19: Git is reached nowhere but
+# here and in the benchmark). The same git.exe this script used from PATH until then.
+GIT=F:/Tools/PortableGit/bin/git.exe
+[ -x "$GIT" ] || die "Git not found at $GIT (configured at the top of this script)"
 [ $# -eq 2 ] || die "usage: tools/publish.sh <message-file> <token-file>"
 msg=$1; tokfile=$2
 [ -s "$msg" ] || die "no message file: $msg"
@@ -65,21 +69,21 @@ echo "publish: MERCURIAL_HISTORY.md ($count changesets) and mercurial-history.hg
 
 # 4. stage exactly what hg tracks
 mapfile -t tracked < <(hg files | tr '\\' '/')
-mapfile -t ignored < <(printf '%s\n' "${tracked[@]}" | git check-ignore --stdin 2>/dev/null)
-git add -u || die "git add -u failed"
-git add -- MERCURIAL_HISTORY.md mercurial-history.hg || die "git add of the history files failed"
-printf '%s\n' "${tracked[@]}" | grep -vxF -f <(printf '%s\n' "${ignored[@]}" "") | tr '\n' '\0' | xargs -0 git add -- || die "git add failed"
-stray=$(git ls-files --others --exclude-standard)
+mapfile -t ignored < <(printf '%s\n' "${tracked[@]}" | "$GIT" check-ignore --stdin 2>/dev/null)
+"$GIT" add -u || die "git add -u failed"
+"$GIT" add -- MERCURIAL_HISTORY.md mercurial-history.hg || die "git add of the history files failed"
+printf '%s\n' "${tracked[@]}" | grep -vxF -f <(printf '%s\n' "${ignored[@]}" "") | tr '\n' '\0' | xargs -0 "$GIT" add -- || die "git add failed"
+stray=$("$GIT" ls-files --others --exclude-standard)
 [ -n "$stray" ] && printf 'publish: NOT published (untracked in hg):\n%s\n' "$stray" | sed 's/^/  /'
 
 # 5. commit and push
-git commit -q -F "$msg" || die "git commit failed"
-head=$(git rev-parse HEAD)
+"$GIT" commit -q -F "$msg" || die "git commit failed"
+head=$("$GIT" rev-parse HEAD)
 token=$(tr -d '\r\n' < "$tokfile")
 auth=$(printf 'Klinkenbecker:%s' "$token" | base64 | tr -d '\n')
-git -c credential.helper= -c "http.https://github.com/.extraHeader=Authorization: Basic $auth" push origin main 2>&1 | sed "s#$token#***#g; s#$auth#***#g"
+"$GIT" -c credential.helper= -c "http.https://github.com/.extraHeader=Authorization: Basic $auth" push origin main 2>&1 | sed "s#$token#***#g; s#$auth#***#g"
 unset token auth
-[ -z "$(git config --get-all http.https://github.com/.extraHeader)" ] || die "an extraHeader is in git config: remove it NOW"
-remote=$(git ls-remote origin refs/heads/main | cut -f1)
+[ -z "$("$GIT" config --get-all http.https://github.com/.extraHeader)" ] || die "an extraHeader is in git config: remove it NOW"
+remote=$("$GIT" ls-remote origin refs/heads/main | cut -f1)
 [ "$remote" = "$head" ] || die "the push did not land: remote main is $remote, HEAD is $head"
-echo "publish: GitHub main = git $(git rev-parse --short HEAD) = hg rev $tip"
+echo "publish: GitHub main = git $("$GIT" rev-parse --short HEAD) = hg rev $tip"

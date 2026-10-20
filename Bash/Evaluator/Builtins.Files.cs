@@ -452,11 +452,12 @@ public sealed partial class Builtins
 		foreach (var op in operands)
 			{
 			var fs = P(op);
+			if (DotsThroughAFile(fs)) { Console.Error.WriteLine($"ls: cannot access '{op}': Not a directory"); rc = 2; continue; }
 			if (Directory.Exists(fs) && !dirSelf) dirs.Add((op, new DirectoryInfo(fs)));
 			else if (Directory.Exists(fs)) files.Add((op, new DirectoryInfo(fs)));
 			else if (File.Exists(fs)) files.Add((op, new FileInfo(fs)));
 			else if (ShellFile.Device(fs) is not null) devices.Add(op);   // `ls /dev/null` (was "cannot access")
-			else { Console.Error.WriteLine($"ls: cannot access '{op}': No such file or directory"); rc = 2; }
+			else { Console.Error.WriteLine($"ls: cannot access '{op}': {Missing(fs)}"); rc = 2; }
 			}
 		// a device: its name, or a character-special line (Linux's numbers are not ours to know: 1, 3)
 		foreach (var dv in devices)
@@ -619,9 +620,10 @@ public sealed partial class Builtins
 			var p = P(pth);
 			try
 				{
-				if (File.Exists(p)) { long len = new FileInfo(p).Length; Print(len, pth); grand += len; }
+				if (DotsThroughAFile(p)) { Console.Error.WriteLine($"du: cannot access '{pth}': Not a directory"); rc = 1; }
+				else if (File.Exists(p)) { long len = new FileInfo(p).Length; Print(len, pth); grand += len; }
 				else if (Directory.Exists(p)) grand += Walk(p, pth.TrimEnd('/', '\\'), 0);
-				else { Console.Error.WriteLine($"du: cannot access '{pth}': No such file or directory"); rc = 1; }
+				else { Console.Error.WriteLine($"du: cannot access '{pth}': {Missing(p)}"); rc = 1; }
 				}
 			catch (Exception ex) { Console.Error.WriteLine($"du: {pth}: {IoError(ex)}"); rc = 1; }
 			}
@@ -742,14 +744,23 @@ public sealed partial class Builtins
 		var o = Opts.Parse("mktemp", args, "dqup:t", ["directory:d", "quiet:q", "dry-run:u", "tmpdir=", "tmpdir", "suffix=", "template=:t"]);
 		bool dir = o.Has('d'), dryRun = o.Has('u');
 		string template = o.Operands.Count > 0 ? o.Operands[0] : "tmp.XXXXXXXXXX";
-		string suffix = o.GetLong("suffix") ?? "";
+		string? givenSuffix = o.GetLong("suffix");
+		string suffix = givenSuffix ?? "", shown = template;
+		// GNU: a template not ending in X has an implied suffix, everything after its last X; with --suffix it must end in
+		// X. `aXXXXb` was used as the literal name (red team F16, 2026-10-19)
+		if (!template.EndsWith('X'))
+			{
+			if (givenSuffix is not null) { Console.Error.WriteLine($"mktemp: with --suffix, template '{shown}' must end in X"); return 1; }
+			int lastX = template.LastIndexOf('X');
+			if (lastX >= 0) { suffix = template[(lastX + 1)..]; template = template[..(lastX + 1)]; }
+			}
 		string? tmpdir = o.GetLong("tmpdir") ?? o.Get('p');
 		// a template is relative to the current directory unless -t, -p/--tmpdir or no template, and the name prints as
 		// built (GNU): `mktemp x.XXXX` went to TEMP and printed its full path (2026-10-17)
 		bool useTmp = tmpdir is not null || o.HasLong("tmpdir") || o.Has('t') || o.Operands.Count == 0;
 		string baseDir = useTmp ? P(tmpdir is { Length: > 0 } ? tmpdir : (Environment.GetEnvironmentVariable("TMPDIR") is { Length: > 0 } td ? td : Path.GetTempPath())) : "";
 		int xs = template.Length - template.TrimEnd('X').Length;
-		if (xs < 3 && suffix.Length == 0 && !template.Contains("XXX")) { Console.Error.WriteLine($"mktemp: too few X's in template '{template}'"); return 1; }
+		if (xs < 3) { Console.Error.WriteLine($"mktemp: too few X's in template '{shown}'"); return 1; }
 		var rnd = new Random();
 		const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 		for (int attempt = 0; attempt < 100; attempt++)
@@ -773,6 +784,13 @@ public sealed partial class Builtins
 		return 1;
 		}
 
+	/// <summary>Why an operand that is not there is not: "Not a directory" when its way runs through a file (`file/x`,
+	/// GNU's ENOTDIR), else "No such file or directory" (red team F13, 2026-10-19).</summary>
+	private static string Missing(string path) => ShellFile.ThroughAFile(path) ? "Not a directory" : "No such file or directory";
+
+	/// <summary>`file/.` and `file/..`: Windows drops the dots and finds `file`; GNU says "Not a directory".</summary>
+	private static bool DotsThroughAFile(string path) => Path.GetFileName(path) is "." or ".." && ShellFile.ThroughAFile(path);
+
 	private static int Realpath(List<string> args)
 		{
 		var o = Opts.Parse("realpath", args, "emsqzLP", ["canonicalize-existing:e", "canonicalize-missing:m", "no-symlinks:s", "strip:s", "quiet:q", "zero:z", "relative-to=", "relative-base=", "logical:L", "physical:P"]);
@@ -781,19 +799,55 @@ public sealed partial class Builtins
 		string? relTo = o.GetLong("relative-to");
 		foreach (var f in o.Operands)
 			{
-			var p = P(f);
 			string full;
 			try
 				{
-				full = Path.GetFullPath(p);
-				if (!o.Has('s')) full = ResolveLinks(full);
-				if (o.Has('e') && !File.Exists(full) && !Directory.Exists(full)) { if (!o.Has('q')) Console.Error.WriteLine($"realpath: {f}: No such file or directory"); rc = 1; continue; }
+				if (Canonicalize(f, o.Has('e') ? 'e' : o.Has('m') ? 'm' : 'f', o.Has('s'), out var why) is not { } c)
+					{ if (!o.Has('q')) Console.Error.WriteLine($"realpath: {f}: {why}"); rc = 1; continue; }
+				full = c;
 				if (relTo is not null) full = Path.GetRelativePath(Path.GetFullPath(P(relTo)), full);
 				}
 			catch (Exception ex) { Console.Error.WriteLine($"realpath: {f}: {IoError(ex)}"); rc = 1; continue; }
 			Console.Out.Write(ShellEnvironment.ToShellPath(full) + (o.Has('z') ? "\0" : "\n"));
 			}
 		return rc;
+		}
+
+	/// <summary>
+	/// realpath's and readlink -f/-e/-m's canonical form, checked as GNU checks it: the path walked component by
+	/// component, `.` dropped, `..` taken lexically (the shell's own resolution: DECISIONS 2026-10-18, `..` after a
+	/// junction), a trailing slash dropped. Mode 'e': every component must exist; 'f' (realpath's default, readlink
+	/// -f): every one but the last; 'm': nothing is checked. A component that exists and is followed by another, or by
+	/// a trailing slash, must be a directory. Then the last link is followed unless <paramref name="noLinks"/>, as
+	/// before. Null, and GNU's reason, when a check fails: until 2026-10-19 nothing was checked (`realpath nodir/x`
+	/// printed a path, rc 0) and a trailing slash was kept (red team F6).
+	/// </summary>
+	private static string? Canonicalize(string operand, char mode, bool noLinks, out string? error)
+		{
+		error = null;
+		var p = P(operand);
+		if (!Path.IsPathFullyQualified(p)) p = Path.IsPathRooted(p) ? Path.GetFullPath(p) : Path.Join(Directory.GetCurrentDirectory(), p);
+		var root = Path.GetPathRoot(p) ?? "";
+		var rest = p[root.Length..];
+		var comps = rest.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+		bool trailingSlash = comps.Length > 0 && rest[^1] is '/' or '\\';
+		var cur = Path.GetFullPath(root.Length > 0 ? root : p);
+		for (int i = 0; i < comps.Length; i++)
+			{
+			var c = comps[i];
+			bool last = i == comps.Length - 1;
+			if (c == ".") continue;
+			if (c == "..") { cur = Path.GetDirectoryName(cur) ?? cur; continue; }
+			var next = Path.Join(cur, c);
+			if (mode != 'm')
+				{
+				bool isDir = Directory.Exists(next), isFile = !isDir && File.Exists(next);
+				if (!isDir && !isFile && (mode == 'e' || !last)) { error = "No such file or directory"; return null; }
+				if (isFile && (!last || trailingSlash)) { error = "Not a directory"; return null; }
+				}
+			cur = next;
+			}
+		return noLinks ? cur : ResolveLinks(cur);
 		}
 
 	private static string ResolveLinks(string full)
@@ -820,8 +874,8 @@ public sealed partial class Builtins
 				{
 				if (o.Has('f') || o.Has('e') || o.Has('m'))
 					{
-					var full = ResolveLinks(Path.GetFullPath(p));
-					if (o.Has('e') && !File.Exists(full) && !Directory.Exists(full)) { rc = 1; continue; }
+					if (Canonicalize(f, o.Has('e') ? 'e' : o.Has('m') ? 'm' : 'f', noLinks: false, out var why) is not { } full)
+						{ if (o.Has('v')) Console.Error.WriteLine($"readlink: {f}: {why}"); rc = 1; continue; }
 					Console.Out.Write(ShellEnvironment.ToShellPath(full) + term);   // as realpath: it printed backslashes (2026-10-17)
 					continue;
 					}
@@ -880,7 +934,7 @@ public sealed partial class Builtins
 			var p = P(f);
 			try
 				{
-				if (!File.Exists(p) && !Directory.Exists(p)) { if (!o.Has('f')) Console.Error.WriteLine($"chmod: cannot access '{f}': No such file or directory"); rc = 1; continue; }
+				if ((!File.Exists(p) && !Directory.Exists(p)) || DotsThroughAFile(p)) { if (!o.Has('f')) Console.Error.WriteLine($"chmod: cannot access '{f}': {(DotsThroughAFile(p) ? "Not a directory" : Missing(p))}"); rc = 1; continue; }
 				if (readOnly is bool ro && File.Exists(p))
 					{
 					var attrs = File.GetAttributes(p);

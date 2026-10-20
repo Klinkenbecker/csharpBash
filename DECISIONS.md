@@ -7555,3 +7555,464 @@ unidentified shell (MINGW64 `uname`, BASH_VERSION unset).
 
 **Open:** why an MSYS bash started by another MSYS bash costs more per program; the 11:44-17:37 window on 2026-10-18
 (Git Bash `loop_big` 18.7-20.0 s instead of ~15 s); the `type -a bash` / `bash` mismatch.
+
+## 2026-10-19 -- PUBLISHED: GitHub main = git 0b5ece5 = hg rev 333 (benchmark provenance; the force-push undone)
+**Status:** Active. The architect: "1/ ok, yes 2/ ok, 3/ concur; go". By `tools/publish.sh`: the benchmark of the
+deployed build (rev 324, the 2026-10-19 04:15 run) found in results.md; MERCURIAL_HISTORY.md (334 changesets) and
+mercurial-history.hg (verified) written; untracked `BENCHMARK-PROVENANCE.md` and `The Windows Shell Tax.url` left
+out; pushed e13485f..0b5ece5, a fast-forward that restores `32ad493`, `9943884`, `a8a90e2` and `b9067c8` to `main`'s
+history; remote main = HEAD; no auth header in git config. Rev 333 also dropped README's call-cost comparisons
+against scratch copies of revs 320 and 316 (diagnostics), keeping "~11 ms".
+
+## 2026-10-19 -- METHOD: the battery's reference is WSL's GNU bash; publish.sh reaches Git by a configured path
+**Status:** Active. The architect: "git is _never_ to be reached _anywhere_, except in the benchmark script, PERIOD";
+then, on publishing, "keep it in publish.sh as a _local_ script root path"; on the battery, "use WSL bash for
+reference". Supersedes, in the entry "METHOD + CORRECTION" above, deploy.sh passing `-Reference
+F:/Tools/PortableGit/bin/bash.exe`, and the 2026-10-12 rule that WSL is never the battery's reference.
+
+**publish.sh:** `GIT=F:/Tools/PortableGit/bin/git.exe` at the top (the git.exe it used from PATH until now; fatal if
+missing); all eleven calls use `"$GIT"`, the `xargs` one included (a shell function would not reach xargs). Why it
+needs Git at all: GitHub takes only git, and the project's VCS is hg; the hg-git extension (bundled with TortoiseHg
+6.6.3, it loads) could push without PortableGit but would rebuild GitHub's history, one git commit per hg revision
+(~330) instead of one per publish: not chosen.
+
+**The battery (tests/compat/run-compat.ps1):** the reference is `wsl.exe -e bash`, each probe started in its fixture
+directory (WSL maps it to `/mnt/f/...`); `-Reference <bash.exe>` still names another; C#Bash is still refused. No
+discovery of Git any more (git.exe on PATH, CLAUDE_CODE_GIT_BASH_PATH, Program Files, PATH). deploy.sh calls it
+with no `-Reference`. Measured against WSL (bash 5.1.16): 222 pass, 15 differ of 237. Against the Git Bash baseline
+(225): 8 joined (55, 136, 145, 180, 196, 199, 209, 212: they match GNU bash 5.1, not Git Bash 4.4) and 11 left
+(1 `$OSTYPE` msys/linux-gnu; 125-127, 131-133 drive paths; 161 dotnet; 227 TEMP/TMP; 233 UNC paths; 211 `bc`, where
+PATH's `bc.exe` writes CRLF and GNU bc LF: the tool's output, not C#Bash's). None is a C#Bash deviation hidden by Git
+Bash. The baseline was rebuilt with `-UpdateBaseline` (222) and converted back to LF (the tool writes CRLF); a rerun
+passes, exit 0.
+
+## 2026-10-19 -- DOCUMENTED: a remembered hit hides a program added later earlier on PATH, until `hash -r`
+**Status:** Active. The architect: "we should clarify the readme - I didn't want a complicating fix, but it may be
+warranted later if the 'documented' fix proves insufficient."
+
+**Context:** daq-fe saw `type -a bash` list Git's `usr/bin/bash.exe` first while `bash` ran C#Bash: its session's
+command map remembered `bash` as dist/Bash.exe from while Git's bash.exe was renamed, and a remembered hit is used
+after one existence probe, so the same name back in a folder earlier on PATH stayed hidden. Reproduced generically
+with two temporary folders. Only a session started before the PATH changed sees it. The 2026-10-16 ruling and the
+README covered the remembered MISS only ("after installing a tool you had probed with `hash`").
+
+**Decision:** documented, not fixed. README: "A program installed later in a folder earlier on PATH stays hidden
+behind the remembered one until `hash -r`", and "After installing a tool, run `hash -r`" (no longer only after a
+`hash` probe). Rejected for now: checking the earlier PATH folders' timestamps before trusting a remembered hit
+(cost unmeasured). **Revisit when** documenting proves insufficient: a session confused by a hidden program again.
+
+## 2026-10-19 -- METHOD: the `-n` corpus and the df check run in WSL's bash, not Git Bash
+**Status:** Active. The architect, on harnesses that ran from Git Bash: "if necessary, same fix" (after "git is
+_never_ to be reached _anywhere_, except in the benchmark script, PERIOD" and "use WSL bash for reference"). Necessary:
+both headers named `F:/Tools/PortableGit/bin/bash.exe` as the harness shell.
+
+**Change:** `tests/corpus/run-n.sh` and `tests/df/compare-wsl.sh` run as `wsl.exe -e bash <script>` from the
+repository, beside GNU (GNU bash and GNU df now run directly, not through `wsl.exe`). C#Bash is started through WSL's
+interop; every path handed to it is in Windows form (`wslpath -m`), and `--cs <exe>` / the df exe may be given as
+`F:/...` or `/mnt/f/...`. Each refuses any other shell (no `wslpath`: C#Bash and Git Bash). run-n builds with
+`dotnet.exe` (Windows' PATH, appended in WSL). Unchanged: the corpus, the manifest, the cases, the normalisation.
+
+**Verified (2026-10-19):** df: 76 passed, 0 differ on the deployed rev 324 (as recorded at build 143); a wrapper adding
+one output line made all 76 differ, exit 1. `-n` corpus (Release build of the working tree, parent rev 334): 850 of
+912 agree, baseline 850, no drift, exit 0; a candidate that rejects every file: 244 agree, regressions listed, exit
+1. `--printer`: 845 of 912, baseline 845, exit 0. Times: df 6 s; `-n` 1 m 42 s with the build; `--printer` 2 m 19 s.
+Not checked: `timeout 20` on a hung C#Bash under interop (no file hit it).
+
+## 2026-10-19 -- FIXED (outside the repo): the no-windows hook's false positives; the user Path's trailing `;` removed
+**Status:** Active. The architect: "commit, no-windows hook, trailing ';' and then red-team - go" (GREENLIT item 2).
+
+**The hook** (`~/.claude/hooks/no-windows`, its own hg, rev 4): it split a command at every `;` and `|`, inside
+`$( )` too. `Start-Process -FilePath '$(printf .. | tr ..)' -NoNewWindow` was cut at the pipe, and the half holding
+Start-Process lacked the flag. And a segment of bare assignments counted as data only with no `$( )` in it:
+`A=$(cygpath -w $S/icu/ship/Bash.exe)` was a "desktop app" (an exe under a folder named ship). Now a `$( )` is never
+split, and its body is scanned as segments of its own (so `ls $(F:/x/publish/App.exe)` is seen; it hid behind ls).
+The for-list and assignment data rules accept a substitution whose commands cannot launch (SafeFirst, plus cygpath
+wslpath realpath readlink dirname basename); a backtick still counts as a launch there. Verified: 65 cases (7 new,
+each red on the installed build first); 18,045 distinct Bash/PowerShell/Write/Edit inputs from every transcript
+replayed through both builds: 3 verdicts changed, all block to allow, all false positives (the two recorded, and a
+DAQ session's `X=$(ls .../GlassFloor.exe | head -1)` whose launches were `--smoke`); installed = the replayed build
+(cmp); live: the cygpath line runs, `ls $(F:/x/publish/App.exe --list)` is blocked. Not changed, and put to the
+architect: an exe path given to a SCRIPT (`bash split.sh .../ship/Bash.exe`) is still flagged: the hook cannot see
+what a script does with an argument (that one did run it), and `headless-exe` is the designed vouch.
+
+**The user Path** (HKCU\Environment, REG_EXPAND_SZ, it holds `%USERPROFILE%`): rewritten by `reg.exe add` without its
+final `;` (485 to 484 characters); read back identical otherwise, type kept. The old value is in this session's
+scratchpad (userpath-before.txt). Running processes, Explorer included, keep the old copy until the next logon.
+Not touched: `.dotnet\tools` is listed three times.
+
+**Found on the way:** a session started before Git left the Windows PATH still carries it (Claude Code replays the
+session-start PATH), and C#Bash puts Git's usr/bin and mingw64/bin in front: there a bare `bash` runs Git Bash 4.4
+(`/usr/bin/bash`), and `perl` and `tar` are Git's. This session was one: the first replay loop ran under Git Bash
+(stopped; rerun under `"$BASH"`). The red team strips PortableGit from PATH in every call. Cure: restart such
+sessions (the architect: restart this one after the red team).
+
+## 2026-10-19 -- RED TEAM (revs 307-316, on deployed rev 324): 16 findings, five HIGH; AWAITING the architect
+**Status:** Open: which to fix, and in what order, is the architect's call (nothing built). By an independent agent,
+GNU bash 5.1.16 in WSL the reference (re-run on WSL's /tmp where DrvFs differs), C#Bash started with PortableGit off
+PATH, MSYS from F:/Tools/msys64; a scratch copy of rev 302 told regressions from older defects. Probes in this
+session's scratchpad `redteam/work/` (`cmp.sh <probe>` runs both shells). Claude re-ran F1, F2, F4, F5 against GNU:
+each reproduces.
+
+**HIGH:**
+- F1 (307; also in 302): a descriptor CLOSED in a subshell (`( )`, `$( )`, a pipeline stage, `&`, a piped `{ }`) is
+  closed in the parent: `exec 3> fa; ( exec 3>&- ); echo A >&3` -> "3: Bad file descriptor", fa empty (GNU: A). On
+  input, `read -u 3` then says ".NET: Stream was not readable". 307 drops descriptors a subshell OPENS, not closes.
+- F2 (308; read-ahead also in 302): `read -u N` reads ahead: `exec 8<> two; read -u 8 a; cat <&8` prints nothing (GNU:
+  l2 l3); a following `head -n1 <&8` gets nothing; `echo X >&8` lands at the end, not after the line read. Same for
+  `exec 8< f`.
+- F3 (310 and the direct path; 302 too): one MSYS program with two `>>` handles on one file overwrites its own output:
+  `msys64 ls.exe -d f nofile >> o 2>> o` -> the error line's first 10 bytes overwritten (302 lost the nested case
+  entirely; 310 turned the loss into this). Not the accepted two-program race (DECISIONS 2026-10-08).
+- F4 (launcher; 302 too), SECURITY: an argument to a `.bat`/`.cmd` is re-parsed by cmd ("BatBadBut",
+  CVE-2024-24576): `./t.bat '"&echo INJECTED'` runs `echo INJECTED`; `'"&whoami>f&"'` wrote f; `'%OS%'` expands.
+- F5 (path translation; the recorded design of 2026-06-13 / 2026-09-12, kept by 309): a QUOTED `~` is the Windows
+  profile, ignoring even `$HOME`: `d='~'; mkdir "$d"; echo x > "$d/f"` wrote `C:/Users/guy/f` (deleted); `rm -rf "$d"`
+  would target the profile (not run). GNU: a directory named `~`.
+
+**MED:** F6 (308) `readlink -f` / `realpath` do no existence check and keep trailing slashes (`readlink -f nodir/x`
+prints a path, rc 0; GNU rc 1). F7 (308) `find -execdir` runs in the wrong directory for `.` and `dir/` start points,
+and runs a program planted beside the file when `.` is on PATH (GNU refuses). F8 (316) `which zz.js` reports a
+non-program. F9 (309) `#!/usr/bin/env -S bash -e` does not run (127). F10 (313) a cwd of exactly 259 characters gives
+"The directory name is invalid", 127, not the stated 126 message.
+**LOW:** F11 (311) set -x: control characters as `\x01` (GNU `\001`); no second line after `export`/`readonly`
+assignments; `a[$i]=` traced expanded; `eval` and EXIT-trap levels; `BASH_XTRACEFD` ignored. F12 (312) `(( ))` and
+arithmetic-for traced as written, not expanded; `for ((;;))`, `for i`, `[[ -z "" ]]`, `[[ x == ~ ]]` text. F13 (308)
+a trailing `/.` passes the path-through-a-file check (`hostname.exe/.` runs). F14 (308) `hash -t`/`-d` and a relative
+PATH entry disagree with `hash`. F15 (309) a directory as `#!` interpreter: "No such file" (GNU "Permission denied").
+F16 `mktemp aXXXXb` does not fill the X run.
+
+**Older, outside 307-316 (all in 302):** HIGH: two background jobs appending to one file lose lines (3000 of 6000;
+contradicts DECISIONS 2026-10-04 "atomic appends"); HIGH: an option the built-in `find` lacks (`-okdir`) falls
+through to System32's `find.exe`. MED: `source /dev/null` and `source /dev/stdin` fail; `export -f` does not reach a
+child C#Bash; `x='1+'; $((x))` is 0 (GNU: syntax error). LOW: `hash -p /abs name` not obeyed; `{fd}>` and `4>&3-`
+unsupported; a text file named `.exe` gives 127 with a literal `%1`.
+
+**Held** (each tried, correct): 307 for every OPENED descriptor in every subshell form and abort path; 308's `source`,
+`mktemp`, "Not a directory"/"Is a directory", `-execdir` on ordinary files, `<>`; 309's `~`/`/f`/`F:p`/`\x` entries,
+child environment, missing interpreters, cmd.exe by `/`; 310's nested MSYS `>>`; 311's quoting, levels, PS4 escapes;
+312's `[[ ]]` (each `$( )` once), case, while/until; 313 in a 405-character directory; 316's `-x` and lookup.
+
+**Claude's proposed order (a proposal):** F4 (data runs as commands), F5 (writes into the profile; reversing a recorded
+design is a ruling), F1 and F2 and the concurrent `>>` loss (data loss), F3, `find` falling through to find.exe; then
+the MEDs; the LOWs last. Falsifier: a finding judged environmental or out of scope by the architect.
+
+## 2026-10-19 -- FIXED (red team F4, security): an argument to a .bat or .cmd is data ("BatBadBut")
+**Status:** Active. The architect: "work through the HIGH list (in your order) ... each fix and commit in turn; go".
+
+**Cause:** Windows runs a batch file through cmd.exe, which parses the whole command line again: `&` `|` `<` `>`
+split commands, `%VAR%` expands, `=` `,` `;` split arguments; `"` quoting by the C runtime's rules (AppendArgument)
+does not protect there. `./t.bat '"&echo INJECTED'` ran echo; `'"&whoami>f&"'` wrote f (CVE-2024-24576's class).
+**Fix (ChildLauncher):** a `.bat`/`.cmd` starts as `<System32>/cmd.exe /e:ON /v:OFF /d /c ""<script>" args"`, each
+argument written as Rust's std writes it since that CVE (quoted unless only letters, digits and `#$*+-./:?@\_`, or
+when empty or ending in `\`; `"` doubled; `%` as `%%cd:~,%`). An argument holding a line break is refused (cmd ends
+the command there): "cannot pass an argument holding a line break to a batch file", 126. Behaviour changes: AutoRun
+no longer runs before a batch file (/d), and delayed expansion is off whatever the registry says (/v:OFF), as Rust.
+**Verified:** case `bat_args` (authored; red on deployed 324: INJECTED ran, %OS% expanded, a file was written, `-o=1,2`
+split at `=`): each argument literal, exit code and `%~nx0` of a batch file found on PATH unchanged. Suite 155/161
+(console and -Detached) with PortableGit off PATH: the 6 failures (`detach_builtins`, `msys_redirects`,
+`awk_unsupported_once`, `awk_getline`, `msys_arguments`, `coreutils_external`) need Git's tools (`sh`, MSYS, gawk) and
+fail identically on 324. Battery 216/237: the 6 below the baseline (20, 160, 162, 170, 185, 210) need Git's `git`,
+`sh`, GNU `tar`, `xxd`; the baseline was taken with Git on PATH (OPEN, below).
+
+**OPEN (the architect's):** with Git off the Windows PATH, the suite's 6 Git-dependent cases and the battery's 6
+Git-dependent probes fail in any new session, so tools/deploy.sh would refuse. Claude's position: MSYS cases to
+F:/Tools/msys64's tools (an MSYS2 install, not Git), the rest skipped when their tool is absent; the battery's
+baseline re-taken without Git. Falsifier: the architect keeps Git for tests (a test-only exception to the rule).
+
+## 2026-10-19 -- FIXED (red team F5): a quoted or data `~` is a name, as in bash, never the profile
+**Status:** Active. Supersedes, for `~`, the inbound mapping of the 2026-06-13 startup-files entry ("`~` ->
+%USERPROFILE%") and the 2026-09-12 symmetry entry (`TranslatePath`: "`~` -> the profile dir"). The architect: "work
+through the HIGH list (in your order)", which put this ruling first among the HIGHs after F4.
+
+**Cause:** `ShellEnvironment.TranslateForm`, under every path a builtin or redirect opens, turned `~` and `~/x` into
+the profile, whatever $HOME said. Bash expands only an UNQUOTED `~` (to $HOME), before a command sees it; a quoted
+or data `~` is a name. So `d='~'; mkdir "$d"` said "File exists", `echo x > "$d/f"` wrote into the profile, and
+`rm -rf "$d"` would have aimed at it.
+**Fix:** TranslateForm leaves `~` alone. What means home asks `ShellEnvironment.TildeHome` (HOME, else the profile, as
+bash takes the account's home): the expander's `~` (unchanged), a `~` PATH entry (also when HOME is unset), and the
+startup files, which a login shell now reads from $HOME (`~/.bash_profile`; `~/.bashrc`), as bash; until now from the
+profile even when HOME pointed elsewhere (the same when HOME is the profile, Claude Code's case). `cd "~"` is "No such
+file or directory", as bash (cd took a literal `~` as home).
+**Verified:** case `tilde_literal` (expected = GNU bash 5.1 via WSL, byte-identical; on deployed 324 its guard stops
+it: the quoted `~` exists before mkdir); a login shell with HOME=<dir> reads <dir>/.bash_profile (324 read the
+profile's). Suite 155 passed, 6 failed, 1 skipped (AOT only) of 162, console and -Detached, PortableGit off PATH: the
+same 6 Git-dependent cases as at F4. Battery 216/237: the same 6 Git-dependent probes.
+**Correction to "FIXED (red team F4…)":** its suite count was 154 passed, 6 failed, 1 skipped of 161, not "155/161".
+
+## 2026-10-19 -- FIXED (red team F1): a descriptor closed in a subshell stays open in the parent
+**Status:** Active. Completes rev 307 ("a subshell's `exec` redirect ends with it"), which dropped what a subshell
+OPENED but not what it CLOSED.
+
+**Cause:** `RedirectScope.TrackFd` disposed the stream on `n>&-` at once. In `( )` (the same descriptor table) and in a
+pipeline stage, `$( )` or job (an evaluator whose table copies the parent's streams) that stream is the parent's: the
+scope later put back a disposed stream. `exec 3> fa; ( exec 3>&- ); echo A >&3` said "3: Bad file descriptor" and A
+was lost; on input, `read -u 3` failed with ".NET: Stream was not readable".
+**Fix:** each stream a redirect opens records the shell that opened it (`Evaluator.ShellToken`: one per evaluator, a
+new one per `EnterSubshell`, restored by `LeaveSubshell`); `n>&-` disposes a stream only in that shell, and elsewhere
+only removes the descriptor, which the scope restores when the subshell ends. A close where it was opened still
+releases the file (a reader still sees EOF).
+**Verified:** case `subshell_fd_close` (expected = GNU bash 5.1 via WSL, byte-identical: `( )`, `$( )`, a pipeline
+stage, `&`, a piped `{ }`, a subshell function, on an output and an input descriptor; the opener's own close; a
+subshell closing its own): on deployed 324 six lines lost. Suite 156 passed, 6 failed (the Git-dependent six), 1
+skipped, of 163, console and -Detached, PortableGit off PATH. Battery 216/237 (the same six Git probes).
+
+## 2026-10-19 -- FIXED (red team F2): after `read -u N`, the descriptor's next reader or writer starts just after the line
+**Status:** Active.
+
+**Cause:** `read -u N` read through a StreamReader kept per descriptor (1 KB buffer): the rest of a small file was
+inside it, so `exec 8<> f; read -u 8 a; cat <&8` printed nothing, `head -n1 <&8` got nothing and the next `read -u
+8` the line after, and `echo X >&8` wrote at the end (GNU: just after the line read, as bash seeks a file back).
+**Fix:** `read -u` reads through `LfReader.ForDescriptor(s)`, kept between reads (a loop stays buffered); before any
+OTHER use of that stream (`<&N`, `>&N`, a child's fd, /dev/fd/N) `LfReader.Release` gives a FILE back what it read
+ahead (seek) and drops it. A reader made for `<&N` on a file gives back what it read ahead when its scope ends
+(`head -n1 <&8; read -u 8` as bash). A pipe cannot be put back: `read -u N`, `<&N` and a child's `<&N` all read
+through its one reader. Measured first, then changed: a fresh reader per `read -u` (bash's block-and-seek) cost
+~28 us a line (20,000 lines: 750 against 185 ms, JIT Release); the kept reader runs at the stdin loop's speed (175).
+**Verified:** case `read_fd_offset` (expected = GNU bash 5.1 via WSL, byte-identical: cat, head, a write, `read <&8`,
+`read -n`, a while loop, a process substitution's pipe; deployed 324 differs in five lines). Suite 157 passed, 6
+failed (the Git-dependent six), 1 skipped, of 164, console and -Detached. Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team, older HIGH): two shells appending to one file keep every line (O_APPEND)
+**Status:** Active. Corrects DECISIONS 2026-10-04's "atomic appends" claim for the shell's OWN `>>`, which was never
+append-only (a child's `>>` handle was: ChildLauncher.Access.Append).
+
+**Cause:** `ShellFile.Append` was `new FileStream(path, FileMode.Append, FileAccess.Write)`: an ordinary write handle
+positioned at the end, and .NET writes at the stream's own offset. Two jobs `( loop ) >> f &` wrote over each other:
+3000 of 6000 lines left (A 2947, B 53); `echo C >> g` per command and an `exec 3>> h` beside a `>>` lost lines too.
+**Fix:** the stream wraps a handle opened with FILE_APPEND_DATA and not FILE_WRITE_DATA (ChildLauncher.Open, Access.
+Append), unbuffered: Windows puts every write at the end whatever offset .NET passes (spiked: concurrent and
+sequential appends, in order). Found on the way and fixed with it: a stream made from a handle is named "[Unknown]" by
+.NET, and `HandOff` reopened a child's `>>` handle by that name, so an MSYS or Windows child inside `{ }`, a loop, a
+function, `exec >>` or `>&5` wrote into a new file "[Unknown]"; `ShellFile.PathOf` keeps the path. Checked against
+deployed 324 with F:/Tools/msys64's echo.exe and hostname.exe in each of those forms: identical; tee -a and awk's
+`>>` append.
+**Verified:** case `append_concurrent` (expected = GNU bash 5.1 via WSL on its own file system, byte-identical; 324
+lost lines in all three forms). Suite 158 passed, 6 failed (the Git-dependent six), 1 skipped, of 165, console and
+-Detached. Battery 216/237 (the six Git probes).
+**Process correction:** revs 337-340 registered their cases in run-tests.ps1 without `hg add` of the case files; rev
+341 adds them (each was run and passing before its commit, from the working tree).
+
+## 2026-10-19 -- FIXED (red team F3): an MSYS program's `>> f 2>> f` keeps both lines whole (one handle per file)
+**Status:** Active. Refines DECISIONS 2026-10-08 (an MSYS child gets a write handle at the end, AppendAtEnd, since it
+takes an append-only handle as unwritable) and rev 310 (an inherited append-only handle reopened for it).
+
+**Cause:** each `>>` an MSYS child got was its own write handle at the end: `ls.exe -d f nofile >> o 2>> o` had two
+handles at one offset, and the second write overwrote the first ("present" over "/usr/bin/ls: cannot ..."); the
+same in `{ }` and inside a nested shell started with `>> o 2>> o` (rev 310 reopened each inherited handle
+separately). Not the accepted race of two programs (2026-10-08): one program, every time.
+**Fix (Evaluator.ExecExternal):** for an MSYS child, every such handle on one file is ONE handle (`OneMsysAppend`,
+keyed by `ChildLauncher.FileId`: volume and file index, whatever path opened it): its own `>>` redirects, the shell's
+streams handed to it, and inherited append-only handles reopened for it. AppendAtEnd and the reopen gain
+FILE_READ_ATTRIBUTES (FileId reads it).
+**Verified:** case `msys_append_shared` (authored: both lines whole, in the order ls writes them; needs MSYS2 at
+F:/Tools/msys64, not Git): direct, in a group, a nested shell; red on deployed 324 in all three. Suite 159 passed, 6
+failed (the Git-dependent six), 1 skipped, of 166, console and -Detached. Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team, older HIGH): a builtin's fallback never runs Windows' own program of that name
+**Status:** Active. Refines DECISIONS 2026-09-04 #2 (an unsupported option defers to a PATH external of the same name).
+
+**Cause:** the fallback (and BASH_COREUTILS=external) ran the FIRST `name` on PATH, and System32 is ahead of the
+tools: `find ff -okdir echo {} \;` ran System32's find.exe ("FIND: Parameter format not correct", 2). Windows' sort,
+timeout, expand share names with the tools the same way.
+**Fix (Builtins.FallbackProgram):** the first match from `AllOnPath` (`type -a`'s list) outside the Windows folder;
+with only Windows' own, the loud refusal says so ("the only 'find' on PATH is Windows' own, another program"), 2.
+**Verified:** case `fallback_not_windows` (authored: a stand-in find.cmd behind System32 runs; System32 alone gives the
+refusal; deployed 324 ran find.exe both times). `coreutils_external` (BASH_COREUTILS=external) is one of the six
+Git-gated cases: its body, run with F:/Tools/msys64/usr/bin on PATH in place of Git's, matches its expected output on
+324 and on this build. Suite 160 passed, 6 failed (the Git-dependent six), 1 skipped, of 167, console and -Detached.
+Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team F6): realpath and readlink -f/-e/-m check components as GNU does
+**Status:** Active.
+
+**Cause:** both took `Path.GetFullPath` (which collapses `..` before anything is looked at) and checked only the
+whole result, and only for -e: `readlink -f nodir/x`, `file/x`, `nodir/../file`, `file/..` printed paths with rc 0
+(GNU: rc 1), `realpath file/` printed `B/file/` (GNU: "Not a directory"), and trailing slashes stayed.
+**Fix (Builtins.Files.Canonicalize):** walked component by component: 'e' every component must exist, 'f' (realpath's
+default, readlink -f) every one but the last, 'm' nothing; a component that exists and is followed by another or by
+a trailing slash must be a directory; `.` dropped; `..` LEXICAL (the shell's own resolution, DECISIONS 2026-10-18 on
+junctions, so the tools report the file the shell would open; GNU walks links physically); the trailing slash
+dropped; the last link followed unless `realpath -s`, as before. realpath prints GNU's reason; readlink is silent
+(with -v, the reason).
+**Verified:** case `readlink_canon` (expected = GNU coreutils 8.32 via WSL, byte-identical: 16 paths x 6 forms, the
+status of each; deployed 324 differs in 47 lines). Suite 161 passed, 6 failed (the Git-dependent six), 1 skipped, of
+168, console and -Detached. Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team F7): find -execdir takes a starting point as written, and refuses an unsafe PATH as GNU
+**Status:** Active. Refines rev 308's -execdir (2026-10-17).
+
+**Cause:** -execdir took every entry's directory from its FULL path, so a starting point ran one level up: `find .
+-maxdepth 0 -execdir touch M \;` made M in the parent, `find proj/ ... -execdir ls -d {}` ran inside proj with
+`./proj`. And it ran with `.`, an empty entry or a relative entry on PATH, so a program planted beside a found file
+ran (GNU refuses: the command is looked up from each file's directory).
+**Fix (Builtins.Find):** a starting point's directory and `{}` come from it as written (`.` runs in `.` as `./.`,
+`proj/` in `.` as `./proj/`, `./a/b` in `./a` as `./b`, an absolute one in its parent); entries below are as before.
+With -execdir in the expression, the first PATH entry that is empty, `.` or relative (absolute: a `/` or `\` start, or
+a drive with its slash) is refused before anything runs, rc 1, in GNU's words ("semicolons" for this PATH's
+separator where GNU says colons). Checked: neither this session's PATH nor the user or system Path has such an entry
+(the user Path's trailing `;`, removed today, would have made every -execdir refuse).
+**Verified:** case `find_execdir` (expected = GNU findutils 4.8 via WSL with LC_ALL=C, byte-identical; refusals on
+their first 90 characters; the case cleans its own PATH first): starting points `.`, `proj/`, `proj`, `./proj/sub`,
+an absolute one, a file, `+` batches; `.`, `rel`, a leading, a trailing empty entry and `./x` refused. Deployed 324
+differs in 8 lines. Suite 162 passed, 6 failed (the Git-dependent six), 1 skipped, of 169, console and -Detached.
+Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team F8): which reports only what can run
+**Status:** Active. Completes rev 316 ("only what Windows' launcher starts is a program") for `which`.
+**Cause:** `which` took a bare-name match on existence alone: `which zz.js` (no `#!`) and `which d.txt` printed paths,
+rc 0, while `[ -x ]` said no, running it gave 126 and `type` did not list it. **Fix:** the bare match must pass
+`FileTests.IsExecutable`, as the lookup and `AllOnPath` require; PATHEXT matches were already filtered.
+**Verified:** case `which_program` (expected = GNU which via WSL, byte-identical; the program files also chmod +x,
+which GNU needs and C#Bash accepts; 324 differs in three lines). Suite 163 passed, 6 failed (the Git-dependent six),
+1 skipped, of 170, console and -Detached. Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team F9, and a defect beside it): `#!` options and env -S for a script run as a command
+**Status:** Active.
+
+**Causes:** (1) `ResolveInterpreter` took the word after `/usr/bin/env` as the interpreter, so `#!/usr/bin/env -S bash
+-e` was "/usr/bin/env: '-S': No such file or directory", 127. (2) Found beside it, not in the red team's report: a
+bash or sh script runs in-process, and its `#!` options were dropped: `#!/bin/bash -e` went on past a failure (rc 0;
+GNU 1), `#!/bin/sh -x` traced nothing. (Claude first compared `Bash.exe ./e.sh`, which is `bash e.sh` and ignores the
+`#!` line in GNU too, against GNU's `./e.sh`: re-run as commands on both sides before concluding.)
+**Fix:** env's `-S`, `-Sword` and `--split-string[=]` are skipped to the command (the line is already split into
+words); `RunScriptInProcess` applies the `#!` options through `set` (single letters of bash's set, `-o name`) and
+`shopt` (`-O name`); invocation-only options (--norc, -l, -i) are ignored.
+**Verified:** case `shebang_options` (expected = GNU bash 5.1 via WSL, byte-identical; scripts run as commands: -e,
+env -S -eu, sh -x, env -S -e, env -S -o pipefail, -Sbash, none); deployed 324 differs in 8 lines. Suite 164 passed, 6
+failed (the Git-dependent six), 1 skipped, of 171, console and -Detached; in the first console run
+`traps_debug_return` also failed once (it has no `#!`, no timing; passed on the rerun and 8 of 8 direct runs on this
+build and on 324: unexplained, noted). Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team F10): a program started from a directory of 259 characters says the Windows limit, 126
+**Status:** Active. Refines rev 313 (paths over 260 characters).
+**Cause:** the limit message needed `Cwd.Length >= 260`, but Windows refuses a current directory over 258 characters
+(it, its trailing `\` and the NUL in MAX_PATH): at exactly 259 its own "The directory name is invalid" came out
+with 127, "command not found" to a script. **Fix:** error 267 while the shell's directory exists can only be the
+length: "cannot start a program in a directory over 258 characters (a Windows limit)", 126. The number in the message,
+`long_paths`' expected line and README's limits line say 258 (they said 260).
+**Verified:** case `cwd_limit` (authored: directories of exactly 258, 259, 260 characters; 258 runs; deployed 324
+gave 127 at 259); `long_paths` with the new number. Suite 165 passed, 6 failed (the Git-dependent six), 1 skipped,
+of 172, console and -Detached. Battery 216/237 (the six Git probes).
+
+## 2026-10-19 -- FIXED (red team, older MED): `source` reads /dev/null, /dev/stdin and /dev/fd/N as bash does
+**Status:** Active.
+**Cause:** the `source` builtin and `SourceFile` required a file on disk: `source /dev/null`, `source /dev/stdin <<<
+'x=1'`, `... | source /dev/stdin`, `source /dev/fd/3` were "No such file or directory", 1 (GNU: they run, 0).
+**Fix:** a device passes the builtin's check; `SourceFile` reads /dev/null as empty, /dev/stdin through the shell's
+stdin reader (a here-string or a pipe), /dev/fd/N through the descriptor, left open. /dev/zero, /dev/random and
+/dev/tty stay refused ("No such file or directory", 1): bash would read forever.
+**Verified:** case `source_devices` (expected = GNU bash 5.1 via WSL, byte-identical: null, `.`, a here-string with
+and without arguments, a pipe, a process substitution's fd, a file fd with `return 5`; deployed 324 failed all).
+Suite 166 passed, 6 failed (the Git-dependent six), 1 skipped, of 173, console and -Detached. Battery 216/237.
+
+## 2026-10-19 -- FIXED (red team, older MED): `export -f` reaches a child shell (BASH_FUNC_name%%), as bash
+**Status:** Active.
+**Cause:** `export -f` was "accepted, no effect": a child C#Bash (or a script run in-process) said "command not found".
+**Fix:** `Evaluator._exportedFunctions`, set by `export -f` / `declare -fx`, cleared by `export -fn` / `declare -f +x` /
+`unset -f` (`export -f nosuch`: "not a function", 1); kept per `( )` level like the other tables (`( export -f f )`
+does not export f outside; found while testing). An external child gets `BASH_FUNC_name%%=() { body }` (the printer's
+text, the form GNU bash reads), `env` lists them, a script run in-process gets the functions. At startup C#Bash
+imports such variables, marked exported, BASH_SOURCE "environment"; the variable goes either way; a value must parse
+to exactly that one function definition and nothing after it (bash's rule since Shellshock, CVE-2014-6271), else it
+is dropped unrun. `declare -F` shows `-fx`; the full `declare -f` listing adds `declare -fx name` after it (bash).
+**Verified:** case `export_function` (expected = GNU bash 5.1 via WSL, byte-identical: export, unexport, declare -fx,
+not a function, an in-process script, stdin, env, unset -f, a forged `...; echo INJECTED` not run, an imported
+function, declare -f/-F, subshell isolation; deployed 324 differs in 8 of the first 13 lines); the full `declare -f`
+listing identical to GNU's. Suite 167 passed, 6 failed (the Git-dependent six), 1 skipped, of 174, console and
+-Detached. Battery 216/237. Not measured: the start-up cost of the import scan (one pass over the environment).
+
+## 2026-10-19 -- FIXED (red team, older MED): an arithmetic variable whose value is no valid expression is an error
+**Status:** Active.
+**Cause:** `ArithVars.Get` evaluates a non-numeric value as an expression (as bash), but caught its error and returned
+0: `x='1+'; $((x))` was 0, `(( x ))` and `let` went on; and a value naming itself (`s=s`) was cut off as 0 at depth 8.
+**Fix:** the value's error is the expression's (reported as any arithmetic syntax error here); a chain deeper than 64
+is "NAME: expression recursion level exceeded (error token is "NAME")". Bash allows 1024 levels; here each level is
+a dozen parser frames and 1024 overflowed the stack at ~630 (measured, Release build): 64 is the cap (a 60-deep chain
+evaluates; checked on the main thread, a pipeline stage, a job, `$( )`).
+**Verified:** case `arith_bad_value` (expected = GNU bash 5.1 via WSL, byte-identical; each probe in a child shell
+with stderr redirected; 324 differs in 6 lines). Suite 168 passed, 6 failed (the Git-dependent six), 1 skipped, of
+175, console and -Detached. Battery 216/237.
+
+**FOUND, OPEN (the architect's; not in the red team's list): arithmetic error parity.** Measured against GNU 5.1 for a
+direct `$((1+))` too, on deployed 324: (1) the message is C#Bash's "Expected number in arithmetic expression", GNU's
+"1+: syntax error: operand expected (error token is "+")"; (2) GNU abandons the rest of the command line after an
+arithmetic expansion error (a non-interactive shell), C#Bash runs it; (3) `(( 1+ ))` is 2 here, 1 in GNU, which also
+prefixes "((: "; (4) the error escapes a redirected subshell or group: `( echo $((1+)) ) 2>/dev/null` prints it
+(the outer handler reports after the subshell's redirects are gone; `${u?}` errors are contained). Claude's position:
+fix as one item (the arithmetic parser's messages to bash's, the abandon rule, the status, reporting inside the scope).
+
+## 2026-10-19 -- FIXED (red team F13): a path through a file is "Not a directory" for commands, opens and redirects
+**Status:** Active. Completes rev 308's "Not a directory" for commands.
+**Cause:** Windows drops a trailing `/.` (and `/..` goes up) before looking: `C:/.../hostname.exe/.` ran (rc 0),
+`./s.sh/.` read s.sh; the ENOTDIR check ran only after a failed start. And .NET says "directory not found" for
+`file/x`, reported "No such file or directory" by cat, ls, du, chmod and redirects (GNU: "Not a directory").
+**Fix:** a command named by a path is checked first (`ShellFile.ThroughAFile` on the path joined to the shell's
+directory, not normalized), 126; `ShellFile.OpenRead/Create/Append` turn a not-found that runs through a file, and a
+`file/.` or `file/..`, into "Not a directory"; redirects for a child map the same; ls, du, chmod name it too.
+**Verified:** case `path_through_file` (expected = GNU bash 5.1 via WSL, byte-identical: `./s.sh/.`, `/..`, `/x`, cat
+`file/x` and `file/.`, ls `file/x` and `file/.`, `>`, `>>`, `<`; deployed 324 differs in 20 lines); by hand,
+`C:/Windows/System32/hostname.exe/.`: "Not a directory", 126 (324 ran it). Suite 169 passed, 6 failed (the
+Git-dependent six), 1 skipped, of 176, console and -Detached. Battery 216/237.
+
+## 2026-10-19 -- FIXED (red team F16): mktemp's implied suffix (a template not ending in X), as GNU
+**Status:** Active.
+**Cause:** only a trailing X run was replaced, so `mktemp aXXXXb` created `aXXXXb` itself (and failed "too many
+attempts" once it existed); `--suffix` on such a template was accepted. **Fix:** as GNU: a template not ending in X has
+an implied suffix, everything after its last X; fewer than 3 X's in the run is "too few X's in template 'T'"; with
+--suffix the template must end in X ("with --suffix, template 'T' must end in X", 1).
+**Verified:** case `mktemp_suffix` (expected = GNU coreutils 8.32 via WSL with LC_ALL=C, byte-identical; each name
+matched against its pattern AND different from its template, since the pattern admits X itself: a first version
+could not fail on 324 and was strengthened); 324 fails it on the literal names, --suffix, the created file. Suite 170
+passed, 6 failed (the Git-dependent six), 1 skipped, of 177, console; -Detached the same plus `traps_debug_return`,
+whose `time true` prints CPU times that are sometimes one 15.6 ms tick (2 of 30 direct runs; a flaky expectation,
+fixed next).
+
+## 2026-10-19 -- TEST FIXED: `traps_debug_return` no longer prints CPU times
+**Status:** Active. The case's `time true` printed real/user/sys, expected all 0.000; Windows counts CPU in 15.6 ms
+ticks, and a run sometimes has one (`user 0m0.015s`): 2 of 30 direct runs, and twice in today's suite runs (once per
+mode). The case is about the DEBUG trap around `time`, not the figures: `TIMEFORMAT=timed` before it; the expectation
+re-taken from GNU bash 5.1 via WSL (it gains `D<TIMEFORMAT=timed>` and `timed`, nothing else). 0 of 30 runs differ on
+this build, 0 of 10 on deployed 324.
+
+## 2026-10-19 -- FIXED (red team F11): set -x details as bash 5.1
+**Status:** Active. Completes rev 311.
+**Fixed:** control characters in $'…' as octal (`$'a\001b'`, `$'\177'`; bash's ansic_quote), which also corrects
+`printf %q` (it printed `\x01`); `export` and `readonly` trace each assignment they make on a line of its own after
+the command (`+ e1='x	y'`), `declare -x` and `local` do not (as bash); an array element's subscript as written
+(`a[$i]=zero`: the parser keeps it, `ArrayElementAssign.IndexText`); eval's commands one trace level deeper (`++`,
+nested `+++`); BASH_XTRACEFD (a set, open descriptor takes the trace; it was ignored).
+**Not reproduced:** "an EXIT trap traced at `++`": GNU 5.1 traces it at `+` in a script, as C#Bash does.
+**Found on the way, NOT a defect:** `A | diff - <(wsl.exe …)` gave diff nothing: wsl.exe inside the process
+substitution inherits the pipe and relays stdin (the shell's behaviour matches bash; the comparison was mine).
+**Verified:** case `xtrace_details` (expected = GNU bash 5.1 via WSL, byte-identical; 324 differs in 28 lines); the
+subscripts `${#x}`, `k*2`, `"$k"`, an associative `$k`, `$((k+1))` with += identical to GNU. Suite 171 passed, 6 failed
+(the Git-dependent six), 1 skipped, of 178, console and -Detached. Battery 216/237.
+
+## 2026-10-19 -- FIXED (found beside red team F11): sed reads a `[` in a replacement or in y as a character
+**Status:** Active. Found writing F11's BASH_XTRACEFD probe (`sed 's/^/[/;s/$/]/'` printed `[/;s/$/]abc`).
+**Cause:** `SedReadDelim` skipped over a bracket expression in every delimited part, so a `[` in the replacement (or
+y's text) swallowed the delimiter up to the next `]`; two `-e` scripts (`-e 's/a/[/' -e 's/c/]/'`) ran together.
+**Fix:** bracket expressions only in a regex (an address, the s pattern); the replacement and y's parts are text.
+**Verified:** case `sed_brackets_text` (expected = GNU sed 4.8 via WSL, byte-identical, including brackets that ARE
+regex: `[/]`, `[]]`, an address `/[b]/`, escaped `\[`; 324 differs in two lines). Suite 172 passed, 6 failed (the
+Git-dependent six), 1 skipped, of 179, console and -Detached. Battery 216/237.
+
+## 2026-10-19 -- FIXED (red team F12): set -x shows compound commands as bash 5.1
+**Status:** Active. Completes rev 312.
+**Fixed:** `(( ))` and the arithmetic `for` parts are traced after their expansions (`((  x = 5 + 1  ))`, `(( i=5 ))`;
+a `$( )` in them traces first) and evaluated from that same text, so a `$( )` runs once (WordExpander.ExpandArithText
+/ EvalExpandedArithmetic; without -x the path is unchanged); an empty arithmetic-for part is `(( 1 ))`; `for i` (no
+list) is `for i in "$@"` (trace and DEBUG's $BASH_COMMAND); an empty [[ ]] operand is ''; a tilde in a [[ ]] pattern
+is a quoted part: traced backslashed (`\/\h\/\x`) and matched literally (a HOME with `[` matched as a pattern).
+**Process note:** the new case was first written over the existing `xtrace_compound.sh` (rev 312) by name; restored
+with `hg revert --no-backup` before any commit, the new one is `xtrace_expanded.sh`; check a case name is free first.
+**Verified:** case `xtrace_expanded` (expected = GNU bash 5.1 via WSL, byte-identical; 324 differs in 19 lines; its
+count of `$( )` runs under -x would be 4 if expanded twice); `xtrace_compound` unchanged and passing. Suite on this
+build: 173 passed, 6 failed (the Git-dependent six), 1 skipped, of 180, console and -Detached (before the case's
+counting line was made able to fail; the build did not change after). Battery 216/237.
+**HANG, OPEN:** the console-mode suite run after that edit hung on the `awk` case for ~2.5 h (the console mode has no
+per-case timeout; -Detached has 120 s): `Bash.exe cases\awk.sh` running, no child process, so inside the shell. Not
+reproduced: 40 direct runs on this build and 40 on deployed 324, none hung or wrong; `awk` passed in ~30 suite runs
+today, one on this binary minutes before. Cause unknown (a deadlock or race; today's descriptor, reader and append
+changes are suspects, not shown). Put to the architect (2026-10-19): a console-mode timeout in run-tests.ps1 (a
+contract tool), and a reproduction loop under the runner's conditions with a stack dump (dotnet-dump not installed).

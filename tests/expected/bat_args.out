@@ -1,0 +1,12 @@
+["""&echo INJECTED"] [plain]
+["%OS%"] ["!PATH!"]
+["a&b|c<d>e^f"] ["x y"]
+[""] ["tail\\"]
+[C:/x/y.txt] ["-o=1,2"]
+[one "two words" "3""q"]
+["""&echo PWNED>pwned.txt&"""] []
+no file written
+line break: rc=126
+line break to a batch file
+zzrc.bat ["a b"]
+found on PATH: rc=3

@@ -147,6 +147,7 @@ else
 
 // ── the shell ────────────────────────────────────────────────────────────────────
 var evaluator = new Evaluator();
+evaluator.ImportFunctions();   // `export -f` in a parent shell (BASH_FUNC_name%%)
 Timing.Mark("evaluator");
 bool interactive = forceInteractive || (cFlagCmd is null && scriptPath is null && !Console.IsInputRedirected);
 evaluator.Options.Interactive   = interactive;
@@ -339,9 +340,10 @@ static void SourceLogin(Evaluator eval, bool noprofile)
 	{
 	if (noprofile) return;
 	eval.SourceFile("/etc/profile", silentIfMissing: true);
-	foreach (var f in new[] { "~/.bash_profile", "~/.bash_login", "~/.profile" })
+	foreach (var f in new[] { ".bash_profile", ".bash_login", ".profile" })
 		{
-		if (File.Exists(ShellEnvironment.TranslatePath(f))) { eval.SourceFile(f, silentIfMissing: true); break; }
+		var path = HomeFile(eval, f);
+		if (File.Exists(ShellEnvironment.TranslatePath(path))) { eval.SourceFile(path, silentIfMissing: true); break; }
 		}
 	}
 
@@ -349,8 +351,11 @@ static void SourceLogin(Evaluator eval, bool noprofile)
 static void SourceInteractiveRc(Evaluator eval, string? rcFile)
 	{
 	eval.SourceFile("/etc/bash.bashrc", silentIfMissing: true);
-	eval.SourceFile(rcFile ?? "~/.bashrc", silentIfMissing: true);
+	eval.SourceFile(rcFile ?? HomeFile(eval, ".bashrc"), silentIfMissing: true);
 	}
+
+// ~/name as bash finds a startup file: in $HOME (the profile when HOME is unset); a literal `~` in a path is a name
+static string HomeFile(Evaluator eval, string name) => ShellEnvironment.TildeHome(eval.Env.Get("HOME")) + "/" + name;
 
 // Non-interactive shells source $BASH_ENV if set.
 static void SourceBashEnv(Evaluator eval)

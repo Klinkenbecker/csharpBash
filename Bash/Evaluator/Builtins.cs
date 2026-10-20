@@ -64,6 +64,20 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 	private static List<string> ExternalArgs(string name, List<string> args) =>
 		name == "awk" ? ["-v", "BINMODE=3", .. args] : args;
 
+	/// <summary>The PATH program a builtin hands over to: the first <paramref name="name"/> on PATH that is not Windows'
+	/// own, or null. System32's find.exe, sort.exe, timeout.exe, expand.exe share a name with the tools and are other
+	/// programs: `find -okdir` ran find.exe ("FIND: Parameter format not correct"), System32 being ahead of the tools
+	/// on PATH (red team, 2026-10-19).</summary>
+	private string? FallbackProgram(string name)
+		{
+		var windows = Path.TrimEndingDirectorySeparator(Environment.GetFolderPath(Environment.SpecialFolder.Windows)) + "\\";
+		return _eval.AllOnPath(name).FirstOrDefault(p =>
+			{
+			try { return !Path.GetFullPath(p).StartsWith(windows, StringComparison.OrdinalIgnoreCase); }
+			catch (Exception) { return false; }
+			});
+		}
+
 	public bool TryExecute(string name, List<string> args, out int exitCode)
 		{
 		// Unsupported-option policy for coreutils (DECISIONS 2026-09-04 #2):
@@ -72,12 +86,12 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		//   BASH_COREUTILS=builtin  builtin only; unsupported → loud error (exit 2).
 		//   BASH_COREUTILS=external always prefer a PATH external for coreutil names.
 		var policy = _env.Get("BASH_COREUTILS");
-		if (policy == "external" && CoreutilNames.Contains(name) && _eval.ResolveOnPath(name) is not null)
+		if (policy == "external" && CoreutilNames.Contains(name) && FallbackProgram(name) is { } program)
 			{
 			// the PATH program only: RunCommand dispatched the builtin of the same name, which came
 			// straight back here, until the stack overflowed and the shell died (every build to rev
 			// 209; DECISIONS 2026-10-11)
-			exitCode = _eval.RunExternal(name, ExternalArgs(name, args));
+			exitCode = _eval.RunExternal(program, ExternalArgs(name, args));
 			return true;
 			}
 		try
@@ -86,14 +100,16 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			}
 		catch (UnsupportedOptionException ex)
 			{
-			if (policy != "builtin" && _eval.ResolveOnPath(name) is not null)
+			if (policy != "builtin" && FallbackProgram(name) is { } fallback)
 				{
-				exitCode = _eval.RunExternal(name, ExternalArgs(name, args));
+				exitCode = _eval.RunExternal(fallback, ExternalArgs(name, args));
 				return true;
 				}
 			Console.Error.WriteLine(ex.Message);
 			Console.Error.WriteLine(policy == "builtin"
 				? $"{ex.Tool}: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)"
+				: _eval.AllOnPath(name).Count > 0
+				? $"{ex.Tool}: (C#Bash: not implemented in-process, and the only '{ex.Tool}' on PATH is Windows' own, another program)"
 				: $"{ex.Tool}: (C#Bash: not implemented in-process and no external '{ex.Tool}' on PATH)");
 			exitCode = 2;
 			return true;
@@ -390,7 +406,9 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 				var (at, rel) = Evaluator.PathEntry(d);
 				var shownDir = rel ? d : at;
 				var bare = Path.Combine(shownDir, name);
-				if (File.Exists(Path.Combine(at, name))) { Console.WriteLine(Shown(bare)); found = true; if (!all) break; }
+				// a program, as `[ -x ]` and the shell's lookup judge it: a `.js` with no `#!` was reported though it cannot run
+				// (126) and `type` does not list it (red team F8, 2026-10-19)
+				if (File.Exists(Path.Combine(at, name)) && FileTests.IsExecutable(Path.Combine(at, name))) { Console.WriteLine(Shown(bare)); found = true; if (!all) break; }
 				if (!hasExt)
 					foreach (var ext in pathExt)
 						{

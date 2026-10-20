@@ -444,14 +444,44 @@ public sealed class LfReader : TextReader
 		return sb.ToString();
 		}
 
+	/// <summary>The reader `read -u N` reads a descriptor's stream through, kept between reads (a loop stays buffered).
+	/// For a pipe it is the stream's one reader: `&lt;&amp;N` reads through it too, so nothing it read ahead is lost.</summary>
+	public static LfReader ForDescriptor(Stream s) => s_forDescriptor.GetValue(s, st => new LfReader(st, leaveOpen: true));
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Stream, LfReader> s_forDescriptor = new();
+
+	/// <summary>Before any other use of a descriptor's stream (`&lt;&amp;N`, `&gt;&amp;N`, a child, /dev/fd/N): a file gets back
+	/// what `read -u` read ahead, so its offset is just after what was used, as bash leaves it, and the reader goes (red
+	/// team F2, 2026-10-19: `read -u 8 a; cat &lt;&amp;8` printed nothing, `echo X &gt;&amp;8` wrote at the end). A pipe cannot
+	/// be put back: its reader is returned (null when there is none) to read on through.</summary>
+	public static LfReader? Release(Stream s)
+		{
+		if (!s_forDescriptor.TryGetValue(s, out var r)) return null;
+		if (!s.CanSeek) return r;
+		r.GiveBack();
+		s_forDescriptor.Remove(s);
+		return null;
+		}
+
 	protected override void Dispose(bool disposing)
 		{
 		if (disposing)
 			{
 			_text?.Dispose();
 			if (!_leaveOpen) _stream?.Dispose();
+			else GiveBack();
 			}
 		base.Dispose(disposing);
+		}
+
+	/// <summary>Put what was read ahead and not used back into a seekable stream this reader does not own, so the next
+	/// reader of that descriptor starts just after the last character used, as bash leaves a file's offset after a
+	/// `read`: `exec 8&lt; f; read -u 8 a; cat &lt;&amp;8` printed nothing, `head -n1 &lt;&amp;8` took the rest (red team F2).</summary>
+	private void GiveBack()
+		{
+		if (_stream is not { CanSeek: true }) return;
+		var pending = TakeBuffered();
+		int n = pending.Length > 0 ? ShellEncoding.Utf8.GetByteCount(pending) : 0;
+		if (n > 0) try { _stream.Seek(-n, SeekOrigin.Current); } catch (IOException) { } catch (NotSupportedException) { }
 		}
 	}
 

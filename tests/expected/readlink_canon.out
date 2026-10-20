@@ -1,0 +1,90 @@
+readlink -f nodir/x        -> [] 1
+readlink -e nodir/x        -> [] 1
+readlink -m nodir/x        -> [B/nodir/x] 0
+realpath    nodir/x        -> [realpath: nodir/x: No such file or directory] 1
+realpath -e nodir/x        -> [realpath: nodir/x: No such file or directory] 1
+realpath -m nodir/x        -> [B/nodir/x] 0
+readlink -f file/          -> [] 1
+readlink -e file/          -> [] 1
+readlink -m file/          -> [B/file] 0
+realpath    file/          -> [realpath: file/: Not a directory] 1
+realpath -e file/          -> [realpath: file/: Not a directory] 1
+realpath -m file/          -> [B/file] 0
+readlink -f file/x         -> [] 1
+readlink -e file/x         -> [] 1
+readlink -m file/x         -> [B/file/x] 0
+realpath    file/x         -> [realpath: file/x: Not a directory] 1
+realpath -e file/x         -> [realpath: file/x: Not a directory] 1
+realpath -m file/x         -> [B/file/x] 0
+readlink -f nodir/../file  -> [] 1
+readlink -e nodir/../file  -> [] 1
+readlink -m nodir/../file  -> [B/file] 0
+realpath    nodir/../file  -> [realpath: nodir/../file: No such file or directory] 1
+realpath -e nodir/../file  -> [realpath: nodir/../file: No such file or directory] 1
+realpath -m nodir/../file  -> [B/file] 0
+readlink -f file/..        -> [] 1
+readlink -e file/..        -> [] 1
+readlink -m file/..        -> [B] 0
+realpath    file/..        -> [realpath: file/..: Not a directory] 1
+realpath -e file/..        -> [realpath: file/..: Not a directory] 1
+realpath -m file/..        -> [B] 0
+readlink -f file/.         -> [] 1
+readlink -e file/.         -> [] 1
+readlink -m file/.         -> [B/file] 0
+realpath    file/.         -> [realpath: file/.: Not a directory] 1
+realpath -e file/.         -> [realpath: file/.: Not a directory] 1
+realpath -m file/.         -> [B/file] 0
+readlink -f a/b/           -> [B/a/b] 0
+readlink -e a/b/           -> [B/a/b] 0
+readlink -m a/b/           -> [B/a/b] 0
+realpath    a/b/           -> [B/a/b] 0
+realpath -e a/b/           -> [B/a/b] 0
+realpath -m a/b/           -> [B/a/b] 0
+readlink -f a//b/          -> [B/a/b] 0
+readlink -e a//b/          -> [B/a/b] 0
+readlink -m a//b/          -> [B/a/b] 0
+realpath    a//b/          -> [B/a/b] 0
+realpath -e a//b/          -> [B/a/b] 0
+realpath -m a//b/          -> [B/a/b] 0
+readlink -f missing        -> [B/missing] 0
+readlink -e missing        -> [] 1
+readlink -m missing        -> [B/missing] 0
+realpath    missing        -> [B/missing] 0
+realpath -e missing        -> [realpath: missing: No such file or directory] 1
+realpath -m missing        -> [B/missing] 0
+readlink -f missing/       -> [B/missing] 0
+readlink -e missing/       -> [] 1
+readlink -m missing/       -> [B/missing] 0
+realpath    missing/       -> [B/missing] 0
+realpath -e missing/       -> [realpath: missing/: No such file or directory] 1
+realpath -m missing/       -> [B/missing] 0
+readlink -f a/missing/     -> [B/a/missing] 0
+readlink -e a/missing/     -> [] 1
+readlink -m a/missing/     -> [B/a/missing] 0
+realpath    a/missing/     -> [B/a/missing] 0
+realpath -e a/missing/     -> [realpath: a/missing/: No such file or directory] 1
+realpath -m a/missing/     -> [B/a/missing] 0
+readlink -f a/b/f/         -> [] 1
+readlink -e a/b/f/         -> [] 1
+readlink -m a/b/f/         -> [B/a/b/f] 0
+realpath    a/b/f/         -> [realpath: a/b/f/: Not a directory] 1
+realpath -e a/b/f/         -> [realpath: a/b/f/: Not a directory] 1
+realpath -m a/b/f/         -> [B/a/b/f] 0
+readlink -f .              -> [B] 0
+readlink -e .              -> [B] 0
+readlink -m .              -> [B] 0
+realpath    .              -> [B] 0
+realpath -e .              -> [B] 0
+realpath -m .              -> [B] 0
+readlink -f a/./b          -> [B/a/b] 0
+readlink -e a/./b          -> [B/a/b] 0
+readlink -m a/./b          -> [B/a/b] 0
+realpath    a/./b          -> [B/a/b] 0
+realpath -e a/./b          -> [B/a/b] 0
+realpath -m a/./b          -> [B/a/b] 0
+readlink -f ./a/../a/b     -> [B/a/b] 0
+readlink -e ./a/../a/b     -> [B/a/b] 0
+readlink -m ./a/../a/b     -> [B/a/b] 0
+realpath    ./a/../a/b     -> [B/a/b] 0
+realpath -e ./a/../a/b     -> [B/a/b] 0
+realpath -m ./a/../a/b     -> [B/a/b] 0

@@ -1,0 +1,10 @@
+direct: rc=2
+o:
+/usr/bin/ls: cannot access 'nofile': No such file or directory
+present
+p:
+/usr/bin/ls: cannot access 'nofile': No such file or directory
+present
+q:
+/usr/bin/ls: cannot access 'nofile': No such file or directory
+present

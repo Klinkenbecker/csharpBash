@@ -1,0 +1,17 @@
+./s.sh/.: Not a directory
+./s.sh/.: rc=126
+./s.sh/..: Not a directory
+./s.sh/..: rc=126
+./s.sh/x: Not a directory
+./s.sh/x: rc=126
+cat: file/x: Not a directory
+cat file/x: rc=1
+cat: file/.: Not a directory
+cat file/.: rc=1
+ls: cannot access 'file/x': Not a directory
+ls: rc=2
+ls: cannot access 'file/.': Not a directory
+ls file/.: rc=2
+file/y: Not a directory
+file/y: Not a directory
+file/z: Not a directory

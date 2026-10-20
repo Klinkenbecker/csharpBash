@@ -1,0 +1,30 @@
++ v=$'a\001b'
++ w=$'\177'
++ t='x	y'
++ export 'e1=x	y'
++ e1='x	y'
++ readonly r1=ro
++ r1=ro
++ declare -x d1=dx
++ local_test
++ local l1=lv
++ i=0
++ a[$i]=zero
++ a[i+1]=one
++ a["$i"]+=more
++ eval 'echo ev; eval "echo nested"'
+++ echo ev
+ev
+++ eval 'echo nested'
++++ echo nested
+nested
++ eval f
+++ f
+++ echo inf
+inf
++ set +x
+$'a\001b'
+$'\177'
+one
+trace file: [+ echo one]
+trace file: [+ set +x]

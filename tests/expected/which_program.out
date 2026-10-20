@@ -1,0 +1,7 @@
+which a.js: rc=1 []
+which b.sh: rc=0 [D/p/b.sh]
+which c: rc=0 [D/p/c]
+which d.txt: rc=1 []
+which e.js: rc=0 [D/p/e.js]
+which -a c: [D/p/c D/q/c ]
+which a.js c: rc=1 [D/p/c]

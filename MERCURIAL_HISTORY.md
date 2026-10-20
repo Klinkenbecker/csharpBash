@@ -12,11 +12,44 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 334 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 367 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 366 | 2026-10-19 | Doc review for the push: README's table from compare3 on deployed rev 324 (2026-10-19 18:45; every row within a few percent of the 04:15 run, Git Bash and WSL slower too, so the machine), its prose figures, 180 cases; results.md |
+| 365 | 2026-10-19 | Anchor: tip 365; the global CLAUDE.md committed in its git repository (65ecb3b) |
+| 364 | 2026-10-19 | run-tests.ps1 ASCII-only again (a .ps1 without a BOM is read as ANSI): 7 typographic characters in comments, from revs 3, 6, 25, 39, 111, 188, made ASCII; suite 173 passed + the 6 Git-dependent failures, both modes |
+| 363 | 2026-10-19 | Anchor: tip 363; the global CLAUDE.md edit left uncommitted for the architect (a git repository) |
+| 362 | 2026-10-19 | Docs for today's fixes: ARCHITECTURE (a ~ in a path is a name), IMPLEMENTATION's file map (batch arguments, ShellToken, exported functions, append-only >>, Not a directory, read -u's reader), README (a builtin's fallback never uses Windows' own program) |
+| 361 | 2026-10-19 | Anchor for the restart: tip 360, not deployed (324) or published (333); the red team's fixes by revision; what remains (F14, F15, older LOWs: paused for the architect's steer); awaiting: the awk hang, arithmetic error parity, Git-dependent tests (deploy would refuse); how each fix was verified |
+| 360 | 2026-10-19 | Red team F12: set -x shows (( )) and arithmetic for expanded (evaluated once), an empty for-part as (( 1 )), for i as for i in "$@", '' for an empty [[ ]] operand, a tilde pattern quoted (and matched literally); case xtrace_expanded; a suite hang on awk recorded (open) |
+| 359 | 2026-10-19 | Found beside red team F11: sed reads a [ in a replacement or y as a character (it swallowed the delimiter; two -e scripts ran together); case sed_brackets_text |
+| 358 | 2026-10-19 | Red team F11: set -x as bash 5.1: octal control characters (printf %q too), export/readonly assignment lines, subscripts as written, eval one level deeper, BASH_XTRACEFD; case xtrace_details |
+| 357 | 2026-10-19 | Test: traps_debug_return no longer prints CPU times (a 15.6 ms tick made it fail 2 runs in 30); expectation re-taken from GNU |
+| 356 | 2026-10-19 | Red team F16: mktemp's implied suffix for a template not ending in X (aXXXXb was the literal name); too few X's and --suffix as GNU; case mktemp_suffix |
+| 355 | 2026-10-19 | Red team F13: a path through a file is Not a directory for a command (hostname.exe/. ran), cat, ls, du, chmod and redirects; case path_through_file |
+| 354 | 2026-10-19 | Anchor: the red team's MEDs done (revs 346-353); the LOWs next; arithmetic error parity found, open |
+| 353 | 2026-10-19 | Red team (older MED): an arithmetic variable whose value is no valid expression is an error, not 0; self-reference is the recursion error (cap 64); found: arithmetic error parity (open); case arith_bad_value |
+| 352 | 2026-10-19 | Red team (older MED): export -f / declare -fx reach a child as BASH_FUNC_name%% and are imported at startup (one definition only, Shellshock rule); per-subshell; declare -F shows -fx; case export_function |
+| 351 | 2026-10-19 | Red team (older MED): source reads /dev/null, /dev/stdin and /dev/fd/N as bash does (they were No such file or directory); case source_devices |
+| 350 | 2026-10-19 | Red team F10: a program started from a directory of 259 characters says the Windows limit (over 258), 126, not Windows' own text with 127; case cwd_limit |
+| 349 | 2026-10-19 | Red team F9: a script run as a command takes env -S and its #! options (#!/bin/bash -e went on past a failure, #!/bin/sh -x traced nothing); case shebang_options |
+| 348 | 2026-10-19 | Red team F8: which reports only what can run (a .js with no #! was reported); case which_program |
+| 347 | 2026-10-19 | Red team F7: find -execdir takes a starting point as written (. ran in the parent) and refuses a PATH holding the current directory or a relative entry, as GNU; case find_execdir |
+| 346 | 2026-10-19 | Red team F6: realpath and readlink -f/-e/-m check each component as GNU does (all but the last must exist for -f) and drop a trailing slash; .. stays lexical; case readlink_canon |
+| 345 | 2026-10-19 | Anchor: the red team's HIGHs done (revs 337-344); the MEDs next |
+| 344 | 2026-10-19 | Red team (older HIGH): a builtin's unsupported-option fallback and BASH_COREUTILS=external never run Windows' own program of that name (System32's find.exe ran for find -okdir); case fallback_not_windows |
+| 343 | 2026-10-19 | Red team F3: an MSYS program's >> f 2>> f keeps both lines whole: one write handle per file (by file id) for its redirects, handed-off streams and reopened inherited handles; case msys_append_shared |
+| 342 | 2026-10-19 | Red team (older HIGH): two shells appending to one file keep every line: the shell's own >> is an append-only handle (and a child's >> handle is reopened by the real path, not .NET's [Unknown]); case append_concurrent |
+| 341 | 2026-10-19 | The case files revs 337-340 registered but did not add (hg add was missed): bat_args, tilde_literal, subshell_fd_close, read_fd_offset |
+| 340 | 2026-10-19 | Red team F2: after read -u N, the descriptor's next reader or writer starts just after the line (read-ahead given back to a file before any other use; a pipe's readers share one buffer); case read_fd_offset |
+| 339 | 2026-10-19 | Red team F1: a descriptor closed in a subshell, pipeline stage, job or $( ) stays open in the parent (its stream was disposed); case subshell_fd_close |
+| 338 | 2026-10-19 | Red team F5: a quoted or data ~ is a name, as in bash (it was the Windows profile whatever HOME said); startup files and ~ PATH entries from HOME; case tilde_literal |
+| 337 | 2026-10-19 | Red team F4 (security): an argument to a .bat or .cmd is data: cmd.exe started explicitly, each argument quoted as Rust's std does since CVE-2024-24576, a line break refused; case bat_args |
+| 336 | 2026-10-19 | Records: the no-windows hook's false positives fixed (its hg rev 4) and the user Path's trailing ';' removed; the red team on revs 307-316: 16 findings, five HIGH, awaiting the architect; a session started before Git left PATH runs Git Bash as bare bash |
+| 335 | 2026-10-19 | Git reached only by the benchmark and publish.sh: the battery against WSL's GNU bash (baseline 222), publish.sh's configured git.exe, the -n corpus and the df check run in WSL's bash; README: run hash -r after installing any tool (a remembered hit hides a program added later earlier on PATH); GREENLIT list |
+| 334 | 2026-10-19 | Published: GitHub main = git 0b5ece5 = hg rev 333 by tools/publish.sh (the force-push undone); resume note updated |
 | 333 | 2026-10-19 | Benchmark provenance: compare3 times Git Bash through <Git>/bin/bash.exe as Claude Code starts it (no LANG, rev 332); README "Benchmark provenance" (rev 139 carried two changes; the article's Git Bash was started by another Git Bash); table from the 2026-10-19 run; deploy.sh's battery takes that Git Bash as reference; stale _bash.exe launch lines fixed |
 | 332 | 2026-10-18 | compare3: no LANG/LC_* reaches any shell (the architect: time Git Bash as Claude Code runs it, a non-login bash -c without LANG); the result no longer depends on how the script is started |
 | 331 | 2026-10-18 | Correction: Claude Code's per-call Git Bash is not a login shell and has no LANG (README's claim at rev 329 was unverified); the benchmark's Git Bash form is the architect's call |

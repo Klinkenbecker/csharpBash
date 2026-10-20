@@ -1,0 +1,4 @@
+the PATH find ran: ff -okdir echo "{}" ";"
+rc=0
+C#Bash: not implemented in-process, and the only 'find' on PATH is Windows' own, another program)
+rc=2

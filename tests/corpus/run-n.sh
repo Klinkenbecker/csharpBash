@@ -2,9 +2,9 @@
 # The `-n` corpus: does C#Bash's syntax check (`bash -n FILE`) give GNU bash's verdict on real scripts?
 #
 #   tests/corpus/run-n.sh [--no-build] [--cs <exe>] [--update-baseline] [--update-manifest]
-#                                                                       (run it FROM Git Bash)
-# On the development machine:
-#   CHERE_INVOKING=1 F:/Tools/PortableGit/bin/bash.exe -l -c 'cd /f/Koliada/Tools/bash && "$BASH" tests/corpus/run-n.sh'
+#                                                                       (run it IN WSL's bash)
+# From a Claude Code Bash call, in the repository:
+#   wsl.exe -e bash tests/corpus/run-n.sh
 #
 # THIS IS A CONTRACT TOOL (2026-10-12, the architect: "repetitive tools here need to be contracts,
 # period"). It ran from a scratch directory and a command recovered from a transcript until then.
@@ -17,8 +17,10 @@
 #   * GNU bash's verdicts are measured again every run, in WSL, on the same files; one that differs
 #     from the manifest is REFERENCE DRIFT (exit 2).
 #   * the candidate is the Release build, built first (as tests/run-tests.ps1 does), unless --no-build
-#     or --cs <exe>. It is never the harness: the loop runs in Git Bash (a C#Bash defect in reading a
-#     file list once hid most of a run).
+#     or --cs <exe> (F:/... or /mnt/f/...). It is never the harness: the loop runs in WSL's bash (a
+#     C#Bash defect in reading a file list once hid most of a run), and starts C#Bash through WSL's
+#     interop with each file's path in Windows form. Until 2026-10-19 the loop ran in Git Bash (Git
+#     is now reached nowhere but the benchmark and the publish script).
 #   * a file AGREES when both say "fine" (status 0) or both say "error" (non-zero). baseline.txt lists
 #     the files that agree; one that stops agreeing fails the run (exit 1); new agreements are
 #     reported and folded in with --update-baseline.
@@ -30,7 +32,7 @@
 #     outputs of every file are kept in tests/corpus/printer/{gnu,cs} (ignored) for the differences.
 # Every run writes its per-file verdicts to tests/corpus/last-run.txt (ignored).
 set -u
-case "${BASH_VERSION:-}" in *koliada*) echo "run-n: run me under Git Bash, not C#Bash (see the header)" >&2; exit 2 ;; esac
+command -v wslpath > /dev/null || { echo "run-n: run me in WSL's bash, not C#Bash or Git Bash (see the header)" >&2; exit 2; }
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 SRC=/usr/share/bash-completion/completions
@@ -41,7 +43,8 @@ build=1; cs="$root/Bash/bin/Release/net8.0/Bash.exe"; upd_base=0; upd_man=0; pri
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) build=0; shift ;;
-    --cs) [ $# -ge 2 ] || usage; cs="$2"; build=0; shift 2 ;;
+    --cs) [ $# -ge 2 ] || usage; cs="$2"; build=0; shift 2
+          case "$cs" in [A-Za-z]:*) cs=$(wslpath -u "$cs") ;; esac ;;
     --update-baseline) upd_base=1; shift ;;
     --update-manifest) upd_man=1; shift ;;
     --printer) printer=1; baseline="$here/printer-baseline.txt"; shift ;;
@@ -49,25 +52,21 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Git Bash must not rewrite the Linux paths; wsl.exe's own "Failed to translate" notes about Windows
-# PATH entries are dropped (only those lines)
-wsl() { MSYS2_ARG_CONV_EXCL='*' wsl.exe -e "$@" 2> >(grep -v '^wsl: Failed to translate' >&2); }
-wsl true 2>/dev/null || { echo "run-n: WSL is not available (wsl.exe -e)" >&2; exit 2; }
-
 if [ $build = 1 ]; then
   echo "run-n: building (Release)..." >&2
-  dotnet build -c Release "$(cygpath -w "$root/Bash")" -nologo > /dev/null || { echo "run-n: the build failed" >&2; exit 2; }
+  dotnet.exe build -c Release "$(wslpath -m "$root/Bash")" -nologo > /dev/null || { echo "run-n: the build failed" >&2; exit 2; }
 fi
 [ -x "$cs" ] || { echo "run-n: no C#Bash build at $cs" >&2; exit 2; }
 
 # ── fetch the corpus ──────────────────────────────────────────────────────────
 rm -rf "$files" && mkdir -p "$files"
-wsl tar -C "$SRC" -chf - . 2>/dev/null | tar -C "$files" -xf - || { echo "run-n: fetching $SRC from WSL failed" >&2; exit 2; }
+tar -C "$SRC" -chf - . 2>/dev/null | tar -C "$files" -xf - || { echo "run-n: fetching $SRC failed" >&2; exit 2; }
+wfiles=$(wslpath -m "$files")   # the same folder as C#Bash names it
 
-# ── GNU's verdicts, measured now, in one WSL bash ────────────────────────────────
-gnu=$(wsl bash -c 'cd "$1" && for f in *; do bash -n "$f" >/dev/null 2>&1; echo "$? $f"; done' _ "$SRC") \
-  || { echo "run-n: running GNU bash in WSL failed" >&2; exit 2; }
-gnu_ver=$(wsl bash -c 'echo "$BASH_VERSION"')
+# ── GNU's verdicts, measured now, in one bash ─────────────────────────────────
+gnu=$(bash -c 'cd "$1" && for f in *; do bash -n "$f" >/dev/null 2>&1; echo "$? $f"; done' _ "$SRC") \
+  || { echo "run-n: running GNU bash failed" >&2; exit 2; }
+gnu_ver=$(bash -c 'echo "$BASH_VERSION"')
 
 # ── the corpus as fetched: sha256 + GNU verdict + name, in name order ─────────
 declare -A gv
@@ -76,7 +75,7 @@ now=$(cd "$files" && sha256sum -- * | while read -r h n; do n=${n#\*}; printf '%
 
 if [ $upd_man = 1 ]; then
   { echo "# tests/corpus/manifest.txt: sha256, GNU bash $gnu_ver's bash -n status, name. Written by --update-manifest."
-    echo "# Source: WSL $SRC ($(wsl dpkg-query -W -f '${Package} ${Version}' bash-completion 2>/dev/null))."
+    echo "# Source: WSL $SRC ($(dpkg-query -W -f '${Package} ${Version}' bash-completion 2>/dev/null))."
     printf '%s\n' "$now"; } > "$manifest"
   echo "run-n: manifest re-recorded ($(printf '%s\n' "$now" | wc -l) files); record why in DECISIONS.md" >&2
 fi
@@ -94,19 +93,19 @@ agree=0; total=0; agreeing=()
 if [ $printer = 0 ]; then
   # ── C#Bash's `bash -n` verdicts ─────────────────────────────────────────────
   while read -r sha g name; do
-    "$cs" -n "$files/$name" > /dev/null 2>&1 < /dev/null; c=$?
+    "$cs" -n "$wfiles/$name" > /dev/null 2>&1 < /dev/null; c=$?
     total=$((total + 1))
     if [ $(( g == 0 )) = $(( c == 0 )) ]; then agree=$((agree + 1)); agreeing+=("$name"); v=agree; else v=DIFFER; fi
     printf '%s gnu=%s cs=%s %s\n' "$v" "$g" "$c" "$name" >> "$last"
   done <<< "$want"
   what="-n corpus"
 else
-  # ── `declare -f` after sourcing each file: GNU in one WSL bash, then C#Bash ────
+  # ── `declare -f` after sourcing each file: GNU in one bash, then C#Bash ────────
   pdir="$here/printer"; rm -rf "$pdir" && mkdir -p "$pdir/gnu" "$pdir/cs"
-  wsl bash -c 'cd "$1" && for f in *; do timeout 20 bash --norc -c "source \"./\$1\" >/dev/null 2>&1; declare -f" _ "$f" > "$2/$f" 2>/dev/null < /dev/null; done' \
-    _ "$SRC" "/mnt$pdir/gnu" || { echo "run-n: GNU's declare -f run in WSL failed" >&2; exit 2; }
+  bash -c 'cd "$1" && for f in *; do timeout 20 bash --norc -c "source \"./\$1\" >/dev/null 2>&1; declare -f" _ "$f" > "$2/$f" 2>/dev/null < /dev/null; done' \
+    _ "$SRC" "$pdir/gnu" || { echo "run-n: GNU's declare -f run failed" >&2; exit 2; }
   while read -r sha g name; do
-    timeout 20 "$cs" --norc -c 'source "$1" >/dev/null 2>&1; declare -f' _ "$files/$name" > "$pdir/cs/$name" 2>/dev/null < /dev/null
+    timeout 20 "$cs" --norc -c 'source "$1" >/dev/null 2>&1; declare -f' _ "$wfiles/$name" > "$pdir/cs/$name" 2>/dev/null < /dev/null
     total=$((total + 1))
     if cmp -s "$pdir/gnu/$name" "$pdir/cs/$name"; then agree=$((agree + 1)); agreeing+=("$name"); v=agree; else v=DIFFER; fi
     printf '%s %s\n' "$v" "$name" >> "$last"

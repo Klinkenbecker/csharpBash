@@ -355,7 +355,8 @@ public static class PrintfFormatter
 					case '\\': sb.Append("\\\\"); break;
 					case '\'': sb.Append("\\'"); break;
 					default:
-						if (ch < ' ' || ch == '\x7f') sb.Append("\\x").Append(((int)ch).ToString("x2"));
+						// octal, as bash's ansic_quote (`$'a\001b'`); hex until 2026-10-19 (red team F11: xtrace and %q)
+						if (ch < ' ' || ch == '\x7f') sb.Append('\\').Append(Convert.ToString(ch, 8).PadLeft(3, '0'));
 						else sb.Append(ch);
 						break;
 					}

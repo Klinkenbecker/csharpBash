@@ -1,0 +1,15 @@
+1: D/proj
+2: ./.
+3: ./g D/proj/sub
+4: ./proj/ D
+5: ./proj D
+6: ./g D/proj/sub
+7: ./g D/proj/sub
+8: ./sub
+9: ./proj D
+10: ./f ./sub ./g 
+rc=1 find: The current directory is included in the PATH environment variable, which is insecur
+rc=1 find: The relative path 'rel' is included in the PATH environment variable, which is insec
+rc=1 find: The current directory is included in the PATH environment variable, which is insecur
+rc=1 find: The current directory is included in the PATH environment variable, which is insecur
+rc=1 find: The relative path './x' is included in the PATH environment variable, which is insec

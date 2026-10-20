@@ -258,6 +258,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				case SingleQuotedPart s: text = s.Value; break;
 				case AnsiCQuotedPart a:  text = a.Value; break;
 				case DoubleQuotedPart d: text = string.Concat(d.Parts.Select(ExpandPart)); break;
+				case TildePart:          text = ExpandPart(p); break;   // a tilde's result matches literally, as bash (red team F12)
 				default: text = ExpandPart(p); quoted = false; break;
 				}
 			sb.Append(quoted ? EscapeGlob(text) : text);
@@ -454,11 +455,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	private static FatalShellException Unbound(string name) =>
 		new($"{name}: unbound variable") { ExpansionError = true };
 
-	private string TildeHome()
-		{
-		var home = _env.Get("HOME");
-		return ShellEnvironment.ToShellPath(home.Length > 0 ? home : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-		}
+	private string TildeHome() => ShellEnvironment.TildeHome(_env.Get("HOME"));
 
 	// ── ${VAR...} parameter expansion ────────────────────────────────────────
 
@@ -1275,6 +1272,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		{
 		private readonly WordExpander _o = owner;
 		private int _depth;
+		// bash's MAX_EXPR_RECURSION_LEVEL is 1024; here each level is a dozen parser frames, and 1024 overflowed the stack
+		// at ~630 (measured 2026-10-19): a value chain deeper than 64 is an error here
+		private const int MaxDepth = 64;
 
 		public long Get(string name, string? subscript)
 			{
@@ -1289,11 +1289,12 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			else val = _o.GetChecked(name);   // set -u: an unset name in arithmetic is an error too
 			if (val.Length == 0) return 0;
 			if (long.TryParse(val, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)) return n;
-			// bash evaluates a non-numeric value as an expression itself (x="y+1")
-			if (_depth > 8) return 0;
+			// bash evaluates a non-numeric value as an expression itself (x="y+1"), and its errors are that expression's:
+			// `x='1+'; $((x))` was 0 (bash: "1+: syntax error: operand expected", the command abandoned), and a value
+			// naming itself was cut off as 0 at depth 8 (bash: "expression recursion level exceeded") (red team, 2026-10-19)
+			if (_depth >= MaxDepth) throw new EvalException($"{val}: expression recursion level exceeded (error token is \"{val}\")");
 			_depth++;
 			try { return _o.EvalArithmetic(val); }
-			catch (EvalException e) when (e is not FatalShellException) { return 0; }
 			finally { _depth--; }
 			}
 
@@ -1319,6 +1320,17 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		}
 
 	public string ExpandArith(string expr) => ExpandVarsInArith(expr.Trim());
+
+	/// <summary>An arithmetic text with its `$` expansions done and its spacing kept, for set -x; evaluate the result with
+	/// <see cref="EvalExpandedArithmetic"/>, so a `$( )` in it runs once.</summary>
+	public string ExpandArithText(string expr) => ExpandVarsInArith(expr);
+
+	/// <summary>Evaluate an arithmetic text whose `$` expansions are done (<see cref="ExpandArithText"/>).</summary>
+	public long EvalExpandedArithmetic(string expanded)
+		{
+		_arithVars ??= new ArithVars(this);
+		return ArithParser.Evaluate(expanded.Trim(), _arithVars);
+		}
 
 	/// <summary>Perform the `$var` / `${…}` / `$(…)` expansions inside an arithmetic
 	/// expression before it is parsed. Bare identifiers are left for the parser, which

@@ -1,0 +1,7 @@
+fa: A B C D E F 
+v=one
+w=two
+fd 5 closed: rc=1
+fb: x
+fd 6 closed in the subshell
+in

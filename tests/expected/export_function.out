@@ -1,0 +1,22 @@
+f ran with child
+g is not exported
+f is no longer exported
+g ran
+export -f nosuch: rc=1
+h: 1 sub 2
+h: 1 sub 1
+1
+0
+h is gone
+x is not defined
+y ran
+1
+k () 
+{ 
+    :
+}
+k
+declare -fx k
+declare -f k
+declare -f k
+declare -fx k

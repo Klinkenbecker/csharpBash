@@ -1,0 +1,15 @@
+e rc=1
+body-ran a1
+s: line 3: unset_var: unbound variable
+s rc=1
++ echo traced
+traced
+x rc=0
+body-ran a1
+rt rc=0
+pipefail rc=1
+p rc=0
+joined -S ran
+j rc=0
+no options: goes on
+n rc=0

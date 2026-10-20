@@ -13,18 +13,17 @@
   so the baseline can be advanced with -UpdateBaseline. APPEND new probes at the
   end of probes.txt only - numbers are positional.
 
-  The reference bash is found from -Reference, else $env:CLAUDE_CODE_GIT_BASH_PATH,
-  else the bash of the Git that owns git.exe (bin\bash.exe, usr\bin\bash.exe, or
-  usr\bin\_bash.exe, its name on this machine from 2026-09-13 to 2026-10-19), else
-  C:\Program Files\Git, else the first bash.exe on PATH. Each candidate is RUN to
-  identify it: one that is C#Bash (any build: its BASH_VERSION says koliada) or that
-  does not start is skipped, and an explicit -Reference that is C#Bash is an error.
-  Until 2026-10-12 only the Release build was skipped, so with CLAUDE_CODE_GIT_BASH_PATH
-  naming the deployed C#Bash the battery compared C#Bash with itself and could not
-  fail. Without a reference the battery cannot run (exit 2).
+  The reference bash is WSL's GNU bash (wsl.exe -e bash), each probe started in its
+  fixture directory, which WSL sees as /mnt/<drive>/... (2026-10-19, the architect:
+  Git is reached nowhere but the benchmark and the publish script; until then the
+  reference was Git for Windows' bash, found through git.exe on PATH). -Reference
+  <path to bash.exe> names another one. Either is RUN to identify it, and C#Bash (any
+  build: its BASH_VERSION says koliada) is refused: compared with itself the battery
+  cannot fail, which happened until 2026-10-12. Without a reference the battery
+  cannot run (exit 2).
 
 .PARAMETER Reference
-  Path to the reference bash.exe.
+  Path to a reference bash.exe, in place of WSL's bash.
 .PARAMETER NoBuild
   Skip the Release build.
 .PARAMETER UpdateBaseline
@@ -63,55 +62,30 @@ if (-not $NoBuild) {
 }
 if (-not $exe -or -not (Test-Path $exe)) { Write-Error "interpreter not found (run without -NoBuild)"; exit 2 }
 
-# ---- locate the reference bash ------------------------------------------------
-function Find-ReferenceBash {
-    param([string]$explicit, [string]$ours)
-    $cands = @()
-    if ($explicit) { $cands += $explicit }
-    if ($env:CLAUDE_CODE_GIT_BASH_PATH) { $cands += $env:CLAUDE_CODE_GIT_BASH_PATH }
-    # Git's own bash, wherever Git lives (portable installs are not under Program Files)
-    $git = Get-Command git.exe -ErrorAction SilentlyContinue
-    if ($git) {
-        # git.exe lives in cmd\, bin\ or mingw64\bin\: the root is the first ancestor with usr\bin
-        # (two levels up from mingw64\bin\git.exe is mingw64, which found nothing until 2026-10-12)
-        $gitRoot = Split-Path $git.Source -Parent
-        for ($k = 0; $k -lt 3 -and $gitRoot -and -not (Test-Path (Join-Path $gitRoot 'usr\bin')); $k++) { $gitRoot = Split-Path $gitRoot -Parent }
-        $cands += (Join-Path $gitRoot 'bin\bash.exe')
-        $cands += (Join-Path $gitRoot 'usr\bin\bash.exe')
-        $cands += (Join-Path $gitRoot 'usr\bin\_bash.exe')
-    }
-    $cands += 'C:\Program Files\Git\bin\bash.exe'
-    $cands += 'C:\Program Files\Git\usr\bin\bash.exe'
-    foreach ($d in ($env:PATH -split ';')) {
-        if ($d) { $cands += (Join-Path $d 'bash.exe') }
-    }
-    # never WSL's launcher (System32\bash.exe): it is a different OS, not a reference
-    $sysRoot = $env:SystemRoot
-    foreach ($c in $cands) {
-        if (-not (Test-Path $c)) { continue }
-        $full = (Resolve-Path $c).Path
-        if ($full -eq $ours) { continue }
-        if ($sysRoot -and $full.StartsWith($sysRoot, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-        $ver = Get-BashVersion $full
-        if (-not $ver) { continue }                          # does not start (a broken launcher stub)
-        if ($ver -match 'koliada') {                         # C#Bash, deployed or not: never its own reference
-            if ($c -eq $explicit) { Write-Error "-Reference $c is C#Bash ($ver), not a reference bash"; exit 2 }
-            continue
-        }
-        return $full
-    }
-    return $null
-}
+# ---- the reference bash -----------------------------------------------------------
+# A reference is a program plus the arguments that come before a probe's script path:
+# WSL's bash is wsl.exe with "-e bash"; a -Reference bash.exe takes none.
+function New-Reference([string]$file, [string]$prefix) { return @{ File = $file; Prefix = $prefix } }
 
-# What a bash says $BASH_VERSION is, or $null when it does not run.
-function Get-BashVersion([string]$path) {
-    try { $v = & $path -c 'echo "$BASH_VERSION"' 2>$null } catch { return $null }
+# What a reference says $BASH_VERSION is, or $null when it does not run.
+function Get-BashVersion($r) {
+    try { $v = & $r.File @(($r.Prefix -split ' ') | Where-Object { $_ }) -c 'echo "$BASH_VERSION"' 2>$null } catch { return $null }
     if ($LASTEXITCODE -ne 0 -or -not $v) { return $null }
     return ([string]$v).Trim()
 }
-$ref = Find-ReferenceBash $Reference $exe
-if (-not $ref) { Write-Error "no reference bash found; pass -Reference <path to bash.exe>"; exit 2 }
-Write-Host ("reference : {0}   (bash {1})" -f $ref, (Get-BashVersion $ref)) -ForegroundColor DarkGray
+
+if ($Reference) {
+    if (-not (Test-Path $Reference)) { Write-Error "-Reference $Reference does not exist"; exit 2 }
+    $ref = New-Reference (Resolve-Path $Reference).Path ''
+} else {
+    $wsl = Join-Path $env:SystemRoot 'System32\wsl.exe'
+    if (-not (Test-Path $wsl)) { Write-Error "no reference bash: WSL is not installed; pass -Reference <path to bash.exe>"; exit 2 }
+    $ref = New-Reference $wsl '-e bash'
+}
+$refVer = Get-BashVersion $ref
+if (-not $refVer) { Write-Error ("the reference bash does not run: {0} {1}" -f $ref.File, $ref.Prefix); exit 2 }
+if ($refVer -match 'koliada') { Write-Error ("the reference is C#Bash ({0}), not a reference bash" -f $refVer); exit 2 }
+Write-Host ("reference : {0} {1}  (bash {2})" -f $ref.File, $ref.Prefix, $refVer) -ForegroundColor DarkGray
 Write-Host ("candidate : {0}" -f $exe) -ForegroundColor DarkGray
 
 # ---- split probes ---------------------------------------------------------------
@@ -146,10 +120,10 @@ function New-Fixture([string]$dir) {
     [System.IO.File]::WriteAllText((Join-Path $dir 'n.md'), "# md`n", $u)
 }
 
-function Invoke-Shell([string]$shell, [string]$script, [string]$cwd) {
+function Invoke-Shell([string]$shell, [string]$script, [string]$cwd, [string]$prefix = '') {
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $shell
-    $psi.Arguments = $script
+    $psi.Arguments = ($prefix + ' ' + $script).Trim()
     $psi.WorkingDirectory = $cwd
     $psi.UseShellExecute = $false
     $psi.RedirectStandardInput = $true
@@ -190,7 +164,7 @@ foreach ($p in $probeList) {
     $script = '../probes/{0:d3}.sh' -f $p.Num
     New-Fixture $fxReal
     New-Fixture $fxCs
-    $r = Invoke-Shell $ref $script $fxReal
+    $r = Invoke-Shell $ref.File $script $fxReal $ref.Prefix
     $c = Invoke-Shell $exe $script $fxCs
     $rOut = $r.Out + "exit=$($r.Code)`n"
     $cOut = $c.Out + "exit=$($c.Code)`n"
