@@ -1,0 +1,19 @@
+--- nothing logged for a request that is serviced
+no log
+--- each place
+PATH sort --zzz f
+sort | --zzz | fell through to sort.cmd, exit 0 | --zzz f
+sort | --zzz | failed, exit 2 | --zzz f
+awk | unsupported | failed while running, exit 2 | BEGIN { f = "%e\n"; printf f, 1 }
+complete | complete (programmable completion) | not available | 
+set | POSIX mode (set -o posix) | not available, went on without it | 
+bash | output process substitution >( ) is not supported | refused when parsed, exit 2 | 
+bash | output process substitution >( ) is not supported | refused when parsed, exit 2 | 
+ulimit | ulimit | not implemented: command not found, exit 127 | 
+help | bind | not implemented: answered with its page | bind
+help | zzzz | no help topic, exit 1 | zzzz
+--- whole lines, valid JSON
+lines: 10, parsed: 10, fields: time,build,tool,feature,message,args,outcome,source,line
+--- BASH_UNSERVICED_LOG: another file, or /dev/null for none
+ulimit | ulimit | not implemented: command not found, exit 127 | 
+unchanged: yes

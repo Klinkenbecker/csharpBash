@@ -13,6 +13,13 @@ public sealed class UnsupportedOptionException(string tool, string option, strin
 	public string Option { get; } = option;
 	}
 
+/// <summary>`--help` met as an option (not as an option's value, nor after the operands of a tool that stops at its
+/// first one): the builtin answers with its manual page from help.json (DECISIONS 2026-10-27).</summary>
+public sealed class HelpRequestedException(string tool) : Exception($"{tool}: --help")
+	{
+	public string Tool { get; } = tool;
+	}
+
 /// <summary>
 /// GNU-style option parsing for the in-process coreutils. Short options cluster
 /// (`-ni`), take attached or separate values (`-n5`, `-n 5`), long options take
@@ -103,6 +110,7 @@ public sealed class Opts
 				string name = body; string? val = null;
 				int eq = body.IndexOf('=');
 				if (eq >= 0) { name = body[..eq]; val = body[(eq + 1)..]; }
+				if (name == "help" && val is null && !longKnown.ContainsKey(name)) throw new HelpRequestedException(tool);
 				if (!longKnown.TryGetValue(name, out var spec))
 					throw new UnsupportedOptionException(tool, "--" + name, "unrecognized option");
 				if (spec.value && val is null)

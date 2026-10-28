@@ -1,0 +1,26 @@
+--- tail -c 4
+ 45 4e 44 0a 
+--- tail -n 3
+last1
+last2
+END
+--- tail -2
+last2
+END
+--- tail -c +2147483649
+ 0a 6c 61 73 74 31 0a 6c 61 73 74 32 0a 45 4e 44  0a 
+--- tail -z -n 1
+ 0a 6c 61 73 74 31 0a 6c 61 73 74 32 0a 45 4e 44  0a 
+--- tail -n 2 < big
+last2
+END
+--- head -c -2147483652
+first
+second
+--- head -n -4 (back over the zeros)
+first
+second
+--- tail -n +2 | head -n 1
+second
+--- rc
+0

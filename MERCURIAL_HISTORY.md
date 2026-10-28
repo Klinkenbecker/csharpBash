@@ -12,11 +12,71 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 367 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 427 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 426 | 2026-10-28 | Benchmark of the deployed build (rev 424) and the doc review, for publishing |
+| 425 | 2026-10-27 | Deployed rev 424 (head; AOT suite 193/0 both modes, battery 216); notified; the greenlit list is done; anchor rewritten (next: publish, awaiting the architect) |
+| 424 | 2026-10-27 | head -n N keeps a last line's missing newline; still the shared line reader (plan revised, measured) |
+| 423 | 2026-10-27 | Deployed rev 422 (fold+strings pooled; AOT suite 192/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: head -n N |
+| 422 | 2026-10-27 | fold and strings use the pooled block; tr keeps its own buffer (measured) |
+| 421 | 2026-10-27 | Deployed rev 420 (tee; AOT suite 192/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: fold, tr, strings (measure first) |
+| 420 | 2026-10-27 | tee copies a here-document's surrogate pairs whole; a pooled block read 8 KiB at a time (measured) |
+| 419 | 2026-10-27 | Deployed rev 418 (tail -f; AOT suite 191/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: tee |
+| 418 | 2026-10-27 | tail -f writes each appended byte once (a busy writer's lines came out twice) |
+| 417 | 2026-10-27 | Deployed rev 416 (paste; AOT suite 190/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: tail -f |
+| 416 | 2026-10-27 | paste a row at a time; `paste - -` reads stdin in turn; GNU's empty delimiters; -z |
+| 415 | 2026-10-27 | Deployed rev 414 (comm; AOT suite 189/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: paste |
+| 414 | 2026-10-27 | comm merges a line at a time; --total, -z, GNU's order check, empty delimiter = NUL |
+| 413 | 2026-10-27 | Deployed rev 412 (uniq; AOT suite 188/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: comm |
+| 412 | 2026-10-27 | uniq a group at a time; coreutils' -d/-u/-D switches; -D -c refused; -z; -f blanks are space/tab |
+| 411 | 2026-10-27 | Deployed rev 410 (sed streams; AOT suite 187/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: uniq |
+| 410 | 2026-10-27 | sed reads as it goes; GNU's per-line newline flags; q ends the run; w files once; -i via a temporary file |
+| 409 | 2026-10-27 | Deployed rev 408 (the output encoder; AOT suite 186/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: sed |
+| 408 | 2026-10-27 | The output encoder carries a surrogate pair across chunks (emoji broke past 8192 characters) |
+| 407 | 2026-10-27 | Deployed rev 406 (split's suffix; AOT suite 185/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: sed |
+| 406 | 2026-10-27 | split's suffix widens or stops as GNU's (it wrapped and overwrote the first pieces); -a checked |
+| 405 | 2026-10-27 | Deployed rev 404 (AOT suite 185/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; anchor rewritten as a resume point (next: split's suffix, GNU's rule recorded) |
+| 404 | 2026-10-27 | Anchor: the match-GNU item ruled; the tool-by-tool sequence greenlit (deploy, then split, sed, uniq, comm, paste, tail -f, tee, fold/tr/strings, head -n; then publish) |
+| 403 | 2026-10-27 | Built (phase B2): split and tac on the shared byte layer; tac keeps a last line without a newline (GNU); ReadBytes removed |
+| 402 | 2026-10-27 | Built (phase B1): cmp, od, hexdump, base64 on the shared byte layer; rev 397's overflow bugs fixed; base64 -d as GNU |
+| 401 | 2026-10-27 | Built: one shared byte layer (Builtins.Bytes.cs) with pooled blocks; wc's ASCII path; faster than rev 397 at every size measured |
+| 400 | 2026-10-27 | Fixed: wc and md5sum/sha1sum/sha256sum/sha512sum over 2 GiB: counted and hashed as they read |
+| 399 | 2026-10-27 | Anchor: wc over 2 GiB reported by koliada-net-28 (reproduced on rev 397), queued behind the architect's go |
+| 398 | 2026-10-27 | Deployed rev 397 (AOT suite 180/0 both modes, battery 216); notified koliada-net-28; anchor: deployed state |
+| 397 | 2026-10-27 | Built: help and --help point at the manual pages (help.json); enable; a log of requests C#Bash does not service |
+| 396 | 2026-10-27 | Fixed: tail, and head's -c -N / -n -N / -z, on a file over 2 GiB: bytes as they are, a file read from its end |
+| 395 | 2026-10-20 | Anchor (d): the module work in PortableBash now awaits the ratification of its design record, spec and architecture together; the runtime ruling noted |
+| 394 | 2026-10-20 | Handoff: the anchor up to date (tip, deployed and notified 373, unpublished 367-394, module work in PortableBash, item (d) un-garbled) |
+| 393 | 2026-10-20 | Anchor: the PortableBash shell is named xpBash (was zigBash) |
+| 392 | 2026-10-20 | PortableBash created (F:/Koliada/Tools/PortableBash): the module documents moved there and frozen here at rev 391; anchor points at PortableBash |
+| 391 | 2026-10-20 | Ruled: PortableBash is the contract, Zig modules and zigBash (deferred, designed for now); C#Bash a host, legacy once zigBash is built; portability high but negotiable; Linux, macOS, WASM/bare-metal in that order |
+| 390 | 2026-10-20 | Proposed by the architect: v2 as a GitHub project PortableBash (any platform), C#Bash continuing, a zigBash; the 2.0 plan and spec on hold pending discussion |
+| 389 | 2026-10-20 | The 2.0 plan (docs/v2-plan.md, proposed) and phase 1: the module specification v1 in draft (docs/module-spec.md); its Zig declarations compile, with a failing control; anchor (d) rewritten |
+| 388 | 2026-10-20 | Ruled: the override is a file (~/.bash/providers) plus a variable; signing by one signed file (Authenticode on public traction); the installer built with InstallGen; everything under ~/.bash (layout proposed: bin/Bash.exe alone, modules/, providers, commands/) |
+| 387 | 2026-10-20 | Ratified: contract draft 3 as the basis of v1 (Zig, one-file form), the cache design; replaceable built-ins decided (modules after built-ins; override for coreutils except kill; shell builtins never); signing and the override's form put to the architect; ~/.bash installed location and an installer ruled |
+| 386 | 2026-10-20 | Measured on Windows 11 (26300): the Zig one-file module passes there too. Contract DRAFT 3: modules in Zig, one plain EXE loaded directly with the shell binding its imports; no packaging, no module cache |
+| 385 | 2026-10-20 | Measured: a Zig module is one plain EXE loaded directly once the shell binds its imports (Windows binds none for an EXE loaded as a library): 0.22 ms first use in-process, 2.3 ms as a program, 50 KB |
+| 384 | 2026-10-20 | Ruled: the internal/external/MSYS split stands, a C# module's first call (~0.6 ms) accepted, runtime sharing parked for the architect's alternate-runtime project. Contract DRAFT 2: hot-path criteria, no repeated work, the ratified streams/files/2.0, costs per provider |
+| 383 | 2026-10-20 | Found: a module DLL cannot use Bash.exe's runtime (nothing exported; own runtime and core types per image); ILC's multi-module mode shares at build time only; IlcDehydrate=false saves ~0.06 ms of the ~0.5 ms start |
+| 382 | 2026-10-20 | Measured: an AOT module DLL starts its own runtime at its first call (~0.6 ms, isolated with a no-op export; not the GC thread); a C module (zig cc) loads in ~0.12 ms and needs no start |
+| 381 | 2026-10-20 | Ratified: streams as callbacks (handle on request), files option c (resolve + open through the shell), C#Bash 2.0.0 on a named branch; the exec and file hot paths are the gold-standard criteria |
+| 380 | 2026-10-20 | Ruled: providers per utility with overridable default order; MSYS as a bridge module; path-invoked MSYS programs to the bridge. Contract DRAFT 1 (providers, csb_provides, handle on request, declined = next provider, resolutions in the command map: Claude's position to confirm) |
+| 379 | 2026-10-20 | Draft 0 of the utility-module contract (docs/module-contract.md): for discussion, nothing ratified; anchor points at it |
+| 378 | 2026-10-20 | Measured: the packaged form with a C launcher (zig cc, 58,880 bytes): packaged tool 1.18 MB (runtime once), 7.3-7.6 ms as a program, ~1.1 ms in-process warm; Installer's Defender lesson applied |
+| 377 | 2026-10-20 | Measured: the packaged form works: one EXE carrying its module DLL as a Win32 resource; warm in-process ~1.1 ms vs ~7-8 ms as a program; cold once per version 23-32 ms; ~1.1-1.2 MB of runtime per module and per launcher |
+| 376 | 2026-10-20 | Measured: Native AOT utility modules work (load 0.2 ms, first call ~0.7 ms, 0.3 us after, two runtimes in one process) against 7 ms for a process start; one file the direct way (an AOT EXE's exports, loaded) crashes |
+| 375 | 2026-10-20 | Docs: how the build and tests use WSL, Git for Windows and MSYS2 (README 'What the build and the tests use', IMPLEMENTATION §11 Tooling, the old §11 now §12); 184 cases; claudecall.sh's cygpath recorded as open |
+| 374 | 2026-10-20 | Deployed rev 373 (suite 176/0 on AOT both modes, battery 216, baseline 216); anchor: state, (c) done, the module proposal, sh, the battery's place in deploy |
+| 373 | 2026-10-20 | Tests no longer need Git: a case whose program is missing prints SKIP: <reason> and the runner names it; detach_builtins on "$BASH" -c; the three self-passing checks and the PATH-awk lines moved to their own cases (native_args_msys, native_args_git, dev_tty_git_prompt, awk_fallthrough); battery baseline 216 without the machine-tool probes |
+| 372 | 2026-10-20 | Proposed by the architect: utilities as loadable modules (a DLL in an EXE: loaded by C#Bash, or run standalone); no MSYS in C#Bash; the MSYS stand-in plan withdrawn; open questions recorded |
+| 371 | 2026-10-20 | Found: how the tests use Git for Windows: the six failures, three checks that pass without testing, the battery's six; a bare sh finds nothing (raised) |
+| 370 | 2026-10-20 | Deploy of rev 369 refused at the suite: the cygpath fix works end to end; on the AOT build exactly the Git-dependent six fail (icu_lazy passes); the battery's place in deploy raised; anchor (c) |
+| 369 | 2026-10-20 | deploy.sh no longer needs cygpath (Git's): paths handed to cmd.exe and PowerShell as C#Bash gives them; a root that is not a drive path refused; MSYS2_ARG_CONV_EXCL kept (C#Bash honours it) |
+| 368 | 2026-10-20 | Found: tools/deploy.sh needs cygpath (Git's, off PATH since 2026-10-19); the deploy of rev 367 stopped at step 2, nothing changed in dist; recorded as open with Claude's position; anchor (c) |
+| 367 | 2026-10-19 | Published: GitHub main = git 0a8eef7 = hg rev 366 by tools/publish.sh (compare3 re-run on deployed 324; not deployed); anchor updated |
 | 366 | 2026-10-19 | Doc review for the push: README's table from compare3 on deployed rev 324 (2026-10-19 18:45; every row within a few percent of the 04:15 run, Git Bash and WSL slower too, so the machine), its prose figures, 180 cases; results.md |
 | 365 | 2026-10-19 | Anchor: tip 365; the global CLAUDE.md committed in its git repository (65ecb3b) |
 | 364 | 2026-10-19 | run-tests.ps1 ASCII-only again (a .ps1 without a BOM is read as ANSI): 7 typographic characters in comments, from revs 3, 6, 25, 39, 111, 188, made ASCII; suite 173 passed + the 6 Git-dependent failures, both modes |

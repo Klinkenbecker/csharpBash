@@ -8,7 +8,7 @@ d=$(mktemp -d) && cd "$d" || exit 1
 printf 'some text\0' > f
 v=$(strings --version); case $v in "strings (C#Bash in-process, GNU strings 2.38 compatible) "*) echo "version ok";; *) echo "version BAD [$v]";; esac
 v=$(strings -V); case $v in *GNU\ Binutils*) echo "-V BAD";; *) echo "-V ok";; esac
-strings --help > h; echo "help rc=$? lines=$(wc -l < h)"; head -1 h; tail -1 h
+strings -h > h; echo "help rc=$? lines=$(wc -l < h)"; head -1 h; tail -1 h   # -h: its own usage; --help: the page (help.json, 2026-10-27)
 for a in '-t q' '-e z' '-e ll'; do echo "== strings $a f"; strings $a f 2>&1 >/dev/null | sed -n '1p;$p'; echo "rc=${PIPESTATUS[0]}"; done
 echo "== strings -"; printf 'stdin text' | strings - 2>&1 >/dev/null | sed -n 1p; echo "rc=${PIPESTATUS[1]}"
 if type -P strings >/dev/null; then

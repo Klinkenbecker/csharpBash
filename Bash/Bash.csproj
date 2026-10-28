@@ -15,6 +15,12 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
+  <!-- `help`'s default table, name to manual page(s); written to %USERPROFILE%/.bash/help.json when that file is
+       missing, and answering for any name the file lacks (DECISIONS 2026-10-27) -->
+  <ItemGroup>
+    <EmbeddedResource Include="help.json" LogicalName="help.json" />
+  </ItemGroup>
+
   <Target Name="StampHg" BeforeTargets="GetAssemblyVersion" Condition="'$(HgStamp)' == ''">
     <!-- `hg id -n -i` prints "<hash>[+] <rev>[+]"; the + marks an uncommitted working tree -->
     <Exec Command="hg id -n -i"

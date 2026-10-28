@@ -5,15 +5,65 @@
 > `PROJECT_CONTEXT.md`, and every item in it is resolved with a DECISIONS entry or carried below. The tail (KNOWN
 > LIMITATIONS, SETTLED, DO NOT undo, machine facts) is kept.
 >
-> **TRUE STATE (verified 2026-10-19 at the end of the session; the architect is RESTARTING it):**
-> - **hg tip = rev 365 (361 this anchor, 362 ARCHITECTURE/IMPLEMENTATION/README for today's fixes, 363 anchor, 364
->   run-tests.ps1 ASCII-only again, 365 these lines), working tree clean.** Outside the repo: the global
+> **2026-10-27 (session 988ee3e2) — RESUME HERE** (rewritten when the greenlit list finished; the list's working notes
+> are in hg rev 424's PROJECT_CONTEXT.md). It SUPERSEDES the TRUE STATE block below wherever they differ.
+> - **TRUE STATE:** hg tip = rev 425 (this anchor), tree clean (two untracked files in the root are not ours:
+>   BENCHMARK-PROVENANCE.md, "The Windows Shell Tax.url"; leave them). **DEPLOYED rev 424** (`1.0.0+hg.e521ecbee024
+>   424`, AOT suite 193/0 both modes, battery 216/237 = baseline; rollbacks dist/Bash.exe.rev422 ... rev397), NOTIFIED
+>   (koliada-net-28, kes-term-a1). GitHub csharpBash = hg rev 366: revs 367-425 NOT published.
+> - **Scope (the architect):** PortableBash is a separate session; here C#Bash user support only.
+> - **DONE this session (DECISIONS 2026-10-27 has each, with measurements; do NOT re-open):** before 404: tail/head over
+>   2 GiB, help/--help -> GNU pages (help.json), enable, the unserviced log, wc + checksums, THE SHARED BYTE LAYER
+>   (Builtins.Bytes.cs) with cmp/od/hexdump/base64/split/tac on it. The greenlit list, each its own commit + deploy:
+>   406 split's suffix widens/stops (was DATA LOSS); 408 the output encoder carries surrogate pairs (CarryEncoder;
+>   emoji broke past 8192 chars); 410 sed streams (SedInput/SedOut/SedShared; GNU's per-line newline flags; q ends the
+>   run; w files once; -i = temp file + File.Replace); 412 uniq (coreutils' -d/-u/-D); 414 comm (--total, -z, the order
+>   check); 416 paste (`paste - -`); 418 tail -f (it DUPLICATED a busy writer's lines); 420 tee (here-doc pairs; 8 KiB
+>   pipe reads, measured); 422 fold + strings pooled (tr kept, measured); 424 head -n N's missing newline (shared line
+>   reader kept: plan revised, measured). Shared helpers added: ShellEncoding.ReadRecord / LfReader.ReadRecord.
+> - **Deliberate differences from GNU (stated in DECISIONS; do not "fix"):** on a PIPE, sed q / head -n leave the next
+>   command exactly the next line (GNU: whatever its block read left); sed `$F` after a lookahead names the line's
+>   file; comm -i kept (C#Bash's own); `tee /dev/stdout` with stdout a file writes two copies (Linux reopens it).
+> - **AWAITING THE ARCHITECT (do NOT start; each with Claude's position):**
+>   (a) **PUBLISH** (next, ruled "when done we can publish"): needs a compare3 run on the deployed build on a QUIET
+>   machine (`F:/Tools/PortableGit/bin/bash.exe tests/bench/compare3.sh`, unmodified), then `tools/publish.sh`. ASK
+>   first (other sessions' perf tests disturb it).
+>   (b) the ruled, unstarted **"match GNU" item**: wc -w printable runs, -m invalid bytes, -L display width, padding;
+>   cmp's EOF text and -l layout; od -j addresses; base64 -w 0's newline, -d dropping spaces/CR, -i ignored; printf %q
+>   escaping '='; sed `l` not wrapped at 70; split -l/-b x|0|-1|'' accepted (one piece, rc 0; -b x falls through to the
+>   PATH split); `Opts.GetInt` takes a bad value as the default (other tools unsurveyed); `$( )` keeps NULs (bash drops
+>   them); sort + comm order is UTF-16 units, GNU's C locale bytes (change BOTH or neither).
+>   (c) RAISED: line output to a redirected FILE is ~5.8 MB/s vs ~23 MB/s to a pipe (the shell's file writer flushes
+>   each write; every line tool; uniq -D in-process is slower than the PATH uniq.exe was for this reason). Position:
+>   buffer non-terminal output and flush at command end; needs a design talk (interleaving with children).
+>   (d) RAISED: the byte tools (cat, wc, checksums) read whole 64 KiB blocks from pipes; tee measured 8 KiB reads 22%
+>   faster on `cat f | tee g > h`. Position: measure cat/wc at 8 KiB before changing anything.
+>   (e) xargs streaming (reads all input first; its own change). (f) `bash tools/check-help-urls.sh` once gnu.org
+>   answers. (g) held from 373: arithmetic `<<` after `)` read as a here-document; sed's empty regex `s//x/`.
+> - **NOT moving (stated; do not re-litigate):** sort, diff, jq, mapfile (need all input).
+> - **How tests were made here (keep doing it):** GNU expected via `wsl.exe -e bash /mnt/f/.../tests/cases/X.sh
+>   < /dev/null 2>/dev/null > tests/expected/X.out`; C#Bash run as the runner runs it (`BASH_UNSERVICED_LOG=/dev/null
+>   $exe 'cases\X.sh'` from tests/); 2 GiB inputs as SPARSE files (fsutil / truncate), never real ones in the suite;
+>   a guard case proven to fail once by a deliberate mutation; `hg add` new cases; check the case NAME is free first.
+>
+> **TRUE STATE (rewritten 2026-10-20, end of session f1b9f797, context nearly exhausted):**
+> - **hg tip = rev 394 (this anchor), working tree clean. DEPLOYED rev 373** (`1.0.0+hg.ad15d9441fb0 373`, rollback
+>   `dist/Bash.exe.rev324`) **and NOTIFIED** (the architect's "yes": all nine sessions, guy-85 included).
+>   **PUBLISHED: GitHub csharpBash main = git `0a8eef7` = hg rev 366**; revs 367-394 NOT published (the deploy.sh and
+>   test fixes, the docs on WSL / Git / MSYS, the module decisions, the PortableBash move): publish only on his word.
+>   This session's C#Bash work: deploy.sh no longer needs cygpath (369); the tests no longer need Git (373: a case whose
+>   program is missing prints `SKIP: <reason>`, the runner names it; battery baseline 216); README "What the build and
+>   the tests use" and IMPLEMENTATION §11 Tooling (375). DECISIONS 2026-10-20 has each.
+> - **THE MODULE WORK MOVED TO PortableBash (F:/Koliada/Tools/PortableBash; read ITS anchor for it).** Here, what stays:
+>   C#Bash becomes a Windows HOST of the module contract on its hg branch `2.0` (PortableBash's plan step 4; not
+>   started; waits for the architect's ratification of PortableBash's plan and spec), and legacy once xpBash (the
+>   PortableBash shell) exists. docs/module-contract.md, docs/module-spec.md and docs/v2-plan.md here are FROZEN copies
+>   (rev 391), kept because DECISIONS entries cite them; the live ones are PortableBash's.
+>   Outside the repo: the global
 >   `C:/Users/guy/.claude/CLAUDE.md`'s C#Bash `hash -r` line (now "after installing any tool"), committed in its git
 >   repository as `65ecb3b` (the architect allowed git there, 2026-10-19; three other changes in that repository are
 >   not ours, left alone). Untracked, leave both: `BENCHMARK-PROVENANCE.md` (not to be committed),
->   `The Windows Shell Tax.url` (not ours). **NOT deployed:** `dist/Bash.exe` = rev 324 (`1.0.0+hg.7b2c529cd84f 324`;
->   rollback `dist/Bash.exe.rev320`). **NOT published:** GitHub main = git `0b5ece5` = hg rev 333. Revs 334-360 are new.
->   Deploy only on "deploy and notify", publish only on "publish"/"push"; neither was asked.
+>   `The Windows Shell Tax.url` (not ours).
 > - DONE 2026-10-19 before the red team (the architect directing each step): the benchmark's provenance (README
 >   "Benchmark provenance", rev 333); rev 335 (Git reached only by compare3 and publish.sh: the battery against WSL's
 >   GNU bash, the `-n` corpus and the df check run in WSL's bash); outside the repo: the no-windows hook's false
@@ -41,22 +91,33 @@
 >   a reproduction loop under the runner's conditions with a stack dump (dotnet-dump is not installed: ask first).
 >   (b) **arithmetic error parity** (DECISIONS rev 353 entry): the message wording, GNU abandoning the rest of the line,
 >   `(( 1+ ))` 2 here against 1, errors escaping a redirected subshell or group. Claude: fix as one item.
->   (c) **Git-dependent tests:** with Git off the Windows PATH, 6 suite cases (detach_builtins, msys_redirects,
->   awk_unsupported_once, awk_getline, msys_arguments, coreutils_external) and 6 battery probes (20, 160, 162, 170,
->   185, 210) fail in every new session, so **tools/deploy.sh would refuse** (DECISIONS "FIXED (red team F4…)", OPEN).
->   Claude: MSYS cases to F:/Tools/msys64 (an MSYS2 install), the rest skip when their tool is absent, the battery's
->   baseline re-taken without Git. To settle before the next deploy.
-> - **Verification, as done for every fix (keep it):** a case, red on deployed 324, GNU bash via WSL as the expected
+>   (c) DONE 2026-10-20 (rev 373, deployed): the Git-dependent tests (DECISIONS "FIXED: the tests no longer need Git").
+>   (d) **Utility modules: see PortableBash** (F:/Koliada/Tools/PortableBash, its anchor). In short: RULED here on
+>   2026-10-20 and carried there (DECISIONS here up to "RULED: PortableBash"; there, imported verbatim and continued):
+>   PortableBash = the contract (`csb_` names) + Zig modules + xpBash (the shell, executable `bash`; once "zigBash");
+>   C#Bash a Windows host, legacy once xpBash exists; built-ins first, modules after; MSYS a bridge module; runtime
+>   sharing PARKED (the architect's alternate-runtime project). C#Bash's part, NOT started: the host on branch `2.0`,
+>   after PortableBash's design record, spec and architecture are ratified, together (2026-10-20: the first two rebuilt
+>   and an initial architecture drafted in PortableBash's working tree; ruled there: PortableBash's own standard
+>   library, one shared runtime in Zig; PortableBash's anchor has the state).
+>   (e) Raised, no position: should C#Bash answer to a bare `sh` (POSIX mode is not available)?
+>   (f) Raised: the battery in deploy.sh tests the managed Release build, not the shipped AOT one; Claude: give
+>   run-compat.ps1 `-Interpreter` and run it on the staged binary (falsifier in DECISIONS "DEPLOY REFUSED (rev 369)").
+>   NOT MSYS in C#Bash, NOT msys64 as a test reference (the architect, 2026-10-20; do NOT re-propose).
+>   (g) Found 2026-10-20: `tests/bench/claudecall.sh` (a contract tool) still needs `cygpath` (Git's), so it runs only
+>   from Git Bash now; deploy.sh's was removed (rev 369). Documented (README, IMPLEMENTATION §11); not changed.
+> - **Verification, as done for every fix (keep it):** a case, red on deployed 373, GNU bash via WSL as the expected
 >   where possible; check the case NAME IS FREE first (a Write overwrote `xtrace_compound.sh` once; restored) and `hg
 >   add` it; `dotnet build -c Release Bash`; suite `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
 >   tests/run-tests.ps1 -NoBuild` and again with `-Detached`; battery `tests/compat/run-compat.ps1 -NoBuild`; a DECISIONS
->   entry; commit. Expected now: suite 173 passed, the 6 Git-dependent failures, 1 skipped (AOT only), of 180;
->   battery 216/237 (the 6 Git probes below its baseline of 222).
+>   entry; commit. Expected now: suite 175 passed, 0 failed, 9 skipped (8 for a missing program, icu_lazy AOT only) of
+>   184 on the Release build (176 passed, 8 skipped on AOT); battery 216/237, baseline 216.
 > - **After the restart, check first:** `type -a bash` names dist/Bash.exe first and no PortableGit entry is on PATH.
 >   The old session began before Git left the Windows PATH: its bare `bash` was Git Bash 4.4 and `perl`/`tar` Git's,
 >   so it stripped PortableGit from PATH in every call; a session started after needs none of that.
-> - `dist/Bash.exe` (rev 324) was told to: gps-time-2c, adc-framework-d8, msp430-a2, nupkg-28, koliada-net-7c, daq-fe,
->   guy-97, ananta-f5. A Claude call ~11 ms; compare3 startup 8.7 ms against Git Bash's 23.3 ms (2026-10-19).
+> - `dist/Bash.exe` (rev 373) was told to (2026-10-20): gps-time-2c, adc-framework-d8, msp430-a2, nupkg-28,
+>   koliada-net-7c, daq-fe, guy-97, guy-85, ananta-f5. A Claude call ~11 ms; compare3 startup 8.9 ms against Git Bash's
+>   23.6 ms (2026-10-19 18:45, deployed 324).
 > - The architect starts Claude Code through a start file (README "Start Claude Code with no PATH of its own"):
 >   `BASH_PATH=%PATH%`, `CLAUDE_CODE_GIT_BASH_PATH=F:/Koliada/Tools/bash/dist/Bash.exe`, `PATH=F:/Koliada/Tools/bash/dist`.
 >   claude.exe's PATH is `dist`; the shell's is the full Windows PATH. A session whose Bash PATH is `dist` alone was

@@ -34,7 +34,5 @@ check dbl-unc    "$(show //c/x //host/share '//a\b/c' ///x/y)"        "//c/x //h
 check dbl-alone  "$(show '//c*' '//c]x' '//c`x')"                    '//c* //c]x //c`x'
 check dbl-off    "$(MSYS_NO_PATHCONV=1 show //c)"                     "//c"
 check dbl-excl   "$(MSYS2_ARG_CONV_EXCL='//c' show //c //k)"          "//c /k"
-if m=$(type -P echo.exe) && [ -f "$(dirname "$m")/msys-2.0.dll" ]; then
-  check msys     "$("$m" /c/Windows)"            "/c/Windows"
-else echo "msys ok"; fi   # no Git usr/bin here: nothing to check
-r=$(git -C "/c/Windows" rev-parse --is-inside-work-tree 2>&1); case $r in *"cannot change to"*) echo "git BAD [$r]";; *) echo "git ok";; esac
+# an MSYS program (no conversion) and git (`git -C /c/repo`) are native_args_msys and native_args_git since
+# 2026-10-20: without their program they printed "ok" here, passes that could not fail

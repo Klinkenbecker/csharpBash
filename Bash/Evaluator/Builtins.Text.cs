@@ -18,21 +18,11 @@ public sealed partial class Builtins
 
 	private static IEnumerable<string> ReadLines(TextReader r) => ShellEncoding.Lines(r);   // LF only: a CR is data
 
-	private static byte[] ReadBytes(string src)
-		{
-		if (src == "-")
-			{
-			// bytes straight from the pipe/file behind stdin; text (here-doc) falls back to the reader
-			var rin = Evaluator.CurrentRawStdin();
-			if (rin is not null) { using var ms = new MemoryStream(); rin.CopyTo(ms); return ms.ToArray(); }
-			return ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd());
-			}
-		return ShellFile.ReadAllBytes(ShellEnvironment.TranslatePath(src));
-		}
+	// (ReadBytes, the whole input as one array, is gone: it failed over 2 GiB; the tools read through OpenBytes and
+	// a rented Block, Builtins.Bytes.cs, 2026-10-27)
 
 	private static List<string> FilesOrStdin(Opts o) => o.Operands.Count == 0 ? ["-"] : o.Operands;
 
-	private static byte[] ReadAll(Stream s) { using var ms = new MemoryStream(); s.CopyTo(ms); return ms.ToArray(); }
 
 	/// <summary>Signal <paramref name="changed"/> when <paramref name="path"/> is written or resized;
 	/// null when the directory cannot be watched (a share, say), and then the caller's interval is
@@ -103,16 +93,17 @@ public sealed partial class Builtins
 						{
 						var rin = Evaluator.CurrentRawStdin();
 						if (rin is not null && raw is not null) { rin.CopyTo(raw); continue; }   // bytes in, bytes out
-						var s = rin is not null ? ShellEncoding.Utf8.GetString(ReadAll(rin)) : Console.In.ReadToEnd();
+						if (rin is not null) { CopyAll(rin); continue; }   // into a capture, a block at a time
+						var s = Console.In.ReadToEnd();   // stdin is text (a here-document)
 						if (raw is not null) { var b = ShellEncoding.Utf8.GetBytes(s); raw.Write(b, 0, b.Length); }
 						else Console.Out.Write(s);
 						continue;
 						}
 					var p = ShellEnvironment.TranslatePath(f);
 					if (Directory.Exists(p)) { Console.Error.WriteLine($"cat: {f}: Is a directory"); rc = 1; continue; }
-					if (raw is not null) { using var fs = ShellFile.OpenInput(p); fs.CopyTo(raw); }
-					else if (ShellFile.Device(p) is not null) { using var ds = ShellFile.OpenInput(p); Console.Out.Write(ShellEncoding.Utf8.GetString(ReadAll(ds))); }
-					else Console.Out.Write(ShellEncoding.ReadAllText(p));
+					using var fs = ShellFile.OpenInput(p);   // a file or a device
+					// into a capture: decoded a block at a time (it read the whole file into one string, 2026-10-27)
+					if (raw is not null) fs.CopyTo(raw); else CopyAll(fs);
 					}
 				catch (BrokenPipeException) { throw; }
 				catch (Exception ex) { Console.Error.WriteLine($"cat: {f}: {IoError(ex)}"); rc = 1; }
@@ -190,58 +181,50 @@ public sealed partial class Builtins
 					{
 					try
 						{
-						var raw = Evaluator.CurrentRawStdout();
-						if (raw is not null) Console.Out.Flush();
-						var text = raw is null ? new MemoryStream() : null;
-						var buf = new byte[(int)Math.Min(count, 65536)];
+						// into a capture, decoded a block at a time (it was gathered whole, 2026-10-27)
+						var sink = new ByteSink();
+						using var block = Block.Rent();
 						for (long left = count; left > 0; )
 							{
-							int n = src.Read(buf, 0, (int)Math.Min(left, buf.Length));
+							int n = src.Read(block.Bytes, 0, (int)Math.Min(left, IoBlock));
 							if (n <= 0) break;
-							if (raw is not null) raw.Write(buf, 0, n); else text!.Write(buf, 0, n);
+							sink.Write(block.Bytes, 0, n);
 							left -= n;
 							}
-						if (raw is not null) raw.Flush();
-						else Console.Out.Write(ShellEncoding.Utf8.GetString(text!.ToArray()));
+						sink.Flush();
 						}
 					finally { if (f != "-") src.Dispose(); }
 					continue;
 					}
-				if (bytes)
+				if (fromEnd || o.Has('z'))
 					{
-					var data = ReadBytes(f);
-					long take = fromEnd ? Math.Max(0, data.Length - count) : Math.Min(count, data.Length);
-					var raw = Evaluator.CurrentRawStdout();
-					if (raw is not null) { Console.Out.Flush(); raw.Write(data, 0, (int)take); raw.Flush(); }
-					else Console.Out.Write(ShellEncoding.Utf8.GetString(data, 0, (int)take));
+					// All but the last N bytes or lines, and -z's NUL-terminated records (accepted and ignored
+					// until 2026-09-05): bytes as they are, a file read from its end. They read the whole input
+					// into one array or list, which failed on a file over 2 GiB (2026-10-27).
+					var input = OpenBytes(f);
+					try
+						{
+						var sink = new ByteSink();
+						byte term = o.Has('z') ? (byte)0 : (byte)'\n';
+						if (fromEnd) FromEnd(input, count, bytes, term, head: true, sink);
+						else CopyRecords(input, count, term, sink);
+						sink.Flush();
+						}
+					finally { if (f != "-") input.Dispose(); }
 					continue;
 					}
-				if (o.Has('z'))
-					{
-					// -z: NUL-terminated records (was accepted and ignored until 2026-09-05 — a silent wrong answer)
-					var (recs, term) = ZeroRecords(f);
-					int end = fromEnd ? (int)Math.Max(0, recs.Count - count) : (int)Math.Min(count, recs.Count);
-					WriteZeroRecords(recs, 0, end, term);
-					continue;
-					}
-				if (fromEnd)
-					{
-					// all but the last N lines
-					using var r0 = f == "-" ? null : OpenText(f);
-					var all = ReadLines(r0 ?? Console.In).ToList();
-					for (int i = 0; i < all.Count - count; i++) Console.WriteLine(all[i]);
-					continue;
-					}
-				// Stream: stop after n lines so an infinite/slow producer is released (SIGPIPE).
+				// Stream: stop after n lines so an infinite/slow producer is released (SIGPIPE). Through the shared line
+				// reader, never past the last line taken, so the next command reads on from there, on a pipe too (GNU's
+				// head takes a pipe's whole block). A last line without a newline stays without one, as GNU (one was
+				// added until 2026-10-27: `printf a | head -n 1` was a\n).
 				TextReader reader = OpenText(f);
 				try
 					{
-					var next = ShellEncoding.LineReaderFor(reader);
 					for (long i = 0; i < count; i++)
 						{
-						var line = next();
-						if (line is null) break;
-						Console.WriteLine(line);
+						if (ShellEncoding.ReadRecord(reader, '\n', out bool ended) is not string line) break;
+						if (ended) Console.WriteLine(line);   // not Write(line + "\n"): a string a line was 20% slower (1M lines)
+						else Console.Write(line);
 						}
 					}
 				finally { if (f != "-") reader.Dispose(); }
@@ -270,35 +253,20 @@ public sealed partial class Builtins
 				{
 				if (header) { if (!first) Console.WriteLine(); Console.WriteLine($"==> {(f == "-" ? "standard input" : f)} <=="); }
 				first = false;
-				if (bytes)
+				// Bytes as they are (a last line keeps having no newline), a file read from its end and a pipe
+				// through a bounded window. Every mode read the whole input into one array or list until
+				// 2026-10-27, which failed on a file over 2 GiB (koliada-net-28, a 93 GB log).
+				long lengthSeen;
+				var input = OpenBytes(f);   // a file or a device (`tail /dev/null`)
+				try
 					{
-					var data = ReadBytes(f);
-					int start = fromStart ? (int)Math.Min(Math.Max(0, count - 1), data.Length) : (int)Math.Max(0, data.Length - count);
-					var raw = Evaluator.CurrentRawStdout();
-					if (raw is not null) { Console.Out.Flush(); raw.Write(data, start, data.Length - start); raw.Flush(); }
-					else Console.Out.Write(ShellEncoding.Utf8.GetString(data, start, data.Length - start));
-					continue;
+					var sink = new ByteSink();
+					byte term = o.Has('z') ? (byte)0 : (byte)'\n';
+					lengthSeen = fromStart ? CopyAfter(input, Math.Max(0, count - 1), bytes, term, sink)
+					                       : FromEnd(input, count, bytes, term, head: false, sink);
+					sink.Flush();
 					}
-				if (o.Has('z'))
-					{
-					var (recs, term) = ZeroRecords(f);
-					int from = fromStart ? (int)Math.Min(Math.Max(0, count - 1), recs.Count) : (int)Math.Max(0, recs.Count - count);
-					WriteZeroRecords(recs, from, recs.Count, term);
-					continue;
-					}
-				var lines = new List<string>();
-				long lengthSeen = 0;
-				if (f == "-") lines = ReadLines(Console.In).ToList();
-				else
-					{
-					var p = ShellEnvironment.TranslatePath(f);
-					using var fs = ShellFile.OpenInput(p);   // a file or a device (`tail /dev/null`)
-					using var r = new LfReader(fs);   // LF-only lines, no BOM sniffing: bytes are data
-					lines = ReadLines(r).ToList();
-					lengthSeen = fs.CanSeek ? fs.Length : 0;
-					}
-				if (fromStart) { for (long i = Math.Max(0, count - 1); i < lines.Count; i++) Console.WriteLine(lines[(int)i]); }
-				else for (int i = (int)Math.Max(0, lines.Count - count); i < lines.Count; i++) Console.WriteLine(lines[i]);
+				finally { if (f != "-") input.Dispose(); }
 				if (follow && f != "-")
 					{
 					// Follow until interrupted (Ctrl+C) or the reader goes away. A file-change watcher wakes
@@ -319,10 +287,13 @@ public sealed partial class Builtins
 						if (len == lengthSeen) continue;
 						using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 						fs.Seek(lengthSeen, SeekOrigin.Begin);
-						using var r = new LfReader(fs);   // LF-only lines, no BOM sniffing: bytes are data
-						Console.Out.Write(r.ReadToEnd());
-						Console.Out.Flush();
-						lengthSeen = len;
+						// What was appended, as bytes, a block at a time, and the next round starts where this read
+						// ended. It was read to the end as one string but the next round started at the length seen
+						// before the read, so whatever a busy writer added in between came out twice (30000 lines
+						// appended as fast as a loop could: ~56600 out, measured 2026-10-27).
+						var sink = new ByteSink();
+						lengthSeen = CopyAfter(fs, 0, true, (byte)'\n', sink);
+						sink.Flush();
 						}
 					}
 				}
@@ -331,29 +302,6 @@ public sealed partial class Builtins
 			catch (Exception ex) { Console.Error.WriteLine($"tail: cannot open '{f}' for reading: {IoError(ex)}"); rc = 1; }
 			}
 		return rc;
-		}
-
-	/// <summary>`-z` input: NUL-terminated records. A final record without its NUL is still a
-	/// record, and is written back without one (GNU behaviour).</summary>
-	private static (List<string> recs, bool lastTerminated) ZeroRecords(string f)
-		{
-		var data = ReadBytes(f);
-		var recs = new List<string>();
-		int start = 0;
-		for (int i = 0; i < data.Length; i++)
-			if (data[i] == 0) { recs.Add(ShellEncoding.Utf8.GetString(data, start, i - start)); start = i + 1; }
-		bool lastTerminated = true;
-		if (start < data.Length) { recs.Add(ShellEncoding.Utf8.GetString(data, start, data.Length - start)); lastTerminated = false; }
-		return (recs, lastTerminated);
-		}
-
-	private static void WriteZeroRecords(List<string> recs, int from, int toExclusive, bool lastTerminated)
-		{
-		for (int i = from; i < toExclusive; i++)
-			{
-			Console.Out.Write(recs[i]);
-			if (i < recs.Count - 1 || lastTerminated) Console.Out.Write('\0');
-			}
 		}
 
 	// ── wc ──────────────────────────────────────────────────────────────────────
@@ -392,19 +340,99 @@ public sealed partial class Builtins
 			{
 			try
 				{
-				byte[] data = ReadBytes(f);
-				string s = ShellEncoding.Utf8.GetString(data);
-				long lines = 0, maxLen = 0, cur = 0;
-				foreach (var ch in s) { if (ch == '\n') { lines++; if (cur > maxLen) maxLen = cur; cur = 0; } else cur++; }
-				if (cur > maxLen) maxLen = cur;
-				long words = s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-				tl += lines; tw += words; tc += data.Length; tm += s.Length; if (maxLen > tL) tL = maxLen;
-				Emit(lines, words, data.Length, s.Length, maxLen, f == "-" ? "" : f);
+				var input = OpenBytes(f);
+				try
+					{
+					var (lines, words, bytes, chars, maxLen) = WcCount(input, text: cw || cm || cL, perChar: cw || cL, bytesOnly: !cl && !cw && !cm && !cL);
+					tl += lines; tw += words; tc += bytes; tm += chars; if (maxLen > tL) tL = maxLen;
+					Emit(lines, words, bytes, chars, maxLen, f == "-" ? "" : f);
+					}
+				finally { if (f != "-") input.Dispose(); }
 				}
 			catch (Exception ex) { Console.Error.WriteLine($"wc: {f}: {IoError(ex)}"); rc = 1; }
 			}
 		if (multi) Emit(tl, tw, tc, tm, tL, "total");
 		return rc;
+		}
+
+	/// <summary>One input's counts, taken as it is read, a block at a time: the whole input was one array and then one
+	/// string, which failed over 2 GiB, file or pipe (koliada-net-28, 2026-10-27). The counts are the ones the whole-
+	/// string code gave: lines and bytes on the bytes; words (runs of non-white-space), characters and the longest line
+	/// (in characters) on the text, decoded only when asked, by the carrying decoder (a character split between two
+	/// blocks is one). `-c` alone on a seekable input takes its length and moves past it, as GNU does. For speed: blocks
+	/// and characters are rented (<see cref="Block"/>); an ASCII block with nothing carried is counted on its bytes, with
+	/// no decoding (an ASCII byte is the character it encodes; <see cref="WcAscii"/> holds char.IsWhiteSpace for each);
+	/// characters alone (-m) need no look at each one (<paramref name="perChar"/> false).</summary>
+	/// <summary>char.IsWhiteSpace of each ASCII character, built on first use (not at the shell's start).</summary>
+	private static class WcAscii
+		{
+		public static readonly bool[] White = [.. Enumerable.Range(0, 128).Select(c => char.IsWhiteSpace((char)c))];
+		}
+
+	private static (long Lines, long Words, long Bytes, long Chars, long MaxLen) WcCount(Stream s, bool text, bool perChar, bool bytesOnly)
+		{
+		if (bytesOnly && s.CanSeek)
+			{
+			long size = Math.Max(0, s.Length - s.Position);
+			s.Seek(0, SeekOrigin.End);
+			return (0, 0, size, 0, 0);
+			}
+		long lines = 0, words = 0, bytes = 0, chars = 0, maxLen = 0, cur = 0;
+		bool inWord = false;
+		using var block = Block.Rent();
+		var buf = block.Bytes;
+		var decoder = text ? (ShellEncoding.CarryDecoder)ShellEncoding.Utf8.GetDecoder() : null;
+		// characters only for a block that is not ASCII: a pipe stage runs on a new thread, where the pool has none to
+		// give and the 256 KB was allocated every time (+5 us on `echo a b c | wc -w`, measured 2026-10-27)
+		char[]? cs = null;
+		try
+			{
+			for (int n; (n = s.Read(buf, 0, IoBlock)) > 0; )
+				{
+				bytes += n;
+				var span = buf.AsSpan(0, n);
+				lines += span.Count((byte)'\n');
+				if (!text) continue;
+				if (!decoder!.Carrying && System.Text.Ascii.IsValid(span))
+					{
+					chars += n;
+					if (perChar) CountAscii(span);
+					}
+				else Count(n, flush: false);
+				}
+			if (text && decoder!.Carrying) Count(0, flush: true);   // with nothing carried a flush gives nothing
+			}
+		finally { if (cs is not null) System.Buffers.ArrayPool<char>.Shared.Return(cs); }
+		if (cur > maxLen) maxLen = cur;
+		return (lines, words, bytes, chars, maxLen);
+
+		void Count(int n, bool flush)
+			{
+			cs ??= System.Buffers.ArrayPool<char>.Shared.Rent(IoBlock + 4);   // up to 3 carried bytes come out with a block
+			int k = decoder!.GetChars(buf, 0, n, cs, 0, flush);
+			chars += k;
+			if (!perChar) return;
+			for (int i = 0; i < k; i++)
+				{
+				char ch = cs[i];
+				if (ch == '\n') { if (cur > maxLen) maxLen = cur; cur = 0; } else cur++;
+				bool white = char.IsWhiteSpace(ch);
+				if (!white && !inWord) words++;
+				inWord = !white;
+				}
+			}
+
+		void CountAscii(ReadOnlySpan<byte> span)
+			{
+			var white = WcAscii.White;
+			foreach (var b in span)
+				{
+				if (b == '\n') { if (cur > maxLen) maxLen = cur; cur = 0; } else cur++;
+				bool w = white[b];
+				if (!w && !inWord) words++;
+				inWord = !w;
+				}
+			}
 		}
 
 	// ── rev / tac ───────────────────────────────────────────────────────────────
@@ -430,13 +458,58 @@ public sealed partial class Builtins
 		int rc = 0;
 		foreach (var f in FilesOrStdin(o))
 			{
-			TextReader? r = null;
-			try { r = OpenText(f); var lines = ReadLines(r).ToList(); for (int i = lines.Count - 1; i >= 0; i--) Console.WriteLine(lines[i]); }
+			// The lines last to first, as bytes: a seekable input read from its end, a pipe first copied to a temporary
+			// file (GNU's tac does the same). It held every line in a list and added a newline to a last line that had
+			// none (`a\nb`: b\na\n; GNU: ba\n), 2026-10-27.
+			Stream? input = null, spool = null;
+			try
+				{
+				input = OpenBytes(f);
+				if (!input.CanSeek)
+					{
+					spool = new FileStream(Path.GetTempFileName(), FileMode.Open, FileAccess.ReadWrite, FileShare.None, IoBlock, FileOptions.DeleteOnClose);
+					input.CopyTo(spool, IoBlock);
+					spool.Position = 0;
+					}
+				var sink = new ByteSink();
+				TacRecords(spool ?? input, sink);
+				sink.Flush();
+				}
 			catch (BrokenPipeException) { throw; }
 			catch (Exception ex) { Console.Error.WriteLine($"tac: failed to open '{f}' for reading: {IoError(ex)}"); rc = 1; }
-			finally { if (f != "-") r?.Dispose(); }
+			finally { spool?.Dispose(); if (f != "-") input?.Dispose(); }
 			}
 		return rc;
+		}
+
+	/// <summary>A seekable input's newline-ended records from the last to the first, read backwards a block at a time; a
+	/// record inside the block in hand is written from it, a longer one read again forwards.</summary>
+	private static void TacRecords(Stream s, ByteSink sink)
+		{
+		long lo = s.Position, hi = Math.Max(lo, s.Length), end = hi, pos = hi;
+		ReadAt read = (at, b, n) => { s.Seek(at, SeekOrigin.Begin); s.ReadExactly(b, 0, n); };
+		using var block = Block.Rent();
+		var buf = block.Bytes;
+		int len = 0;
+		while (pos > lo)
+			{
+			len = (int)Math.Min(IoBlock, pos - lo);
+			pos -= len;
+			read(pos, buf, len);
+			for (int i = len; (i = buf.AsSpan(0, i).LastIndexOf((byte)'\n')) >= 0; ) Emit(pos + i + 1);
+			}
+		Emit(lo);
+
+		// the record [from, end): from the block in hand when it is all there, else read again forwards
+		void Emit(long from)
+			{
+			if (end > from)
+				{
+				if (end <= pos + len) sink.Write(buf, (int)(from - pos), (int)(end - from));
+				else CopyRange(read, from, end, sink);
+				}
+			end = from;
+			}
 		}
 
 	// ── tr ──────────────────────────────────────────────────────────────────────
@@ -495,6 +568,7 @@ public sealed partial class Builtins
 
 		// a filter, a block at a time, as GNU tr: it read ALL its input first until 2026-10-10, so
 		// `tr '\0' z < /dev/zero | head -c 3` never ended and a large input had to fit in memory
+		// its own buffer: a pooled one measured no faster (2026-10-27)
 		var buf = new char[8192];
 		int n;
 		while ((n = Console.In.Read(buf, 0, buf.Length)) > 0)
@@ -645,8 +719,19 @@ public sealed partial class Builtins
 
 	private static int Uniq(List<string> args)
 		{
-		var o = Opts.Parse("uniq", args, "cduif:s:w:z", ["count:c", "repeated:d", "unique:u", "ignore-case:i", "skip-fields=:f", "skip-chars=:s", "check-chars=:w", "zero-terminated:z", "all-repeated:D"]);
-		bool count = o.Has('c'), onlyD = o.Has('d') || o.Has('D'), onlyU = o.Has('u'), icase = o.Has('i');
+		var o = Opts.Parse("uniq", args, "cduDif:s:w:z", ["count:c", "repeated:d", "unique:u", "ignore-case:i", "skip-fields=:f", "skip-chars=:s", "check-chars=:w", "zero-terminated:z", "all-repeated:D"]);
+		// coreutils' three switches: -d and -D turn off the lone lines, -u the first line of a repeated group, -D turns
+		// on its later lines. `-d -u` printed the repeated groups (GNU: nothing); -D went to the PATH uniq, which
+		// differs from GNU on -D -d and -D -u (2026-10-27).
+		bool count = o.Has('c'), icase = o.Has('i');
+		bool unique = !(o.Has('d') || o.Has('D')), firstRepeated = !o.Has('u'), laterRepeated = o.Has('D');
+		if (count && laterRepeated)
+			{
+			Console.Error.WriteLine("uniq: printing all duplicated lines and repeat counts is meaningless");
+			Console.Error.WriteLine("Try 'uniq --help' for more information.");
+			return 1;
+			}
+		char sep = o.Has('z') ? '\0' : '\n';
 		int skipFields = o.GetInt('f', 0), skipChars = o.GetInt('s', 0), checkChars = o.GetInt('w', 0);
 		string input = o.Operands.Count > 0 ? o.Operands[0] : "-";
 		string? output = o.Operands.Count > 1 ? o.Operands[1] : null;
@@ -656,9 +741,10 @@ public sealed partial class Builtins
 			var k = s;
 			for (int i = 0; i < skipFields; i++)
 				{
+				// blanks are space and tab, as GNU (char.IsWhiteSpace also took a CR: `uniq -f 1` of CRLF lines differed)
 				int p = 0;
-				while (p < k.Length && char.IsWhiteSpace(k[p])) p++;
-				while (p < k.Length && !char.IsWhiteSpace(k[p])) p++;
+				while (p < k.Length && k[p] is ' ' or '\t') p++;
+				while (p < k.Length && k[p] is not (' ' or '\t')) p++;
 				k = k[p..];
 				}
 			if (skipChars > 0) k = skipChars < k.Length ? k[skipChars..] : "";
@@ -672,18 +758,28 @@ public sealed partial class Builtins
 			{
 			r = OpenText(input);
 			if (output is not null) { fw = new StreamWriter(ShellEnvironment.TranslatePath(output), false, ShellEncoding.Utf8) { NewLine = "\n" }; w = fw; }
-			var lines = ReadLines(r).ToList();
-			int i = 0;
-			while (i < lines.Count)
+			// A group at a time: its first line, key and size (every line was read into a list first, which failed over
+			// 2 GiB and held a pipe's whole input). -z: NUL-ended records (it was accepted and ignored).
+			string? first = null, firstKey = null;
+			long n = 0;
+			void EndGroup()
 				{
-				var key = KeyOf(lines[i]);
-				int j = i + 1;
-				while (j < lines.Count && KeyOf(lines[j]) == key) j++;
-				int n = j - i;
-				bool show = onlyD ? n > 1 : onlyU ? n == 1 : true;
-				if (show) w.WriteLine(count ? $"{n,7} {lines[i]}" : lines[i]);
-				i = j;
+				if (first is null) return;
+				if (n == 1 ? unique : firstRepeated && !laterRepeated) w.Write((count ? $"{n,7} {first}" : first) + sep);
 				}
+			while (ShellEncoding.ReadRecord(r, sep, out _) is string line)
+				{
+				var key = KeyOf(line);
+				if (first is not null && key == firstKey)
+					{
+					if (++n == 2 && laterRepeated && firstRepeated) w.Write(first + sep);
+					if (laterRepeated) w.Write(line + sep);
+					continue;
+					}
+				EndGroup();
+				first = line; firstKey = key; n = 1;
+				}
+			EndGroup();
 			}
 		catch (BrokenPipeException) { throw; }
 		catch (Exception ex) { Console.Error.WriteLine($"uniq: {input}: {IoError(ex)}"); return 1; }
@@ -761,9 +857,11 @@ public sealed partial class Builtins
 				      : Evaluator.CurrentRawStdin() ?? new MemoryStream(ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd()));
 				var line = new List<byte>();
 				int column = 0;
-				var buf = new byte[8192];
+				// a pooled block, read 8 KiB at a time as before: 2000 runs on a tiny file 45 -> 43 ms (2026-10-27)
+				using var block = Block.Rent();
+				var buf = block.Bytes;
 				int n;
-				while ((n = input.Read(buf, 0, buf.Length)) > 0)
+				while ((n = input.Read(buf, 0, 8192)) > 0)
 					for (int k = 0; k < n; k++)
 						{
 						byte c = buf[k];
@@ -812,40 +910,72 @@ public sealed partial class Builtins
 	private static int Paste(List<string> args)
 		{
 		var o = Opts.Parse("paste", args, "d:sz", ["delimiters=:d", "serial:s", "zero-terminated:z"]);
-		string delims = o.Get('d') is string d ? UnescapeDelims(d) : "\t";
-		if (delims.Length == 0) delims = "\t";
+		var delims = PasteDelims(o.Get('d') ?? "\t");
 		bool serial = o.Has('s');
+		char sep = o.Has('z') ? '\0' : '\n';
 		var files = FilesOrStdin(o);
-		var cols = new List<List<string>>();
-		foreach (var f in files)
+		// A row at a time, a line from each input (each was read into a list first: failed over 2 GiB, and `paste - -`
+		// gave the first `-` all of stdin: one line a row, as GNU reads each `-` in turn from the one stdin). -z: NUL
+		// records (was ignored).
+		var r = new TextReader?[files.Count];
+		try
 			{
-			TextReader? r = null;
-			try { r = OpenText(f); cols.Add(ReadLines(r).ToList()); }
-			catch (Exception ex) { Console.Error.WriteLine($"paste: {f}: {IoError(ex)}"); return 1; }
-			finally { if (f != "-") r?.Dispose(); }
-			}
-		if (serial)
-			{
-			foreach (var col in cols)
+			for (int k = 0; k < files.Count; k++)
 				{
-				var sb = new StringBuilder();
-				for (int i = 0; i < col.Count; i++) { if (i > 0) sb.Append(delims[(i - 1) % delims.Length]); sb.Append(col[i]); }
-				Console.WriteLine(sb.ToString());
+				try { r[k] = OpenText(files[k]); }
+				catch (Exception ex) { Console.Error.WriteLine($"paste: {files[k]}: {IoError(ex)}"); return 1; }
 				}
-			return 0;
-			}
-		int max = cols.Count == 0 ? 0 : cols.Max(c => c.Count);
-		for (int row = 0; row < max; row++)
-			{
+			var w = Console.Out;
 			var sb = new StringBuilder();
-			for (int c = 0; c < cols.Count; c++)
+			if (serial)
 				{
-				if (c > 0) sb.Append(delims[(c - 1) % delims.Length]);
-				if (row < cols[c].Count) sb.Append(cols[c][row]);
+				for (int k = 0; k < files.Count; k++)
+					{
+					sb.Clear();
+					for (int i = 0; ShellEncoding.ReadRecord(r[k]!, sep, out _) is string line; i++)
+						{
+						if (i > 0) sb.Append(delims[(i - 1) % delims.Length]);
+						sb.Append(line);
+						if (sb.Length >= 65536) { w.Write(sb.ToString()); sb.Clear(); }   // one input is one output line: written as it grows
+						}
+					w.Write(sb.Append(sep).ToString());
+					}
+				return 0;
 				}
-			Console.WriteLine(sb.ToString());
+			var done = new bool[files.Count];
+			while (true)
+				{
+				sb.Clear();
+				bool any = false;
+				for (int c = 0; c < files.Count; c++)
+					{
+					if (c > 0) sb.Append(delims[(c - 1) % delims.Length]);
+					if (done[c]) continue;
+					if (ShellEncoding.ReadRecord(r[c]!, sep, out _) is string line) { sb.Append(line); any = true; }
+					else done[c] = true;
+					}
+				if (!any) return 0;
+				w.Write(sb.Append(sep).ToString());
+				}
 			}
-		return 0;
+		catch (BrokenPipeException) { throw; }
+		catch (Exception ex) { Console.Error.WriteLine($"paste: {IoError(ex)}"); return 1; }
+		finally
+			{
+			for (int k = 0; k < files.Count; k++) if (files[k] != "-") r[k]?.Dispose();
+			}
+		}
+
+	/// <summary>paste's delimiter list, one entry per character, as GNU: `\0` is an empty delimiter and so is an empty
+	/// list (they were a NUL and a tab); `\t`, `\n`, `\\` as written.</summary>
+	private static string[] PasteDelims(string d)
+		{
+		var list = new List<string>();
+		for (int i = 0; i < d.Length; i++)
+			if (d[i] == '\\' && i + 1 < d.Length)
+				list.Add(d[++i] switch { 't' => "\t", 'n' => "\n", '\\' => "\\", '0' => "", var x => x.ToString() });
+			else list.Add(d[i].ToString());
+		return list.Count == 0 ? [""] : [.. list];
 		}
 
 	private static string UnescapeDelims(string s)
@@ -860,30 +990,71 @@ public sealed partial class Builtins
 	private static int Comm(List<string> args)
 		{
 		var o = Opts.Parse("comm", args, "123iz", ["check-order", "nocheck-order", "output-delimiter=", "total", "zero-terminated:z"]);
-		bool s1 = o.Has('1'), s2 = o.Has('2'), s3 = o.Has('3'), icase = o.Has('i');
-		string od = o.GetLong("output-delimiter") ?? "\t";
-		if (o.Operands.Count < 2) { Console.Error.WriteLine("comm: missing operand"); return 1; }
-		List<string> A, B;
+		bool s1 = o.Has('1'), s2 = o.Has('2'), s3 = o.Has('3'), icase = o.Has('i'), total = o.HasLong("total");
+		// as GNU: an empty delimiter is one NUL; -z NUL records; --total and the order check (each was accepted and
+		// ignored until 2026-10-27). -i is C#Bash's own (GNU's comm has none).
+		string od = o.GetLong("output-delimiter") is string ods ? (ods.Length == 0 ? "\0" : ods) : "\t";
+		char sep = o.Has('z') ? '\0' : '\n';
+		if (o.Operands.Count != 2)
+			{
+			Console.Error.WriteLine(o.Operands.Count == 0 ? "comm: missing operand" : o.Operands.Count == 1 ? $"comm: missing operand after '{o.Operands[0]}'" : $"comm: extra operand '{o.Operands[2]}'");
+			Console.Error.WriteLine("Try 'comm --help' for more information.");
+			return 1;
+			}
+		// The order check, as GNU: --check-order stops at the first line out of order (status 1); by default a file is
+		// checked only once an unpairable line has been seen, warned once, and the status is 1 at the end;
+		// --nocheck-order never checks.
+		int check = o.HasLong("check-order") ? 2 : o.HasLong("nocheck-order") ? 0 : 1;
+		var cmp = icase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+		var r = new TextReader?[2];
 		try
 			{
-			using var ra = OpenText(o.Operands[0]); A = ReadLines(ra).ToList();
-			using var rb = OpenText(o.Operands[1]); B = ReadLines(rb).ToList();
+			// Both inputs merged a line at a time (each was read into a list first: failed over 2 GiB).
+			for (int k = 0; k < 2; k++)
+				{
+				try { r[k] = OpenText(o.Operands[k]); }
+				catch (Exception ex) { Console.Error.WriteLine($"comm: {o.Operands[k]}: {IoError(ex)}"); return 1; }
+				}
+			var line = new string?[2];
+			var warned = new bool[2];
+			bool unpairable = false;
+			long n1 = 0, n2 = 0, n3 = 0;
+			// the next line of file k, checked against the one before it; false when --check-order stops
+			bool Advance(int k)
+				{
+				var prev = line[k];
+				line[k] = ShellEncoding.ReadRecord(r[k]!, sep, out _);
+				if (line[k] is null || prev is null || check == 0 || (check == 1 && !unpairable) || warned[k] || cmp.Compare(prev, line[k]) <= 0) return true;
+				Console.Error.WriteLine($"comm: file {k + 1} is not in sorted order");
+				warned[k] = true;
+				return check != 2;
+				}
+			if (!Advance(0) || !Advance(1)) return 1;
+			string p2 = s1 ? "" : od, p3 = (s1 ? "" : od) + (s2 ? "" : od);
+			var w = Console.Out;
+			while (line[0] is not null || line[1] is not null)
+				{
+				int c = line[0] is null ? 1 : line[1] is null ? -1 : cmp.Compare(line[0], line[1]);
+				if (c == 0) { n3++; if (!s3) w.Write(p3 + line[0] + sep); }
+				else
+					{
+					unpairable = true;
+					if (c < 0) { n1++; if (!s1) w.Write(line[0] + sep); }
+					else { n2++; if (!s2) w.Write(p2 + line[1] + sep); }
+					}
+				if (c <= 0 && !Advance(0)) return 1;
+				if (c >= 0 && !Advance(1)) return 1;
+				}
+			if (total) w.Write($"{n1}{od}{n2}{od}{n3}{od}total{sep}");
+			if (warned[0] || warned[1]) { Console.Error.WriteLine("comm: input is not in sorted order"); return 1; }
+			return 0;
 			}
+		catch (BrokenPipeException) { throw; }
 		catch (Exception ex) { Console.Error.WriteLine($"comm: {IoError(ex)}"); return 1; }
-		string p2 = s1 ? "" : od;
-		string p3 = (s1 ? "" : od) + (s2 ? "" : od);
-		var cmp = icase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-		int i = 0, j = 0;
-		while (i < A.Count && j < B.Count)
+		finally
 			{
-			int c = cmp.Compare(A[i], B[j]);
-			if      (c < 0) { if (!s1) Console.WriteLine(A[i]); i++; }
-			else if (c > 0) { if (!s2) Console.WriteLine(p2 + B[j]); j++; }
-			else            { if (!s3) Console.WriteLine(p3 + A[i]); i++; j++; }
+			for (int k = 0; k < 2; k++) if (o.Operands[k] != "-") r[k]?.Dispose();
 			}
-		while (i < A.Count) { if (!s1) Console.WriteLine(A[i]); i++; }
-		while (j < B.Count) { if (!s2) Console.WriteLine(p2 + B[j]); j++; }
-		return 0;
 		}
 
 	// ── tee ─────────────────────────────────────────────────────────────────────
@@ -918,27 +1089,52 @@ public sealed partial class Builtins
 				{
 				var rout = Evaluator.CurrentRawStdout();
 				if (rout is not null) Console.Out.Flush();
-				var buf = new byte[8192];
-				int n;
-				while ((n = rin.Read(buf, 0, buf.Length)) > 0)
+				// A pooled block, read 8 KiB at a time: reading the whole block from a pipe made `cat f | tee g > h`
+				// slower (100 MB: 537 ms at 8 KiB, 656 ms at 64 KiB; AOT, 5 interleaved rounds, 2026-10-27). Text
+				// targets (stdout when it is text, a capture; /dev/stdout and /dev/stderr operands) get each chunk
+				// through one carrying decoder, so a character cut by the chunk's end is not two raw bytes there.
+				const int chunk = 8192;
+				using var block = Block.Rent();
+				var buf = block.Bytes;
+				var decoder = rout is null || copies.Count > 0 ? ShellEncoding.Utf8.GetDecoder() : null;
+				var chars = decoder is null ? null : System.Buffers.ArrayPool<char>.Shared.Rent(chunk + 4);
+				try
 					{
-					if (rout is not null) { rout.Write(buf, 0, n); rout.Flush(); }
-					else { Console.Out.Write(ShellEncoding.Utf8.GetString(buf, 0, n)); Console.Out.Flush(); }
-					foreach (var fs in files) fs.Write(buf, 0, n);
-					foreach (var w in copies) { w.Write(ShellEncoding.Utf8.GetString(buf, 0, n)); w.Flush(); }
+					void Text(int nc)
+						{
+						if (nc <= 0) return;
+						if (rout is null) { Console.Out.Write(chars!, 0, nc); Console.Out.Flush(); }
+						foreach (var w in copies) { w.Write(chars!, 0, nc); w.Flush(); }
+						}
+					int n;
+					while ((n = rin.Read(buf, 0, chunk)) > 0)
+						{
+						if (rout is not null) { rout.Write(buf, 0, n); rout.Flush(); }
+						foreach (var fs in files) fs.Write(buf, 0, n);
+						if (decoder is not null) Text(decoder.GetChars(buf, 0, n, chars!, 0, false));
+						}
+					if (decoder is not null) Text(decoder.GetChars([], 0, 0, chars!, 0, true));
 					}
+				finally { if (chars is not null) System.Buffers.ArrayPool<char>.Shared.Return(chars); }
 				}
 			else
 				{
-				var buf = new char[4096];
-				int n;
-				while ((n = Console.In.Read(buf, 0, buf.Length)) > 0)
+				// A text source (a here-document): a high surrogate that ends a chunk waits for the next, so no target
+				// gets half a pair (the files got two U+FFFD, and stdout's Flush wrote the held half alone: 2026-10-27).
+				var buf = new char[4097];
+				int keep = 0, n;
+				while ((n = Console.In.Read(buf, keep, 4096)) > 0 || keep > 0)
 					{
-					Console.Out.Write(buf, 0, n);
+					bool more = n > 0;   // false: the input ended on a held half, which goes alone, as before
+					n += keep;
+					keep = more && char.IsHighSurrogate(buf[n - 1]) ? 1 : 0;
+					int m = n - keep;
+					Console.Out.Write(buf, 0, m);
 					Console.Out.Flush();
-					var b = ShellEncoding.Utf8.GetBytes(buf, 0, n);
+					var b = ShellEncoding.Utf8.GetBytes(buf, 0, m);
 					foreach (var fs in files) fs.Write(b, 0, b.Length);
-					foreach (var w in copies) { w.Write(buf, 0, n); w.Flush(); }
+					foreach (var w in copies) { w.Write(buf, 0, m); w.Flush(); }
+					if (keep == 1) buf[0] = buf[n - 1];
 					}
 				}
 			}
@@ -1141,44 +1337,90 @@ public sealed partial class Builtins
 		int lines = o.Numeric is not null ? int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture) : o.GetInt('l', 1000);
 		long byteSize = o.Get('b') is string bs ? ParseCount("split", bs, 'b') : 0;
 		if (o.Get('n') is not null) throw new UnsupportedOptionException("split", "-n", "chunk mode is not implemented");
-		int suffixLen = o.GetInt('a', 2);
+		// -a 0 is the default length, as GNU; -a x / -a -1 were taken as the default and as no suffix at all.
+		int suffixLen = 2;
+		bool widen = true;
+		if (o.Get('a') is string av)
+			{
+			if (!int.TryParse(av, System.Globalization.NumberStyles.AllowLeadingWhite | System.Globalization.NumberStyles.AllowLeadingSign,
+					System.Globalization.CultureInfo.InvariantCulture, out suffixLen) || suffixLen < 0)
+				{ Console.Error.WriteLine($"split: invalid suffix length: '{av}'"); return 1; }
+			widen = suffixLen == 0;
+			if (widen) suffixLen = 2;
+			}
 		bool numeric = o.Has('d');
 		string extra = o.GetLong("additional-suffix") ?? "";
 		string file = o.Operands.Count > 0 ? o.Operands[0] : "-";
 		string prefix = o.Operands.Count > 1 ? o.Operands[1] : "x";
-		byte[] data;
-		try { data = ReadBytes(file); }
-		catch (Exception ex) { Console.Error.WriteLine($"split: {file}: {IoError(ex)}"); return 1; }
 
-		string Suffix(int idx)
+		// The suffix counts up as GNU's next_file_name: each character an index into the alphabet. Without -a it
+		// never runs out: when its first character would become the last letter, that letter joins the prefix and
+		// the suffix grows by one, restarting (xyz, xzaaa; -d: x89, x9000). With -a the last name is the last:
+		// "output file suffixes exhausted". It wrapped to xaa and overwrote the first pieces (2026-10-27).
+		string alphabet = numeric ? "0123456789" : "abcdefghijklmnopqrstuvwxyz";
+		var digits = new int[suffixLen];
+		bool started = false;
+		string? NextName()
 			{
-			if (numeric) return idx.ToString().PadLeft(suffixLen, '0') + extra;
-			var sb = new StringBuilder();
-			for (int k = 0; k < suffixLen; k++) { sb.Insert(0, (char)('a' + idx % 26)); idx /= 26; }
-			return sb + extra;
+			if (started)
+				for (int i = digits.Length - 1; ; i--)
+					{
+					if (i < 0) return null;
+					if (++digits[i] < alphabet.Length)
+						{
+						if (widen && i == 0 && digits[0] == alphabet.Length - 1)
+							{ prefix += alphabet[^1]; digits = new int[digits.Length + 1]; }
+						break;
+						}
+					digits[i] = 0;
+					}
+			started = true;
+			var sb = new StringBuilder(prefix);
+			foreach (int d in digits) sb.Append(alphabet[d]);
+			return sb.Append(extra).ToString();
 			}
-		void Write(int idx, int off, int len)
+		FileStream? NewPiece()
 			{
-			using var fs = ShellFile.Create(ShellEnvironment.TranslatePath(prefix + Suffix(idx)));
-			fs.Write(data, off, len);
+			if (NextName() is not string name) { Console.Error.WriteLine("split: output file suffixes exhausted"); return null; }
+			try { return ShellFile.Create(ShellEnvironment.TranslatePath(name)); }
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+				{ Console.Error.WriteLine($"split: {name}: {IoError(ex)}"); return null; }
 			}
-		int piece = 0;
-		if (byteSize > 0)
+		// Each piece written as the input is read, a block at a time: it read the whole input first, which failed over
+		// 2 GiB (2026-10-27). A piece is opened only when there is a byte for it, as before.
+		Stream? input = null;
+		FileStream? piece = null;
+		try
 			{
-			for (long off = 0; off < data.Length; off += byteSize)
-				Write(piece++, (int)off, (int)Math.Min(byteSize, data.Length - off));
-			}
-		else
-			{
-			int start = 0, count = 0;
-			for (int i = 0; i < data.Length; i++)
+			input = OpenBytes(file);
+			using var block = Block.Rent();
+			var buf = block.Bytes;
+			long inPiece = 0, linesIn = 0;
+			for (int n; (n = input.Read(buf, 0, IoBlock)) > 0; )
 				{
-				if (data[i] != (byte)'\n') continue;
-				if (++count == lines) { Write(piece++, start, i - start + 1); start = i + 1; count = 0; }
+				for (int at = 0; at < n; )
+					{
+					piece ??= NewPiece();
+					if (piece is null) return 1;
+					int take = n - at;
+					bool full = false;
+					if (byteSize > 0) { take = (int)Math.Min(take, byteSize - inPiece); full = inPiece + take == byteSize; }
+					else if (lines > 0)
+						for (int scanned = 0, nl; (nl = buf.AsSpan(at + scanned, n - at - scanned).IndexOf((byte)'\n')) >= 0; )
+							{
+							scanned += nl + 1;
+							if (++linesIn == lines) { take = scanned; full = true; break; }
+							}
+					piece.Write(buf, at, take);
+					at += take; inPiece += take;
+					if (full) { piece.Dispose(); piece = null; inPiece = 0; linesIn = 0; }
+					}
 				}
-			if (start < data.Length) Write(piece++, start, data.Length - start);
+			return 0;
 			}
-		return 0;
+		catch (BrokenPipeException) { throw; }
+		catch (Exception ex) { Console.Error.WriteLine($"split: {file}: {IoError(ex)}"); return 1; }
+		finally { piece?.Dispose(); if (file != "-") input?.Dispose(); }
 		}
 
 	// ── od / hexdump ────────────────────────────────────────────────────────────
@@ -1193,11 +1435,7 @@ public sealed partial class Builtins
 		long limit = o.Get('N') is string ns ? ParseCount("od", ns, 'N') : long.MaxValue;
 		int width = o.GetInt('w', 16);
 		string file = o.Operands.Count > 0 ? o.Operands[0] : "-";
-		byte[] data;
-		try { data = ReadBytes(file); }
-		catch (Exception ex) { Console.Error.WriteLine($"od: {file}: {IoError(ex)}"); return 1; }
-		if (skip > 0) data = data.Skip((int)Math.Min(skip, data.Length)).ToArray();
-		if (limit < data.Length) data = data.Take((int)limit).ToArray();
+		width = Math.Max(1, width);   // -w 0 looped forever
 
 		string Addr(long off) => addr switch
 			{
@@ -1208,16 +1446,15 @@ public sealed partial class Builtins
 			};
 		int size = fmt.Length > 1 && char.IsDigit(fmt[^1]) ? fmt[^1] - '0' : (fmt[0] == 'c' || fmt[0] == 'a' ? 1 : 2);
 		char kind = fmt[0];
-		for (int off = 0; off < data.Length; off += width)
+		void Line(long off, ReadOnlySpan<byte> line)
 			{
 			var sb = new StringBuilder(Addr(off));
-			int end = Math.Min(off + width, data.Length);
-			for (int i = off; i < end; i += size)
+			for (int i = 0; i < line.Length; i += size)
 				{
-				if (kind == 'c') { sb.Append(' ').Append(OdChar(data[i]).PadLeft(3)); continue; }
-				if (kind == 'a') { sb.Append(' ').Append((data[i] >= 32 && data[i] < 127 ? ((char)data[i]).ToString() : "nul").PadLeft(3)); continue; }
+				if (kind == 'c') { sb.Append(' ').Append(OdChar(line[i]).PadLeft(3)); continue; }
+				if (kind == 'a') { sb.Append(' ').Append((line[i] >= 32 && line[i] < 127 ? ((char)line[i]).ToString() : "nul").PadLeft(3)); continue; }
 				long v = 0;
-				for (int b = 0; b < size && i + b < end; b++) v |= (long)data[i + b] << (8 * b);
+				for (int b = 0; b < size && i + b < line.Length; b++) v |= (long)line[i + b] << (8 * b);
 				sb.Append(' ').Append(kind switch
 					{
 					'x' => v.ToString("x" + (size * 2)),
@@ -1228,7 +1465,19 @@ public sealed partial class Builtins
 				}
 			Console.WriteLine(sb.ToString());
 			}
-		if (addr != "n") Console.WriteLine(Addr(data.Length));   // GNU prints it for empty input too (`0000000`)
+		// a line at a time as it is read (it read the whole input, which failed over 2 GiB, 2026-10-27)
+		Stream? input = null;
+		long total;
+		try
+			{
+			input = OpenBytes(file);
+			using (var block = Block.Rent()) SkipBytes(input, skip, block.Bytes);
+			total = ForEachPiece(input, limit, width, Line);
+			}
+		catch (BrokenPipeException) { throw; }
+		catch (Exception ex) { Console.Error.WriteLine($"od: {file}: {IoError(ex)}"); return 1; }
+		finally { if (file != "-") input?.Dispose(); }
+		if (addr != "n") Console.WriteLine(Addr(total));   // GNU prints it for empty input too (`0000000`)
 		return 0;
 		}
 
@@ -1243,27 +1492,36 @@ public sealed partial class Builtins
 		var o = Opts.Parse("hexdump", args, "Cn:s:v", ["canonical:C", "length=:n", "skip=:s", "no-squeezing:v"]);
 		if (!o.Has('C')) throw new UnsupportedOptionException("hexdump", "(default format)", "only -C (canonical) is implemented");
 		string file = o.Operands.Count > 0 ? o.Operands[0] : "-";
-		byte[] data;
-		try { data = ReadBytes(file); }
-		catch (Exception ex) { Console.Error.WriteLine($"hexdump: {file}: {IoError(ex)}"); return 1; }
 		long skip = o.Get('s') is string ss ? ParseCount("hexdump", ss, 's') : 0;
 		long len = o.Get('n') is string ns ? ParseCount("hexdump", ns, 'n') : long.MaxValue;
-		int start = (int)Math.Min(skip, data.Length), end = (int)Math.Min(data.Length, start + len);
-		for (int off = start; off < end; off += 16)
+		long start = 0;
+		void Line(long at, ReadOnlySpan<byte> line)
 			{
+			long off = start + at;
 			var sb = new StringBuilder(off.ToString("x8")).Append(' ');
-			int lineEnd = Math.Min(off + 16, end);
-			for (int i = off; i < off + 16; i++)
+			for (int i = 0; i < 16; i++)
 				{
-				if (i == off + 8) sb.Append(' ');
-				sb.Append(i < lineEnd ? " " + data[i].ToString("x2") : "   ");
+				if (i == 8) sb.Append(' ');
+				sb.Append(i < line.Length ? " " + line[i].ToString("x2") : "   ");
 				}
 			sb.Append("  |");
-			for (int i = off; i < lineEnd; i++) sb.Append(data[i] >= 32 && data[i] < 127 ? (char)data[i] : '.');
+			foreach (var b in line) sb.Append(b >= 32 && b < 127 ? (char)b : '.');
 			sb.Append('|');
 			Console.WriteLine(sb.ToString());
 			}
-		Console.WriteLine((end).ToString("x8"));
+		// a line at a time as it is read (it read the whole input, which failed over 2 GiB, 2026-10-27)
+		Stream? input = null;
+		long total;
+		try
+			{
+			input = OpenBytes(file);
+			using (var block = Block.Rent()) start = SkipBytes(input, skip, block.Bytes);
+			total = ForEachPiece(input, len, 16, Line);
+			}
+		catch (BrokenPipeException) { throw; }
+		catch (Exception ex) { Console.Error.WriteLine($"hexdump: {file}: {IoError(ex)}"); return 1; }
+		finally { if (file != "-") input?.Dispose(); }
+		Console.WriteLine((start + total).ToString("x8"));
 		return 0;
 		}
 
@@ -1313,38 +1571,118 @@ public sealed partial class Builtins
 		{
 		var o = Opts.Parse("base64", args, "dw:i", ["decode:d", "wrap=:w", "ignore-garbage:i"]);
 		string file = o.Operands.Count > 0 ? o.Operands[0] : "-";
-		byte[] data;
-		try { data = ReadBytes(file); }
-		catch (Exception ex) { Console.Error.WriteLine($"base64: {file}: {IoError(ex)}"); return 1; }
-		if (o.Has('d'))
+		int wrap = o.Has('d') ? 0 : o.GetInt('w', 76);
+		// a block at a time as it is read (it read the whole input, which failed over 2 GiB, 2026-10-27)
+		Stream? input = null;
+		try
 			{
-			var text = Encoding.ASCII.GetString(data).Where(c => !char.IsWhiteSpace(c)).ToArray();
-			byte[] outBytes;
-			try { outBytes = Convert.FromBase64String(new string(text)); }
-			catch (FormatException) { Console.Error.WriteLine("base64: invalid input"); return 1; }
-			var raw = Evaluator.CurrentRawStdout();
-			if (raw is not null) { Console.Out.Flush(); raw.Write(outBytes, 0, outBytes.Length); raw.Flush(); }
-			else Console.Out.Write(ShellEncoding.Utf8.GetString(outBytes));
+			input = OpenBytes(file);
+			return o.Has('d') ? Base64Decode(input) : Base64Encode(input, wrap);
+			}
+		catch (BrokenPipeException) { throw; }
+		catch (Exception ex) { Console.Error.WriteLine($"base64: {file}: {IoError(ex)}"); return 1; }
+		finally { if (file != "-") input?.Dispose(); }
+		}
+
+	/// <summary>Whole groups of 3 bytes encoded as they come, the 0-2 left over carried to the next block; lines of
+	/// <paramref name="wrap"/> characters (none for 0: one line, and a newline even for no input, as before).</summary>
+	private static int Base64Encode(Stream src, int wrap)
+		{
+		using var block = Block.Rent();
+		var buf = block.Bytes;
+		var chars = System.Buffers.ArrayPool<char>.Shared.Rent(IoBlock / 3 * 4 + 4);
+		long col = 0;
+		try
+			{
+			int carry = 0;
+			while (true)
+				{
+				int n = src.Read(buf, carry, IoBlock - carry), total = carry + n;
+				int whole = n > 0 ? total / 3 * 3 : total;   // at the end the rest, padded
+				Convert.TryToBase64Chars(buf.AsSpan(0, whole), chars, out int written);
+				Put(chars.AsSpan(0, written));
+				if (n <= 0) break;
+				carry = total - whole;
+				buf.AsSpan(whole, carry).CopyTo(buf);
+				}
+			if (wrap <= 0 || col > 0) Console.WriteLine();
 			return 0;
 			}
-		int wrap = o.GetInt('w', 76);
-		var enc = Convert.ToBase64String(data);
-		if (wrap <= 0) { Console.WriteLine(enc); return 0; }
-		for (int i = 0; i < enc.Length; i += wrap) Console.WriteLine(enc.Substring(i, Math.Min(wrap, enc.Length - i)));
+		finally { System.Buffers.ArrayPool<char>.Shared.Return(chars); }
+
+		void Put(ReadOnlySpan<char> s)
+			{
+			if (wrap <= 0) { Console.Out.Write(s); return; }
+			while (s.Length > 0)
+				{
+				int take = (int)Math.Min(wrap - col, s.Length);
+				Console.Out.Write(s[..take]);
+				col += take; s = s[take..];
+				if (col == wrap) { Console.WriteLine(); col = 0; }
+				}
+			}
+		}
+
+	/// <summary>White space dropped (char.IsWhiteSpace, as before), whole groups of 4 decoded as they come; the last
+	/// group, which may hold the padding, waits for the next block or the end. Invalid input: what came before it is
+	/// written, then "invalid input", 1 (it wrote nothing then, the whole input decoded at once).</summary>
+	private static int Base64Decode(Stream src)
+		{
+		using var inBlock = Block.Rent();
+		using var pendBlock = Block.Rent();
+		using var outBlock = Block.Rent();
+		byte[] input = inBlock.Bytes, pend = pendBlock.Bytes, output = outBlock.Bytes;
+		var white = WcAscii.White;
+		var sink = new ByteSink();
+		int have = 0;
+		bool ok = true;
+		for (int n; ok && (n = src.Read(input, 0, IoBlock - 4)) > 0; )   // room for the group held back
+			{
+			foreach (var b in input.AsSpan(0, n)) if (b >= 128 || !white[b]) pend[have++] = b;
+			int keep = have % 4 == 0 ? Math.Min(4, have) : have % 4, ready = have - keep;
+			ok = Decode(ready, final: true);
+			pend.AsSpan(ready, keep).CopyTo(pend);
+			have = keep;
+			}
+		if (ok && have % 4 is 2 or 3)
+			{
+			// a last group cut short (no padding): written as GNU's base64 writes it, then invalid
+			pend.AsSpan(have, 4 - have % 4).Fill((byte)'=');
+			Decode(have + 4 - have % 4, final: true);
+			ok = false;
+			}
+		else if (ok) ok = Decode(have, final: true);
+		sink.Flush();
+		if (!ok) { Console.Error.WriteLine("base64: invalid input"); return 1; }
 		return 0;
+
+		bool Decode(int count, bool final)
+			{
+			if (count == 0) return true;
+			var status = System.Buffers.Text.Base64.DecodeFromUtf8(pend.AsSpan(0, count), output, out int used, out int written, final);
+			sink.Write(output, 0, written);
+			return status == System.Buffers.OperationStatus.Done && used == count;
+			}
 		}
 
 	private static int Checksum(string tool, List<string> args)
 		{
 		var o = Opts.Parse(tool, args, "bctz", ["binary:b", "check:c", "text:t", "tag", "quiet", "status", "zero:z"]);
-		System.Security.Cryptography.HashAlgorithm Algo() => tool switch
+		var algorithm = tool switch
 			{
-			"md5sum" => System.Security.Cryptography.MD5.Create(),
-			"sha1sum" => System.Security.Cryptography.SHA1.Create(),
-			"sha512sum" => System.Security.Cryptography.SHA512.Create(),
-			_ => System.Security.Cryptography.SHA256.Create(),
+			"md5sum" => System.Security.Cryptography.HashAlgorithmName.MD5,
+			"sha1sum" => System.Security.Cryptography.HashAlgorithmName.SHA1,
+			"sha512sum" => System.Security.Cryptography.HashAlgorithmName.SHA512,
+			_ => System.Security.Cryptography.HashAlgorithmName.SHA256,
 			};
-		string HexOf(byte[] data) { using var h = Algo(); return Convert.ToHexString(h.ComputeHash(data)).ToLowerInvariant(); }
+		// hashed as it is read, a block at a time: the whole input was one array, which failed over 2 GiB (2026-10-27)
+		string HexOf(Stream s)
+			{
+			using var h = System.Security.Cryptography.IncrementalHash.CreateHash(algorithm);
+			using var block = Block.Rent();
+			for (int n; (n = s.Read(block.Bytes, 0, IoBlock)) > 0; ) h.AppendData(block.Bytes, 0, n);
+			return Convert.ToHexString(h.GetHashAndReset()).ToLowerInvariant();
+			}
 		int rc = 0;
 		if (o.Has('c'))
 			{
@@ -1362,7 +1700,7 @@ public sealed partial class Builtins
 						if (!m.Success) continue;
 						var target = m.Groups[2].Value;
 						string actual;
-						try { actual = HexOf(ShellFile.ReadAllBytes(ShellEnvironment.TranslatePath(target))); }
+						try { using var t = ShellFile.OpenInput(ShellEnvironment.TranslatePath(target)); actual = HexOf(t); }
 						catch { Console.WriteLine($"{target}: FAILED open or read"); failed++; continue; }
 						bool ok = string.Equals(actual, m.Groups[1].Value, StringComparison.OrdinalIgnoreCase);
 						if (!ok) failed++;
@@ -1379,7 +1717,10 @@ public sealed partial class Builtins
 			{
 			try
 				{
-				var hex = HexOf(ReadBytes(f));
+				var input = OpenBytes(f);
+				string hex;
+				try { hex = HexOf(input); }
+				finally { if (f != "-") input.Dispose(); }
 				if (o.HasLong("tag")) Console.WriteLine($"{tool[..^3].ToUpperInvariant()} ({f}) = {hex}");
 				else Console.WriteLine($"{hex}  {f}");
 				}
@@ -1539,7 +1880,8 @@ public sealed partial class Builtins
 		bool allWhitespace, bool showName, string separator)
 		{
 		int width = enc is 's' or 'S' ? 1 : enc is 'b' or 'l' ? 2 : 4;
-		var buffer = new byte[65536];
+		using var block = Block.Rent();   // pooled (it was 64 KiB of its own): 2000 runs on a tiny file 59 -> 55 ms (2026-10-27)
+		var buffer = block.Bytes;
 		int pos = 0, len = 0;
 		var pushedBack = new byte[8];   // bytes an unget put back, read before the stream (last in, first out)
 		int pushed = 0;

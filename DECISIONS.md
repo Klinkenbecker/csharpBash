@@ -8016,3 +8016,939 @@ reproduced: 40 direct runs on this build and 40 on deployed 324, none hung or wr
 today, one on this binary minutes before. Cause unknown (a deadlock or race; today's descriptor, reader and append
 changes are suspects, not shown). Put to the architect (2026-10-19): a console-mode timeout in run-tests.ps1 (a
 contract tool), and a reproduction loop under the runner's conditions with a stack dump (dotnet-dump not installed).
+
+## 2026-10-19 -- PUBLISHED: GitHub main = git 0a8eef7 = hg rev 366 (the red team's fixes, not deployed)
+**Status:** Active. The architect: "Lets publish the prior work per the publish workflow". By the push rule:
+`compare3.sh` on the DEPLOYED build (rev 324, 2026-10-19 18:45, from Git Bash; all outputs agree with Git Bash and
+WSL; every row within a few percent of the 04:15 run of the same binary, Git Bash and WSL slower too, so the
+machine) and the doc review (rev 366: README's table and the prose quoting it, 180 cases; ARCHITECTURE and
+IMPLEMENTATION were reviewed in rev 362; lines 155 and 159 are dated records of rev 333's measurement, kept).
+`bash tools/publish.sh` under C#Bash (deployed 324): MERCURIAL_HISTORY.md (367 changesets) and mercurial-history.hg
+(verified) written; untracked `BENCHMARK-PROVENANCE.md` and `The Windows Shell Tax.url` left out; pushed
+0b5ece5..0a8eef7; remote main = HEAD; no auth header in git config. The published source (revs 334-366) is ahead
+of the deployed build: the deploy stays blocked on the Git-dependent tests (OPEN, above). Message file:
+`F:/TEMP/claude/F--Koliada-Tools-bash/f1b9f797-4e9e-4d42-9e66-48cf9ad258da/scratchpad/publish-msg-366.txt`.
+
+## 2026-10-20 -- FOUND: tools/deploy.sh needs cygpath, which left PATH with Git; the deploy of rev 367 stopped
+**Status:** OPEN (the architect's: a contract tool). The architect: "deploy". `bash tools/deploy.sh` (C#Bash 324)
+stopped at step 2, before the publish: `cygpath: command not found` (line 45), the publish then given empty paths
+("the publish FAILED", exit 2). Nothing changed: dist/Bash.exe still rev 324, no rollback copy, tree clean.
+**Cause (verified):** `cygpath` is Git's (`F:/Tools/PortableGit/usr/bin/cygpath.exe`; msys64 has one too), off the
+Windows PATH since 2026-10-19; rev 335 gave publish.sh a configured git.exe but missed deploy.sh's four `cygpath -w`
+(lines 45, 53, 54, 61). compare3.sh's one runs in Git Bash, which has its own `usr/bin`; claudecall.sh dies with
+its own message.
+**Even with it fixed**, step 3 (the suite, 0 failures) stops on the six Git-dependent cases (OPEN, 2026-10-19).
+**Claude's position:** deploy.sh drops `cygpath` and runs in C#Bash only (Git is reached nowhere else): its `pwd`
+is already `F:/...`, which PowerShell's `-File` and .NET take as is; the header's "any bash" goes. Unverified:
+`cmd.exe /c` with a forward-slash `.cmd` path; falsifier: if cmd refuses it, that one argument gets backslashes.
+Not msys64's cygpath: it would tie the deploy to an MSYS install for a conversion C#Bash does not need.
+
+## 2026-10-20 -- FIXED: tools/deploy.sh no longer needs cygpath; it runs in C#Bash
+**Status:** Active. The architect: "fix deploy.sh to not require cygpath". Resolves the deploy.sh half of "FOUND:
+tools/deploy.sh needs cygpath" (above); the Git-dependent suite cases stay OPEN.
+**Fix:** the four `cygpath -w` calls are gone; the paths are handed to cmd.exe and PowerShell as C#Bash gives them
+(`F:/...`). A root that is not a drive path is refused at the start (Git Bash's `/f/...`, and UNC, which cmd.exe
+cannot `cd` to). `MSYS2_ARG_CONV_EXCL='*'` on the publish line is KEPT: it is not Git Bash's alone, C#Bash honours it
+(Evaluator.cs, the Windows-program argument conversion) and it keeps `/c` from being rewritten as a path.
+**Verified:** no `cygpath` call left (two header mentions); `bash -n`; the guard accepts `F:/...`, `c:/x` and refuses
+`/f/...`, `//host/share`; `MSYS2_ARG_CONV_EXCL='*' cmd.exe /c "<F:/.../t.cmd>" "<F:/.../out>"` from C#Bash 324: the
+script runs, `%~dp0` is the backslash full path, `cd /d "%~dp0.."` works, the forward-slash argument arrives
+intact; controls: a missing output directory and a missing `.cmd` both fail. The falsifier in the FOUND entry
+(cmd refusing a forward-slash `.cmd` path) did not fire. End to end: the deploy run that follows this commit.
+
+## 2026-10-20 -- DEPLOY REFUSED (rev 369): the cygpath fix works end to end; the suite's Git-dependent six stop it
+**Status:** Active record; the six stay OPEN (2026-10-19 entry). The architect: "deploy". `bash tools/deploy.sh` on
+rev 369: step 2 passed (publish-aot.cmd given `F:/...` paths; the staged build reads `1.0.0+hg.7e122ad8c813 369`),
+step 3 stopped: "suite (console): 174 passed, 6 failed". Nothing changed in dist (rev 324, no rollback copy).
+The suite re-run on `dist.staging/Bash.exe` (console, `-Interpreter`) names the six: detach_builtins, msys_redirects,
+awk_unsupported_once, awk_getline, msys_arguments, coreutils_external, the Git six exactly; `icu_lazy` (AOT only)
+passes. So the AOT build of revs 334-369 shows no failure of its own in console mode; `-Detached` and the battery
+were not reached. `detach_builtins` mentions no Git, MSYS or PATH awk: its cause is not yet known.
+**Raised with it (the architect's question "why is a test suite running on deploy"):** step 3 is the only test of
+the shipped AOT binary (per-fix runs use the managed Release build); step 4, the battery, rebuilds and tests that
+same managed build (run-compat.ps1 takes no interpreter), so it repeats per-fix work. Claude's position: keep step
+3; give run-compat.ps1 `-Interpreter` and run the battery on the staged AOT binary. Falsifier: the architect
+accepts the AOT build untested (then both steps go, and `icu_lazy` never runs). AWAITING the architect.
+
+## 2026-10-20 -- FOUND: how the tests use Git for Windows (the architect: "Detail the use of git in the tests")
+**Status:** Record; the fixes are AWAITING the architect. Never `git` the VCS: Git's MSYS tools (usr/bin) and its
+gawk, which sat on PATH until 2026-10-19. Without them a name resolves to a C#Bash builtin, F:/Tools/UnixUtils
+(native, not MSYS), System32 or nothing; `sh` and `awk` to nothing.
+**Failing (6):** detach_builtins (`nohup sh -c 'exit 7'`, `setsid sh -c 'exit 3'`: no `sh`, 127; the case is about
+nohup/setsid); msys_redirects and coreutils_external (gated on `command -v git`: print "needs Git for Windows");
+awk_unsupported_once (`type -P awk`: none); awk_getline line 22 (`"echo x" | getline` falls through to the PATH awk:
+Git's gawk kept CR, 3; now 0); msys_arguments (`type -P printf/gawk/sed/find` now finds UnixUtils and System32's
+find.exe, not MSYS programs: é garbled, find empty; it tests the wrong programs).
+**Passing without checking (cannot fail without Git):** msys_inherited_append (no usr/bin cat: it prints the
+expected lines itself); native_args' MSYS sub-check ("msys ok"); dev_tty_windowless' git credential sub-check.
+**Already off Git:** msys_append_shared names F:/Tools/msys64/usr/bin/ls.exe (rev 343). msys64 has sh, cat, echo,
+printf, sed, find, gawk, awk, ls; not git, tar, xxd.
+**Battery (6 below baseline; C#Bash against WSL's bash, which has these tools):** 20 `type -P git`, 160 `git
+--version`, 162 `which git`, 170 `sh -c`, 185 `tar --version` (System32's is bsdtar), 210 `xxd`. All but 170 and
+20 probe the machine's tool set, not the shell.
+**Raised:** a bare `sh` finds nothing under C#Bash (`#!/bin/sh` runs in-process); bash on Linux always has one.
+Whether C#Bash should answer `sh` is the architect's (POSIX mode is not available).
+
+## 2026-10-20 -- PROPOSED (the architect): utilities as loadable modules; no MSYS in C#Bash
+**Status:** AWAITING the architect (direction stated, nothing designed or ratified).
+**The architect's words:** "a model where all the 'external' utilities are a loadable DLL, packaged inside an EXE
+file with the effect that c#bash can load the DLL to run the utility and the exe can also run it's own dll if
+called outside c#bash"; "think the existing 'internal' utilities being loaded in as a DLL instead of being compiled
+in". And, on the tests: "I would definitely prefer not to encumber c#Bash with MSYS" (the nature of the
+encumbrance, and this model making it redundant). The tests depend on WSL, not Git.
+**Withdrawn by it:** Claude's MSYS stand-in plan (C# look-alike, then one on a real msys-2.0.dll; DECISIONS above
+this entry's date) and msys64 as a test reference. Claude's claim that C#Bash's users "mostly run Git for Windows"
+had no evidence and is withdrawn.
+**Ground (verified):** the ~70 in-process utilities (Builtins.CoreutilNames: cat … jq) are compiled into Bash.exe
+as Builtins partial-class methods, named in a static list (Builtins.cs), each falling through to a PATH program
+on an unsupported option; shell builtins proper (cd, export, read, trap …) change the shell and stay inside. No
+earlier record of loadable builtins (none found for enable -f, loadable, plug-in, LoadLibrary).
+**Open (Claude's, to put to the architect):** the module ABI under Native AOT; one file or two (an EXE that is also
+loadable); the I/O contract between shell and module (handles or callbacks; cwd, environment, cancellation, status).
+
+## 2026-10-20 -- FIXED: the tests no longer need Git; a case whose program is missing SKIPs, by name
+**Status:** Active. Resolves the Git-dependent six (2026-10-19, OPEN) and the three checks that passed without their
+program (2026-10-20 FOUND). The architect, to Claude's "meanwhile" (detach_builtins on `"$BASH" -c`, a visible SKIP
+for the MSYS and awk-fallback cases, the battery's baseline re-taken): "yes, good call, go".
+**Runner (run-tests.ps1):** a case whose ONLY output line is `SKIP: <reason>` is reported SKIP and named with its
+reason in the summary ("N skipped: name (reason); ..."); the "N passed, N failed" line deploy.sh reads is unchanged.
+**Cases:** detach_builtins: the status child is `"$BASH" -c` (no bare `sh` here). SKIP when their program is
+missing: msys_redirects and coreutils_external (git), msys_inherited_append (an MSYS cat: it printed its own expected
+lines), msys_arguments (off Linux the PATH printf must be MSYS: it was testing native ports and System32's
+find.exe), msys_append_shared (msys64's ls.exe). Moved into their own cases, because without their program they
+passed: native_args_msys and native_args_git (from native_args), dev_tty_git_prompt (from dev_tty_windowless),
+awk_fallthrough (awk_unsupported_once's four PATH-awk lines and awk_getline's two CR lines; the
+`BASH_COREUTILS=external` line passed with no PATH awk, the in-process awk keeping CR too). awk_unsupported_once's
+in-process lines now run (they sat behind its PATH-awk gate).
+**Battery:** probes 20, 160, 162, 170, 185, 210 (git, sh, GNU tar, xxd: the machine's tools) removed from
+baseline.txt by hand, 222 -> 216 (`-UpdateBaseline` only adds).
+**Verified:** suite on the Release build 175 passed, 0 failed, 9 skipped (8 for their program, icu_lazy for AOT) of
+184, console and -Detached; the skip rule fires only for a lone `SKIP: ` line (5 inputs); awk_unsupported_once
+differs from its expected in 5 lines on rollback rev 320 and matches on this build. NOT verified: the moved lines
+with their program present (that needs Git, kept off every path but the benchmark and publish); they are the same
+lines and expected text as before the move.
+Battery: 216 pass, 21 diff of 237, baseline 216, exit 0 (no regression).
+
+## 2026-10-20 -- DEPLOYED rev 373 (not notified)
+**Status:** Active. The architect: "go" (to the test changes and the deploy). `bash tools/deploy.sh`: suite on the
+staged AOT build 176 passed, 0 failed, console and -Detached; battery 216 pass, 21 diff of 237, baseline 216;
+`dist/Bash.exe` = `1.0.0+hg.ad15d9441fb0 373`, rollback `dist/Bash.exe.rev324`. Revs 325-373 now deployed: the red
+team's fixes (337-360), deploy.sh without cygpath, the tests without Git. Live check from a Claude Code Bash call:
+the stamp, a quoted `~` a name, mktemp's implied suffix, `readlink -f` on a missing parent 1, `set -x` of `$(( ))`.
+(A first `.bat` live check used `%~1`, which re-parses `&` inside the batch file under any shell: not F4's case;
+`bat_args` covers F4 and passed on this build.) Not notified: "notify" was not said; put to the architect.
+
+## 2026-10-20 -- MEASURED: Native AOT utility modules (the architect: "can you check this, no reason why they should not be native AOT?")
+**Status:** Record (a throwaway spike, not the benchmark; code in session f1b9f797's scratchpad `aotspike/`). For the
+PROPOSED module model (above). net8.0, ILCompiler, this machine; an AOT host standing in for Bash.exe.
+**Native AOT modules work.** A C# utility published `NativeLib=Shared` exports `tool_main` (UnmanagedCallersOnly,
+cdecl; argc, UTF-16 argv, three handles): 1.12 MB. Loaded by an AOT host: LoadLibrary 0.16-0.29 ms; the first call
+(its runtime starting) 0.67-0.83 ms; later calls 0.3-0.6 us. Two AOT modules in one process each have their own
+runtime and statics and interleave without trouble. The same tool started as an AOT EXE: 6.8-7.1 ms per start
+(50 starts, 3 runs). One outlier: the first LoadLibrary of a freshly copied DLL 16.9 ms (then 0.19, 0.16; a first
+scan of a new file, inferred), which any design that writes a DLL to disk pays once.
+**One file, the direct way, does NOT work.** An AOT EXE with `IlcExportUnmanagedEntrypoints` runs as a program and
+does export `tool_main` (GetProcAddress finds it; LoadLibrary 0.09 ms), but calling it in a host that loaded the EXE
+as a library crashed the host (exit 139): an EXE image loaded by LoadLibrary never runs its startup code, so its
+runtime is never set up (inferred from the crash; not debugged).
+**Not measured:** memory per loaded module; a DLL carried inside the EXE and loaded from a copy on disk; an EXE whose
+exports set up their own runtime.
+
+## 2026-10-20 -- MEASURED: the packaged form works (one EXE carrying its module DLL)
+**Status:** Record (spike, session f1b9f797 scratchpad `aotspike/`; diagnostic numbers, not the benchmark). The
+architect: "yes" (to testing "a loadable DLL, packaged inside an EXE" after the direct one-file form crashed).
+**Form:** a small Native AOT launcher EXE (1.25 MB) carrying the module DLL as Win32 RCDATA "TOOLDLL" plus "TOOLID"
+(16 hex digits of the DLL's SHA-256); packed with BeginUpdateResource/UpdateResource. Run as a program, the EXE
+copies its DLL once to `<cache>/<id>.dll` (temp file + rename) and calls its `tool_main`. The shell opens the same
+EXE with LoadLibraryEx(AS_DATAFILE | AS_IMAGE_RESOURCE): it reads the resources and runs none of the EXE's code, then
+loads the same cached copy. A new version has a new id, so a cached copy is never stale.
+**Numbers (this machine):** the packaged tool 2.37 MB. As a program, warm cache: median 7.90 ms (50 starts), against
+6.76 ms for the plain AOT EXE with the code compiled in; cold (cache emptied each start): median 31.1 ms. In-process
+from a fresh host, warm: total 1.03-1.16 ms (resources and cache check 0.18-0.21, LoadLibrary 0.14-0.18, first call
+0.69-0.79); cold: 23-32 ms (extraction 5.3 ms, then LoadLibrary of the new file 16.8-24.6 ms, consistent with a
+first scan of a newly written image, inferred). Cold is paid once per version per machine.
+**Costs found:** every module carries its own .NET runtime (~1.1 MB) and every packaged EXE a second one in its
+launcher (~1.2 MB): seventy one-utility packages would be ~165 MB on disk against Bash.exe's 6.9 MB for all of
+them today (arithmetic on these sizes; a real module's size depends on its code). Memory per loaded module: not
+measured. Open for the architect: module granularity (one utility per module, or several), the cache's location,
+and the interface contract.
+
+## 2026-10-20 -- MEASURED: the packaged form with a C launcher (zig cc): the runtime paid once
+**Status:** Record (spike; diagnostic numbers). The architect: "lets use a C launcher, but use zig ... checkout the
+project E:/Claude/Installer for the work already done on small launcher design".
+**From the Installer (read, E:/Claude/Installer):** zig 0.16.0 at `E:/Claude/.zig/0.16.0/zig.exe` (its
+`src/installer/.toolchain`); INST-030: Defender's dropper heuristic ate a 600 KB Zig stub built on the full std.Io
+runtime, while minimal-entry stubs with the same imports, an appended payload and a trailer drew nothing; so: a
+minimal entry, raw Win32, stripped. Its carrier is an appended payload + trailer (breaks an Authenticode
+signature); this spike keeps the Win32 RCDATA carrier (packed before signing, so a signature can cover it).
+**Launcher:** C, raw Win32 (FindResource/LoadResource, CreateFile/WriteFile/MoveFileEx, LoadLibrary,
+GetProcAddress, CommandLineToArgvW), `zig cc -target x86_64-windows-gnu -Os -s`: 58,880 bytes, no .pdb.
+**Numbers:** the packaged tool 1,179,136 bytes (C# launcher: 2,368,000): the .NET runtime is in the module only. As a
+program, warm: median 7.26-7.61 ms (C# launcher 7.95-7.98; the plain AOT EXE with the code compiled in 6.73-6.85);
+cold (cache emptied each start) 29.6-30.8 ms. In-process from a fresh host, warm: 1.09-1.12 ms (independent of the
+launcher). An argument with a space arrives intact. Defender: no detection in the 2 hours covering these runs
+(Get-MpThreatDetection; no positive control), every file still present.
+**Not measured:** a launcher without the C runtime (the Installer linked a 4,608-byte PE with 3 imports); memory
+per loaded module.
+
+## 2026-10-20 -- RULED: providers for a utility (overridable defaults); MSYS as a bridge module; path-invoked MSYS programs to the bridge
+**Status:** Active (the direction; the contract itself is still a draft, docs/module-contract.md).
+**The architect:** "Now you can remember MSYS again. Think about how, using this modular approach, and the same
+contract, an awk module (for example) could differ to an MSYS module if it did not itself support the requested
+awk utility. Fast is not the issue, conveniences of 'evolution' of modules is key"; then "Who sets the provider
+order; overridable defaults works, 'MSYS programs invoked by path', yes, and this should leverage the existing
+persistant cache mechanism?"
+**The model:** a utility name has an ORDERED LIST OF PROVIDERS, all under the one contract: an implementation module
+(the C# awk: does the work, answers "unsupported" before any output or input), a BRIDGE module (MSYS: runs the
+machine's MSYS program and carries every MSYS rule now in the core: IsMsysProgram, AppendArgument's MSYS quoting,
+no path conversion, WritableForMsys / OneMsysAppend, awk's BINMODE=3), then a plain program. "Unsupported" means
+the next provider. The order: defaults declared by the modules, overridable by the user (RULED). A program run by
+its path is offered to the bridge ("will you run this file?") and leaves the core too (RULED). The point is
+evolution: a module grows or is replaced without the shell or the other providers changing; MSYS knowledge has one
+home; MSYS tests belong to the bridge's own suite, the core's need none; the bridge is optional and ships no MSYS.
+**Claude's position on the cache (the architect's suggestion, to confirm):** resolutions live in the command map
+(`~/.bash/commands`): its key gains the provider setup (modules, versions, order), so a change makes a fresh map as a
+PATH change does; an entry names a provider (module id, bridge + path, or a program) and keeps the one existence
+check; a bridge folder is remembered per folder (today's in-process s_msysDirs, persisted); "no provider" is recorded
+and obeyed by `hash` alone (the ratified miss rule); a new map format gets a new file name (all builds on a machine
+share the maps); extracted module DLLs live in `~/.bash/modules` (the folder name is the architect's call).
+
+## 2026-10-20 -- RATIFIED: streams, files (option c), the 2.0 branch; the two HOT PATHS are the gold standard
+**Status:** Active. The architect: "Yes, ratified." (to Claude's three positions), then the criteria below.
+**Ratified:** (1) Streams cross the module boundary as callbacks by default; a module that starts a process asks for
+a stream's OS handle (pipes then pumped, files shared at their offset). (2) Files, option c: two calls through the
+shell, `resolve(operand)` (a Windows path, "a shell stream", or an error such as Not a directory) and `open(operand,
+mode)`; the module does ordinary operations (stat, enumerate, delete, times) itself on resolved paths; the module
+carries the same C# path library for standalone use (correcting draft 1's 3.4: the launcher is C). (3) Module work is
+C#Bash 2.0.0 on an hg named branch `2.0`; `default` stays the 1.x line (deployed, published); default merged into
+2.0 regularly; DECISIONS.md merged with hg's `:union`; deploy.sh and publish.sh refuse the 2.0 branch until release.
+**THE CRITERIA (the architect):** "2x notions of code 'hot paths'; a) exec code path (from bash to utility), and b)
+the file hot path (from request to usage). These two 'hot paths are what we are trying to optimise and are always
+the 'gold standards' against which options should be chosen. Other factors are pertinent, but secondary (evolution
+-> C source portability - evolution first, C portability distant last)."
+**Raised with it, AWAITING the architect:** "a binary form of the AST should be part of the contract?" (its purpose
+to be stated by the architect; Claude's candidate readings in the conversation, none adopted).
+
+## 2026-10-20 -- MEASURED: an AOT module DLL starts its own runtime (~0.6 ms per process); a C module does not
+**Status:** Record (spike, diagnostic numbers, 6 fresh processes each). The architect asked whether a runtime start is
+"true only of an EXE, not a DLL", the contract being with the DLL. Claude's earlier "0.7 ms for its own runtime" had
+not been isolated from the tool's own first-run work; now it is.
+**Native AOT C# DLL:** a no-op export's first call 0.55-0.82 ms (typically ~0.6), its second 0.1 us; tool_main's first
+call after that 0.09-0.2 ms (the tool's own first-time work). So ~0.6 ms is the price of first entering the DLL's
+managed code: Native AOT compiles a whole runtime into every image, DLL included, and a DLL cannot use its host's
+(recalled mechanism; cost measured). Not the background GC thread: built with ConcurrentGarbageCollection=false,
+0.57-0.71 ms (default, interleaved: 0.60-0.63).
+**C DLL (zig cc -shared -Os -s, 54,272 bytes):** LoadLibrary 0.11-0.20 ms; first call of either export 1-3 us.
+**For the exec hot path:** utilities compiled into Bash.exe cost nothing; a C/Zig module ~0.1-0.2 ms (its load) per
+process; a C# AOT module ~0.75 ms per process plus its own first-time work.
+
+## 2026-10-20 -- FOUND: a module DLL cannot share Bash.exe's runtime; the start's levers are small
+**Status:** Record. The architect: "what do we know about the structure of AOT and is it possible to spoof the
+runtime load for a DLL, or 'remodel' the DLL itself, to use the bash runtime (assuming they are the same 'make and
+model')?"
+**Verified (objdump; ilc 8.0.25 --help and its targets):** the module DLL is the runtime's native code (`.text` 412
+KB), the compiled C# (`.managed` 318 KB), type data stored dehydrated and expanded at start (`hydrated` 163 KB),
+`.rdata`, unwind data (`.pdata`); it imports only Windows (kernel32, advapi32, bcrypt, ole32, the UCRT), nothing of
+Bash.exe; Bash.exe exports only `DotNetRuntimeDebugHeader`, none of its runtime. ILC offers `IlcMultiModule` /
+`--multifile` (the framework compiled once into a static Framework.lib, assemblies compiled separately, all LINKED
+into one image: sharing at build time, not load time), `--dehydrate` (default on; `IlcDehydrate=false`),
+`--splitinit` (purpose here not established), `--initassembly`, `--nativelib`.
+**Measured:** `IlcDehydrate=false`: a no-op's first call 0.49-0.54 ms against 0.58-0.60 (interleaved), +83 KB; with
+concurrent GC off, no change (earlier entry). A C# AOT module's first use stays ~0.5 ms.
+**Why not spoof or remodel (recalled mechanism, Claude's position):** the DLL's compiled code calls its own runtime
+directly, and every image holds its own copies of the core types (object, string), identified by address; using
+Bash.exe's runtime would mean rewriting the DLL's binary per build and registering its types, code and GC data with a
+runtime that exports nothing; any .NET servicing update would break it, and a module bound to Bash.exe's exact
+build destroys the independent evolution modules exist for. Not pursued unless the architect says otherwise.
+
+## 2026-10-20 -- RULED: the internal / external / MSYS split stands; a C# module's first-call cost is accepted; runtime sharing parked
+**Status:** Active. The architect: "I have a way around this, but it depends on another project I'm working on -
+replacing the C# runtime with an alternate. We will let this go for now, the internal/external/msys split stands and
+6ms is the cost of a first call - it is still less than the cost of an extern exe, and much less than an MSYS
+fork/exec."
+**Ruled:** providers for a utility are, in order by default: INTERNAL (compiled into Bash.exe: the ~70 built-ins,
+zero exec cost), EXTERNAL modules (a DLL in a packaged EXE), the MSYS bridge, then a plain program. A C# module's
+first call per process is accepted. Sharing Bash.exe's runtime with modules is PARKED: the architect's other project
+(an alternate runtime) may remove the cost; do not pursue it here.
+**Number, corrected in the conversation:** the measured first call of a C# AOT module is ~0.6 ms (0.55-0.82), not 6 ms;
+an external EXE start measured 6.8-7.1 ms (~10x). The conclusion holds more strongly.
+
+## 2026-10-20 -- MEASURED: a Zig module works as ONE plain EXE, loaded directly, if the shell binds its imports
+**Status:** Record (spike, session f1b9f797 scratchpad `aotspike/zigtool/`; diagnostic numbers). The architect,
+weighing Zig for modules ("better fits 'moosh all the way down'", "removes the need for the C# runtime"): "Run the
+test". The question: can the tool's own EXE be loaded as the module (no packaging, no cache)?
+**Build:** one Zig 0.16.0 file, minimal `pub fn main() void`, raw Win32 externs, no std.Io (INST-030), exports
+`tool_main` (and `noop`, `bump`, `imp` for the diagnosis); `zig build-exe -O ReleaseSmall -fstrip -rdynamic`:
+50,176 bytes, relocatable (.reloc, DYNAMIC_BASE), exports present.
+**Found:** standalone it runs (arguments incl. `é` intact). Loaded with LoadLibrary, its code runs (`noop` 0) and its
+own state works (`bump` 1, 2), but the first call to a Windows function crashed: Windows maps and relocates an EXE
+loaded as a library but does NOT bind its imports (its kernel32 slots held 0xCCF0, 0xCCFE...: name-table offsets).
+A host that binds them itself (walk the import table, GetProcAddress, write each slot) makes everything work.
+**Numbers:** importing kernel32 only (the standalone main splits its own command line): first use in-process 0.22 ms
+(LoadLibrary ~0.175, binding ~0.025, first call ~0.016); as a program 2.31 ms median (AOT EXE 6.71). Importing
+shell32 too (CommandLineToArgvW): binding 1.35-1.44 ms and 5.06 ms as a program, all of it shell32 loading.
+Defender: no detection in the hour of these runs (no positive control), every file present.
+**What it implies (Claude, to put to the architect):** the one-file form needs no packaging, cache or extraction (no
+~30 ms cold first use) if the contract says: the shell binds a module's imports; a module runs no entry point when
+loaded (no initialisation in main, no std.Io runtime); no thread-local storage (TLS callbacks are not run either);
+imports from kernel32 (or what the host has already loaded). Risk: executing code from an EXE loaded as a library is
+measured here (Windows 10 19045), not documented; Windows 11 unmeasured; the packaged form stays the fallback.
+
+## 2026-10-20 -- MEASURED on Windows 11: the Zig one-file module works there too
+**Status:** Record. The architect ran the kit (`E:/Claude/Temp/csbash-zig-module-test/run.cmd`: the module
+`zigtool_k32.exe` and the checker `zigmod-check.exe`, sources beside them) on guy-windows11; result file
+`result-GUY-WINDOWS11.txt` there, beside `result-GUY-WINDOWS8.txt`.
+**Windows 10.0.26300.9711 (an Insider build, newer than the releases: recalled numbering):** 3x PASS; Windows does not
+bind the imports of an EXE loaded as a library there either (first slot 0xCCC0, as on Windows 10); binding by the host
+0.025-0.027 ms; LoadLibrary 0.076-0.085 ms; the module runs as a program (exit 2 as wanted); Defender 0 detections.
+"calls" 0.53-1.02 ms (Windows 10: 0.03-0.04) includes tool_main writing its line to stdout, which there was the result
+file on E:, a network share on guy-windows11 (inferred). The checker's negative control (a C DLL without the exports)
+FAILs as it must (exit 1); a DLL's imports are bound by Windows (the control showed it).
+**Closes:** the Windows 11 risk named in the one-file entry above; the packaged form stays only as the fallback.
+
+## 2026-10-20 -- RATIFIED: contract draft 3 is the basis of version 1; replaceable built-ins (Claude's call); signing; install locations
+**Status:** Active. The architect: "1, 2, 3/ ratified. 4/ your choice based on best claude utility 'bang for the buck'.
+5/ colocated signature or a file with signatures (can we embed the signature as a resource?) 6/ both - ~/.bash should
+be the 'installed' location and we should produce an installer going forward."
+**Ratified:** docs/module-contract.md DRAFT 3 as the basis of contract version 1, including Zig modules and the
+one-file direct form (the shell binds a module's imports); the cache design (3.13). Item 3 (the override's FORM) had no
+proposal in the draft: Claude's position, put to the architect, is both, a file under ~/.bash for lasting choices and
+a variable for a session or a command, the variable winning (AWAITING confirmation).
+**4, Claude's call (delegated; criterion: Claude's exec hot path first):** modules stand AFTER the built-ins by
+default, so Claude's common commands stay at 0 ms and a built-in's decline goes to a module (~0.22 ms) instead of a
+PATH program (~7 ms) or MSYS. A module ahead of a built-in only by explicit user override, allowed for the coreutils
+(Builtins.CoreutilNames) except `kill` (job table); the shell builtins proper are never replaceable. Falsifier: a
+built-in giving wrong answers instead of declining (a built-in bug, fixed there).
+**5 (Claude's position, AWAITING the architect):** a signature cannot be our own resource without a self-exclusion rule
+(adding the resource rewrites the bytes it would sign); Authenticode is that rule done properly (the PE certificate
+table, excluded from its hash). For the shell's check: ONE signed file of signatures per installation (each module's
+SHA-256, written and signed by the installer, the public key in Bash.exe), verified once per module version and
+remembered in the command map; Authenticode later for distribution (Defender / SmartScreen reputation).
+**6, ruled:** modules are looked for beside Bash.exe and under ~/.bash; ~/.bash is the installed location; C#Bash gets
+an installer from now on (Claude's position: built with the architect's Installer project, InstallGen). Open: whether
+Bash.exe itself installs under ~/.bash.
+
+## 2026-10-20 -- RULED: signing, the override's form, the installer, the installed layout
+**Status:** Active. The architect: "2/ Signed file, but note we will go to authenticode if this project gets public
+traction. Items 6; absolutely! 1/ yes, that works 3/ I think everything goes there unless you think otherwise
+(executables in bin/)?"
+**Ruled:** (1) the provider-order override is a file under ~/.bash for lasting choices plus a variable for a session or
+a command, the variable winning. (2) Signing: ONE signed file of signatures per installation (each module's SHA-256,
+written and signed by the installer, the public key in Bash.exe), checked once per module version and remembered in
+the command map; Authenticode IF the project gets public traction. (6) The installer is built with the architect's
+Installer project (InstallGen). (3) Everything installs under ~/.bash.
+**Layout (Claude's refinement of "executables in bin/", put to the architect):** `~/.bash/bin/Bash.exe` alone (the only
+thing meant for PATH, and what CLAUDE_CODE_GIT_BASH_PATH would name); `~/.bash/modules/` the module EXEs and the
+signatures file (module EXEs are named after their utility, find.exe, sort.exe, timeout.exe, and would shadow
+System32's own programs for cmd and PowerShell if on PATH: the red team's find.exe finding); `~/.bash/providers` the
+override file (the user's; the installer never overwrites it); `~/.bash/commands/` the command map as today (a cache).
+~ is HOME, else the Windows profile (as the command map). Per-user: no elevation. Until 2.0 ships, this machine runs
+1.x from dist/.
+
+## 2026-10-20 -- PROPOSED: the 2.0 plan; PHASE 1 done in draft: the module specification, version 1
+**Status:** The plan AWAITING ratification; the specification a DRAFT awaiting ratification. The architect: "Yes, all
+hunky-dory! write the plan, start the plan step 1; go" (the layout of the previous entry confirmed).
+**The plan (`docs/v2-plan.md`):** five phases, each with the observation that says it is done: (1) the specification;
+(2) the `2.0` branch, the loader and import binding, provider lists, the guards, no exec-hot-path regression; (3) the
+first Zig module, `xxd` (Claude's choice: absent from C#Bash, battery probe 210, small, byte streams and files), built
+from the specification alone; (4) the MSYS bridge, MSYS out of the core; (5) the installer (InstallGen) and signing.
+What must not be decided during the work is listed there.
+**Phase 1 (`docs/module-spec.md`):** standalone, versioned; exports `csb_module_info`, `csb_provides`, `csb_run`;
+sized structures; the host table (read, read_line, write, os_handle, resolve, open, close, getenv, env_next, run);
+DECLINED (-2) legal only before any read, write or run; Linux errno codes; the module rules; providers and their
+override; `SIGNATURES` (sha256 lines + an ECDSA P-256 signature, the key in Bash.exe); the `~/.bash` layout.
+**Acceptance so far:** (a) its section 11 maps every ruled and ratified item to where it is specified; (b) its Zig
+declarations compile under zig 0.16.0 with a skeleton module using every type and host function (exports force the
+analysis), and a copy with one calling convention broken fails to compile (the control); (c) is phase 3's.
+
+## 2026-10-20 -- PROPOSED (the architect): v2 as a GitHub project "PortableBash"; C#Bash continues; a "zigBash"
+**Status:** AWAITING the architect (discussion). The 2.0 plan (docs/v2-plan.md) and the specification draft
+(docs/module-spec.md) are ON HOLD until this is settled: do NOT start phase 2.
+**The architect:** "slight change in plan. I would like v2 to be github project called 'PortableBash' with the idea that
+it can transcend windows only and be something that can run on any platform. We will continue to use c#bash but also
+produce a 'zigBash' for extreme portability? Thoughts?"
+**Facts gathered:** C#Bash is 27,539 lines of C# (Evaluator 22,640, Parser 2,681, Lexer 859, IO 807), with 181 suite
+cases and a 237-probe battery whose expected outputs come from GNU bash and would serve any implementation.
+**Claude's thoughts and questions:** in the conversation of this date (the relationship of PortableBash, C#Bash and
+zigBash; the specification being Windows-x64-only; one-file forms per platform; where platform portability ranks
+against the two hot paths).
+
+## 2026-10-20 -- RULED: PortableBash (the contract, Zig modules, zigBash); platform order; C#Bash a host, legacy once zigBash exists
+**Status:** Active. The architect: "ZigBash: Yes, same modules, same paradigm/contract, large build that can be deferred
+as long as we design for it now? I think once zigBash is built c#Bash will be 'legacy only'? 1/ Yes, 2/ High but
+negotiable! 3/ linux, macos, WASM (and other 'bare-metal' targets) in that order, only because debugging wasm is harder
+and should start with 'known good code'".
+**Ruled:** PortableBash, a GitHub project of its own, is the module contract, the Zig modules and zigBash (a bash in
+Zig, the same modules and contract); C#Bash stays its own project, a Windows HOST of the contract, and becomes legacy
+once zigBash is built. zigBash's build is deferred, but everything is DESIGNED FOR IT NOW. Platform portability ranks
+HIGH, negotiable against the two hot paths (which stay the gold standard). Platforms after Windows, in order: Linux,
+macOS, then WASM and other bare-metal targets (WASM last: harder to debug; it should start from known-good code).
+**Consequences (Claude, to put to the architect):** the specification draft (docs/module-spec.md) must become
+platform-neutral before ratification (native path type, handle or fd, the module's loadable form per platform); the
+contract's names belong to PortableBash, not C#Bash (`csb_` prefix); the plan restructures across two repositories.
+
+## 2026-10-20 -- CREATED: PortableBash (F:/Koliada/Tools/PortableBash); the module documents moved there
+**Status:** Active. The architect: "lets keep csb_ for historical reference", "create with all current refs/docs/etc use
+Hg locally, github publicly - same as c#Bash". PortableBash hg rev 0 holds the design record, the specification draft,
+the plan, the module decisions of this date (imported verbatim) and the spike sources. Here, docs/module-contract.md,
+docs/module-spec.md and docs/v2-plan.md are marked MOVED and frozen at rev 391 (DECISIONS entries cite them). C#Bash's
+part from now: a Windows host of the contract (its `2.0` branch, as ratified), legacy once zigBash exists. The module
+work continues in PortableBash's own PROJECT_CONTEXT and DECISIONS.
+
+## 2026-10-20 -- HANDOFF: the anchor brought up to date at the end of session f1b9f797 (context nearly exhausted)
+**Status:** Record. The architect: "now a good time to save _everything_ stales/ambiguities and inconsistencies
+included". Fixed in the anchor: TRUE STATE (tip 394; rev 373 deployed AND notified to nine sessions; revs 367-394
+unpublished); item (d), garbled by piecemeal edits ("zigBash", a "do NOT start phase 2" from before PortableBash, plan
+and spec status that now lives in PortableBash), replaced by a pointer to PortableBash; the notified-sessions line
+(rev 373, nine sessions). Still open here, unchanged: the awk suite hang (a), arithmetic error parity (b), a bare `sh`
+(e), the battery in deploy.sh testing the managed build (f), claudecall.sh's cygpath (g), the red team's remaining LOWs
+(paused), finished jobs kept in the table (greenlit, not started).
+
+## 2026-10-27 -- FIXED: tail, and head's from-the-end forms, on a file over 2 GiB (bytes, a file read from its end)
+**Status:** Active. Reported by koliada-net-28 (the architect asked it to send it): reading the last records of a 93 GB
+runaway log, `tail -c 4 big` gave "Stream was too long" and `tail -n 1 big` "The length cannot be greater than the
+capacity" (rc 1); it worked around with a PowerShell FileStream seek. GREENLIT: "Your order; go" (2026-10-27).
+**Cause (verified on rev 373):** every tail mode read the WHOLE input first: `-c` and `-z` into one byte array
+(`ReadBytes`, a MemoryStream; .NET caps one array at 2 GiB), `-n` into a list of decoded lines (a 2 GiB line is past a
+string's capacity; a 93 GB log of short lines is past memory). head's `-c -N`, `-n -N` and `-z` did the same; head
+reading forwards already streamed. Also found: `tail -n` wrote each line with WriteLine, so a last line without a
+newline gained one (`printf 'a\nb' | tail -n 1` gave `b\n`; GNU `b`).
+**Decision:** tail in every mode, and head's `-c -N` / `-n -N` / `-z`, copy BYTES as they are. A seekable input (a file,
+a `< file` stdin) is read from its end: `-c N` seeks, `-n N` reads backwards 64 KiB at a time until the N-th
+terminator (`\n`, or NUL with -z; one that is the last byte ends the last record and is not counted), so a file is
+read only as far back as the answer goes. A pipe goes through `PipeWindow`: whole 64 KiB blocks, the oldest dropped
+(head: written) once the newer ones alone hold N bytes or N+1 terminators, so memory follows what is kept, not the
+input. `+N` skips forward (seeking past bytes on a file). Output goes to the raw sink, or as text through the shell's
+carrying decoder (a character split between two blocks stays one character in a capture). `tail -f` follows from the
+length that was read, now after `-c` as well (it skipped -f with -c and -z before; GNU follows).
+**Alternatives:** a larger array or `long` indexing (still the whole file in memory: the 93 GB case); a temp file for
+pipes (disk for nothing: the window is bounded by the answer); decoding lines and fixing only the newline (the 2 GiB
+line remains).
+**Measured (Release build):** the large case 0.9 s (rev 373: 31 s, failing; GNU via WSL 5.5 s); `tail -n 2` and `-c 4`
+on the 2 GiB file under 1 ms (`time`, 3 decimals), `tail -n 1` on a 2-byte file 8 ms; 2 GiB through `tail -n 1 big |
+tail -c 4` 0.9 s, `cat big | tail -n 1 | tail -c 4` 1.5 s. A pipe whose LAST LINE is 2 GiB keeps it (as GNU must).
+Memory per pipe window: by design, not measured.
+**Tests (red on rev 373, expected = GNU coreutils 8.32 via WSL):** `tail_head_large` (a sparse 2147483665-byte file:
+fsutil, or truncate; SKIP with neither; -c, -n, -N, -c +N, -z, `< big`, head -c -N, head -n -N back over 2 GiB of
+zeros, tail -n +2 into head; 31 lines red) and `tail_head_exact` (file and pipe for 13 operations on four files, -z,
+records across blocks, a line longer than a block, several files, seekable stdin, UTF-8 cut and kept in a capture; 11
+lines red: the added newline). Suite 177 passed, 0 failed, 9 skipped (both modes); battery 216/237, baseline 216.
+**Not done, found here:** `head -n N` reading forwards also adds a newline to an unterminated last line (`printf a |
+head -n 1`: `a\n`, GNU `a`); not a one-liner, because that path must not read past line N on a shared stdin (`{ head -n
+1; cat; } < f`). The same whole-file read fails `wc` and `md5sum` over 2 GiB (verified) and, by the code, sha*sum, cmp,
+od, hexdump, base64, split, diff and jq: the next item, not greenlit.
+**Revisit:** if a pipe window's memory matters (measure it), or a seekable stdin's position after head -c -N / -n -N
+matters (here it is just after what head printed; GNU's not checked).
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Head, Tail, `OpenBytes`, `ByteSink`,
+`PipeWindow`, `RecordsStart`, `CopyRange`, `FromEnd`, `CopyAfter`, `CopyRecords`; `ZeroRecords` gone),
+`tests/cases/tail_head_large.sh`, `tests/cases/tail_head_exact.sh`, their `tests/expected/*.out`,
+`tests/run-tests.ps1`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- BUILT: `help` and `--help` point at the manual pages (help.json); `enable`; the log of unserviced requests
+**Status:** Active. Reported by koliada-net-28: `help` was not a builtin, so it ran Windows' help.exe (`help dd`:
+"This command is not supported by the help utility", exit 0: another program, no error); `enable` was "not found".
+Found beside it (verified): `tail --help` and `sed --help` ran the PATH program's help (UnxUtils), another program
+than the builtin that runs. RULED (the architect): "Any help request should point requester to the specific GNU help
+page(s) pertaining to their request ... via a json file containing the lookup table stored in %USERPROFILE%/.bash";
+"the ones we lack should call out 'not implemented' along with the URL and save the request to a .bash/ file as a
+tracking log of requests made but not serviced (along with any similar 'unservicable' request exits/fails) so we
+have a list of things to consider implementing (e.g. find -print ... was reported unsupported recently, details flew
+by unsaved)"; "the log should go in the %USERPROFILE%/.bash/ folder"; both `help X` and `X --help`, the built-in
+table answering for names the file lacks ("Yes"); "your order - go".
+**Decision, help:** `help` and `enable` are builtins. `help PATTERN...` prints "name: URL" for each matching topic, bash's
+matching (help.def: an exact name or glob; failing those, every name the pattern begins), -d -m -s accepted; no match:
+bash's message, exit 1; no pattern: the bash manual's builtins page. A topic C#Bash does not implement (a bash 5.1
+builtin it lacks: bind caller logout suspend ulimit; `select`, `coproc`) prints "name (not implemented in C#Bash):
+URL" and is logged. `X --help` answers with X's page: as the first argument (bash's rule; `: [ echo false test true`
+take it as an argument, measured), or met among a tool's options (Opts throws HelpRequestedException at an undeclared
+`--help`, so an option's value, `grep -e --help`, and a command after a tool's first operand, `timeout 5 echo --help`,
+are untouched). `strings -h` keeps its own usage text (its last line says what C#Bash's strings lacks); `--help` is
+the page. The table: `Bash/help.json` (151 names: bash's help topics, then C#Bash's other builtins; GNU's manuals,
+else the manual of the program imitated: jq 1.6, util-linux and procps pages on man7.org, binutils' strings),
+embedded; written to %USERPROFILE%/.bash/help.json when missing; the file's entries win name by name, the built-in
+ones answer for the rest; a file that does not parse is said and the built-in table answers.
+**Decision, the log:** `Unserviced.Log` appends one JSON line (time UTC, build, tool, feature, message, args, outcome,
+source, line) to %USERPROFILE%/.bash/unserviced.jsonl through `ShellFile.Append` (FILE_APPEND_DATA, one write: shells
+in parallel sessions keep whole lines), never failing the command. Logged: a builtin's unsupported option (one place,
+Builtins.TryExecute: "fell through to PATH, exit N" or "failed, exit 2"), awk refusing while its program runs, every
+not-available notice (NotAvailable.Lines), a construct refused when parsed (`>( )`, in a script, `eval` or `-c`), a
+bash builtin C#Bash lacks run as a command (NotFound, 127), help on a topic not implemented or not found. Fall-throughs
+count: C#Bash did not service them itself. The full arguments are kept (local, as `~/.bash_history`; a secret passed
+to an unsupported command lands there too: said in README).
+**Claude's calls (falsifiers):** the folder is the USERPROFILE VARIABLE as the shell has it, else the Windows profile
+API (the literal %USERPROFILE%; a test points it at a folder of its own, as command_map.sh does HOME) -- wrong if the
+architect meant the profile API only. `BASH_UNSERVICED_LOG` names another file, `/dev/null` none; run-tests.ps1,
+run-compat.ps1 and run-n.sh set `/dev/null`: their cases ask for unsupported things on purpose, and a run wrote 0
+lines to the real profile (checked) -- wrong if a test run's requests are wanted in the list. No de-duplication or
+size cap (wrong when the file grows noticeably). Not logged: `select` (a syntax error from the parser, not a refusal);
+help.json's absence of a name after the user removed it is a help error, logged.
+**Alternatives:** the not-available notice for `help` (Claude's first proposal; superseded by the ruling); HOME's
+`~/.bash` like the command map (the ruling names %USERPROFILE%); System.Text.Json for the log lines (jq's own quoter
+`Json.Quote` already in the binary; a carried byte becomes U+FFFD so the line is valid UTF-8 JSON).
+**Verified:** the pages' names: coreutils 8.32's info nodes (all 50 `X invocation`, `sha2 utilities`), diffutils'
+and findutils' `Invoking` nodes (WSL); the bash manual's `index-NAME` anchors on Bourne-Shell-Builtins (all 23,
+fetched) and Bash-Builtins (five, fetched before gnu.org stopped answering); man7.org, sourceware.org, jqlang.org: 200.
+NOT verified: the other bash manual pages and anchors, grep/sed/gawk/findutils/diffutils/which pages on gnu.org
+(gnu.org timed out from 2026-10-27 ~11:00): run `tools/check-help-urls.sh` (new, proven to fail on a 404 and a missing
+anchor) when it answers.
+**Tests (red on rev 373; expected authored):** `help_builtin` (on 373 `help cd` printed Windows' CHDIR help) and
+`unserviced_log` (each logging place, valid JSON lines, BASH_UNSERVICED_LOG). Changed: compgen_local (`-b HAS enable /
+help`), strings_local (its own usage via `-h`). Suite 179 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Unserviced.cs`, `Bash/Evaluator/Builtins.Help.cs`,
+`Bash/help.json`, `Bash/Bash.csproj`, `Bash/Evaluator/Builtins.cs`, `Bash/Evaluator/Opts.cs`,
+`Bash/Evaluator/NotAvailable.cs`, `Bash/Evaluator/Evaluator.cs`, `Bash/Evaluator/Builtins.Awk.cs`,
+`tools/check-help-urls.sh`, `tests/run-tests.ps1`, `tests/compat/run-compat.ps1`, `tests/corpus/run-n.sh`,
+`tests/cases/{help_builtin,unserviced_log,strings_local}.sh`, `tests/expected/{help_builtin,unserviced_log,compgen_local}.out`,
+`README.md`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 397 (tail over 2 GiB; help, --help, enable; the unserviced log) and NOTIFIED
+**Status:** Record. The architect: "deploy and notify". `tools/deploy.sh` as written: rev 397 over rev 373; the AOT
+binary's suite 180 passed, 0 failed, console and -Detached (179 + icu_lazy, AOT only); battery 216/237, baseline 216;
+`1.0.0+hg.818b51e1e4c6 397` in dist/, rollback `dist/Bash.exe.rev373`. Live check from a Claude Code Bash call:
+`$BASH --version` ends 397; `tail -c 4` on koliada-net-28's 2147483700-byte sparse file gives 00 00 00 00, rc 0;
+`help` and `enable` are builtins; `help cd` and `tail --help` print their pages; `enable` lists 131 builtins.
+Notified: koliada-net-28 (ListAgents: the only live session), leading with the behaviour changes. Not published
+(GitHub csharpBash = hg rev 366; revs 367-397 wait for "publish").
+
+## 2026-10-27 -- FIXED: wc and md5sum/sha1sum/sha256sum/sha512sum over 2 GiB (counted and hashed as they read)
+**Status:** Active. Reported by koliada-net-28 on rev 397: `wc -c big` and `cat big | wc -c` gave "Stream was too
+long", rc 1 (reproduced; Claude had found wc and md5sum the same way beside the tail fix). GREENLIT: "yes" to Claude's
+recommendation (wc and the checksums first; cmp, od, hexdump, base64, split, diff, jq NOT greenlit).
+**Cause:** wc read the whole input into one byte array (`ReadBytes`) and decoded it into one string; the checksums
+hashed one array; `md5sum -c` read each listed file whole. .NET caps one array at 2 GiB.
+**Decision:** wc counts a 64 KiB block (`IoBlock`, renamed from tail's TailBlock) at a time (`WcCount`): bytes and
+lines on the bytes (a vectorised count of `\n`); words, characters and the longest line on the text, decoded only when
+one of them is asked, through the carrying decoder (a character split between two blocks stays one). The counts are
+DEFINED as the whole-string code's (runs of non-white-space; UTF-16 characters, a carried byte one; -L in characters):
+this fix changes when they are taken, not what they are. `-c` alone on a seekable input (a file, `< file`) takes its
+length and moves past it, as GNU does. The checksums use IncrementalHash, a block at a time, for files, stdin and the
+files `-c` checks.
+**Measured (Release build, `time`, one run each, a machine with other sessions busy: indicative):** on the 2 GiB
+sparse file `wc -c` 7 ms, `wc -l` 0.39 s, `cat | wc -c` 1.0 s, `md5sum` 3.3 s, `wc -m` 4.3 s (every character decoded
+and examined; GNU via WSL not timed).
+**Equivalence (the old and new code on the same inputs):** rev 397 and the new build print the same 82 lines for wc
+(default, -m -L, all five, from a pipe, `< file`), the four checksums and `md5sum -c`, on files where a word, a 2- and
+3-byte character, an invalid byte and a CRLF straddle byte 65536, a 300000-byte line, 400 KB of random bytes, and the
+odd inputs (NUL, control, invalid UTF-8); control: on the 2 GiB file rev 397 fails and the new build answers.
+**Tests (expected = GNU coreutils 8.32 via WSL, LC_ALL=C.UTF-8):** `wc_checksum_large` (sparse 2147483665 bytes: wc -c,
+-l < big, -lc, -m, a pipe, `< big`, md5sum; 17 lines red on 397) and `wc_checksum_exact` (block-edge inputs from a file
+and a pipe, several files, the four checksums, --tag, stdin, -c OK/FAILED and --quiet; passes on 397 as it must, and
+FAILS with a non-carrying decoder: mutation checked, 2 lines). Suite 181 passed, 0 failed (both modes); battery
+216/237, baseline 216.
+**Found, NOT fixed (C#Bash's wc against GNU's, all already in rev 397, verified):** -w: GNU's words are runs of
+PRINTABLE characters (`\0\0\0\n`: GNU 0, here 1; invalid bytes are not word characters); -m: GNU does not count an
+invalid UTF-8 byte (`\377\376 ab\n`: 4, here 6); -L: GNU's is the display width (a tab to the next 8, a wide CJK
+character 2, NUL and CR 0; here characters); padding: GNU pads several counts read from stdin to 7 and prints one
+count of one file unpadded (`wc -l f` with 1 line of 100 bytes: GNU `1 f`, here `  1 f`). A "wc as GNU" item, not
+greenlit.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Wc, `WcCount`, Checksum, `IoBlock`),
+`tests/cases/wc_checksum_{large,exact}.sh`, their `tests/expected/*.out`, `tests/run-tests.ps1`, `IMPLEMENTATION.md`,
+`PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- BUILT: one shared byte layer (Builtins.Bytes.cs), pooled blocks; wc's ASCII path; measured faster than rev 397 at every size
+**Status:** Active. The architect: "Share (and optimize) anything that makes sense (for best throughput)". Phase A of
+two (B: the other whole-input tools onto it; DECISIONS of the same date to follow).
+**Why:** a diagnostic (AOT 397 against AOT 400, each command repeated in one shell, 3 interleaved rounds; NOT the
+benchmark) found the 2 GiB fixes 3-77x faster from 1 MB up but SLOWER on tiny inputs: a 111-byte `wc` +10 us, `wc -l`
+and md5sum +1-3 us: each call allocated its own 64 KiB block and, decoding, 131 KB of characters (the large-object
+heap).
+**Decision:** the byte layer lives in one file, `Builtins.Bytes.cs`: `OpenBytes`, `Block` (64 KiB rented from
+ArrayPool.Shared, returned by Dispose), `ByteSink` (characters rented), `PipeWindow` (rented blocks, returned by
+Dispose), `RecordsStart`, `CopyRange`, `FromEnd`, `CopyAfter`, `CopyRecords`, `CopyAll`. tail, head, wc, the checksums
+use it; so do `cat` and `head -c` into a capture (they gathered the whole input and decoded it at once). wc: an ASCII
+block with nothing carried is counted on its bytes (System.Text.Ascii.IsValid; `WcAscii.White` = char.IsWhiteSpace per
+ASCII character, built on first use, not at start); -m alone looks at no character; the character buffer is rented
+only for a block that is not ASCII, because a pipeline stage runs on a new thread where the pool holds none (a 256 KB
+allocation per `echo a b c | wc -w`: +5 us, measured; a control pipe into tr showed nothing). `CarryDecoder.Carrying`
+added. `ReadAll` removed (no caller).
+**Measured (the same diagnostic, medians, old 397 / new):** 111-byte file: wc 25.3 / 24.9 us, wc -l 27.2 / 25.1, wc -c
+25.3 / 15.8, md5sum 22.8 / 22.3; `echo a b c | wc -w` 129.9 / 116.3 (7 rounds, new faster in all 7); 1 MB: wc 8.06 /
+0.73 ms, wc -l 8.43 / 0.114 ms, md5sum 1.76 / 1.42 ms; 100 MB: wc 1.34 / 0.080 s, wc -l 1.37 s / 18 ms, md5sum 213 /
+148 ms. Other sessions may have been busy: interleaved, but a diagnostic.
+**Equivalence:** rev 397 and this build print the same 96 lines (wc in every form, the checksums, md5sum -c, cat and
+head -c into a capture) on the block-edge, invalid-byte, CRLF, long-line and random inputs.
+**Tests:** suite 181 passed, 0 failed (both modes); battery 216/237, baseline 216. No new case: the 2 GiB and exact
+cases of tail/head/wc/checksums cover the moved code.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Bytes.cs` (new), `Bash/Evaluator/Builtins.Text.cs`,
+`Bash/Evaluator/ShellEncoding.cs`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- BUILT (phase B1): cmp, od, hexdump, base64 on the shared byte layer; three overflow bugs of rev 397 fixed; base64 -d as GNU on invalid input
+**Status:** Active. Under "Share (and optimize) anything that makes sense (for best throughput)" (phase A: the layer).
+**Decision:** cmp reads both inputs side by side, a rented block each, the first difference by a vectorised common
+prefix (`CommonPrefixLength`), lines counted on the matched bytes (`Count`); `SkipBytes` (seek, else read) for -i.
+od and hexdump take the input a line at a time through `ForEachPiece` (Builtins.Bytes.cs: `width` bytes per piece,
+a full piece handed straight from the block, a split one assembled); `SkipBytes` for -j / -s. base64 encodes whole
+groups of 3 as they come (0-2 bytes carried, the wrap column kept); -d drops white space as before and decodes whole
+groups of 4 with `Base64.DecodeFromUtf8`, the last group held back for the padding. All read whole before (one array).
+**Changed behaviour, each now GNU's (verified in WSL):** (1) `cmp -i N` without -n compared NOTHING in rev 397 (an
+int start plus long.MaxValue wrapped: equal, 0, whatever the files); it compares, and byte numbers count from after
+the skip (`cmp -i 2 t1 t2`: byte 15). (2) A skip past both ends is equal, 0 (397: "EOF on t3", 1). (3) `hexdump -C
+-s N` without -n printed no line and a wrong end offset (the same wrap); it prints. (4) base64 -d writes what decodes
+before invalid input, a last group cut short included (`aGVsbG8`: hello, then "invalid input", 1), and takes
+concatenated encodings (`YQ==YQ==`: aa, 0); 397 wrote nothing on any invalid input and refused concatenation.
+`od -w 0` (an endless loop) is taken as 1.
+**Equivalence with 397 otherwise:** the same output on valid input (base64: 52 lines over files, stdin, -w, empty,
+round trips, a capture; cmp/od/hexdump: 191 lines over block edges, EOF, -s/-l/-n/-i, stdin, a missing file, every od
+format, empty input) apart from the changes above.
+**Found, NOT fixed (all in 397 too; GNU via WSL):** cmp's EOF message (GNU: "EOF on r5 after byte 150000, in line
+558") and -l layout (GNU `65537  64 130`, here `  65537 064 130`); od's addresses after -j count from after the skip
+(GNU from the file's start); `base64 -w 0` ends with a newline (GNU none); base64 -d drops spaces and CR (GNU only
+newlines); base64 -i is accepted and does nothing; `printf %q` escapes `=` (bash does not).
+**Tests (expected = GNU via WSL):** `bytes_tools_large` (two sparse 2 GiB files: cmp's difference past 2 GiB, od -j
+and hexdump -s past it, base64's end; 17 lines red on 397) and `bytes_tools_exact` (block edges, skips, base64's
+invalid inputs; 21 lines red on 397). Suite 183 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Files.cs` (Cmp, `SkipBytes`),
+`Bash/Evaluator/Builtins.Text.cs` (Od, Hexdump, Base64, `Base64Encode`, `Base64Decode`), `Bash/Evaluator/Builtins.Bytes.cs`
+(`Piece`, `ForEachPiece`), `tests/cases/bytes_tools_{large,exact}.sh`, their expected, `tests/run-tests.ps1`,
+`PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- BUILT (phase B2): split and tac on the shared byte layer; tac as GNU on a last line; ReadBytes gone. RAISED: split's suffix wraps and overwrites
+**Status:** Active. Under "Share (and optimize) anything that makes sense (for best throughput)".
+**Decision:** split writes each piece as it reads, a rented block at a time (by -b, or by -l counting newlines in the
+block), a piece opened only when it has a byte (as before); an output it cannot create is named (`split: xaa: ...`).
+tac reads a seekable input from its end, a block at a time (`TacRecords`), a record inside the block in hand written
+from it and a longer one read again forwards (`CopyRange`); a pipe is first copied to a temporary file opened
+DeleteOnClose (GNU's tac does the same), so memory stays one block. `ReadBytes` (one array) has no caller left and
+is removed; `rev` already streamed (Claude's earlier "rev collects all lines" was a misread of a search window).
+**Changed behaviour, now GNU's (verified):** tac keeps a last line without a newline so (`a\nb`: ba\n, GNU's; rev
+397: b\na\n; `x`: x, was x\n). Otherwise the same output as 397 (split: 16 variants, each piece's name, size and sum;
+tac: files, pipes, several files, a 300000-byte line).
+**Measured / checked by hand:** `split -b 1G` of the 2 GiB sparse file: pieces 1073741824, 1073741824, 16 bytes, joined
+= the file, 9.4 s (2 GiB written; not a suite case for that reason).
+**RAISED, not fixed (in 397 too; DATA LOSS):** split's suffix wraps after its last name: with the default length 2,
+piece 677 is named `xaa` again and OVERWRITES the first (`split -l 3` of 40000 lines leaves 676 files of the wrong
+content; GNU lengthens the suffix: 13334 files, the last `xzstv`; with -a given GNU stops: "output file suffixes
+exhausted"). Claude's position: fix it next, GNU's rule (lengthen when -a is not given, refuse when it is).
+**Not streamed (Claude's position):** xargs (`-a` and stdin) reads its whole input before running anything; GNU runs
+as input arrives. Streaming it needs its tokenizer (quotes, -0, -d, -E) made incremental: a change of its own, put to
+the architect. diff, sort, jq: not streaming tools (both files' lines; all lines; one JSON value).
+**Tests (expected = GNU via WSL):** `split_tac_exact` (6 lines red on 397: tac's last line); `bytes_tools_large` gained
+`tac big | head -n 3`. Suite 184 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Split, Tac, `TacRecords`; ReadBytes
+removed), `tests/cases/split_tac_exact.sh`, `tests/cases/bytes_tools_large.sh`, their expected, `tests/run-tests.ps1`,
+`PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 404 (wc and the checksums, the shared byte layer, phases B1 and B2) and NOTIFIED
+**Status:** Record. The architect: "yup, deploy, then in order when done we can publish". `tools/deploy.sh` as
+written: rev 404 over rev 397; the AOT binary's suite 185 passed, 0 failed, console and -Detached; battery 216/237,
+baseline 216; `1.0.0+hg.40c3f7c6949a 404` in dist/, rollback `dist/Bash.exe.rev397`. Live check from a Claude Code
+Bash call: `$BASH --version` ends 404; `wc -c` and `cat | wc -c` on the 2147483664-byte sparse file answer;
+`echo a b c | wc -w` 3; `printf 'a\nb' | tac` gives `ba\n`; `cmp -i 2 t1 t2` gives byte 15, line 3. Notified (ListAgents):
+koliada-net-28 and kes-term-a1 (started after 397: told of help, the log and the 2 GiB fixes too). Not published
+(GitHub csharpBash = hg rev 366): publishing follows the tool-by-tool sequence, after a compare3 run on a quiet
+machine (the architect).
+
+## 2026-10-27 -- BUILT: split's suffix widens or stops as GNU's (it wrapped and OVERWROTE the first pieces); -a checked
+**Status:** Active. Item (1) of the greenlit sequence ("yup, deploy, then in order").
+**Context:** split named piece N by N modulo 26^length, so piece 677 (default length 2) was `xaa` again and replaced
+the first piece; `-d` ran on into `x100`; `-a 0` and `-a -1` named every piece `x`; `-a x` and `-a ''` were taken as
+the default. Data loss in every build to 404.
+**Decision:** the suffix counts up as coreutils' `next_file_name`: an index per character into the alphabet
+(a-z; 0-9 with -d). Without -a (or with -a 0, the default length, as GNU) it widens: when the first character would
+become the last letter, that letter joins the prefix and the suffix grows by one, restarting (`xyz`, `xzaaa`;
+`x89`, `x9000`, `x9899`, `x990000`); `--additional-suffix` follows it. With -a / --suffix-length N it stops at the
+last name: "split: output file suffixes exhausted", rc 1, the pieces before it whole (a piece is opened only when a
+byte for it arrives, so an input that fits exactly is no error). A length that is not a number >= 0 (leading blanks
+allowed) is refused before anything is written: "split: invalid suffix length: 'x'", rc 1.
+**Verified against GNU (coreutils 8.32, WSL):** every rule above, measured before the code; `split -l 3` of `seq 1
+40000`: 13334 pieces, the last `xzstv`, joined = the input (by hand on the new build: 13334 files, too slow for the
+suite). **Deliberate difference:** an overflowing length (`-a 99999999999999999999`) gets the same message without
+GNU's ": Value too large for defined data type".
+**Alternatives:** keep wrapping but refuse at the end (loses GNU's no-a behaviour, which scripts rely on to never
+fail); widen always, ignoring -a (GNU stops; a caller who fixed the length expects the names to keep it).
+**Found, not fixed (onto the "match GNU" item; no data lost):** `split -l` with x, 0, -1 or '' writes the whole input
+as one piece, rc 0 (GNU: "invalid number of lines", rc 1); `-b 0` the same; `-b x` falls through to the PATH split
+(`F:/Tools/UnixUtils/.../split.exe` here). `Opts.GetInt` falls back to its default on a bad value, so other tools
+using it may accept bad numbers too (not surveyed).
+**Tests (expected = GNU via WSL):** `split_tac_exact` gained 34 lines (letters and -d widening twice, -a and
+--suffix-length stopping, -d -a 2, -a 0, --additional-suffix, bytes, stdin, four invalid lengths and ' 3'); 21 of
+them wrong or missing on deployed 404; the case's first 86 lines are unchanged (same output as 404 there). Suite 184 passed,
+0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Split), `tests/cases/split_tac_exact.sh`,
+`tests/expected/split_tac_exact.out`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 406 (split's suffix) and NOTIFIED
+**Status:** Record. Item (1) of the greenlit sequence. `tools/deploy.sh` as written: rev 406 over rev 404; the AOT
+binary's suite 185 passed, 0 failed, console and -Detached; battery 216/237, baseline 216; `1.0.0+hg.943f7c304915 406`
+in dist/, rollback `dist/Bash.exe.rev404`. Live check from a Claude Code Bash call: `$BASH --version` ends 406;
+`seq 1 700 | split -l 1` gives 700 pieces, the last `xzabx`; with `-a 2` "output file suffixes exhausted", rc 1, 676
+pieces; `split -a x` "invalid suffix length: 'x'", rc 1. Notified (ListAgents): koliada-net-28, kes-term-a1. Not
+published (GitHub csharpBash = hg rev 366).
+
+## 2026-10-27 -- BUILT: the output encoder carries a surrogate pair across chunks (emoji broke past 8192 characters)
+**Status:** Active. Found while moving sed (item (2)): `sed -i` writes through a writer, so a streamed -i needs this.
+**Context (measured on deployed 406):** `ShellEncoding` overrode `GetDecoder` (CarryDecoder, 2026-10-10) but not
+`GetEncoder`, so every writer over it (process stdout/stderr in Program.cs, redirections, pipes, `File.WriteAllText`,
+StreamWriters in sed/awk) got .NET's stateless encoder: a character past U+FFFF whose two halves fell on either side
+of a chunk boundary came out as two U+FFFD. `printf '%s\n' "$x"` / `echo "$x"` of a capture over 8192 characters, to a
+file, a pipe or stderr, and `sed -i`, corrupted the emoji there (first bad byte at char 8192 exactly: File.WriteAllText's
+chunk). Small writes (`sed ''`, `awk 1`, line by line) were never cut, so they were whole.
+**Decision:** `GetEncoder()` returns `CarryEncoder`: a high surrogate that ends a chunk is held and encoded with the
+low surrogate that starts the next; on the final (flush) chunk a lone one is encoded as before (U+FFFD). A raw-byte
+character (U+DC80..DCFF) after a held high surrogate is the pair's low half, as `IsLoneByte` already reads it.
+**Alternatives:** fix each writer (many sites; any new writer would bring the bug back); write through byte sinks only
+(a far larger change). **Consequence:** a lone high surrogate at the very end of output (only from cutting a pair in a
+string; never from decoding) is written only when the writer flushes its encoder (Flush/Dispose), not by AutoFlush.
+**Diagnostic, not the benchmark** (AOT 406 vs AOT new, dist.staging, in-process `$EPOCHREALTIME`, 5 interleaved
+rounds, medians): 20000 `echo` to a file 86.6 -> 84.3 ms, to a pipe 37.7 -> 34.6 ms, 40 x 288 KB `printf` to a file
+160.5 -> 157.0 ms: no slowdown (within the rounds' spread).
+**Found, not fixed:** tee's text path (Builtins.Text.cs, `ShellEncoding.Utf8.GetBytes(buf, 0, n)` per 4096-char chunk)
+has the same stateless cut for its file copies: item (7), tee.
+**Tests (expected = GNU via WSL):** new `astral_chunks` (5000 lines of 1..97 'a's and two emoji: printf/echo of a
+capture to a file, a pipe, a group, stderr; sed -i; sed w; sed's capture written back): 7 of its 8 checks fail on 406.
+Suite 185 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/ShellEncoding.cs` (CarryEncoder),
+`tests/cases/astral_chunks.sh`, `tests/expected/astral_chunks.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 408 (the output encoder carries surrogate pairs) and NOTIFIED
+**Status:** Record. Step (2a), found doing item (2). `tools/deploy.sh` as written: rev 408 over rev 406; the AOT
+binary's suite 186 passed, 0 failed, console and -Detached (astral_chunks added); battery 216/237, baseline 216;
+`1.0.0+hg.b0bbc8cb03a2 408` in dist/, rollback `dist/Bash.exe.rev406`. Live check from a Claude Code Bash call:
+`$BASH --version` ends 408; a 288887-byte capture of emoji lines written back by `printf '%s\n'` is byte-identical.
+Notified (ListAgents): koliada-net-28, kes-term-a1. Not published (GitHub csharpBash = hg rev 366).
+
+## 2026-10-27 -- BUILT: sed reads as it goes; GNU's per-line newline flags; q ends the run; w files once; -i via a temporary file
+**Status:** Active. Item (2) of the greenlit sequence.
+**Context:** sed read every file whole (`ReadAllText`, a MemoryStream: fails over 2 GiB, from the code, not run: it would
+fill ~3 GB first) and stdin with `ReadToEnd`: `yes | sed 3q` never ended and its memory grew (seen on 406 by accident,
+stopped at once: never run it on a build before this one), and `{ sed 1q; head -n 1; } < f` left head nothing.
+**Decision:** a streaming engine in Builtins.Search.cs. `SedInput` yields lines as the script asks, through
+`LfReader.ReadRecord` / `ShellEncoding.ReadRecord` (new: a record to LF or NUL and whether the separator ended it);
+stdin through the shell's shared reader, never past the line; `$` is a Peek (nothing consumed), opening later files
+to see whether any has a line; a console reader is wrapped in an LfReader (its own Peek can say "nothing" early).
+`SedOut` owes a missing newline to the next write. `SedShared` holds stdout, stderr, the `w` files (opened, so
+truncated, once before any input) and `Quit`. The pattern and hold spaces each carry "its newline was there".
+**Changed behaviour, each measured against GNU sed 4.8 in WSL first (408 differed):** `q` on a file stdin leaves the
+offset after the line (head gets line 2); x / g / G / H / `1!G;h;$!d` and a last file that is empty keep or add the
+final newline as GNU (hold starts with one; x swaps, h/g copy, G/H take the appended one's, n/N the new line's);
+`q` writes an owed newline (`printf a | sed 1q` is `a\n`, also into an -i file), `Q` does not; `w` keeps it missing;
+`F` names the current file (was always the first); `q` ends the whole run under -s and -i (`sed -i 1q a b` also
+truncated b); `w` files last across files (-s and -i reopened them per file, keeping only the last file's lines) and a
+`w` file never written is still truncated (stale content stayed); `w /dev/stdout` under -i is stdout (it went into
+the file, doubling lines). Unchanged, as GNU: hold, ranges and line numbers restart per file under -s/-i; N/n do not
+cross files there.
+**-i (Claude's stated default; the architect may reverse):** output to a temporary file beside the original
+(`sedXXXXXXXXXXX`), then `File.Replace` (GNU's rename model): a failure leaves the original whole (WriteAllText in place
+lost it on a failed write), Windows keeps the original's attributes, ACL and creation time, the -i SUFFIX backup is
+the original itself (overwritten on a second run, as GNU), hard links are broken (as GNU). Alternatives: in place as
+before (not atomic); stream to a temp then copy back (keeps the file's identity, not atomic, twice the I/O).
+**Deliberate differences from GNU:** `q` on a PIPE leaves exactly the next line (GNU: whatever its block read left);
+`$F` on a line followed only by empty files names the line's file (GNU names the empty file its lookahead opened);
+stderr against stdout order (GNU block-buffers a piped stdout); a temp file that cannot be made reports "couldn't edit
+F" (GNU: "couldn't open temporary file").
+**Verified:** a 2.2 GB file of 110000000 lines: `$=` 5.2 s, `s///` to the end correct, `$p`, `1q` at once. Equivalence
+sweep, three ways (deployed 408, new, GNU), 329 lines: 25 changed, every one to GNU's output; 3 still differ from GNU
+with 408 = new (below). `yes | sed 3q` ends. **Diagnostic, not the benchmark** (AOT 408 vs AOT new, 5 interleaved
+rounds, medians): `sed -n '$='` on 100 MB 937 -> 302 ms; `s///` on 100 MB to a pipe 4.91 -> 4.30 s, to a file 17.69 ->
+17.12 s; 2000 runs on a 3-line file 50 -> 51 ms.
+**Found, not fixed:** `l` does not wrap at 70 columns (GNU does; old = new) -> the "match GNU" item. Line-by-line output
+to a REDIRECTED FILE is ~5.8 MB/s (100 MB in 17 s; 4.3 s to a pipe), both builds: the shell's file writer flushes each
+write; not sed's -> raised.
+**Tests (expected = GNU via WSL):** new `sed_stream`: 23 of its lines wrong or missing on 408; `sed`, `sed_brackets_text`,
+`sed_final_newline` unchanged. Suite 186 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Search.cs` (Sed, SedInput, SedOut, SedShared,
+SedRun, SedSelect; SedReadFile/SedReadStdin/SedSplit removed), `Bash/Evaluator/ShellEncoding.cs` (ReadRecord x2),
+`tests/cases/sed_stream.sh`, `tests/expected/sed_stream.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 410 (sed streams) and NOTIFIED
+**Status:** Record. Item (2). `tools/deploy.sh` as written: rev 410 over rev 408; the AOT binary's suite 187 passed,
+0 failed, console and -Detached (sed_stream added); battery 216/237, baseline 216; `1.0.0+hg.1a671746edef 410` in dist/,
+rollback `dist/Bash.exe.rev408`. Live check from a Claude Code Bash call: `$BASH --version` ends 410; `{ sed 1q; head
+-n 1; } < f` gives 1 2; `yes | sed 3q` ends (y y y); `printf 'a\nb' | sed x` gives `\na\n`; `sed -i.bak` edits and keeps
+the original as the backup. Notified (ListAgents): koliada-net-28, kes-term-a1. Not published (GitHub = hg rev 366).
+
+## 2026-10-27 -- BUILT: uniq a group at a time; coreutils' -d/-u/-D switches; -D -c refused; -z; -f blanks are space/tab
+**Status:** Active. Item (3) of the greenlit sequence.
+**Context:** uniq read every line into a list (`ReadLines(r).ToList()`: fails over 2 GiB, holds a pipe's whole input).
+Measured against GNU coreutils 8.32 in WSL on deployed 410: `-d -u` printed the repeated groups (GNU: nothing); short
+`-D` was not declared, so it fell through to the PATH uniq (UnixUtils' uniq.exe here), which differs from GNU on
+`-D -d` and `-D -u`, and is absent on a machine without it; `--all-repeated` ran in-process as -d; `-z` was accepted and
+ignored; `-f` took a CR as a blank (`uniq -f 1` of CRLF lines grouped differently).
+**Decision:** a group at a time (first line, key, size) through `ShellEncoding.ReadRecord` (LF, or NUL with -z), and
+coreutils' three switches: lone lines shown unless -d/-D; a repeated group's first line shown unless -u; its later lines
+shown with -D (the first is written when the second arrives). `-D -c` is refused as GNU ("printing all duplicated lines
+and repeat counts is meaningless", rc 1). Fields split at space and tab only.
+**Verified:** three-way sweep (410, new, GNU; 400 lines: 19 option sets x 10 inputs x file/stdin, pipes, an output
+file): 102 lines changed, every one to GNU's; new = GNU on all 400. A 2.2 GB file: `uniq -c` gives 110000000, 4.9 s.
+**Diagnostic, not the benchmark** (AOT 410 vs AOT new, 5 interleaved rounds, medians): `-c` on 100 MB of one group
+623 -> 270 ms; `-c` on 3M lines in groups of 3 376 -> 139 ms; 2000 runs on a 3-line file 46 -> 44 ms. SLOWER: `-D` into
+a pipe, 2M lines out, 579 -> 1056 ms: on 410 that was the external uniq.exe (block-buffered stdout); in-process it pays
+the shell's per-write flush (the RAISED output-path item). Kept in-process: GNU's answers, no PATH dependency.
+**Tests (expected = GNU via WSL):** new `uniq_stream` (14 lines wrong on 410). Suite 187 passed, 0 failed (both
+modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Uniq), `tests/cases/uniq_stream.sh`,
+`tests/expected/uniq_stream.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 412 (uniq a group at a time) and NOTIFIED
+**Status:** Record. Item (3). `tools/deploy.sh` as written: rev 412 over rev 410; the AOT binary's suite 188 passed,
+0 failed, console and -Detached (uniq_stream added); battery 216/237, baseline 216; `1.0.0+hg.f693145e0d06 412` in dist/,
+rollback `dist/Bash.exe.rev410`. Live check from a Claude Code Bash call: `$BASH --version` ends 412; `uniq -D` gives
+a a c c; `uniq -d -u` prints nothing; `uniq -z -c` counts NUL records. Notified (ListAgents): koliada-net-28,
+kes-term-a1. Not published (GitHub = hg rev 366).
+
+## 2026-10-27 -- BUILT: comm merges a line at a time; --total, -z, GNU's order check, empty delimiter = NUL
+**Status:** Active. Item (4) of the greenlit sequence.
+**Context:** comm read both inputs into lists (fails over 2 GiB). Measured against GNU coreutils 8.32 in WSL (LC_ALL=C)
+on deployed 412: `--total`, `-z`, `--check-order` and the default order check were accepted and did nothing (Opts'
+"strict, nothing silently ignored" rule broken); an empty `--output-delimiter` gave no separator (GNU: one NUL); an
+open error lost the file name ("comm: No such file or directory"); the operand messages were not GNU's.
+**Decision:** a two-way merge through `ShellEncoding.ReadRecord` (LF, or NUL with -z), the comparison unchanged
+(Ordinal, -i OrdinalIgnoreCase: the same order as C#Bash's sort, which comm's input comes from). GNU's order check:
+each new line against the one before it in its file; --check-order stops at the first disorder ("comm: file N is not in
+sorted order", status 1); by default a file is checked only once an unpairable line has been seen, warned once, and
+"comm: input is not in sorted order", status 1, at the end; --nocheck-order never. `--total` prints the three counts
+(all columns, suppressed or not) and "total". GNU's "missing operand after 'X'" / "extra operand" / "Try" lines.
+**Deliberate differences:** `-i` is kept (C#Bash's own; GNU's comm rejects it). Order is UTF-16 code units, GNU's C
+locale is bytes: they differ for U+E000..U+FFFF against characters past U+FFFF and for raw bytes, so a file sorted by
+GNU's byte order can now draw the order warning. That is the sort + comm collation item ("match GNU"): change both or
+neither.
+**Found, not comm's:** `$( )` keeps NUL bytes; bash drops them (with a warning) -> the "match GNU" item.
+**Verified:** three-way sweep (412, new, GNU; 170 lines: 12 option sets x 12 file pairs, stdin on either side, -z): 48
+changed, every one to GNU's; new = GNU on all 170. A 2.2 GB file against itself: `--total` 0 0 110000000, 9.6 s.
+**Diagnostic, not the benchmark** (AOT 412 vs AOT new, 5 interleaved rounds, medians): 1M + 1.5M sorted lines to a
+pipe 887 -> 776 ms; `-12` 231 -> 109 ms; 2000 runs on two 2-line files 99 -> 63 ms.
+**Tests (expected = GNU via WSL):** new `comm_stream` (23 lines wrong on 412). Suite 188 passed, 0 failed (both
+modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Comm), `tests/cases/comm_stream.sh`,
+`tests/expected/comm_stream.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 414 (comm merges a line at a time) and NOTIFIED
+**Status:** Record. Item (4). `tools/deploy.sh` as written: rev 414 over rev 412; the AOT binary's suite 189 passed,
+0 failed, console and -Detached (comm_stream added); battery 216/237, baseline 216; `1.0.0+hg.43d4afd6544f 414` in dist/,
+rollback `dist/Bash.exe.rev412`. (A first start was lost: Claude ran the commit-and-deploy chain under `&`, a thread of
+the tool's shell, which ended with it as documented 2026-10-04; the commit had landed, nothing was deployed; started
+again with the harness's background run.) Live check from a Claude Code Bash call: `$BASH --version` ends 414;
+`comm --total` counts 2 1 1; `comm --check-order` reports "file 1 is not in sorted order". Notified (ListAgents):
+koliada-net-28, kes-term-a1 (told an unsorted input now reports). Not published (GitHub = hg rev 366).
+
+## 2026-10-27 -- BUILT: paste a row at a time; `paste - -` reads stdin in turn; GNU's empty delimiters; -z
+**Status:** Active. Item (5) of the greenlit sequence.
+**Context:** paste read every input into a list (fails over 2 GiB). Measured against GNU coreutils 8.32 in WSL on
+deployed 414: `seq 4 | paste - -` gave 1\t, 2\t, 3\t, 4\t (the first `-` read all of stdin; GNU: 1\t2, 3\t4, each `-`
+reading the next line of the one stdin, a common idiom); `-d '\0'` gave a NUL and `-d ''` a tab (GNU: an empty
+delimiter, nothing between the columns); `-z` was accepted and ignored.
+**Decision:** one reader per operand (all opened first, as GNU, so an error comes before any output), a row at a time,
+a record from each through `ShellEncoding.ReadRecord` (LF, or NUL with -z); a finished input gives an empty column, and
+the output ends when every input has. -s: an input's records joined into one output line, written in pieces of 64 K
+characters as it grows. `PasteDelims` (paste's own: `UnescapeDelims` stays for seq -s): one entry per character, `\0`
+empty, an empty list one empty delimiter.
+**Verified:** three-way sweep (414, new, GNU; 254 lines: 8 option sets x 9 inputs in three positions, all inputs at
+once, `- -` / `- s3 -` / `-s -` on stdin, -z): 62 changed, every one to GNU's; new = GNU on all 254. Two 2.2 GB columns
+through a pipe: 48.2 s, the tail right; `-s` of 2.2 GB: 8.0 s.
+**Diagnostic, not the benchmark** (AOT 414 vs AOT new, 5 interleaved rounds, medians): two 1M-line columns to a pipe
+555 -> 433 ms; -s of 1M lines 75 -> 34 ms; 2000 runs on a 2-line file 82 -> 64 ms; `paste - -` of 1M lines 433 -> 216
+ms (not like for like: 414 wrote 1M one-column rows).
+**Tests (expected = GNU via WSL):** new `paste_stream` (9 lines wrong on 414). Suite 189 passed, 0 failed (both
+modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Paste, PasteDelims),
+`tests/cases/paste_stream.sh`, `tests/expected/paste_stream.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 416 (paste a row at a time) and NOTIFIED
+**Status:** Record. Item (5). `tools/deploy.sh` as written: rev 416 over rev 414; the AOT binary's suite 190 passed,
+0 failed, console and -Detached (paste_stream added); battery 216/237, baseline 216; `1.0.0+hg.3a18d8e94497 416` in dist/,
+rollback `dist/Bash.exe.rev414`. Live check from a Claude Code Bash call: `$BASH --version` ends 416; `seq 4 | paste
+- -` gives 1,2;3,4; `paste -d ''` joins with nothing. Notified (ListAgents): koliada-net-28, kes-term-a1. Not
+published (GitHub = hg rev 366).
+
+## 2026-10-27 -- BUILT: tail -f writes each appended byte once (a busy writer's lines came out twice)
+**Status:** Active. Item (6) of the greenlit sequence ("tail -f's appended chunk through ByteSink").
+**Context (measured on deployed 416):** the follow loop read the appended part to the end of the file as one string
+(`LfReader.ReadToEnd`) but set the next round's start to the length it had read BEFORE that read, so whatever a writer
+added in between was written again next round: 30000 lines appended by a loop while `tail -f` followed came out as
+56459-59892 lines (three runs, ~28000 repeated). Every `tail -f` of a busy log repeated itself.
+**Decision:** the appended bytes go through the byte layer (`CopyAfter(fs, 0, bytes, ...)` into a `ByteSink`, a block at
+a time: no string the size of the append) and the next round starts where that read ended (its return value).
+**Verified:** the same stress, new build: racing start, the output is exactly the file's last lines with none repeated
+(tail starts at the last 10 present when it opens); writer starting after tail is up, all 30000 lines byte-identical.
+Raw bytes and appends ending mid-line were already byte-exact (the text path was byte-transparent) and stay so.
+Not measured: throughput (the loop waits on the file watcher / the -s interval; not a hot path).
+**Tests (expected = GNU via WSL):** new `tail_follow_exact` (3000 lines; on 416: 5631 out, 1790 repeated; ~12 s: three
+4-second follows). Suite 190 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Tail's follow loop),
+`tests/cases/tail_follow_exact.sh`, `tests/expected/tail_follow_exact.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 418 (tail -f writes each appended byte once) and NOTIFIED
+**Status:** Record. Item (6). `tools/deploy.sh` as written: rev 418 over rev 416; the AOT binary's suite 191 passed,
+0 failed, console and -Detached (tail_follow_exact added); battery 216/237, baseline 216; `1.0.0+hg.ad60c4b64c4c 418` in
+dist/, rollback `dist/Bash.exe.rev416`. Live check from a Claude Code Bash call: `$BASH --version` ends 418; the 30000-
+line stress: racing start, the file's last lines with none repeated; writer after tail, byte-identical. Notified
+(ListAgents): koliada-net-28, kes-term-a1 (told earlier `tail -f` output may have shown repeats). Not published.
+
+## 2026-10-27 -- BUILT: tee copies a here-document's surrogate pairs whole; a pooled block read 8 KiB at a time (measured)
+**Status:** Active. Item (7) of the greenlit sequence ("tee: its own 8 KiB buffers").
+**Context (measured on deployed 418):** a here-document is a text source; tee read it 4096 characters at a time and
+`ShellEncoding.Utf8.GetBytes` per chunk cut a surrogate pair at the chunk's end into two U+FFFD in the files, and
+stdout's `Flush()` after each chunk wrote the held half alone too: 'a' + 5000 emoji (every pair at an odd offset)
+broke at byte 8190 in the file, on stdout and in a /dev/stderr copy. (A first probe with one emoji per ~52 characters
+happened to pass: no 4096 edge fell inside a pair, a ~29% chance [estimate]; a test must force the cut.) The pipe path
+was byte-exact; its capture case decoded each chunk statelessly but the capture healed the split bytes (measured).
+**Decision:** the text path holds back a high surrogate that ends a chunk and starts the next chunk with it, so no target
+gets half a pair (one at the very end goes alone, as before). The pipe path uses the pooled Block, its text targets (a
+capture, /dev/stdout, /dev/stderr operands) one carrying decoder, chars rented from the pool.
+**Measured choice:** the Block is read 8 KiB at a time, not whole: `cat f | tee g > h`, 100 MB, AOT, 5 interleaved
+rounds, medians: 418 537 ms; 64 KiB reads 656 ms (+22%); 8 KiB reads 540 ms. Cause not isolated [unverified: a larger
+request on this pipe likely waits for more data, less producer/consumer overlap, as LfReader's notes measured]. Into a
+capture 91 -> 73 ms; 2000 tiny runs 1.497 -> 1.361 s (noisy). RAISED for item (8): the other byte tools (cat, wc, the
+checksums) read whole 64 KiB blocks from pipes, measured faster than 397 but never against 8 KiB reads.
+**Tests (expected = GNU via WSL):** new `tee_exact` (3 lines wrong on 418). Two first drafts of its /dev/stdout check
+were dropped as not tee's: with stdout a file GNU's `tee /dev/stdout` reopens it truncated (Linux offsets, one copy);
+through a pipe both interleave by chunk and chunk sizes differ; it checks one chunk. Suite 191 passed, 0 failed (both
+modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Tee), `tests/cases/tee_exact.sh`,
+`tests/expected/tee_exact.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 420 (tee copies surrogate pairs whole) and NOTIFIED
+**Status:** Record. Item (7). `tools/deploy.sh` as written: rev 420 over rev 418; the AOT binary's suite 192 passed,
+0 failed, console and -Detached (tee_exact added); battery 216/237, baseline 216; `1.0.0+hg.3053e802c0a8 420` in dist/,
+rollback `dist/Bash.exe.rev418`. Live check from a Claude Code Bash call: `$BASH --version` ends 420; the forced-cut
+here-document ('a' + 5000 emoji) through tee into a file is byte-identical. Notified (ListAgents): koliada-net-28,
+kes-term-a1. Not published (GitHub = hg rev 366).
+
+## 2026-10-27 -- BUILT (measured): fold and strings use the pooled block; tr keeps its own buffer
+**Status:** Active. Item (8) of the greenlit sequence ("fold, tr, strings: the pooled Block ONLY if MEASURED faster").
+**Measured** (AOT 420 vs AOT with all three pooled, read sizes unchanged: fold 8 KiB, tr 8192 chars, strings 64 KiB;
+5 interleaved rounds, the five values each): 2000 runs on a 2-line file: fold 45-47 -> 42-44 ms, strings 58-61 ->
+54-56 ms (no overlap: ~2 us a run, one 8 / 64 KiB allocation fewer), tr 48-52 -> 48-50 ms (overlap). 50 MB from a
+file: fold 155-162 -> 154-157 ms (overlap), strings 325-329 -> 307-316 ms, tr 365-368 -> 355-357 (one 374) ms; 50 MB
+through a pipe: fold and tr overlap. A one-allocation change cannot account for 10-20 ms on one 50 MB run, so those
+file numbers are not credited to it [inferred: binary layout of the rebuilt build].
+**Decision:** fold and strings rent the pooled Block (measured faster per run, nothing slower); tr keeps its own 8192-
+char buffer (no measured gain; a char buffer is not the byte Block anyway). No behaviour change, so no red test.
+**Tests:** suite 191 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Fold, StringsScan; Tr a comment),
+`PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 422 (fold and strings on the pooled block) and NOTIFIED
+**Status:** Record. Item (8). `tools/deploy.sh` as written: rev 422 over rev 420; the AOT binary's suite 192 passed,
+0 failed, console and -Detached; battery 216/237, baseline 216; `1.0.0+hg.4f0f9f5bc4a1 422` in dist/, rollback
+`dist/Bash.exe.rev420`. Live check: `$BASH --version` ends 422; fold -w 4 and strings answer as before. Notified
+(ListAgents): koliada-net-28, kes-term-a1 (no behaviour change). Not published (GitHub = hg rev 366).
+
+## 2026-10-27 -- BUILT: head -n N keeps a last line's missing newline; still the shared line reader (plan revised, measured)
+**Status:** Active. Item (9) of the greenlit sequence. **Supersedes the item's pre-compaction plan** ("bytes; hand back
+the read-ahead on a shared stdin"; PROJECT_CONTEXT anchor, rev 405).
+**Measured against GNU coreutils 8.32 in WSL on deployed 422:** head -n N forwards added a newline to a last line that
+had none (`printf a | head -n 1` was a\n; `head -n 2` of `a\nb` ended b\n) - the one defect. Everything else already
+matched: `{ head -n 1; cat; } < f` (a file stdin) leaves cat the rest; CR and raw bytes are byte-exact (the text path is
+byte-transparent). On a PIPE C#Bash is exact to the line (`seq 5 | { head -n 1; cat; }`: cat gets 2..5); GNU's head
+takes the pipe's whole block (cat gets nothing here): kept, the same deliberate difference as sed's `q`.
+**Decision:** keep the shared line reader and use `ShellEncoding.ReadRecord`'s "ended" flag: `Console.WriteLine` when
+the line had its newline, `Console.Write` when not. Not bytes: a byte reader reads blocks ahead, which on a pipe cannot
+be handed back - it would lose the line-exact sharing for no measured gain.
+**Diagnostic, not the benchmark** (AOT 422 vs AOT new, 5 interleaved rounds, all five values): `head -n 1000000` of a
+2M-line file 38-40 -> 40-41 ms (touching: the per-line ReadRecord dispatch); through a pipe 299-306 -> 289-306 ms;
+2000 runs on a 3-line file 38-40 -> 38-41 ms. A first draft wrote `line + "\n"`: 46-47 ms (a string a line), replaced.
+**Tests (expected = GNU via WSL):** new `head_lines_exact` (10 lines wrong on 422). Suite 192 passed, 0 failed (both
+modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Text.cs` (Head forwards),
+`tests/cases/head_lines_exact.sh`, `tests/expected/head_lines_exact.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-27 -- DEPLOYED rev 424 (head -n N keeps a missing newline) and NOTIFIED; the greenlit list is done
+**Status:** Record. Item (9), the last of the list ("yup, deploy, then in order when done we can publish").
+`tools/deploy.sh` as written: rev 424 over rev 422; the AOT binary's suite 193 passed, 0 failed, console and -Detached
+(head_lines_exact added); battery 216/237, baseline 216; `1.0.0+hg.e521ecbee024 424` in dist/, rollback
+`dist/Bash.exe.rev422`. Live check: `$BASH --version` ends 424; `printf a | head -n 1` gives `a`; `{ head -n 1; cat; }
+< f` gives 1..5. Notified (ListAgents): koliada-net-28, kes-term-a1. Deployed this session after 404: 406 split's
+suffix, 408 the output encoder, 410 sed, 412 uniq, 414 comm, 416 paste, 418 tail -f, 420 tee, 422 fold+strings, 424
+head. Not published (GitHub csharpBash = hg rev 366): PUBLISH is next and needs the architect (compare3 on a quiet
+machine, then tools/publish.sh).

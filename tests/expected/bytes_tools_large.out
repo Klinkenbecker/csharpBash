@@ -1,0 +1,18 @@
+--- cmp (the difference past 2 GiB)
+big big2 differ: byte 2147483664, line 6
+rc=1
+--- cmp -s, the same file
+rc=0
+--- od -j past 2 GiB
+ 0a 6c 61 73 74 31 0a 6c 61 73 74 32 0a 45 4e 44
+ 0a
+--- hexdump -C -s past 2 GiB
+80000000  0a 6c 61 73 74 31 0a 6c  61 73 74 32 0a 45 4e 44  |.last1.last2.END|
+80000010  0a                                                |.|
+80000011
+--- tac (the last lines first; it held every line in a list)
+END
+last2
+last1
+--- base64 -w 0 (its last 24; GNU ends with no newline, C#Bash with one: not this case's subject)
+bGFzdDEKbGFzdDIKRU5ECg==

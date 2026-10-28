@@ -1,0 +1,54 @@
+== stdin left by q
+1
+2
+2
+4
+== newline flags
+x             \n a \n | \n
+x;p           \n \n a \n a \n | \n \n
+G             a \n \n b \n \n | a \n \n
+g             \n \n | \n
+$!d;x         \n | \n
+1!G;h;$!d     b \n a \n | a
+H;$!d;x       \n a \n b | \n a
+N;P;D         a \n b | a
+n             a \n b | a
+1q            a \n | a \n
+1{p;q}        a \n a \n | a \n a \n
+1Q            |
+$a\
+END       a \n b \n E N D \n | a \n E N D \n
+-n 1{p;q}  a \n | -n 1{p;Q}  a
+na e:  a | na nb p:  a \n a \n b \n b \n | $p na nb:  b \n
+$d nb e: [] | -s $d xy nb:  x \n | N xy nb:  x \n y \n b \n
+w keeps it missing:  a
+== F
+xy
+nb
+-
+q
+== q ends the run
+x
+2
+-i 1q: a b
+-i 1q: 1 / 3 4 
+-i 1q owed:  a \n
+== w files
+-s: a b 
+-i: a b []
+never written: []
+created
+-i w /dev/stdout: [X 2] file: X 2 
+== -i
+a!  3 \n 4 !
+-i.bak twice: B A
+-i old_*: C 1
+rc=2 sed: can't read missing: ...
+-i $!d: 10000
+== $
+heredoc: two
+3
+10002
+10000
+2
+1

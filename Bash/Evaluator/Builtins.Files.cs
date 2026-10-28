@@ -641,28 +641,73 @@ public sealed partial class Builtins
 		string f1 = o.Operands[0], f2 = o.Operands.Count > 1 ? o.Operands[1] : "-";
 		long limit = o.Get('n') is string ns ? ParseCount("cmp", ns, 'n') : long.MaxValue;
 		long skip = o.Get('i') is string isk ? ParseCount("cmp", isk.Split(':')[0], 'i') : 0;
+		// Both inputs read side by side, a rented block each: they were read whole, which failed over 2 GiB
+		// (2026-10-27). The first difference by a vectorised common prefix, lines counted on the matched bytes.
+		Stream? a = null, b = null;
 		try
 			{
-			var a = ReadBytes(f1); var b = ReadBytes(f2);
-			int start = (int)Math.Min(skip, Math.Min(a.Length, b.Length));
-			int min = (int)Math.Min(Math.Min(a.Length, b.Length), start + limit); long line = 1; bool differ = false;
-			for (int i = start; i < min; i++)
+			a = OpenBytes(f1); b = OpenBytes(f2);
+			using var ba = Block.Rent();
+			using var bb = Block.Rent();
+			// what follows the skip is compared, and byte numbers count from it, as GNU's (`cmp -i 2`: byte 15 where
+			// the files differ at their 17th); rev 397 compared nothing after any -i (start + long.MaxValue wrapped)
+			SkipBytes(a, skip, ba.Bytes); SkipBytes(b, skip, bb.Bytes);
+			long pos = 0, line = 1, compared = 0;
+			int la = 0, pa = 0, lb = 0, pb = 0; bool differ = false;
+			while (compared < limit)
 				{
-				if (a[i] != b[i])
+				if (pa == la) { la = Math.Max(0, a.Read(ba.Bytes, 0, IoBlock)); pa = 0; }
+				if (pb == lb) { lb = Math.Max(0, b.Read(bb.Bytes, 0, IoBlock)); pb = 0; }
+				if (pa == la || pb == lb) break;   // one has ended
+				int n = (int)Math.Min(Math.Min(la - pa, lb - pb), limit - compared);
+				var sa = ba.Bytes.AsSpan(pa, n); var sb = bb.Bytes.AsSpan(pb, n);
+				if (verbose)
 					{
-					differ = true;
-					if (verbose) { Console.WriteLine($"{i + 1,7} {Convert.ToString(a[i], 8).PadLeft(3, '0')} {Convert.ToString(b[i], 8).PadLeft(3, '0')}"); continue; }
-					if (!silent) Console.WriteLine($"{f1} {f2} differ: byte {i + 1}, line {line}");
-					return 1;
+					for (int i = 0; i < n; i++)
+						if (sa[i] != sb[i])
+							{
+							differ = true;
+							Console.WriteLine($"{pos + i + 1,7} {Convert.ToString(sa[i], 8).PadLeft(3, '0')} {Convert.ToString(sb[i], 8).PadLeft(3, '0')}");
+							}
 					}
-				if (a[i] == (byte)'\n') line++;
+				else
+					{
+					int same = sa.CommonPrefixLength(sb);
+					if (same < n)
+						{
+						line += sa[..same].Count((byte)'\n');
+						if (!silent) Console.WriteLine($"{f1} {f2} differ: byte {pos + same + 1}, line {line}");
+						return 1;
+						}
+					line += sa.Count((byte)'\n');
+					}
+				pa += n; pb += n; pos += n; compared += n;
 				}
 			if (differ) return 1;
-			if (a.Length != b.Length && min < Math.Max(a.Length, b.Length) && limit == long.MaxValue)
-				{ if (!silent) Console.Error.WriteLine($"cmp: EOF on {(a.Length < b.Length ? f1 : f2)}"); return 1; }
-			return 0;
+			if (limit != long.MaxValue) return 0;
+			// the remainders differ in length when one has more after the other ended (both empty: equal, as GNU's)
+			bool aMore = pa < la || a.Read(ba.Bytes, 0, 1) > 0, bMore = pb < lb || b.Read(bb.Bytes, 0, 1) > 0;
+			if (aMore == bMore) return 0;
+			if (!silent) Console.Error.WriteLine($"cmp: EOF on {(bMore ? f1 : f2)}");
+			return 1;
 			}
 		catch (Exception ex) { Console.Error.WriteLine($"cmp: {IoError(ex)}"); return 2; }
+		finally { if (f1 != "-") a?.Dispose(); if (f2 != "-") b?.Dispose(); }
+		}
+
+	/// <summary>Move past up to <paramref name="n"/> bytes (a seek when the input can, else a read); how many it moved.</summary>
+	private static long SkipBytes(Stream s, long n, byte[] buf)
+		{
+		if (n <= 0) return 0;
+		if (s.CanSeek)
+			{
+			long by = Math.Min(n, Math.Max(0, s.Length - s.Position));
+			s.Seek(by, SeekOrigin.Current);
+			return by;
+			}
+		long done = 0;
+		for (int r; done < n && (r = s.Read(buf, 0, (int)Math.Min(IoBlock, n - done))) > 0; ) done += r;
+		return done;
 		}
 
 	// ── stat ────────────────────────────────────────────────────────────────────

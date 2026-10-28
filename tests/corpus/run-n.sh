@@ -36,6 +36,8 @@ command -v wslpath > /dev/null || { echo "run-n: run me in WSL's bash, not C#Bas
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 SRC=/usr/share/bash-completion/completions
+# constructs C#Bash refuses (`>( )`) are found here on purpose: not requests for the unserviced log (2026-10-27)
+export BASH_UNSERVICED_LOG=/dev/null WSLENV="BASH_UNSERVICED_LOG${WSLENV:+:$WSLENV}"
 files="$here/files"; manifest="$here/manifest.txt"; baseline="$here/baseline.txt"; last="$here/last-run.txt"
 
 usage() { echo "usage: tests/corpus/run-n.sh [--printer] [--no-build] [--cs <exe>] [--update-baseline] [--update-manifest]" >&2; exit 2; }

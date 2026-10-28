@@ -1,0 +1,42 @@
+1	x	p
+2	y	
+3		
+1,x;p
+2,y;
+3,;
+1axbpa1
+2ayba2
+3aba3
+1	2	3
+x	y
+1,2;3
+ \n
+	1
+	2
+	3
+ 1 x \n 2 y \n 3 \n
+ 1 x \n 2 y \n 3 \n
+123
+ 1 \n x \n 2 \n y \n 3 \n \n
+1\x
+2\y
+3\
+1	2
+3	4
+ 1 \t 2 \t 3 \n 4 \t 5 \t \n
+1	1
+2	2
+3	3
+1	2	3
+1	2	3
+1	2	3
+
+ a \t b \0
+ a \t b \0
+ a \r \t b \n
+19f03a2cce3e
+b25088c50ca3
+e071f707df7b
+ a a a a a \t 1 \n b \t 2 \n \t 3 \n
+paste: nope: No such file or directory
+rc=1

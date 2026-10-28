@@ -4,6 +4,7 @@
 # one handle per file. Needs MSYS2's ls.exe at F:/Tools/msys64 (an MSYS2 install, not Git). Authored: the lines GNU
 # bash keeps under O_APPEND (both whole, in the order ls writes them).
 M=F:/Tools/msys64/usr/bin/ls.exe
+[ -f "$M" ] || { echo "SKIP: needs MSYS2's ls.exe at $M"; exit 0; }
 d=$(mktemp -d) && cd "$d" || exit 1
 touch present
 "$M" -d present nofile >> o 2>> o; echo "direct: rc=$?"

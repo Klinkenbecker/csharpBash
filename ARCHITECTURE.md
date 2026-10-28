@@ -329,6 +329,13 @@ Two model points:
   default to BRE.)*
 - **Re-entrancy.** Builtins that drive other commands (`xargs`, `timeout`) call back through
   `Evaluator.RunCommand`, which re-enters the builtin→function→external dispatch.
+- **Streaming (2026-10-27).** The tools read as they go, so an input over 2 GiB or an endless pipe
+  works: byte tools through the shared layer (`Builtins.Bytes.cs`: pooled blocks, `ByteSink`, a pipe's
+  end kept in a bounded window, a file read from its end), line tools a record at a time
+  (`ShellEncoding.ReadRecord`, which says whether the newline was there, so a missing one stays
+  missing). Stdin is read through the shell's shared reader and never past what a tool took, so the
+  next command reads on from there (`{ head -n 1; cat; } < f`, `sed q`). Only tools that need all of
+  their input hold it: sort, diff, jq, mapfile, xargs.
 - **Loud, never silent (DECISIONS 2026-09-04 #2).** Every tool parses its options with the
   strict `Opts` parser; an option or construct it does not implement raises
   `UnsupportedOptionException`. `Builtins.TryExecute` then re-runs the command through a PATH
@@ -373,7 +380,9 @@ Two model points:
   everything else round-trips anyway. It is used by every file, pipe, capture and console stream,
   which is what makes it a *model* rather than a per-tool workaround: no code has to decide
   whether its data is text. Escape handlers emit that range directly; `\u`/`\U` stay code points.
-  *(DECISIONS: 2026-09-12.)*
+  *(DECISIONS: 2026-09-12.)* Both directions carry state across chunks: the decoder holds a character
+  cut by a block's end (`CarryDecoder`, 2026-10-10), the encoder a surrogate pair cut by a writer's
+  chunk (`CarryEncoder`, 2026-10-27: an emoji past 8192 characters of one write became two U+FFFD).
 - **Paths are forward-slash in both directions.** Backslash is the shell's escape character, so a
   path containing one is a value the shell's own `${p#…}`, globs, `case` and `[[ … ]]` misread.
   `TranslatePath` (inbound) and `ToShellPath` (outbound) both produce `E:/dir/file`, which every

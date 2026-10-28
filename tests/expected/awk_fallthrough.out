@@ -1,0 +1,6 @@
+literal %e               first x1
+literal sprintf %G       first x1
+literal RS               first x1
+system()                 first x1
+fall-through keeps CR: 3
+BASH_COREUTILS=external keeps CR: 3

@@ -70,6 +70,7 @@ public sealed partial class Builtins
 			try { Console.Out.Flush(); } catch { }
 			Console.Error.WriteLine($"awk: unsupported: {ex.Message}");
 			Console.Error.WriteLine("awk: (C#Bash: met while the program ran, so not handed to an external awk, which would run it again; BASH_COREUTILS=external runs the PATH awk from the start)");
+			Unserviced.Log("awk", "unsupported", ex.Message, args, "failed while running, exit 2");
 			return 2;
 			}
 		catch (AwkUnsupportedException ex) { throw new UnsupportedOptionException("awk", "unsupported", ex.Message); }

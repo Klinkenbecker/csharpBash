@@ -5,17 +5,14 @@
 # as GNU bash gives it with no controlling terminal (setsid) and Git Bash in the same place; git then fails at
 # once ("could not read Username"). A console with a window, even hidden (a classic console; Windows Terminal's
 # ConPTY has one too, measured), keeps /dev/tty. The consoles come from tests/fixtures/console-kind.ps1, the same
-# in both suite modes. Expected output: authored (Windows-specific); the messages are GNU bash's.
+# in both suite modes. Expected output: authored (Windows-specific); the messages are GNU bash's. git's own prompt is
+# dev_tty_git_prompt since 2026-10-20 (without git it printed the expected line here, a pass that could not fail).
 fx="$PWD/fixtures/console-kind.ps1"
 d=$(mktemp -d) && cd "$d" || exit 1
 cat > probe.sh <<'EOF'
 { echo to-tty > /dev/tty; } 2>&1; echo "write rc=$?"
 read -r line </dev/tty 2>&1; echo "read rc=$?"
 cat /dev/tty 2>&1; echo "cat rc=$?"
-if command -v git >/dev/null; then
-  out=$(printf 'protocol=https\nhost=example.invalid\n\n' | PATH="$(dirname "$BASH");$PATH" GIT_ASKPASS= SSH_ASKPASS= git -c credential.helper= -c core.askPass= credential fill 2>&1)
-  echo "git rc=$? prompt failed: $(printf '%s\n' "$out" | grep -c 'could not read Username')"
-else echo "git rc=128 prompt failed: 1"; fi   # no git here: nothing to check
 EOF
 echo '{ echo to-tty > /dev/tty; } 2>&1; echo "write rc=$?"' > writer.sh
 run() { powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$fx" -Kind "$1" -CommandLine "\"$BASH\" $2" -Cwd "$PWD"; }

@@ -1,0 +1,14 @@
+here-doc to a file: same
+here-doc to stdout: same
+here-doc to /dev/stderr: same
+here-doc captured: same
+pipe to a file: same
+pipe captured: same
+small
+small
+0e10426a1d5b
+0e10426a1d5b
+ x 200 377 \0 y \n
+ x 200 377 \0 y \n
+one
+two

@@ -1,0 +1,10 @@
+printf to a file: same
+printf to a pipe: same
+echo to a file: same
+printf in a group: same
+printf to stderr: same
+sed -i: same
+sed w: same
+sed capture back out: same
+ef5284011fdb
+288887

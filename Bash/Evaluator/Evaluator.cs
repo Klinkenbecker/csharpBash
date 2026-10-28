@@ -673,8 +673,11 @@ public sealed class Evaluator
 			{
 			// bash's wording and lines (Parser.SyntaxMessage), each line with the prefix
 			if (reportErrors)
+				{
 				foreach (var (line, text) in Parser.SyntaxMessage.For(ex, source))
 					Console.Error.WriteLine($"{SyntaxPrefix(origin, line + _lineBase)}{text}");
+				if (ex is Parser.ParseException { Unsupported: true } px) LogUnsupportedSyntax(px);
+				}
 			int status = ex is Parser.ParseException { Status: int s } ? s : syntaxErrorCode;
 			_env.LastExitCode = status; return status;
 			}
@@ -699,7 +702,12 @@ public sealed class Evaluator
 		int first = _env.CurrentLine + (se.Backquoted ? 0 : 1);
 		foreach (var (k, text) in Parser.SyntaxMessage.For(se.Error, se.Shown))
 			Console.Error.WriteLine($"{SyntaxPrefix("command substitution", first + k - 1)}{text}");
+		if (se.Error is Parser.ParseException { Unsupported: true } px) LogUnsupportedSyntax(px);
 		}
+
+	/// <summary>A construct C#Bash refuses when it parses (`>( )`): a request it did not service (<see cref="Unserviced"/>).</summary>
+	private static void LogUnsupportedSyntax(Parser.ParseException px) =>
+		Unserviced.Log("bash", px.Reason.Split(':')[0], px.Reason, null, "refused when parsed, exit 2");
 
 	/// <summary>Source a file (startup files, BASH_ENV, `source`/`.`). When silentIfMissing
 	/// is set, a non-existent file is a no-op returning 0. A syntax error inside the file
@@ -1857,6 +1865,8 @@ public sealed class Evaluator
 		{
 		using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
 		Console.Error.WriteLine($"{ErrorPrefix}{name}: {what}");
+		// a bash builtin (or `coproc`) C#Bash lacks: a request it did not service (Unserviced, 2026-10-27)
+		if (status == 127 && Builtins.NotImplemented(name)) Unserviced.Log(name, name, $"{name}: {what}", null, $"not implemented: {what}, exit {status}");
 		return status;
 		}
 

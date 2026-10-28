@@ -1,0 +1,128 @@
+== split -l 300 ../s
+rc=0 pieces=134
+xaa 1092 bf4fa7116e26
+xab 1200 9ffbdfe60bfc
+xac 1200 4f71576f6c57
+xad 1401 d2a3ce3a26fa
+xfd 600 bc549a5fd6ce
+== split ../s
+rc=0 pieces=40
+xaa 3893 53d025127ae9
+xab 5000 2c9e995cbfd7
+xac 5000 b624239a8c59
+xad 5000 ae32d23eaf98
+xbn 6000 6c18f3d141b4
+== split -b 1000 ../s
+rc=0 pieces=229
+xaa 1000 532188f9cac7
+xab 1000 e1490be3fb8e
+xac 1000 5d819a5e5e2d
+xad 1000 520608439c2b
+xiu 894 a7e5abec5119
+== split -b 65536 ../s
+rc=0 pieces=4
+xaa 65536 4007e8ac25d3
+xab 65536 b7239db8ebd0
+xac 65536 c6604eb7f576
+xad 32286 070e0600e7e0
+xad 32286 070e0600e7e0
+== split -b 65537 ../s
+rc=0 pieces=4
+xaa 65537 34fff6aa14e4
+xab 65537 bf6a4e134d86
+xac 65537 a11b9d7356fc
+xad 32283 17daa17ca043
+xad 32283 17daa17ca043
+== split -b 1 ../nonl
+rc=0 pieces=5
+xaa 1 0cc175b9c0f1
+xab 1 68b329da9893
+xac 1 92eb5ffee6ae
+xad 1 68b329da9893
+xae 1 4a8a08f09d37
+== split -d -a 3 -l 5000 ../s
+rc=0 pieces=8
+x000 23893 a5a208cd26b0
+x001 25001 4b9dde880a5e
+x002 30000 464bb8a09e7a
+x003 30000 bf8cd936e8d5
+x007 30000 c6bbfd9d72ae
+== split --additional-suffix=.txt -l 20000 ../s
+rc=0 pieces=2
+xaa.txt 108894 e071f707df7b
+xab.txt 120000 5ba496e57ca1
+xab.txt 120000 5ba496e57ca1
+== split -l 1 ../nonl
+rc=0 pieces=3
+xaa 2 60b725f10c9c
+xab 2 3b5d5c371295
+xac 1 4a8a08f09d37
+xac 1 4a8a08f09d37
+== split ../empty
+rc=0 pieces=0
+== split -l 2 ../longl
+rc=0 pieces=3
+xaa 300003 11036997cb06
+xab 4 19283599a986
+xac 4 565c31f12a59
+xac 4 565c31f12a59
+== split -b 70000 ../longl
+rc=0 pieces=5
+xaa 70000 185bce7fcf15
+xab 70000 185bce7fcf15
+xac 70000 185bce7fcf15
+xad 70000 185bce7fcf15
+xae 20011 9cf12476843b
+== split -l 7000 ../s pre
+rc=0 pieces=6
+preaa 33893 58528b7c510b
+preab 39001 0cfdbb7f1fb4
+preac 42000 3ae78ee496d5
+pread 42000 16962490dd37
+preaf 30000 c6bbfd9d72ae
+== split stdin
+xaa 21 3b0332e02daa
+xab 30 95656f98bb5f
+xac 15 349ac631d7da
+== split 649 -l 1 ../k
+rc=0 pieces=700 xyy xyz xzaaa xzaab last=xzabx all=95a02ea27a0d
+== split 675 -l 1 -a 2 ../k
+split: output file suffixes exhausted
+rc=1 pieces=676 xzy xzz last=xzz all=e4cb7865f7e3
+== split 25 --suffix-length=1 -l 1 ../k
+split: output file suffixes exhausted
+rc=1 pieces=26 xy xz last=xz all=bad418d9ce6f
+== split 89 -d -l 1 ../t
+rc=0 pieces=1000 x88 x89 x9000 x9001 last=x990009 all=53d025127ae9
+== split 989 -d -l 1 ../t
+rc=0 pieces=1000 x9898 x9899 x990000 x990001 last=x990009 all=53d025127ae9
+== split 99 -d -a 2 -l 1 ../h2
+split: output file suffixes exhausted
+rc=1 pieces=100 x98 x99 last=x99 all=d632eba71107
+== split 89 -a 0 -d -l 1 ../h
+rc=0 pieces=100 x88 x89 x9000 x9001 last=x9009 all=d632eba71107
+== split 89 --additional-suffix=.t -d -l 1 ../h
+rc=0 pieces=100 x88.t x89.t x9000.t x9001.t last=x9009.t all=d632eba71107
+== split 89 -d -b 1 ../z
+rc=0 pieces=100 x88 x89 x9000 x9001 last=x9009 all=6d0bb00954ce
+== split 1 -a 3 -l 1 ../k
+rc=0 pieces=700 xaaa xaab xaac xaad last=xbax all=95a02ea27a0d
+== split widen stdin
+100 x9009
+split: invalid suffix length: 'x'
+-a 'x' rc=1  0
+split: invalid suffix length: '-1'
+-a '-1' rc=1  0
+split: invalid suffix length: ''
+-a '' rc=1  0
+split: invalid suffix length: '3x'
+-a '3x' rc=1  0
+-a ' 3' rc=0 xaaa 134
+== tac s: 41ea4407dcbc3d0c 41ea4407dcbc3d0c  4 0 0 0 0 \n 3 9 9 9 9 \n
+== tac nonl: 9baafc7b202d1ccb 9baafc7b202d1ccb  c b \n a \n
+== tac empty: d41d8cd98f00b204 d41d8cd98f00b204 
+== tac longl: b974c7e997ee765b b974c7e997ee765b  5 \n 4 \n 3 \n 2 \n 1 \n y y
+== tac several
+cb
+a
+40000

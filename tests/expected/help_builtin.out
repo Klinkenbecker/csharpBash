@@ -1,0 +1,56 @@
+--- builtins now
+builtin
+builtin
+--- help: exact, prefix, glob, keyword, several
+cd: https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html#index-cd
+read: https://www.gnu.org/software/bash/manual/html_node/Bash-Builtins.html#index-read
+read readarray readonly return readlink realpath rev 
+compgen complete compopt 
+[[ ... ]] for 
+tail: https://www.gnu.org/software/coreutils/manual/html_node/tail-invocation.html
+--- the file was written: true
+--- not implemented, beside its page
+ulimit (not implemented in C#Bash): https://www.gnu.org/software/bash/manual/html_node/Bash-Builtins.html#index-ulimit
+bind (not implemented in C#Bash): https://www.gnu.org/software/bash/manual/html_node/Bash-Builtins.html#index-bind
+coproc (not implemented in C#Bash): https://www.gnu.org/software/bash/manual/html_node/Coprocesses.html
+select (not implemented in C#Bash): https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html
+--- no topic, bad option, no pattern
+help: no help topics match `zzzz'.  Try `help help' or `man -k zzzz' or `info zzzz'.
+rc=1
+help: -x: invalid option
+help: usage: help [-dms] [pattern ...]
+rc=2
+bash: https://www.gnu.org/software/bash/manual/html_node/Shell-Builtin-Commands.html
+--- --help
+tail: https://www.gnu.org/software/coreutils/manual/html_node/tail-invocation.html
+rc=0
+tail: https://www.gnu.org/software/coreutils/manual/html_node/tail-invocation.html
+cd: https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html#index-cd
+jq: https://jqlang.org/manual/v1.6/
+--help
+--help
+rc=0
+--help
+sort: https://www.gnu.org/software/coreutils/manual/html_node/sort-invocation.html
+--- the file wins name by name; its own names are topics
+cd: https://example.org/my-cd
+mytool: https://example.org/mytool
+tail: https://www.gnu.org/software/coreutils/manual/html_node/tail-invocation.html
+--- a file that does not parse: said, and the built-in table answers
+help: (help.json does not parse); the built-in table answers
+cd: https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html#index-cd
+--- enable
+enable .
+enable :
+enable [
+enable alias
+131
+enable . enable : enable break enable continue enable eval enable exec enable exit enable export enable readonly enable return enable set enable shift enable source enable times enable trap enable unset 
+rc=0
+rc=0
+enable: zzz: not a shell builtin
+rc=1
+enable: enable -n (turning a builtin off) is not currently available in C#Bash
+enable: -q: invalid option
+enable: usage: enable [-a] [-dnps] [-f filename] [name ...]
+rc=2

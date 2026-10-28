@@ -1,0 +1,67 @@
+== word
+    1     2 65543 word
+    1     2 65543 65543 65542 word
+-l 1 | -w 2 | -c 65543 | -m 65543 | -L 65542 | 
+< word: 65543
+== two
+    1     1 65539 two
+    1     1 65538 65539 65537 two
+-l 1 | -w 1 | -c 65539 | -m 65538 | -L 65537 | 
+< two: 65539
+== three
+    1     1 65539 three
+    1     1 65537 65539 65536 three
+-l 1 | -w 1 | -c 65539 | -m 65537 | -L 65536 | 
+< three: 65539
+== crlf
+    2     2 65540 crlf
+    2     2 65540 65540 crlf
+-l 2 | -w 2 | -c 65540 | -m 65540 | 
+< crlf: 65540
+== long
+ 50001  50001 588895 long
+ 50001  50001 588895 588895 300000 long
+-l 50001 | -w 50001 | -c 588895 | -m 588895 | -L 300000 | 
+< long: 588895
+== text
+ 3  6 41 text
+ 3  6 39 41 15 text
+-l 3 | -w 6 | -c 41 | -m 39 | -L 15 | 
+< text: 41
+== empty
+0 0 0 empty
+0 0 0 0 0 empty
+-l 0 | -w 0 | -c 0 | -m 0 | -L 0 | 
+< empty: 0
+== several files
+     1      2  65543 word
+     1      1  65539 two
+     3      6     41 text
+     5      9 131123 total
+== checksums
+6cd890691ee52484e78beb60de5a186c  text
+0f7f2a998a5ab143c0263f97916f585a  long
+6cd890691ee52484e78beb60de5a186c  -
+MD5 (empty) = d41d8cd98f00b204e9800998ecf8427e
+7525860e7842db044d23b572e6b16f2c006f21e2  text
+79773f00836a1a373863d6557f913f58ffc4ab53  long
+7525860e7842db044d23b572e6b16f2c006f21e2  -
+SHA1 (empty) = da39a3ee5e6b4b0d3255bfef95601890afd80709
+75bca008023455b825f49ac60b323a0ed6a182c324c6f48f3b2906e99ce5fb95  text
+b768143a0aa83789bfc08f8a00bb135688c3562f8e02a805c7cff7ed29ab72e5  long
+75bca008023455b825f49ac60b323a0ed6a182c324c6f48f3b2906e99ce5fb95  -
+SHA256 (empty) = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+7878d57a5ec11530db4365986307342efdf241b9468800ceb704aa850bacd9f5d509897bacddf4db0bbd21dc186281f2be5a1cba26fdeed5f9819a9090d3782d  text
+3a1aa82d8c262fb1163e39aef59352bb054dad701856e969f2422d687c2ae1a2f5072c7e20a37752bb0d7af7730fed7dec363cac2365fbf49f9e1e211a04b226  long
+7878d57a5ec11530db4365986307342efdf241b9468800ceb704aa850bacd9f5d509897bacddf4db0bbd21dc186281f2be5a1cba26fdeed5f9819a9090d3782d  -
+SHA512 (empty) = cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e
+word: OK
+two: OK
+word: OK
+two: OK
+text: FAILED
+md5sum: WARNING: 1 computed checksum did NOT match
+rc=1
+text: FAILED
+md5sum: WARNING: 1 computed checksum did NOT match
+rc=1

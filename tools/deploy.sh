@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Deploy the committed tree as dist/Bash.exe, the shell every Claude Code session on this machine runs.
 #
-#   bash tools/deploy.sh       (on the architect's "deploy"; from a Claude Code Bash call, i.e. C#Bash, or Git Bash)
+#   bash tools/deploy.sh       (on the architect's "deploy"; from a Claude Code Bash call, i.e. C#Bash)
 #
-# Any bash runs it. Until 2026-10-14 it refused C#Bash, a guard copied from compare3.sh with no reason of its
-# own; every command form here was then run under Git Bash, the deployed C#Bash and the next one with identical
-# results, renaming a running image included (DECISIONS 2026-10-14, the architect: "drop it, go").
+# Run it in C#Bash: its paths are already Windows form (F:/...), which cmd.exe, PowerShell and .NET take as they
+# are, so the paths handed to them are used as written. Until 2026-10-20 they went through `cygpath -w`, a leftover
+# from running in Git Bash (whose paths are /f/...); cygpath is Git's and left PATH with it on 2026-10-19, which
+# stopped the deploy of rev 367 (DECISIONS 2026-10-20). A shell whose paths are not Windows form is refused below.
+# (Until 2026-10-14 it refused C#Bash, a guard copied from compare3.sh with no reason of its own: DECISIONS
+# 2026-10-14, the architect: "drop it, go".)
 #
 # A CONTRACT TOOL (2026-10-12, the architect: "repetitive tools here need to be contracts, period").
 # Until then each deploy was done by hand from DECISIONS' notes. It runs one way:
@@ -26,6 +29,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root" || exit 2
 stage="$root/dist.staging"; dist="$root/dist"
 die() { echo "deploy: $*" >&2; exit 2; }
+[[ $root == [A-Za-z]:/* ]] || die "the repository's path is '$root', not a drive path (X:/...): run this in C#Bash, from a drive (cmd.exe cannot cd to a UNC path)"
 
 # 1. a clean tree
 command -v hg >/dev/null || die "hg is not on PATH"
@@ -42,7 +46,7 @@ echo "deploy: rev $rev ($node) over the deployed rev $old_rev"
 
 # 2. publish to staging
 echo "deploy: publishing with tools/publish-aot.cmd to $stage (log: $root/dist.staging.log)"
-MSYS2_ARG_CONV_EXCL='*' cmd.exe /c "$(cygpath -w "$root/tools/publish-aot.cmd")" "$(cygpath -w "$stage")" > "$root/dist.staging.log" 2>&1 \
+MSYS2_ARG_CONV_EXCL='*' cmd.exe /c "$root/tools/publish-aot.cmd" "$stage" > "$root/dist.staging.log" 2>&1 \
   || { tail -5 "$root/dist.staging.log" >&2; die "the publish FAILED"; }
 new="$stage/Bash.exe"
 new_stamp=$("$new" --version 2>/dev/null | tail -1)
@@ -50,15 +54,15 @@ new_stamp=$("$new" --version 2>/dev/null | tail -1)
 
 # 3. the suite on that exact binary, both modes
 for mode in console -Detached; do
-  args=(-Interpreter "$(cygpath -w "$new")"); [ "$mode" = -Detached ] && args+=(-Detached)
-  res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$root/tests/run-tests.ps1")" "${args[@]}" 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
+  args=(-Interpreter "$new"); [ "$mode" = -Detached ] && args+=(-Detached)
+  res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" "${args[@]}" 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
   echo "deploy: suite ($mode): $res"
   [[ "$res" == *" 0 failed" ]] || die "the suite failed on $new ($mode); not deployed"
 done
 
 # 4. the battery, against WSL's GNU bash (its reference since 2026-10-19: Git is reached nowhere but the benchmark
 #    and the publish script)
-bat=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$root/tests/compat/run-compat.ps1")" 2>&1)
+bat=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/compat/run-compat.ps1" 2>&1)
 bat_rc=$?
 echo "deploy: battery: $(grep -E 'pass, [0-9]+ diff' <<< "$bat" | tail -1)"
 [ $bat_rc -eq 0 ] || { grep -E 'REGRESS|FAIL' <<< "$bat" >&2; die "the battery regressed; not deployed"; }

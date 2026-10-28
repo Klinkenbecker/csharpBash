@@ -34,6 +34,8 @@ param(
 # stderr into a terminating error. We check exit codes explicitly instead.
 $ErrorActionPreference = 'Continue'
 $testsDir = $PSScriptRoot
+# cases ask for unsupported options on purpose: not requests for the unserviced log (%USERPROFILE%/.bash; 2026-10-27)
+$env:BASH_UNSERVICED_LOG = '/dev/null'
 $proj     = Join-Path $testsDir '..\Bash'
 $exe      = Join-Path $proj 'bin\Release\net8.0\Bash.exe'
 if ($Interpreter) { $exe = $Interpreter; $NoBuild = $true }
@@ -198,6 +200,8 @@ $tests = @(
     @{ Name = 'fd_copy';            Script = 'cases\fd_copy.sh';            Args = @() }   # 2026-10-10: exec 3>&1 / 4>&2 / 3<&0 copy a standard fd (>&3 was Bad file descriptor); closing a copy keeps the other (expected = GNU via WSL)
     @{ Name = 'wait_next';          Script = 'cases\wait_next.sh';          Args = @() }   # 2026-10-10: wait -n waits for the next job and returns its status (127 with none); wait -n ID; wait -p VAR (were ignored) (expected = GNU via WSL)
     @{ Name = 'jobs_list';          Script = 'cases\jobs_list.sh';          Args = @() }   # 2026-10-10: jobs in bash's format with -l -p -r -s and job specs; a pipeline stage lists the parent's jobs (expected = GNU via WSL)
+    @{ Name = 'native_args_msys';   Script = 'cases\native_args_msys.sh';   Args = @() }   # 2026-10-20: from native_args: an MSYS program gets /c/x unconverted (SKIP without an MSYS echo.exe on PATH)
+    @{ Name = 'native_args_git';    Script = 'cases\native_args_git.sh';    Args = @() }   # 2026-10-20: from native_args: git -C /c/x reaches git as C:/x (SKIP without git on PATH)
     @{ Name = 'native_args';        Script = 'cases\native_args.sh';        Args = @() }   # 2026-10-10: a Windows program gets /c/x and /tmp/x at the start of an argument as C:/x and the temp dir (as Git Bash); MSYS programs and the off switches untouched (authored: Windows-specific)
     @{ Name = 'python_utf8';        Script = 'cases\python_utf8.sh';        Args = @() }   # 2026-10-10: PYTHONIOENCODING=utf-8 exported unless set (piped py crashed on non-cp1252 text); not HGENCODING (authored: Windows-specific)
     @{ Name = 'utf8_bytes';         Script = 'cases\utf8_bytes.sh';         Args = @() }   # 2026-10-10: carried bytes spelling a UTF-8 char are that char ($'\xc3\xa9' is e-acute: length, ==, case, file names, ${x^^}) (expected = GNU via WSL)
@@ -210,6 +214,7 @@ $tests = @(
     @{ Name = 'path_script';        Script = 'cases\path_script.sh';        Args = @() }   # 2026-10-17: a #! or .sh script found on PATH runs (it was "Permission denied"), $0 the path found; a match that cannot run is passed over, or named when it is the only one; a bare name never runs a script from the cwd (a planted git ran) (expected = GNU via WSL)
     @{ Name = 'pathext_programs';   Script = 'cases\pathext_programs.sh';   Args = @() }   # 2026-10-18: only .com/.exe/.bat/.cmd (and .sh, #!) are programs: a zz.js before zz.exe is passed over, -x of a .js is false, a .js with #! is a script (authored: Windows-specific)
     @{ Name = 'icu_lazy';           Script = 'cases\icu_lazy.sh';           Args = @(); AotOnly = $true }   # 2026-10-18 (review R4): icu.dll loads at the first culture-sensitive operation, not on every start (StartsWith, integer parses, ToLowerInvariant, the SID text, a file's local time); controls ${x^^} and sort load it (authored; Native AOT only: the JIT runtime loads ICU itself)
+    @{ Name = 'awk_fallthrough';    Script = 'cases\awk_fallthrough.sh';    Args = @() }   # 2026-10-20: from awk_unsupported_once and awk_getline: the PATH awk runs a refused program once, and keeps CR (SKIP without a PATH awk)
     @{ Name = 'awk_unsupported_once'; Script = 'cases\awk_unsupported_once.sh'; Args = @() }   # 2026-10-18: a construct outside the in-process awk visible in the text (literal %e/%g, RS, system()) falls through before running; one met while running fails loud (2): the PATH awk ran the program again ("first" twice); +inf/-nan as gawk 5.1 (authored: needs Git's awk; the number lines are gawk's)
     @{ Name = 'printf_nonfinite';   Script = 'cases\printf_nonfinite.sh';   Args = @() }   # 2026-10-18: printf inf/-inf/nan/-nan as C (INF/NAN for capitals, sign flags, spaces not zeros), the words read in any case; %g of an infinity threw (expected = GNU via WSL)
     @{ Name = 'startup_env';        Script = 'cases\startup_env.sh';        Args = @() }   # 2026-10-18: a Git on PATH adds its usr/bin and mingw64/bin: a mingw64/bin entry names Git's root (it was never reached), an entry with / is not added twice; a child's PPID is $$ (authored)
@@ -245,6 +250,7 @@ $tests = @(
     @{ Name = 'awk_getline';        Script = 'cases\awk_getline.sh';        Args = @() }   # 2026-10-12 (msp430-a2): main-input getline in-process; BINMODE=3 on fall-through, CR kept (GNU awk)
     @{ Name = 'msys_arguments';     Script = 'cases\msys_arguments.sh';     Args = @() }   # 2026-10-12 (msp430-a2): arguments reach MSYS programs intact (braces, globs, quotes, backslashes) (GNU bash)
     @{ Name = 'sed_final_newline';  Script = 'cases\sed_final_newline.sh';  Args = @() }   # 2026-10-12: a last line without a newline stays without one; D does not autoprint (N;P;D doubled lines) (GNU sed)
+    @{ Name = 'dev_tty_git_prompt'; Script = 'cases\dev_tty_git_prompt.sh'; Args = @() }   # 2026-10-20: from dev_tty_windowless: git's credential prompt fails at once with no window (SKIP without git on PATH)
     @{ Name = 'dev_tty_windowless'; Script = 'cases\dev_tty_windowless.sh'; Args = @() }   # 2026-10-15: /dev/tty in a console with no window (Claude Code's) is "No such device or address"; git's credential prompt hung (authored; GNU's messages)
     @{ Name = 'compgen';            Script = 'cases\compgen.sh';            Args = @() }   # 2026-10-15 (daq-d1): compgen as bash 5.1: -W -X -P -S -G -f -d, the name lists, jobs, order, status (was not a builtin) (GNU bash)
     @{ Name = 'compgen_local';      Script = 'cases\compgen_local.sh';      Args = @() }   # 2026-10-15: compgen describes THIS shell: -b every C#Bash builtin, -c no PATH scan (deferred), the notices (authored)
@@ -277,14 +283,31 @@ $tests = @(
     @{ Name = 'xtrace_details';     Script = 'cases\xtrace_details.sh';     Args = @() }   # 2026-10-19 (red team F11): set -x as bash: octal control characters (and printf %q), export/readonly assignments, a subscript as written, eval one level deeper, BASH_XTRACEFD (expected = GNU via WSL)
     @{ Name = 'sed_brackets_text';  Script = 'cases\sed_brackets_text.sh';  Args = @() }   # 2026-10-19 (found beside red team F11): in sed only a regex has bracket expressions; a `[` in the replacement or y swallowed the delimiter (expected = GNU sed via WSL)
     @{ Name = 'xtrace_expanded';    Script = 'cases\xtrace_expanded.sh';    Args = @() }   # 2026-10-19 (red team F12): set -x shows (( )) and arithmetic for expanded (once), an empty for-part as (( 1 )), for i as for i in "$@", an empty [[ ]] operand as '', a tilde pattern quoted (and matched literally) (expected = GNU via WSL)
+    @{ Name = 'tail_head_large';    Script = 'cases\tail_head_large.sh';    Args = @() }   # 2026-10-27 (koliada-net-28): tail and head -c/-n -N on a sparse file over 2 GiB (whole-file reads failed: "Stream was too long"); a file read from its end (expected = GNU via WSL; SKIP without fsutil or truncate)
+    @{ Name = 'tail_head_exact';    Script = 'cases\tail_head_exact.sh';    Args = @() }   # 2026-10-27: tail and head's from-end forms byte for byte, file and pipe: no newline added to a last line, -n 0, +N, -z, CR, across 64 KiB blocks, several files, UTF-8 in a capture (expected = GNU via WSL)
+    @{ Name = 'help_builtin';       Script = 'cases\help_builtin.sh';       Args = @() }   # 2026-10-27 (koliada-net-28; the architect): help and X --help answer with the manual page(s) from %USERPROFILE%/.bash/help.json (was Windows' help.exe / the PATH program's help); not implemented said; enable (authored)
+    @{ Name = 'unserviced_log';     Script = 'cases\unserviced_log.sh';     Args = @() }   # 2026-10-27 (the architect): requests not serviced go to %USERPROFILE%/.bash/unserviced.jsonl from each place that gives up; BASH_UNSERVICED_LOG (authored)
+    @{ Name = 'wc_checksum_large';  Script = 'cases\wc_checksum_large.sh';  Args = @() }   # 2026-10-27 (koliada-net-28): wc and md5sum on a sparse file over 2 GiB, file and pipe ("Stream was too long"); counted and hashed as read (expected = GNU via WSL; SKIP without fsutil or truncate)
+    @{ Name = 'wc_checksum_exact';  Script = 'cases\wc_checksum_exact.sh';  Args = @() }   # 2026-10-27: wc and the four checksums unchanged where a word, a 2-/3-byte character or a CRLF straddles a 64 KiB block, file and pipe; -c, --tag, stdin (expected = GNU via WSL; fails with a non-carrying decoder, checked)
+    @{ Name = 'bytes_tools_large';  Script = 'cases\bytes_tools_large.sh';  Args = @() }   # 2026-10-27: cmp, od, hexdump, base64 past 2 GiB on sparse files (whole-input reads failed); the shared byte layer (expected = GNU via WSL; SKIP without fsutil or truncate)
+    @{ Name = 'bytes_tools_exact';  Script = 'cases\bytes_tools_exact.sh';  Args = @() }   # 2026-10-27: cmp/od/hexdump/base64 across 64 KiB edges and skips; rev 397's overflow (cmp -i, hexdump -s without -n) fixed; base64 -d's partial output (expected = GNU via WSL)
+    @{ Name = 'split_tac_exact';    Script = 'cases\split_tac_exact.sh';    Args = @() }   # 2026-10-27: split writes pieces as it reads; tac reads from the end (a pipe spooled), a last line without a newline kept so (was b\na\n) (expected = GNU via WSL)
+    @{ Name = 'head_lines_exact';   Script = 'cases\head_lines_exact.sh';   Args = @() }   # 2026-10-27: head -n N keeps a last line's missing newline missing (one was added), still through the shared line reader (expected = GNU via WSL)
+    @{ Name = 'tee_exact';          Script = 'cases\tee_exact.sh';          Args = @() }   # 2026-10-27: tee copies exactly: a here-doc's surrogate pair cut by a 4096-char chunk became two U+FFFD in files and stdout; pipes through a pooled block, one carrying decoder for text targets (expected = GNU via WSL)
+    @{ Name = 'tail_follow_exact';  Script = 'cases\tail_follow_exact.sh';  Args = @() }   # 2026-10-27: tail -f writes each appended byte once (the next round began at the length seen before the read: a busy writer's lines came out twice) (expected = GNU via WSL)
+    @{ Name = 'paste_stream';       Script = 'cases\paste_stream.sh';       Args = @() }   # 2026-10-27: paste a row at a time; `paste - -` reads stdin in turn (the first - took it all); -d '\0' / '' empty; -z (expected = GNU via WSL)
+    @{ Name = 'comm_stream';        Script = 'cases\comm_stream.sh';        Args = @() }   # 2026-10-27: comm merges a line at a time; --total, -z, the order check (default/--check-order/--nocheck-order), empty delimiter = NUL, file name in open errors (each accepted and ignored before) (expected = GNU via WSL)
+    @{ Name = 'uniq_stream';        Script = 'cases\uniq_stream.sh';        Args = @() }   # 2026-10-27: uniq a group at a time; coreutils' -d/-u/-D switches (-d -u printed groups; -D went to the PATH uniq); -D -c refused; -z; -f blanks are space/tab (expected = GNU via WSL)
+    @{ Name = 'sed_stream';         Script = 'cases\sed_stream.sh';         Args = @() }   # 2026-10-27: sed reads as it goes (q leaves stdin, $ peeks); per-line newline flags (x/g/G/H, q owes it); F; q ends -s/-i; w files once; -i via a temporary file (expected = GNU via WSL)
+    @{ Name = 'astral_chunks';      Script = 'cases\astral_chunks.sh';      Args = @() }   # 2026-10-27: a surrogate pair across a writer's chunk boundary stays whole (the stateless encoder made two U+FFFD: printf/echo of a long capture, sed -i) (expected = GNU via WSL)
     @{ Name = 'subshell_isolation'; Script = 'cases\subshell_isolation.sh'; Args = @() }   # 2026-10-04: options, shopts, traps (own EXIT trap fires at subshell end), aliases stay in the subshell (expected = GNU via WSL)   # 2026-10-03: \* \? \[ \{ \, \~ stay quoted (echo \*, find -name \*.txt globbed) (expected = GNU via WSL)   # 2026-10-03: a copy without -p gets the current mtime (expected = GNU via WSL)   # 2026-10-03: ${x#"$p"} ${x//$o/$n} ${x%%"lit"}: expansions + quotes in pattern/replacement (expected = GNU via WSL)   # 2026-10-03: each shell's own cwd: stages, subshells, in-process scripts (expected = GNU via WSL)   # 2026-10-03: arr[$k]=v / m+=(["$k"]=v) with an expanded index (expected = GNU via WSL)   # 2026-10-03: each pipeline stage is a subshell (own vars/functions/options/traps) (expected = GNU via WSL)   # 2026-10-03: text then byte readers on one stdin; head -c streams N bytes (yes|head -c hung) (expected = GNU via WSL)   # 2026-10-03: CR is data in every line tool, a lone CR ends no line, no BOM sniffing (expected = GNU via WSL)   # 2026-10-03: first external with inherited stdio in a console-less shell lost its output (meaningful under -Detached)   # 2026-09-12: byte transparency - printf/$'' escapes emit BYTES; non-UTF-8 survives variables, $( ), pipes, files
 )
 
 Push-Location $testsDir
-$pass = 0; $fail = 0; $skip = 0; $failed = @()
+$pass = 0; $fail = 0; $skip = 0; $failed = @(); $skipped = @()
 try {
     foreach ($t in $tests) {
-        if ($t.AotOnly -and -not $aot) { Write-Host ("SKIP  {0}  (Native AOT only)" -f $t.Name) -ForegroundColor Yellow; $skip++; continue }
+        if ($t.AotOnly -and -not $aot) { Write-Host ("SKIP  {0}  (Native AOT only)" -f $t.Name) -ForegroundColor Yellow; $skip++; $skipped += "$($t.Name) (Native AOT only)"; continue }
         $expectedPath = Join-Path $testsDir "expected\$($t.Name).out"
         if (-not (Test-Path $expectedPath)) { Write-Host ("MISS  {0}  (no expected file)" -f $t.Name) -ForegroundColor Yellow; $fail++; $failed += $t.Name; continue }
 
@@ -302,6 +325,13 @@ try {
             $actual = @(& $exe $t.Script @a 2>$null)
         }
 
+        # a case whose program is missing says so as its only line, "SKIP: <reason>" (2026-10-20): never a pass, never
+        # its own expected lines printed (three cases did that and could not fail)
+        if ($actual.Count -eq 1 -and $actual[0] -clike 'SKIP: *') {
+            $why = $actual[0].Substring(6)
+            Write-Host ("SKIP  {0}  ({1})" -f $t.Name, $why) -ForegroundColor Yellow
+            $skip++; $skipped += "$($t.Name) ($why)"; continue
+        }
         $diff = Compare-Object $expected $actual -SyncWindow 0
         if ($null -eq $diff) {
             Write-Host ("PASS  {0}" -f $t.Name) -ForegroundColor Green
@@ -321,6 +351,6 @@ finally { Pop-Location }
 Write-Host ""
 $summaryColor = if ($fail -eq 0) { 'Green' } else { 'Red' }
 Write-Host ("{0} passed, {1} failed" -f $pass, $fail) -ForegroundColor $summaryColor
-if ($skip -gt 0) { Write-Host ("{0} skipped (Native AOT only; tools/deploy.sh runs them)" -f $skip) -ForegroundColor Yellow }   # its own line: deploy.sh reads "N passed, N failed"
+if ($skip -gt 0) { Write-Host ("{0} skipped: {1}" -f $skip, ($skipped -join '; ')) -ForegroundColor Yellow }   # its own line: deploy.sh reads "N passed, N failed"
 if ($fail -gt 0) { Write-Host ("Failed: {0}" -f ($failed -join ', ')) -ForegroundColor Red; exit 1 }
 exit 0

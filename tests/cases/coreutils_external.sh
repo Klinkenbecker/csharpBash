@@ -3,7 +3,7 @@
 # handed it back, until the stack overflowed and the shell died, rc 139 (every build to rev 209). A tool
 # with no PATH twin, and anything that is not a coreutil, stays in-process. Needs Git for Windows (its
 # usr/bin tools). Authored expectations.
-command -v git > /dev/null || { echo "needs Git for Windows"; exit 0; }
+command -v git > /dev/null || { echo "SKIP: needs Git for Windows (its usr/bin tools)"; exit 0; }
 export BASH_COREUTILS=external
 case "$(awk --version | head -1)" in "GNU Awk"*) echo "awk: the PATH program" ;; *) echo "awk: NOT the PATH program" ;; esac
 case "$(cat --version | head -1)" in "cat (GNU coreutils)"*) echo "cat: the PATH program" ;; *) echo "cat: NOT the PATH program" ;; esac

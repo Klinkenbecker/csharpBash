@@ -108,6 +108,24 @@ public sealed class ShellEncoding : Encoding
 
 	[ThreadStatic] private static StringBuilder? t_line;
 
+	/// <summary>The next record of <paramref name="r"/> to <paramref name="sep"/>, as <see cref="ReadLine"/> reads (never
+	/// past it), and whether the separator ended it.</summary>
+	public static string? ReadRecord(TextReader r, char sep, out bool ended)
+		{
+		if (ReferenceEquals(r, Console.In)) r = ConsoleMux.In;
+		if (r is LfReader lf) return lf.ReadRecord(sep, out ended);
+		var sb = t_line ??= new StringBuilder(256);
+		sb.Clear();
+		int c;
+		while ((c = r.Read()) >= 0)
+			{
+			if (c == sep) { ended = true; return sb.ToString(); }
+			sb.Append((char)c);
+			}
+		ended = false;
+		return sb.Length > 0 ? sb.ToString() : null;
+		}
+
 	/// <summary>A next-line function for <paramref name="r"/>, LF only. Stdin is shared -- what
 	/// this command leaves unread belongs to the next one -- so it goes through
 	/// <see cref="ReadLine"/>, never read ahead of; any other reader is a file the caller opened
@@ -218,10 +236,63 @@ public sealed class ShellEncoding : Encoding
 	/// char too long that no pattern matched (inferred 2026-10-03, measured 2026-10-10).</summary>
 	public override Decoder GetDecoder() => new CarryDecoder();
 
+	/// <summary>An encoder for chunked writers (every StreamWriter the shell makes, File.WriteAllText): a high surrogate
+	/// that ends a chunk is held for the low one that starts the next. Encoding's default encoder is stateless, so a
+	/// character past U+FFFF across a chunk's end came out as two U+FFFD: `printf '%s\n' "$x"` of a capture over 8192
+	/// characters, and `sed -i`, broke an emoji there (measured 2026-10-27).</summary>
+	public override Encoder GetEncoder() => new CarryEncoder();
+
+	public sealed class CarryEncoder : Encoder
+		{
+		private char _high;   // a high surrogate that ended the last chunk, or '\0'
+
+		public override int GetByteCount(char[] chars, int index, int count, bool flush) => GetByteCount(chars.AsSpan(index, count), flush);
+		public override int GetBytes(char[] chars, int charIndex, int charCount, byte[] bytes, int byteIndex, bool flush) =>
+			GetBytes(chars.AsSpan(charIndex, charCount), bytes.AsSpan(byteIndex), flush);
+
+		public override int GetByteCount(ReadOnlySpan<char> chars, bool flush)
+			{
+			Span<char> head = stackalloc char[2];
+			var body = Split(chars, flush, head, out int headLen, out _);
+			return Utf8.GetByteCount(head[..headLen]) + Utf8.GetByteCount(body);
+			}
+
+		public override int GetBytes(ReadOnlySpan<char> chars, Span<byte> bytes, bool flush)
+			{
+			Span<char> head = stackalloc char[2];
+			var body = Split(chars, flush, head, out int headLen, out char carry);
+			_high = carry;
+			int n = Utf8.GetBytes(head[..headLen], bytes);
+			return n + Utf8.GetBytes(body, bytes[n..]);
+			}
+
+		/// <summary>What to encode now: the held high surrogate, with the low one completing it when the chunk starts
+		/// with one, as <paramref name="head"/>; then the chunk less a high surrogate ending it, which is held in
+		/// <paramref name="carry"/> unless this is the last chunk (a lone one is encoded as before, U+FFFD).</summary>
+		private ReadOnlySpan<char> Split(ReadOnlySpan<char> chars, bool flush, Span<char> head, out int headLen, out char carry)
+			{
+			headLen = 0;
+			if (_high != '\0')
+				{
+				if (chars.Length > 0 && char.IsLowSurrogate(chars[0])) { head[0] = _high; head[1] = chars[0]; headLen = 2; chars = chars[1..]; }
+				else if (chars.Length > 0 || flush) { head[0] = _high; headLen = 1; }
+				else { carry = _high; return chars; }   // nothing yet to pair it with
+				}
+			carry = '\0';
+			if (!flush && chars.Length > 0 && char.IsHighSurrogate(chars[^1])) { carry = chars[^1]; chars = chars[..^1]; }
+			return chars;
+			}
+
+		public override void Reset() => _high = '\0';
+		}
+
 	public sealed class CarryDecoder : Decoder
 		{
 		private readonly byte[] _carry = new byte[3];
 		private int _carried;
+
+		/// <summary>True while the start of a character is held for the next block (wc's ASCII path needs none held).</summary>
+		public bool Carrying => _carried > 0;
 
 		public override int GetCharCount(byte[] bytes, int index, int count) => GetCharCount(bytes, index, count, false);
 		public override int GetCharCount(byte[] bytes, int index, int count, bool flush) =>
@@ -421,6 +492,28 @@ public sealed class LfReader : TextReader
 			(sb ??= (_carry ??= new StringBuilder()).Clear()).Append(_buf, _pos, _len - _pos);   // a line spanning blocks
 			_pos = _len;
 			}
+		return sb is { Length: > 0 } ? sb.ToString() : null;
+		}
+
+	/// <summary><see cref="ReadLine"/> to <paramref name="sep"/> (LF, or NUL for `sed -z`), saying whether the separator
+	/// ended the record (false: the input ended first). sed keeps a last line's missing newline missing.</summary>
+	public string? ReadRecord(char sep, out bool ended)
+		{
+		StringBuilder? sb = null;
+		while (Fill())
+			{
+			int at = Array.IndexOf(_buf, sep, _pos, _len - _pos);
+			if (at >= 0)
+				{
+				string rec = sb is null ? new string(_buf, _pos, at - _pos) : sb.Append(_buf, _pos, at - _pos).ToString();
+				_pos = at + 1;
+				ended = true;
+				return rec;
+				}
+			(sb ??= (_carry ??= new StringBuilder()).Clear()).Append(_buf, _pos, _len - _pos);
+			_pos = _len;
+			}
+		ended = false;
 		return sb is { Length: > 0 } ? sb.ToString() : null;
 		}
 

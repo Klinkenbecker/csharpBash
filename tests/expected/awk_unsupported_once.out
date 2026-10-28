@@ -1,7 +1,3 @@
-literal %e               first x1
-literal sprintf %G       first x1
-literal RS               first x1
-system()                 first x1
 == a format known only while running
 first
 awk: unsupported: printf %e

@@ -1,0 +1,35 @@
+== cmp
+a b: a b differ: byte 65536, line 12774 rc=1
+a c: a c differ: byte 65537, line 12774 rc=1
+-n 65536 a b: a b differ: byte 65536, line 12774 rc=1
+-n 65535 a b: rc=0
+-i 2 t1 t2: t1 t2 differ: byte 15, line 3 rc=1
+-i 100 t3 t1: rc=0
+-i 65000 a c: a c differ: byte 537, line 90 rc=1
+-s a a: rc=0
+== od
+ 33 0a 31 32 37 37 34 0a 31 32 37 37
+   2   3   6   9   7  \n
+ 0a31 0a32
+ 0a33 0a34
+ 0a35
+== hexdump
+0000fffa  33 0a 31 32 37 37 34 0a  31 32 37 37 35 0a 31 32  |3.12774.12775.12|
+0001000a  37 37 36 0a                                       |776.|
+0001000e
+00037e10  38 0a 33 39 39 39 39 0a  34 30 30 30 30 0a        |8.39999.40000.|
+00037e1e
+== base64
+8d3938143aaf99b22acbdeb401e244fe  -
+MQoyCjMKNA
+o1CjYKNwo4
+CjkKMTAKMT
+round trip ok
+[aGVsbG8]:  h e l l o b a s e 6 4 : i n v a l i d i n p u t \n rc=1
+[aGVsbA]:  h e l l b a s e 6 4 : i n v a l i d i n p u t \n rc=1
+[YQ]:  a b a s e 6 4 : i n v a l i d i n p u t \n rc=1
+[Y]:  b a s e 6 4 : i n v a l i d  i n p u t \n rc=1
+[aGVs!G8=]:  h e l b a s e 6 4 : i n v a l i d i n p u t \n rc=1
+[YQ==YQ==]:  a a rc=0
+[aGVsbG8==]:  h e l l o b a s e 6 4 : i n v a l i d i n p u t \n rc=1
+[aGVs|bG8=|]:  h e l l o rc=0

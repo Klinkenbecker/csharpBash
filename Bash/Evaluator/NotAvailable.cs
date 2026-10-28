@@ -19,12 +19,19 @@ public static class NotAvailable
 	public const string Repository = "https://github.com/klinkenbecker/csharpBash";
 
 	/// <summary>The two lines to print, each after <paramref name="prefix"/>; <paramref name="goingOn"/> when
-	/// the shell carries on without the feature (POSIX mode) rather than refusing (restricted mode).</summary>
-	public static string[] Lines(string prefix, string feature, bool goingOn = false) =>
-		[
-		$"{prefix}{feature} is not currently available in C#Bash{(goingOn ? "; going on in bash's default mode" : "")}",
-		$"{prefix}to ask for it, open: {IssueLink(feature)}",
-		];
+	/// the shell carries on without the feature (POSIX mode) rather than refusing (restricted mode). Every caller
+	/// prints them at once, so the request is logged here (<see cref="Unserviced"/>, 2026-10-27).</summary>
+	public static string[] Lines(string prefix, string feature, bool goingOn = false)
+		{
+		string[] lines =
+			[
+			$"{prefix}{feature} is not currently available in C#Bash{(goingOn ? "; going on in bash's default mode" : "")}",
+			$"{prefix}to ask for it, open: {IssueLink(feature)}",
+			];
+		Unserviced.Log(prefix.TrimEnd(' ', ':').Split(": ")[^1], feature, lines[0][prefix.Length..], null,
+		               goingOn ? "not available, went on without it" : "not available");
+		return lines;
+		}
 
 	/// <summary>Turning on POSIX mode (`--posix`, `-o posix`, `set -o posix`, `shopt -so posix`): it was
 	/// accepted and silently ignored. It only narrows bash's behaviour, so scripts that ask for it mostly

@@ -1,0 +1,16 @@
+--- wc -c (the length)
+2147483665 big
+--- wc -l < big
+6
+--- wc -lc
+         6 2147483665 big
+--- wc -m (every character)
+2147483665 big
+--- cat | wc -c (a pipe)
+2147483665
+--- wc -c < big
+2147483665
+--- md5sum
+4ee86c56cb1e605f94e884a8e26cedd6  big
+--- rc
+0

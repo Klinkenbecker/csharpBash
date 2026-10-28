@@ -14,8 +14,8 @@
 -b has strings
 -b has find
 -b has no bind
--b has no enable
--b has no help
+-b HAS enable
+-b HAS help
 -b has no ulimit
 -b has no caller
 -b has no logout

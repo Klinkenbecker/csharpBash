@@ -33,7 +33,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
 		"timeout", "id", "whoami", "nproc", "printenv", "tty", "arch", "awk",
-		"pgrep", "pkill", "ps", "jq",
+		"pgrep", "pkill", "ps", "jq", "help", "enable",
 		];
 
 	/// <summary>The in-process coreutils (as opposed to shell builtins): these follow the
@@ -94,15 +94,21 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			exitCode = _eval.RunExternal(program, ExternalArgs(name, args));
 			return true;
 			}
+		// `--help` answers with the builtin's manual page (help.json), never the PATH program's help: that is another
+		// program than the one that runs (2026-10-27)
+		if (AsksForHelp(name, args)) { exitCode = HelpFor(name, args); return true; }
 		try
 			{
 			exitCode = Dispatch(name, args);
 			}
+		catch (HelpRequestedException) { exitCode = HelpFor(name, args); }
 		catch (UnsupportedOptionException ex)
 			{
+			// either way a request C#Bash did not service itself: logged (Unserviced, 2026-10-27)
 			if (policy != "builtin" && FallbackProgram(name) is { } fallback)
 				{
 				exitCode = _eval.RunExternal(fallback, ExternalArgs(name, args));
+				Unserviced.Log(ex.Tool, ex.Option, ex.Message, args, $"fell through to {ShellEnvironment.ToShellPath(fallback)}, exit {exitCode}");
 				return true;
 				}
 			Console.Error.WriteLine(ex.Message);
@@ -112,6 +118,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 				? $"{ex.Tool}: (C#Bash: not implemented in-process, and the only '{ex.Tool}' on PATH is Windows' own, another program)"
 				: $"{ex.Tool}: (C#Bash: not implemented in-process and no external '{ex.Tool}' on PATH)");
 			exitCode = 2;
+			Unserviced.Log(ex.Tool, ex.Option, ex.Message, args, "failed, exit 2");
 			return true;
 			}
 		// A filesystem failure inside a builtin is an ordinary error, not a reason to kill the
@@ -235,6 +242,8 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"alias"   => Alias(args),
 			"compgen" => Compgen(args),
 			"complete" or "compopt" => CompletionNotAvailable(name),
+			"help" => Help(args),
+			"enable" => Enable(args),
 			"unalias" => Unalias(args),
 			"builtin" => BuiltinCmd(args),
 			"readonly"=> Readonly(args),

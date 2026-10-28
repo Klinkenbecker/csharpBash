@@ -1,0 +1,159 @@
+tail -n 1 nonl                     1:b
+cat nonl | tail -n 1               1:b
+tail -n 2 nonl                     3:a|b
+cat nonl | tail -n 2               3:a|b
+tail -n 0 nonl                     0:
+cat nonl | tail -n 0               0:
+tail -n +2 nonl                    1:b
+cat nonl | tail -n +2              1:b
+tail -n +0 nonl                    3:a|b
+cat nonl | tail -n +0              3:a|b
+tail -c 3 nonl                     3:a|b
+cat nonl | tail -c 3               3:a|b
+tail -c 0 nonl                     0:
+cat nonl | tail -c 0               0:
+tail -c +2 nonl                    2:|b
+cat nonl | tail -c +2              2:|b
+head -n -1 nonl                    2:a|
+cat nonl | head -n -1              2:a|
+head -n -2 nonl                    0:
+cat nonl | head -n -2              0:
+head -n -0 nonl                    3:a|b
+cat nonl | head -n -0              3:a|b
+head -c -1 nonl                    2:a|
+cat nonl | head -c -1              2:a|
+head -c -100 nonl                  0:
+cat nonl | head -c -100            0:
+tail -n 1 three                    2:c|
+cat three | tail -n 1              2:c|
+tail -n 2 three                    4:b|c|
+cat three | tail -n 2              4:b|c|
+tail -n 0 three                    0:
+cat three | tail -n 0              0:
+tail -n +2 three                   4:b|c|
+cat three | tail -n +2             4:b|c|
+tail -n +0 three                   6:a|b|c|
+cat three | tail -n +0             6:a|b|c|
+tail -c 3 three                    3:|c|
+cat three | tail -c 3              3:|c|
+tail -c 0 three                    0:
+cat three | tail -c 0              0:
+tail -c +2 three                   5:|b|c|
+cat three | tail -c +2             5:|b|c|
+head -n -1 three                   4:a|b|
+cat three | head -n -1             4:a|b|
+head -n -2 three                   2:a|
+cat three | head -n -2             2:a|
+head -n -0 three                   6:a|b|c|
+cat three | head -n -0             6:a|b|c|
+head -c -1 three                   5:a|b|c
+cat three | head -c -1             5:a|b|c
+head -c -100 three                 0:
+cat three | head -c -100           0:
+tail -n 1 crlf                     3:b^|
+cat crlf | tail -n 1               3:b^|
+tail -n 2 crlf                     6:a^|b^|
+cat crlf | tail -n 2               6:a^|b^|
+tail -n 0 crlf                     0:
+cat crlf | tail -n 0               0:
+tail -n +2 crlf                    3:b^|
+cat crlf | tail -n +2              3:b^|
+tail -n +0 crlf                    6:a^|b^|
+cat crlf | tail -n +0              6:a^|b^|
+tail -c 3 crlf                     3:b^|
+cat crlf | tail -c 3               3:b^|
+tail -c 0 crlf                     0:
+cat crlf | tail -c 0               0:
+tail -c +2 crlf                    5:^|b^|
+cat crlf | tail -c +2              5:^|b^|
+head -n -1 crlf                    3:a^|
+cat crlf | head -n -1              3:a^|
+head -n -2 crlf                    0:
+cat crlf | head -n -2              0:
+head -n -0 crlf                    6:a^|b^|
+cat crlf | head -n -0              6:a^|b^|
+head -c -1 crlf                    5:a^|b^
+cat crlf | head -c -1              5:a^|b^
+head -c -100 crlf                  0:
+cat crlf | head -c -100            0:
+tail -n 1 empty                    0:
+cat empty | tail -n 1              0:
+tail -n 2 empty                    0:
+cat empty | tail -n 2              0:
+tail -n 0 empty                    0:
+cat empty | tail -n 0              0:
+tail -n +2 empty                   0:
+cat empty | tail -n +2             0:
+tail -n +0 empty                   0:
+cat empty | tail -n +0             0:
+tail -c 3 empty                    0:
+cat empty | tail -c 3              0:
+tail -c 0 empty                    0:
+cat empty | tail -c 0              0:
+tail -c +2 empty                   0:
+cat empty | tail -c +2             0:
+head -n -1 empty                   0:
+cat empty | head -n -1             0:
+head -n -2 empty                   0:
+cat empty | head -n -2             0:
+head -n -0 empty                   0:
+cat empty | head -n -0             0:
+head -c -1 empty                   0:
+cat empty | head -c -1             0:
+head -c -100 empty                 0:
+cat empty | head -c -100           0:
+--- -z
+tail -z -n 1 zero                  1:c
+cat zero | tail -z -n 1            1:c
+tail -z -n 2 zero                  3:b@c
+cat zero | tail -z -n 2            3:b@c
+tail -z -n +2 zero                 3:b@c
+cat zero | tail -z -n +2           3:b@c
+head -z -n -1 zero                 4:a@b@
+cat zero | head -z -n -1           4:a@b@
+head -z -n 1 zero                  2:a@
+cat zero | head -z -n 1            2:a@
+tail -z -n 1 zeroend               2:b@
+cat zeroend | tail -z -n 1         2:b@
+tail -z -n 2 zeroend               4:a@b@
+cat zeroend | tail -z -n 2         4:a@b@
+tail -z -n +2 zeroend              2:b@
+cat zeroend | tail -z -n +2        2:b@
+head -z -n -1 zeroend              2:a@
+cat zeroend | head -z -n -1        2:a@
+head -z -n 1 zeroend               2:a@
+cat zeroend | head -z -n 1         2:a@
+--- across blocks
+tail -n 3 many                     21:199998|199999|200000|
+tail -c 10 many                    10:99|200000|
+tail -n 70000 many | head -n 1     7:130001|
+head -n -199998 many               4:1|2|
+head -n -70000 many | tail -n 1    7:130000|
+head -c -1288890 many              5:1|2|3
+tail -n 3 < many                   21:199998|199999|200000|
+tail -c 10 < many                  10:99|200000|
+tail -n 70000 < many | head -n 1   7:130001|
+head -n -199998 < many             4:1|2|
+head -n -70000 < many | tail -n 1  7:130000|
+head -c -1288890 < many            5:1|2|3
+cat many | tail -n 3               21:199998|199999|200000|
+cat many | tail -c 10              10:99|200000|
+cat many | tail -n 70000 | head -n 1 7:130001|
+cat many | head -n -199998         4:1|2|
+cat many | head -n -70000 | tail -n 1 7:130000|
+cat many | head -c -1288890        5:1|2|3
+--- a line longer than a block
+ tail -n 2: 100007
+ tail -n 1: 6
+ head -n -1: 100001
+cat long |  tail -n 2: 100007
+cat long |  tail -n 1: 6
+cat long |  head -n -1: 100001
+--- several files, a seekable stdin
+tail -n 1 nonl three               31:==> nonl <==|b|==> three <==|c|
+tail -c 2 nonl crlf                31:==> nonl <==||b|==> crlf <==|^|
+tail -n 2 < three                  4:b|c|
+head -n -1 < three                 4:a|b|
+--- UTF-8 in a capture
+kept: 1 é
+cut:  a9

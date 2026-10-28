@@ -1,0 +1,84 @@
+[]
+a
+		b
+	c
+		d
+e
+	f
+[-12]
+b
+d
+[-3]
+a
+	c
+e
+	f
+[--output-delimiter=|]
+a
+||b
+|c
+||d
+e
+|f
+[--total]
+a
+		b
+	c
+		d
+e
+	f
+2	2	2	total
+[--total -123]
+2	2	2	total
+ a \n \0 \0 b \n \0 c \n \0 \0 d \n e \n \0
+ f \n
+ a \0 \t \t b \0 \t c \0 1 \t 1 \t 1 \t t
+ o t a l \0
+a
+	b
+		c
+comm: file 1 is not in sorted order
+b
+	d
+comm: input is not in sorted order
+rc=1
+a
+	c
+	y
+comm: file 2 is not in sorted order
+	d
+z
+comm: file 1 is not in sorted order
+b
+comm: input is not in sorted order
+rc=1
+a
+	b
+		c
+b
+	d
+rc=0
+		b
+		a
+rc=0
+		b
+comm: file 1 is not in sorted order
+rc=1
+a~		b~	c~		d~e~	f~
+ a \n \t \t b \n
+5000	10000	5000	total
+a38f501fbf75
+		aaaa
+b
+	c
+comm: nope: No such file or directory
+rc=1
+comm: missing operand after 'x'
+Try 'comm --help' for more information.
+rc=1
+comm: missing operand
+Try 'comm --help' for more information.
+rc=1
+comm: extra operand 'z'
+Try 'comm --help' for more information.
+rc=1

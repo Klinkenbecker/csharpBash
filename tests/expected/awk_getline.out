@@ -30,5 +30,3 @@ x=s2
 3: s3
 13
 4 5
-14 fall-through keeps CR: 3
-15 BASH_COREUTILS=external keeps CR: 3

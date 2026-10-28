@@ -1,7 +1,8 @@
 # 2026-10-12 (msp430-a2): awk's `getline` and `getline var` read the main input in-process, as gawk (NR, FNR, FILENAME,
 # across files, in BEGIN, 0 at the end). They were outside the subset, so any program containing one, even never
 # run, went to the PATH awk, Git's gawk, which strips every CR: a CRLF file came back LF. A program that still
-# falls through (`cmd | getline`) or BASH_COREUTILS=external now gets -v BINMODE=3 and keeps CR. Expected: GNU awk via WSL.
+# falls through (`cmd | getline`) or BASH_COREUTILS=external now gets -v BINMODE=3 and keeps CR: those two checks need a
+# PATH awk and are in awk_fallthrough since 2026-10-20. Expected: GNU awk via WSL.
 d=$(mktemp -d) && cd "$d" || exit 1
 printf 'a\r\nb\r\nc\r\n' > crlf.txt
 printf 'l1 x\nl2 y y\nl3\n' > f1; printf 'm1\nm2\n' > f2
@@ -19,6 +20,4 @@ echo "10"; awk 'END { r = getline; print "END getline", r, $0 }' f1
 echo "11"; awk '{ getline; print v, $0 }' f1 v=7 f2
 echo "12"; printf 's1\ns2\ns3\n' | awk 'NR==1 { getline x; print "x=" x } { print NR ": " $0 }'
 echo "13"; awk '{ while ((getline n) > 0) c++ } END { print c, NR }' f1 f2
-echo "14 fall-through keeps CR: $(awk '{ "echo x" | getline y; print }' crlf.txt | cr)"
-echo "15 BASH_COREUTILS=external keeps CR: $(BASH_COREUTILS=external awk '{ print }' crlf.txt | cr)"
 cd / && rm -rf "$d"

@@ -46,6 +46,8 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+# probes ask for unsupported features on purpose: not requests for the unserviced log (%USERPROFILE%/.bash; 2026-10-27)
+$env:BASH_UNSERVICED_LOG = '/dev/null'
 $here     = $PSScriptRoot
 $proj     = Join-Path $here '..\..\Bash'
 $exe      = (Resolve-Path (Join-Path $proj 'bin\Release\net8.0\Bash.exe') -ErrorAction SilentlyContinue).Path

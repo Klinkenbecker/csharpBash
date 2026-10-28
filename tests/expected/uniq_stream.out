@@ -1,0 +1,34 @@
+       a b c d 
+-c           2 a       1 b       3 c       1 d 
+-d     a c 
+-u     b d 
+-D     a a c c c 
+-d -u  
+-D -u  a c c 
+-D -d  a a c c c 
+-c -d        2 a       3 c 
+-c -u        1 b       1 d 
+uniq: printing all duplicated lines and repeat counts is meaningless
+Try 'uniq --help' for more information.
+rc=1
+ 2 a \0 
+ 2 b \0
+ a \0 a \0
+ 4 a \r \n
+      1 k 1 x
+      1 k 2 x
+      1 j	2 x
+A
+a
+ x \n
+      1 p
+      2 q
+319cc7cb5921
+084cc5180772
+      7 4284
+      6 4285
+0
+      2 aa
+      1 b
+a b c d 
+uniq: missing: ...
