@@ -78,6 +78,18 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			});
 		}
 
+	/// <summary>Output to a redirected file is buffered (its writer does not AutoFlush) and written when each builtin
+	/// finishes, as bash's builtins flush theirs: one write a builtin, not one a line (`sed ... > out` wrote line by line
+	/// at ~5.8 MB/s; DECISIONS 2026-10-28 "buffered output to redirected files"). A raw-byte writer flushes the text
+	/// first, and a child is handed the file only after `HandOff` flushes it, so the order holds.</summary>
+	internal static void FlushBuffered()
+		{
+		if (!ConsoleMux.OutDirty) return;   // nothing written on this thread since the last flush (stderr flushes itself)
+		var o = ConsoleMux.OutSlot;
+		if (o is StreamWriter { AutoFlush: false }) { ConsoleMux.OutDirty = false; o.Flush(); }
+		else if (o is null && ConsoleMux.RealOutBuffered) { ConsoleMux.OutDirty = false; ConsoleMux.RealOut.Flush(); }   // the process stdout, redirected (step (c))
+		}
+
 	public bool TryExecute(string name, List<string> args, out int exitCode)
 		{
 		// Unsupported-option policy for coreutils (DECISIONS 2026-09-04 #2):
@@ -100,6 +112,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		try
 			{
 			exitCode = Dispatch(name, args);
+			FlushBuffered();   // here, so a write error (a full disk) is this builtin's, reported below
 			}
 		catch (HelpRequestedException) { exitCode = HelpFor(name, args); }
 		catch (UnsupportedOptionException ex)
@@ -136,6 +149,11 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			Console.Error.WriteLine($"{name}: {IoError(ex)}");
 			exitCode = 1;
 			return true;
+			}
+		finally
+			{
+			// exit, return, Ctrl+C or an error: what the builtin wrote still goes out
+			try { FlushBuffered(); } catch (Exception) { }
 			}
 		if (exitCode == -1) { exitCode = 0; return false; }
 		return true;

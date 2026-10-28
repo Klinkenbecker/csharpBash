@@ -506,6 +506,14 @@ public sealed partial class Builtins
 			catch (Exception ex) { Console.Error.WriteLine($"sed: couldn't open file {wf}: {IoError(ex)}"); return 4; }
 			}
 
+		try { return SedFiles(prog, files, inPlace, separate, backupSuffix, noAuto, sep, shared); }
+		// a runtime error (GNU's panic: `s//x/` before any regex has run) ends sed; under -i the file is left as it was
+		catch (SedRuntimeException ex) { Console.Error.WriteLine($"sed: -e expression #1, char 0: {ex.Message}"); return 1; }
+		}
+
+	/// <summary>sed's files, in place, separately or as one stream (options parsed, the program compiled).</summary>
+	private int SedFiles(SedProgram prog, List<string> files, bool inPlace, bool separate, string? backupSuffix, bool noAuto, char sep, SedShared shared)
+		{
 		if (inPlace)
 			{
 			if (files.Count == 0) { Console.Error.WriteLine("sed: no input files"); return 1; }
@@ -534,7 +542,7 @@ public sealed partial class Builtins
 				catch (Exception ex)
 					{
 					try { File.Delete(temp); } catch { }
-					if (ex is BrokenPipeException) throw;
+					if (ex is BrokenPipeException or SedRuntimeException) throw;
 					Console.Error.WriteLine($"sed: couldn't edit {f}: {IoError(ex)}");
 					rc = 4;
 					continue;
@@ -660,6 +668,9 @@ public sealed partial class Builtins
 		public void Settle() { if (_owed) { W.Write(_sep); _owed = false; } }
 		}
 
+	/// <summary>An error sed finds while running (GNU's panic): reported as "sed: MESSAGE".</summary>
+	private sealed class SedRuntimeException(string message) : Exception(message);
+
 	/// <summary>What lasts across sed's files: stdout, stderr and the `w` files, each opened once (`w /dev/stdout` is the
 	/// real stdout under -i too, as GNU: it went into the edited file), and whether `q` ended the run.</summary>
 	private sealed class SedShared(char sep) : IDisposable
@@ -668,6 +679,11 @@ public sealed partial class Builtins
 		private SedOut? _stderr;
 		private readonly Dictionary<string, SedOut> _files = new(StringComparer.Ordinal);
 		public bool Quit;
+		private Regex? _lastRe;
+
+		/// <summary>A regex as it runs: an empty one (`//`, null) is the last one used, and every other use makes itself
+		/// the last, across files too (GNU's regex_last). With none used yet: GNU's runtime error.</summary>
+		public Regex Use(Regex? re) => re is not null ? (_lastRe = re) : _lastRe ?? throw new SedRuntimeException("no previous regular expression");
 
 		public SedOut For(string file)
 			{
@@ -685,6 +701,7 @@ public sealed partial class Builtins
 		{
 		var prog = new SedProgram();
 		var blockStack = new Stack<int>();
+		bool anyRe = false;   // a regex compiled before this point of the script: `//` needs one
 		int p = 0;
 		string s = script;
 		void SkipWs() { while (p < s.Length && (s[p] == ' ' || s[p] == '\t')) p++; }
@@ -706,8 +723,16 @@ public sealed partial class Builtins
 				if (c == '\\') { p++; if (p >= s.Length) throw new Exception("unexpected end of script"); delim = s[p]; }
 				p++;
 				var re = SedReadDelim(s, ref p, delim);
-				bool ic = false;
-				while (p < s.Length && (s[p] == 'I' || s[p] == 'M')) { if (s[p] == 'I') ic = true; p++; }
+				bool ic = false, modifier = false;
+				while (p < s.Length && (s[p] == 'I' || s[p] == 'M')) { if (s[p] == 'I') ic = true; modifier = true; p++; }
+				// `//` is the last regex used (null here; SedShared.Use), as GNU; with none before it in the script, or
+				// with a modifier, an error. It was Regex(""), which matched every line.
+				if (re.Length == 0)
+					{
+					if (modifier) throw new Exception("cannot specify modifiers on empty regexp");
+					return anyRe ? new SedAddr { Kind = 3, Re = null } : throw new Exception("no previous regular expression");
+					}
+				anyRe = true;
 				return new SedAddr { Kind = 3, Re = new Regex(ere ? EreToNet(re) : BreToNet(re), ic ? RegexOptions.IgnoreCase : RegexOptions.None) };
 				}
 			return null;
@@ -790,8 +815,14 @@ public sealed partial class Builtins
 						else throw new Exception($"unknown option to `s'");
 						}
 					var opts = (ic ? RegexOptions.IgnoreCase : RegexOptions.None) | (multiline ? RegexOptions.Multiline : RegexOptions.None);
-					if (pat.Length == 0) throw new Exception("no previous regular expression");
-					cmd.SRe = new Regex(ere ? EreToNet(pat) : BreToNet(pat), opts);
+					// `s//x/`: the last regex used (null here), as GNU; it was refused always (2026-10-28)
+					if (pat.Length == 0)
+						{
+						if (ic || multiline) throw new Exception("cannot specify modifiers on empty regexp");
+						if (!anyRe) throw new Exception("no previous regular expression");
+						cmd.SRe = null;
+						}
+					else { cmd.SRe = new Regex(ere ? EreToNet(pat) : BreToNet(pat), opts); anyRe = true; }
 					break;
 					}
 				case 'y':
@@ -914,7 +945,7 @@ public sealed partial class Builtins
 			while (pc < prog.Cmds.Count)
 				{
 				var cmd = prog.Cmds[pc];
-				bool selected = SedSelect(cmd, lineNo, input, ps);
+				bool selected = SedSelect(cmd, lineNo, input, ps, shared);
 				if (cmd.Negate) selected = !selected;
 				if (cmd.Cmd == '}') { pc++; continue; }
 				if (!selected)
@@ -952,7 +983,7 @@ public sealed partial class Builtins
 						}
 					case 's':
 						{
-						var (res, changed) = SedSub(cmd, ps);
+						var (res, changed) = SedSub(cmd, ps, shared.Use(cmd.SRe));
 						ps = res;
 						if (changed)
 							{
@@ -1014,14 +1045,14 @@ public sealed partial class Builtins
 		return 0;
 		}
 
-	private static bool SedSelect(SedCmd cmd, int lineNo, SedInput input, string ps)
+	private static bool SedSelect(SedCmd cmd, int lineNo, SedInput input, string ps, SedShared shared)
 		{
 		if (cmd.A1 is null) return true;
 		bool M(SedAddr a) => a.Kind switch
 			{
 			1 => lineNo == a.Num,
 			2 => input.AtEnd(),
-			3 => a.Re!.IsMatch(ps),
+			3 => shared.Use(a.Re).IsMatch(ps),
 			4 => a.Step <= 0 ? lineNo == a.Num : lineNo >= a.Num && (lineNo - a.Num) % a.Step == 0,
 			5 => false,
 			_ => true,
@@ -1042,7 +1073,7 @@ public sealed partial class Builtins
 			if (cmd.A2.Kind == 3)
 				{
 				// 0,/re/ lets the end match the very first line; addr1,/re/ starts checking on the next line
-				if (cmd.A1.Kind == 5 && cmd.A2.Re!.IsMatch(ps)) { cmd.InRange = false; return true; }
+				if (cmd.A1.Kind == 5 && shared.Use(cmd.A2.Re).IsMatch(ps)) { cmd.InRange = false; return true; }
 				cmd.InRange = true; return true;
 				}
 			cmd.InRange = true; return true;
@@ -1050,7 +1081,7 @@ public sealed partial class Builtins
 		// inside a range: does this line end it?
 		if (cmd.A2Plus || cmd.A2Tilde || cmd.A2.Kind == 1) { if (lineNo >= cmd.RangeEndLine) cmd.InRange = false; return true; }
 		if (cmd.A2.Kind == 2) { if (input.AtEnd()) cmd.InRange = false; return true; }
-		if (cmd.A2.Kind == 3) { if (cmd.A2.Re!.IsMatch(ps)) cmd.InRange = false; return true; }
+		if (cmd.A2.Kind == 3) { if (shared.Use(cmd.A2.Re).IsMatch(ps)) cmd.InRange = false; return true; }
 		return true;
 		}
 
@@ -1078,9 +1109,9 @@ public sealed partial class Builtins
 		return sb.Append('$').ToString();
 		}
 
-	private static (string result, bool changed) SedSub(SedCmd cmd, string input)
+	private static (string result, bool changed) SedSub(SedCmd cmd, string input, Regex re)
 		{
-		var matches = cmd.SRe!.Matches(input);
+		var matches = re.Matches(input);
 		if (matches.Count == 0) return (input, false);
 		int target = cmd.SNth == 0 ? 1 : cmd.SNth;
 		var sb = new StringBuilder();

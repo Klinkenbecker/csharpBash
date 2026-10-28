@@ -20,10 +20,20 @@ if (!consoleUtf8)
 	Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), ShellEncoding.Utf8) { AutoFlush = true });
 	Console.SetError(new StreamWriter(Console.OpenStandardError(), ShellEncoding.Utf8) { AutoFlush = true });
 	}
+// A redirected stdout (a pipe or a file: Claude Code reads every call's output through one) is buffered and written when
+// each builtin finishes, before any child starts (Builtins.FlushBuffered) and at exit, as bash's builtins flush theirs;
+// it was a write a line. A console stays unbuffered (step (c), 2026-10-28).
+bool stdoutBuffered = Console.IsOutputRedirected;
+if (stdoutBuffered) Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), ShellEncoding.Utf8, 4096) { AutoFlush = false });
 Console.Out.NewLine = "\n";    // bash emits LF, not Windows CRLF (installed writers set it too)
 Console.Error.NewLine = "\n";
 Timing.Mark("console.writers");
 ConsoleMux.Install();          // per-thread console streams (pipeline stages, captures, jobs)
+if (stdoutBuffered)
+	{
+	ConsoleMux.RealOutBuffered = true;
+	AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { ConsoleMux.RealOut.Flush(); } catch { } };
+	}
 Timing.Mark("console");
 
 const string BashVersion = "5.1.0-koliada";

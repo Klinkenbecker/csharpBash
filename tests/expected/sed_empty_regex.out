@@ -1,0 +1,23 @@
+foo
+X
+bar X
+a[<b>]c
+yz
+0ne
+bca
+X1
+X2
+K1
+K2
+sed: -e expression #1, char N: no previous regular expression
+rc=1
+sed: -e expression #1, char N: no previous regular expression
+rc=1
+sed: -e expression #1, char N: no previous regular expression
+rc=1
+sed: -e expression #1, char N: cannot specify modifiers on empty regexp
+rc=1
+sed: -e expression #1, char N: cannot specify modifiers on empty regexp
+rc=1
+sed: -e expression #1, char N: no previous regular expression
+-i untouched: z

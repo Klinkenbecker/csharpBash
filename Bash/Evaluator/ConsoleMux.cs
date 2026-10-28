@@ -100,11 +100,17 @@ public static class ConsoleMux
 	public static bool ErrSwapped => _err is not null;
 	public static bool InSwapped  => _in  is not null;
 
-	public static void SetOut(TextWriter? w) => _out = w;
+	public static void SetOut(TextWriter? w) { _out = w; OutDirty = true; }   // the writer left may hold output
 	public static void SetErr(TextWriter? w) => _err = w;
 	public static void SetIn(TextReader? r)  => _in  = r;
 
 	public static TextWriter RealOut => _realOut ?? Console.Out;
+	/// <summary>True when the process stdout is redirected and so buffered (Program.cs; Builtins.FlushBuffered writes it).</summary>
+	public static bool RealOutBuffered;
+	/// <summary>Something was written to this thread's stdout since Builtins.FlushBuffered last wrote it out, or the
+	/// thread's stdout changed: a flush is due. Without it every builtin flushed an empty writer (~60 ns: `func` +6%,
+	/// `loop_big` +8% in the benchmark, 2026-10-28).</summary>
+	[ThreadStatic] public static bool OutDirty;
 
 	/// <summary>The thread's whole stdio state, for handing to a child thread.</summary>
 	public readonly record struct State(TextWriter? Out, TextWriter? Err, TextReader? In, Stream? Raw, bool Capturing, Stream? PipeIn, Stream? PipeOut, Stream? RawIn);
@@ -113,26 +119,31 @@ public static class ConsoleMux
 
 	public static void Apply(State s)
 		{
-		_out = s.Out; _err = s.Err; _in = s.In;
+		_out = s.Out; _err = s.Err; _in = s.In; OutDirty = true;
 		Raw = s.Raw; Capturing = s.Capturing; PipeIn = s.PipeIn; PipeOut = s.PipeOut; RawIn = s.RawIn;
 		}
 
 	// ── the multiplexers ──────────────────────────────────────────────────────
 
+	/// <summary>Console.Out / Console.Error for every thread. stderr is never left buffered, as GNU's: after each write
+	/// to it the writer it points at is flushed. Where `2>&1` points it at a buffered stdout (a file, a pipe, the process's
+	/// own: 2026-10-28) that writes stdout's earlier text and then the message, in order, before any later raw-byte or
+	/// descriptor output (strings' "No such file", the shell's "Bad file descriptor" came out late without it).</summary>
 	private sealed class MuxWriter(bool isErr) : TextWriter
 		{
 		private TextWriter T => isErr ? Err : Out;
+		private void Done(TextWriter t) { if (isErr) t.Flush(); else OutDirty = true; }
 		public override Encoding Encoding => T.Encoding;
 		public override IFormatProvider FormatProvider => T.FormatProvider;
 		[AllowNull]
 		public override string NewLine { get => T.NewLine; set { var t = T; lock (t) t.NewLine = value ?? "\n"; } }
-		public override void Write(char value) { var t = T; lock (t) t.Write(value); }
-		public override void Write(char[] buffer, int index, int count) { var t = T; lock (t) t.Write(buffer, index, count); }
-		public override void Write(ReadOnlySpan<char> buffer) { var t = T; lock (t) t.Write(buffer); }
-		public override void Write(string? value) { var t = T; lock (t) t.Write(value); }
-		public override void WriteLine() { var t = T; lock (t) t.WriteLine(); }
-		public override void WriteLine(string? value) { var t = T; lock (t) t.WriteLine(value); }
-		public override void WriteLine(ReadOnlySpan<char> buffer) { var t = T; lock (t) t.WriteLine(buffer); }
+		public override void Write(char value) { var t = T; lock (t) { t.Write(value); Done(t); } }
+		public override void Write(char[] buffer, int index, int count) { var t = T; lock (t) { t.Write(buffer, index, count); Done(t); } }
+		public override void Write(ReadOnlySpan<char> buffer) { var t = T; lock (t) { t.Write(buffer); Done(t); } }
+		public override void Write(string? value) { var t = T; lock (t) { t.Write(value); Done(t); } }
+		public override void WriteLine() { var t = T; lock (t) { t.WriteLine(); Done(t); } }
+		public override void WriteLine(string? value) { var t = T; lock (t) { t.WriteLine(value); Done(t); } }
+		public override void WriteLine(ReadOnlySpan<char> buffer) { var t = T; lock (t) { t.WriteLine(buffer); Done(t); } }
 		public override void Flush() { var t = T; lock (t) t.Flush(); }
 		}
 

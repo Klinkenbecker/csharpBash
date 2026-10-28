@@ -32,6 +32,7 @@ public sealed class Lexer
 	// Each entry: (stripTabs, noExpand).  noExpand = delimiter was quoted.
 	// Delimiter word resolved post-hoc from emitted token stream.
 	private readonly Queue<(bool stripTabs, int tokenIndexAfterOp)> _heredocQueue = new();
+	private int _arithParens;   // parentheses open in an unquoted `$(( ))` being lexed: `<<` there is a shift
 
 	public Lexer(string src)
 		{
@@ -238,7 +239,9 @@ public sealed class Lexer
 					// Queue: delimiter token will be at currentTokenCount + 1
 					// (currentTokenCount + 0 = this << token itself, not yet added;
 					//  the delimiter word will be the next token emitted)
-					_heredocQueue.Enqueue((strip, currentTokenCount + 1));
+					// Inside an unquoted `$(( ))` it is the shift operator: queued there, the lines after it were read
+					// as a here-document's body and the next line failed (`x=$(( 3 << 1 ))`, until 2026-10-28).
+					if (_arithParens == 0) _heredocQueue.Enqueue((strip, currentTokenCount + 1));
 					return Make(strip ? TokenType.LessLessDash : TokenType.LessLess,
 						strip ? "<<-" : "<<", startLine, startCol);
 					}
@@ -288,8 +291,11 @@ public sealed class Lexer
 					// no matching "))" — treat as an ordinary "(" (nested subshell)
 					_pos = save; _line = saveLine; _col = saveCol;
 					}
+				if (_arithParens > 0) _arithParens++;
 				return Make(TokenType.LParen, "(", startLine, startCol);
-			case ')':  return Make(TokenType.RParen, ")", startLine, startCol);
+			case ')':
+				if (_arithParens > 0) _arithParens--;
+				return Make(TokenType.RParen, ")", startLine, startCol);
 			case '{':  return Make(TokenType.LBrace, "{", startLine, startCol);
 			case '}':  return Make(TokenType.RBrace, "}", startLine, startCol);
 
@@ -351,7 +357,8 @@ public sealed class Lexer
 			{
 			Advance();
 			if (_pos < _src.Length && Peek() == '(')
-				{ Advance(); return Make(TokenType.DollarDollarLParen, "$((", startLine, startCol); }
+				{ Advance(); _arithParens += 2; return Make(TokenType.DollarDollarLParen, "$((", startLine, startCol); }
+			if (_arithParens > 0) _arithParens++;   // `$( )` inside `$(( ))` closes with one of its `)`
 			return Make(TokenType.DollarLParen, "$(", startLine, startCol);
 			}
 

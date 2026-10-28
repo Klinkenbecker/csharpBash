@@ -1422,7 +1422,9 @@ public sealed class Evaluator
 				else ConsoleMux.PipeIn = null;
 				if (idx < n - 1)
 					{
-					writer = new System.IO.StreamWriter(pipes[idx].WriteEnd, utf8, 4096) { AutoFlush = true, NewLine = "\n" };
+					// buffered, written when each builtin finishes (Builtins.FlushBuffered) and when the stage ends (below),
+					// as bash's builtins: it was a write a line (step (b), 2026-10-28). A closed reader is seen at the flush.
+					writer = new System.IO.StreamWriter(pipes[idx].WriteEnd, utf8, 4096) { AutoFlush = false, NewLine = "\n" };
 					ConsoleMux.SetOut(writer);
 					ConsoleMux.Raw = pipes[idx].WriteEnd;
 					ConsoleMux.Capturing = false;
@@ -2491,6 +2493,7 @@ public sealed class Evaluator
 		try
 			{
 			if (Timing.On) Timing.Mark("ext+ " + name);   // the performance review's timing switch
+			Builtins.FlushBuffered();   // nothing the shell buffered may come after the child's output (2026-10-28)
 			proc = ChildLauncher.Start(psi, HandleFor(fds[0]), HandleFor(fds[1]), HandleFor(fds[2]),
 			                           noWindow: hideConsole || ownConsole, breakaway: detached);
 			}
@@ -2800,7 +2803,9 @@ public sealed class Evaluator
 					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
 					// ShellEncoding, not the default: StreamWriter's default UTF-8 THROWS on a lone
 					// surrogate, so `printf '\xff' > file` died with an encoder error (2026-09-12).
-					var w = new System.IO.StreamWriter(fs, ShellEncoding.Utf8) { AutoFlush = true, NewLine = "\n" };
+					// Buffered, written when each builtin finishes (Builtins.FlushBuffered, 2026-10-28); one writer for
+					// both, so stdout and stderr keep their order.
+					var w = new System.IO.StreamWriter(fs, ShellEncoding.Utf8) { AutoFlush = false, NewLine = "\n" };
 					scope.TrackInstalled(w);
 					scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(w); ConsoleMux.Raw = fs;
 					scope.SaveErr(); ConsoleMux.SetErr(w);
@@ -2849,7 +2854,9 @@ public sealed class Evaluator
 					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
 					// ShellEncoding, not the default: StreamWriter's default UTF-8 THROWS on a lone
 					// surrogate, so `printf '\xff' > file` died with an encoder error (2026-09-12).
-					var w = new System.IO.StreamWriter(fs, ShellEncoding.Utf8) { AutoFlush = true, NewLine = "\n" };
+					// stdout buffered, written when each builtin finishes (Builtins.FlushBuffered, 2026-10-28: it was a
+					// write a line, ~5.8 MB/s); `2> file` stays unbuffered, as GNU's stderr.
+					var w = new System.IO.StreamWriter(fs, ShellEncoding.Utf8) { AutoFlush = fd == 2, NewLine = "\n" };
 					scope.TrackInstalled(w);
 					if (fd == 2) { scope.SaveErr(); ConsoleMux.SetErr(w); }              // 2>file → stderr
 					else         { scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(w); ConsoleMux.Raw = fs; }

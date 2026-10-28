@@ -12,11 +12,34 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 427 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 450 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 449 | 2026-10-28 | README: table and prose from compare3 on deployed 448 (pipeline 0.080 s, 1.3x WSL: no row loses now); benchmark log appended |
+| 448 | 2026-10-28 | Benchmark log: compare3 on deployed 445 (pipeline 0.080 s, 1.4x WSL; func/loop_big 6-8% slower: fixed in 447, re-run to follow) |
+| 447 | 2026-10-28 | No empty flush after every builtin (step (c) made func +6%, loop_big +8%); the publish doc review |
+| 446 | 2026-10-28 | Deployed rev 445 (own stdout buffered, stderr never buffered; AOT suite 198/0 both modes, battery 216); notified; next: publish |
+| 445 | 2026-10-28 | C#Bash's own redirected stdout is buffered (step (c)); stderr is never left buffered (fixes a 433-442 reorder) |
+| 444 | 2026-10-28 | check-help-urls keeps the pages it got (a cache) and checks their anchors even when a run stops |
+| 443 | 2026-10-28 | Deployed rev 442 (buffered pipes; AOT suite 197/0 both modes, battery 216); notified; next: step (c) |
+| 442 | 2026-10-28 | Output into a pipeline's pipe is buffered, written when each builtin finishes (step (b)) |
+| 441 | 2026-10-28 | Test runner: each console-mode case gets an empty, closed stdin ($null \|), as -Detached gives NUL |
+| 440 | 2026-10-28 | check-help-urls paced like a person: shuffled pages, a random 20-70 s pause before each, a browser User-Agent, stop at the first refusal (exit 3) |
+| 439 | 2026-10-28 | Anchor: greenlit (1) runner stdin NUL, (2) buffering step (b) pipes, (3) step (c) own stdout, then publish |
+| 438 | 2026-10-28 | Deployed rev 437 (sed empty regex; AOT suite 196/0 both modes, battery 216); notified; "2 & 3 and then 6" done |
+| 437 | 2026-10-28 | sed's empty regex `//` is the last regex executed (GNU); runtime error when none has run |
+| 436 | 2026-10-28 | Deployed rev 435 (arith << fix; AOT suite 195/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: sed's empty regex |
+| 435 | 2026-10-28 | `<<` inside an unquoted $(( )) is a shift: the lexer queued a here-document and the next line failed |
+| 434 | 2026-10-28 | Deployed rev 433 (buffered file output; AOT suite 194/0 both modes, battery 216); notified koliada-net-28, kes-term-a1; next: item 6 |
+| 433 | 2026-10-28 | Output to a redirected file is buffered, written when each builtin finishes (step (a)) |
+| 432 | 2026-10-28 | Agreed + go: buffered output to redirected files, flushed when each builtin finishes (step (a) first); item 6 paused, its findings recorded |
+| 431 | 2026-10-28 | Measured, no change: cat, wc and the checksums keep 64 KiB reads (8 KiB slower for them); anchor: item 5 is the architect's (gnu.org blocks), the order 2, 3, then 6 |
+| 430 | 2026-10-28 | README: "Money talks, bullshit walks:" (the saying's order; for the next publish) |
+| 429 | 2026-10-28 | Expected files fieldutils, path_lookup, unserviced_log converted from CRLF to LF (CRs only; suite 192/0 both modes) |
+| 428 | 2026-10-28 | Correction: the three CR expected files are CRLF line endings, harmless (the runner ignores line endings; verified); no second push needed |
+| 427 | 2026-10-28 | Published: GitHub main = git 9a5a95c = hg rev 426 by tools/publish.sh (compare3 on deployed 424); found: three expected files lose a needed CR in git |
 | 426 | 2026-10-28 | Benchmark of the deployed build (rev 424) and the doc review, for publishing |
 | 425 | 2026-10-27 | Deployed rev 424 (head; AOT suite 193/0 both modes, battery 216); notified; the greenlit list is done; anchor rewritten (next: publish, awaiting the architect) |
 | 424 | 2026-10-27 | head -n N keeps a last line's missing newline; still the shared line reader (plan revised, measured) |

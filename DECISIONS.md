@@ -8952,3 +8952,265 @@ modes); battery 216/237, baseline 216.
 suffix, 408 the output encoder, 410 sed, 412 uniq, 414 comm, 416 paste, 418 tail -f, 420 tee, 422 fold+strings, 424
 head. Not published (GitHub csharpBash = hg rev 366): PUBLISH is next and needs the architect (compare3 on a quiet
 machine, then tools/publish.sh).
+
+## 2026-10-28 -- PUBLISHED: GitHub main = git 9a5a95c = hg rev 426 (the tools stream; help; the GNU fixes)
+**Status:** Active. The architect: "I told you to publish deliberately _because_ you would have a quiet machine, with me
+here running 3 claudes you would _not_!! publish; go" (Claude had stopped to ask for a quiet slot at the end of the
+greenlit run; that "ask first" was Claude's own addition to the anchor; memory publish-at-end-of-run). By the push
+rule: `compare3.sh` on the DEPLOYED build (rev 424, 2026-10-28 03:09, from Git Bash; ListAgents showed both peer
+sessions idle; all outputs agree with Git Bash and WSL; rows within a few percent of the published rev 324 table except
+`pipeline`, 0.243 -> 0.156 s, 2.1x Git Bash) and the doc review (rev 426: README's table, its prose, 201 cases, a line on
+streaming; ARCHITECTURE: the streaming model point, CarryEncoder; IMPLEMENTATION: ReadRecord, CarryEncoder, the tools'
+entries, ReadBytes gone). `bash tools/publish.sh` under C#Bash (deployed 424): MERCURIAL_HISTORY.md (427 changesets)
+and mercurial-history.hg (verified) written; untracked BENCHMARK-PROVENANCE.md and "The Windows Shell Tax.url" left out;
+pushed 0a8eef7..9a5a95c; remote main = HEAD; no auth header in git config. Message file:
+`F:/TEMP/claude/F--Koliada-Tools-bash/988ee3e2-f1b4-4772-913a-37e408930e46/scratchpad/publish-msg-426.txt`.
+**FOUND (git's CRLF warning):** `.gitattributes` (`* text=auto eol=lf`) normalises every text file, so three expected
+files that must carry a CR (real output: cmd's echo, CRLF data) lost it in git: fieldutils.out (20 CR lines in hg, 0 in
+git HEAD; so since at least rev 220's publishes), path_lookup.out (5 / 0), unserviced_log.out (1 / 0; added today).
+Those three cases fail from a GitHub checkout. Claude's position: mark the three `-text` in .gitattributes and publish
+again; AWAITING the architect (another push).
+
+## 2026-10-28 -- CORRECTION: the three CR expected files do NOT fail from a GitHub checkout (CRLF line endings, not data)
+**Status:** Corrects the "FOUND" paragraph of the 2026-10-28 "PUBLISHED ... hg rev 426" entry. The architect asked
+whether those tests use the CR or the files are CRLF. They are CRLF: fieldutils.out has CRLF on all 20 lines,
+path_lookup.out on the 5 lines a .cmd stub's `echo` writes (of 8), unserviced_log.out on the 1 such line (of 19); no case
+checks a CR as data. The runner never sees line endings: expected lines come from `Get-Content` (CRLF or LF), actual
+output is split on `\r?\n` (tests/run-tests.ps1:314, :323). Verified: each file read the runner's way from hg's CRLF copy
+and from an LF copy, 0 differences. So git's normalisation to LF is harmless and nothing needs a second push. Claude's
+claim was an inference from the CRLF warning, not checked before it was written down. Also: the architect confirms the
+machine was quiet for the 03:09 compare3 run ("it was a clean benchmark").
+**Claude's position (small, local, no push):** convert the three to LF in hg, so hg matches git and the LF rule (the
+architect: LF everywhere); git's warning goes away. AWAITING the architect.
+
+## 2026-10-28 -- DONE: the three CRLF expected files converted to LF (the architect: "convert them to LF only")
+**Status:** Record. tests/expected/fieldutils.out, path_lookup.out, unserviced_log.out: CRs removed (`tr -d '\r'`),
+nothing else (`hg diff --ignore-space-at-eol` empty; line counts 20, 8, 19 unchanged). hg now matches git; no push, no
+deploy (fixtures only). Suite 192 passed, 0 failed, console and -Detached (the three pass in both).
+
+## 2026-10-28 -- README's intro line is "Money talks, bullshit walks:" (the saying's order)
+**Status:** Record. The architect asked whether "Bullshit walks, money talks:" had been switched: no; his request
+of 2026-10-16 read "a single line intro note 'Bullshit walks, money talks;'", added at rev 287 as written (colon for the
+semicolon) and unchanged since (`hg grep --all`). Swapped to the usual order at his request ("fix it ... so it's
+corrected next publish"). In hg only; goes out with the next publish.
+
+## 2026-10-28 -- MEASURED, no change: cat, wc and the checksums keep 64 KiB reads (tee's 8 KiB gain does not carry over)
+**Status:** Record. Item (d) of the anchor (the architect, 2026-10-28: "Lets do 2 & 3 and then 6"). tee had measured
+8 KiB pipe reads 22% faster than 64 KiB (DECISIONS "tee copies a here-document's surrogate pairs whole"); asked whether
+the other byte tools gain the same. **Diagnostic, not the benchmark:** AOT 424 against a variant reading 8 KiB in wc
+(Text.cs WcCount), the checksums (HexOf) and cat's stdin copy (`CopyTo(raw, 8192)`; it was CopyTo's 81920), built to
+dist.staging (source restored right after), 5 interleaved rounds, all five values, 100 MB: pipe -> wc -l 40-42 vs 39-42
+ms (same); pipe -> md5sum 119-123 vs 133-138 ms (8 KiB slower); pipe -> cat > file 266-269 vs 252-267 ms (~4%, overlap);
+wc -l of the file 16-19 vs 35-44 ms (8 KiB 2x slower); md5sum of the file 124-128 vs 143-149 ms (slower); 2000 tiny
+`echo | wc -w` 241-258 vs 242-255 ms (same). **Decision:** no change; tee keeps its own measured 8 KiB.
+
+## 2026-10-28 -- AGREED + GO: buffered output to redirected files, flushed at the end of each builtin (bash's model); step (a) first
+**Status:** Active (the architect, to "Does that rule fit what you want, with step (a) first?": "yes"; with "Lets do 2
+& 3 and then 6"). Anchor item (c).
+**Context (verified in code):** every text writer behind a file redirect (Evaluator.cs ApplyRedirects), a pipeline
+stage (Evaluator.cs:1425) and C#Bash's own stdout (Program.cs) is a StreamWriter with AutoFlush: one WriteFile per write.
+Line output to a redirected file is ~5.8 MB/s against ~23 MB/s to a pipe (sed 100 MB: 17 s vs 4.3 s). Order is already
+kept where it matters: the six raw-byte writers flush the text writer first (ByteSink, cat, fold, strings, tee), an
+external child gets a redirected file only after `HandOff` flushes it, a redirect scope flushes when it ends.
+**Decision (bash's own model: builtins flush when they finish, programs block-buffer to files):** writers to redirected
+files stop AutoFlushing; the shell flushes when each builtin finishes (also on error / Ctrl+C); everything above stays;
+`2> file` alone stays unbuffered (GNU's stderr). Visible effect: one tool writing many lines to a file writes in ~4 KB
+pieces; a loop of echoes into a log still shows each line as it is written; a process killed inside a builtin loses up
+to ~4 KB unwritten (as GNU tools). Steps, each with ordering tests against GNU, a before/after diagnostic and a deploy:
+(a) file redirects; (b) pipeline-stage pipes; (c) C#Bash's own stdout when it is not a console (the pipe Claude Code
+reads; needs a flush before any child that inherits that handle).
+**Alternatives:** per-tool buffering (every tool, wrong altitude); buffering per redirect scope (a loop's lines would
+appear only when the loop ends: changes what a follower sees, unlike bash).
+
+## 2026-10-28 -- BUILT step (a): output to a redirected file is buffered, written when each builtin finishes
+**Status:** Active. Step (a) of DECISIONS 2026-10-28 "AGREED + GO: buffered output to redirected files".
+**Change:** Evaluator.cs ApplyRedirects: the `> f` / `>> f` / `>| f` writer for stdout and the `&> f` writer (one for
+both streams) no longer AutoFlush; `2> f` alone still does. Builtins.cs `FlushBuffered`: after each builtin's Dispatch
+(a write error there is the builtin's, reported as before) and in a `finally` (exit, return, Ctrl+C, an error), the
+thread's stdout and stderr writers are flushed when they are buffered StreamWriters. Unchanged and relied on: raw-byte
+writers flush the text first; `HandOff` flushes before a child gets the file; the redirect scope flushes at its end.
+**Diagnostic, not the benchmark** (AOT 424 vs AOT new, dist.staging, 5 interleaved rounds, all five values): `sed` of
+20 MB to a file 1.659-1.726 -> 0.284-0.316 s (5.8x); `seq 1 2000000 > f` 0.412-0.453 -> 0.410-0.437 s (same: already
+fast); a loop of 20000 `echo` into a file 0.097-0.101 -> 0.095-0.124 s (same, by design: one builtin a line); 2000 `echo
+x > f` 1.013-1.025 -> 1.020-1.124 s (overlap; two slow outliers); 200000 `:` with no redirect 0.117-0.128 -> 0.114-0.120 s
+(the flush check costs nothing measurable).
+**Tests (expected = GNU via WSL):** new `redirect_buffered` (ordering: builtin/program/builtin, printf pieces around a
+program, a raw-byte tool between, 2>&1, &>, exec > f, a loop, a background job, >> and >|, a function; a follower
+sees "start" while the group sleeps; `2> f` at once; large seq/sed/awk byte-exact). No visible change by design, so it
+passes on 424 too; PROVEN able to fail: with FlushBuffered disabled (buffering per scope) it failed on the follower
+line. Suite 193 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.cs` (FlushBuffered, TryExecute),
+`Bash/Evaluator/Evaluator.cs` (the two redirect writers), `tests/cases/redirect_buffered.sh`,
+`tests/expected/redirect_buffered.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-28 -- DEPLOYED rev 433 (output to a redirected file buffered, step (a)) and NOTIFIED
+**Status:** Record. `tools/deploy.sh` as written: rev 433 over rev 424 (a first start was stopped in its build step at
+koliada-net-28's request for a quiet window, and it was told its run's first seconds may have been disturbed; `dist`
+untouched; restarted after its "timing done"); the AOT binary's suite 194 passed, 0 failed, console and -Detached
+(redirect_buffered added); battery 216/237, baseline 216; `1.0.0+hg.be7cf7f51cbf 433` in dist/, rollback
+`dist/Bash.exe.rev424`. Live check from a Claude Code Bash call: `$BASH --version` ends 433; `{ echo a; "$BASH" -c 'echo
+ext'; echo b; } > f` gives a ext b; a follower sees "start" while the group sleeps; `sed` of 20 MB to a file 0.41 s.
+Notified (ListAgents): koliada-net-28 (told its STDOUT timings before 433 carry the old per-line cost), kes-term-a1.
+Not published (GitHub = hg rev 426).
+
+## 2026-10-28 -- BUILT: `<<` inside an unquoted `$(( ))` is a shift (the lexer queued a here-document; the next line failed)
+**Status:** Active. Item (g1) of the anchor (held from rev 373; the architect, 2026-10-28: "Lets do 2 & 3 and then 6").
+**Measured on deployed 424/433 against GNU bash 5.1 in WSL:** any UNQUOTED `$(( a << b ))` (an assignment, an argument,
+`declare`; with or without parentheses) computed the right value, but the line after it was a syntax error ("near
+unexpected token"); quoted `"$(( ))"`, `>>` and the `(( ))` command were fine. The anchor's "after `)`" was imprecise.
+**Cause (Lexer.cs):** a command-position `((` captures its interior raw, but `$((` only emits a token, so its interior
+is lexed as ordinary tokens and `<<` queued a here-document: after the line, the lines below were read as its body.
+**Decision:** the lexer counts parentheses from an unquoted `$((` (`_arithParens`: +2 at `$((`, +1 at `(` and `$(`
+inside, -1 at `)`); while it is above zero `<<` is emitted without queueing a here-document. Only the main token loop
+calls ConsumeDollar/ConsumeOperator (double-quoted text has its own reader), so the count stays balanced. Not done: a
+here-document INSIDE a `$( )` inside `$(( ))` (absurd) is now not recognised.
+**Tests:** new `arith_shift_heredoc` (expected = GNU via WSL; 16 lines wrong on 433): each form followed by a line that
+must run; real here-documents after and containing arithmetic, `<<-`. Suite 194 passed, 0 failed (both modes); battery
+216/237, baseline 216; the `bash -n` corpus 850/912 = baseline 850.
+**FOUND while testing (RAISED, AWAITING the architect):** the console-mode suite run started at 06:21 hung 37 min on
+`awk.sh` line 86 (`awk 'BEGIN{getline; print}'`, which reads stdin): the console runner runs each case as `& $exe` with
+the runner's inherited stdin, and that run's stdin never reached EOF; deployed 433 hung identically; with `< /dev/null`
+both builds pass in 0.0-0.2 s (`-Detached` always gives NUL). In this session's shell a child started inside `$( )`
+also saw a stdin that never ended (`out=$(timeout 5 "$BASH" -c "cat | head -1")`: 124), while the same from a fresh
+`Bash.exe -c` (424 or 433) got EOF at once: the cause is not pinned (the stdin Claude Code hands a tool call's shell, or
+how C#Bash hands it to a child in a capture). Claude's position: give each case stdin NUL in console mode too (a change
+to the contract runner: the architect's call), and investigate the capture-child stdin. Until then the suite and deploys
+are started with `< /dev/null`.
+**Implemented by:** rev (this commit). Files: `Bash/Lexer/Lexer.cs`, `tests/cases/arith_shift_heredoc.sh`,
+`tests/expected/arith_shift_heredoc.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-28 -- DEPLOYED rev 435 (`<<` inside an unquoted `$(( ))` is a shift) and NOTIFIED
+**Status:** Record. Item (g1). `bash tools/deploy.sh < /dev/null` (stdin NUL: the raised console-runner stdin item):
+rev 435 over rev 433; the AOT binary's suite 195 passed, 0 failed, console and -Detached (arith_shift_heredoc added);
+battery 216/237, baseline 216; `1.0.0+hg.9411ba5fc223 435` in dist/, rollback `dist/Bash.exe.rev433`. Live check: `$BASH
+--version` ends 435; a script `x=$(( (3) << 1 )); echo "x=$x"` / `echo next line runs` runs both lines. Notified
+(ListAgents): koliada-net-28, kes-term-a1. Not published (GitHub = hg rev 426).
+
+## 2026-10-28 -- BUILT: sed's empty regex `//` is the last regex executed (GNU); runtime error when none has run
+**Status:** Active. Item (g2) of the anchor (held from rev 373).
+**Measured against GNU sed 4.8 in WSL first (deployed 435 differed):** `s//x/` was always refused ("no previous regular
+expression"), and an empty ADDRESS `//` was `Regex("")`, matching every line. GNU: `//` is the last regex EXECUTED,
+dynamically (`/foo/!d;s//X/p`; `2s/a/b/;s//c/` on line 1, where `s/a/b/` has not run, is an error), kept across files
+under -s, its groups usable (`s/(b)/[\1]/;s//<\1>/` with -E); with no regex before it in the SCRIPT, a compile-time
+error; with one that has not run yet, the same message at run time, rc 1; a modifier on an empty regex (`s//y/I`,
+`//I`) "cannot specify modifiers on empty regexp", rc 1.
+**Decision:** SedCompile tracks whether a regex was compiled before (`anyRe`); an empty regex compiles to null (or
+the errors above). `SedShared.Use(re)` resolves null to the last regex used and makes every other one the last (shared:
+across files); with none, `SedRuntimeException`, reported once by Sed() as GNU ("sed: -e expression #1, char 0: ...",
+rc 1). Under -i the temporary file is deleted and the original left as it was (the -i catch rethrows it after the
+delete). The file-running part of Sed() moved, unchanged, into `SedFiles` so one try/catch covers -i, -s and the stream.
+**Known difference kept:** C#Bash prints "char 0" for every script error (GNU gives the position).
+**Verified:** the GNU spikes (13 + 8 forms) match, char position aside; the 329-line three-way sed sweep is identical to
+the previous build's (only the three known differences: `l` wrapping x2, `$F` after a lookahead).
+**Tests (expected = GNU via WSL):** new `sed_empty_regex` (14 lines wrong on 435). Suite 195 passed, 0 failed (both
+modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Builtins.Search.cs`, `tests/cases/sed_empty_regex.sh`,
+`tests/expected/sed_empty_regex.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-28 -- DEPLOYED rev 437 (sed's empty regex) and NOTIFIED; the architect's "2 & 3 and then 6" is done
+**Status:** Record. Item (g2). `bash tools/deploy.sh < /dev/null`: rev 437 over rev 435; the AOT binary's suite 196
+passed, 0 failed, console and -Detached (sed_empty_regex added); battery 216/237, baseline 216; `1.0.0+hg.59d48c202726
+437` in dist/, rollback `dist/Bash.exe.rev435`. Live check: `$BASH --version` ends 437; `sed -n '/foo/!d;s//X/p'` gives X,
+bar X; `sed -n '//p'` reports "no previous regular expression", rc 1. Notified (ListAgents): koliada-net-28, kes-term-a1.
+Done of "Lets do 2 & 3 and then 6": (c) step (a) (433), (d) measured no change, (g1) (435), (g2) (437). Not published
+(GitHub = hg rev 426; revs 427-438 local).
+
+## 2026-10-28 -- BUILT: the console-mode test runner gives each case an empty, closed stdin (as -Detached gives NUL)
+**Status:** Active. Item (1) of the 2026-10-28 greenlit list (the architect: "I'd do 1 first ... then 2.'; Yes and 3 then
+publish?"); the raised item (h).
+**Context:** tests/run-tests.ps1 ran each console-mode case as `& $exe $t.Script`, so a case inherited the runner's own
+stdin: a case that reads stdin (awk.sh line 86, `awk 'BEGIN{getline; print}'`) depended on whoever started the run; one
+run (06:21) hung 37 minutes on it. -Detached already started every case with stdin NUL.
+**Decision:** `$null | & $exe ...`: PowerShell gives the case a redirected stdin and closes it at once (EOF), whatever
+the runner's own stdin is. A case that needs input supplies its own (here-doc, pipe), as every case does.
+**Verified:** with `yes |` as the runner's stdin (endless data, so a reading case fails rather than hangs): the old runner
+194 passed, 1 failed (awk); the new one 195 passed, 0 failed; -Detached 195/0. The file stays ASCII, LF.
+**Implemented by:** rev (this commit). Files: `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+**Also (rev 440):** `tools/check-help-urls.sh` paced like a person for gnu.org (the architect: a VPN reaches it now;
+"don't hit it too hard or fast"): shuffled pages, a random 20-70 s pause before each fetch, a browser User-Agent, and
+the run STOPS at the first 403/429/503/no-answer (exit 3), no retry. The real run started 2026-10-28 in the background.
+
+## 2026-10-28 -- BUILT step (b): output into a pipeline's pipe is buffered, written when each builtin finishes
+**Status:** Active. Step (b) of DECISIONS 2026-10-28 "AGREED + GO: buffered output to redirected files"; item (2) of the
+2026-10-28 greenlit list.
+**Change:** Evaluator.cs: the pipeline-stage writer (into the pipe to the next stage) no longer AutoFlushes; it is
+flushed when each builtin finishes (Builtins.FlushBuffered, now internal) and when the stage ends (its finally, as
+before). New: FlushBuffered also runs right before the one `ChildLauncher.Start`, so a program never starts ahead of what
+the shell still holds (needed for (c) too). A reader that went away is now noticed at the flush, not at the write: `yes
+| head` still ends (PIPESTATUS 141 0, as GNU), a few KiB later.
+**Diagnostic, not the benchmark** (AOT 437 vs AOT new, 5 interleaved rounds, all five values): `sed` of 20 MB into a pipe
+0.467-0.485 -> 0.228-0.240 s (2x); `seq 1 200000 | grep 1 | sed | sort | uniq -c | wc -l` 0.318-0.335 -> 0.156-0.172 s
+(2x); a loop of 20000 echo into a pipe 0.031-0.035 -> 0.035-0.049 s (median 0.035 both); 2000 `echo x | cat`: first
+0.270-0.282 vs 0.277-0.792 (one outlier), re-run alone over 9 rounds 0.259-0.291 (+0.77, 0.81 outliers) vs 0.257-0.302:
+medians 0.284 / 0.276, no change.
+**Tests (expected = GNU via WSL):** new `pipe_buffered` (order: builtin/program/builtin, printf pieces around a program,
+2>&1, |&; a reader's `read -t 2` gets "start" while the producer sleeps; yes | head and PIPESTATUS 141; large
+seq/sed/awk byte-exact; a function's last line without newline; exit in a stage). No visible change by design, so it
+passes on 437 too; PROVEN able to fail: with FlushBuffered disabled the program's output came before the builtin's
+(`ext a b`, `Xabc`). Suite 196 passed, 0 failed (both modes); battery 216/237, baseline 216.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/Evaluator.cs`, `Bash/Evaluator/Builtins.cs`,
+`tests/cases/pipe_buffered.sh`, `tests/expected/pipe_buffered.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-28 -- DEPLOYED rev 442 (step (b): buffered pipeline pipes) and NOTIFIED
+**Status:** Record. Item (2) of the greenlit list. `bash tools/deploy.sh < /dev/null`: rev 442 over rev 437; the AOT
+binary's suite 197 passed, 0 failed, console and -Detached (pipe_buffered added; the runner's new stdin NUL in use);
+battery 216/237, baseline 216; `1.0.0+hg.c289ffb9ea87 442` in dist/, rollback `dist/Bash.exe.rev437`. Live check: `$BASH
+--version` ends 442; `{ echo a; "$BASH" -c 'echo ext'; echo b; } | tr` gives a ext b; `yes | head -n 1` PIPESTATUS 141 0;
+`read -t 1` downstream gets "start" while the producer sleeps. Notified (ListAgents): koliada-net-28, kes-term-a1.
+
+## 2026-10-28 -- BUILT step (c): C#Bash's own redirected stdout is buffered; stderr is never left buffered (fixes a 433-442 reorder)
+**Status:** Active. Step (c) of DECISIONS 2026-10-28 "AGREED + GO: buffered output"; item (3) of the greenlit list.
+**Change:** Program.cs: when stdout is redirected (a pipe or a file: Claude Code's capture, this suite's runner) it gets
+a buffered StreamWriter (`ConsoleMux.RealOutBuffered`), flushed by Builtins.FlushBuffered when each builtin finishes at
+top level, before any program starts, and by a ProcessExit handler; a console keeps .NET's unbuffered writer.
+**Found doing it (a regression of 433 and 442):** two suite cases failed (`fd_copy`, `strings_gnu`): an error message
+came out late. With `2>&1` stderr points at the buffered stdout writer, so a message sat in it while later output that
+bypasses the text writer (strings' raw bytes, a descriptor) went straight out. The same happened since 433 with
+`> f 2>&1` and since 442 with `2>&1 |`: measured on deployed 442, `strings a nofile.bin a > f 2>&1` wrote the error LAST
+(GNU: between the two outputs). **Fix:** ConsoleMux's stderr MuxWriter flushes the writer it points at after every
+write, so stderr is never left buffered, as GNU's: through `2>&1` stdout's earlier text and then the message go out, in
+order; to the real stderr (already unbuffered) it costs a no-op flush. stderr writes are rare.
+**Diagnostic, not the benchmark** (AOT 442 vs AOT new before the stderr fix, which touches only stderr writes; a child
+C#Bash whose stdout is a pipe, 5 interleaved rounds, all five values): `sed` of 20 MB 0.634-0.846 -> 0.249-0.356 s
+(2.5x); `seq 1 2000000` 0.418-0.571 -> 0.386-0.575 s (same); a loop of 20000 echo 0.053-0.200 -> 0.053-0.061 s (same);
+200 short runs of `-c 'echo x'` 2.081-2.484 -> 2.175-2.542 s (overlap, medians 2.223 / 2.209).
+**Tests (expected = GNU via WSL):** new `stdout_buffered` (top level, function, subshell, group 2>&1, background job,
+capture, here-document, a script ending without a newline; read through a pipe and a file): passes on 442 too (no
+visible change), PROVEN able to fail (with the real-stdout flush removed the programs' output came first);
+`redirect_buffered` gained two lines (strings and cat with an error between outputs, `> f 2>&1`): RED on 442, as GNU now.
+Suite 197 passed, 0 failed (both modes); battery 216/237, baseline 216; `bash -n` corpus 850 = baseline.
+**Implemented by:** rev (this commit). Files: `Bash/Program.cs`, `Bash/Evaluator/ConsoleMux.cs` (RealOutBuffered,
+MuxWriter), `Bash/Evaluator/Builtins.cs` (FlushBuffered), `tests/cases/stdout_buffered.sh`,
+`tests/expected/stdout_buffered.out`, `tests/cases/redirect_buffered.sh`, `tests/expected/redirect_buffered.out`,
+`tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+**Help-link check (rev 440, 444):** the first paced run stopped as designed at page 41 of 87 (gnu.org: no answer, curl
+000, not retried); pages are now kept between runs, so the next run fetches only the 47 left. Not re-run yet.
+
+## 2026-10-28 -- DEPLOYED rev 445 (step (c): own stdout buffered; stderr never buffered) and NOTIFIED; the greenlit list's builds done
+**Status:** Record. Item (3). `bash tools/deploy.sh < /dev/null`: rev 445 over rev 442; the AOT binary's suite 198
+passed, 0 failed, console and -Detached (stdout_buffered added); battery 216/237, baseline 216; `1.0.0+hg.95c54cea077f
+445` in dist/, rollback `dist/Bash.exe.rev442`. Live check through this session's own (now buffered) tool-call output:
+`echo a; "$BASH" -c 'echo ext'; echo b` in order; `strings a nofile.bin a 2>&1` with the error between; a last line without
+a newline appears at exit. Notified (ListAgents): koliada-net-28, kes-term-a1, koliada-net-forms-e9 (told the 433-442
+2>&1 reorder is fixed; asked each for a quiet window for publish's compare3). Next: PUBLISH.
+
+## 2026-10-28 -- FIXED: an empty flush after every builtin (step (c) made `func` +6%, `loop_big` +8%); the publish doc review
+**Status:** Active. Found by publish's compare3 run on deployed 445 (2026-10-28; all outputs agree; `pipeline` 0.080 s,
+1.4x WSL's 0.110, from 0.8x; but `func` 0.207 -> 0.228 and `loop_big` 1.406 -> 1.534 s against the 424 table).
+**Diagnosed (diagnostic, not the benchmark; interleaved, stdout to a file, 5 rounds):** 442 vs 445, `func` 0.217-0.224 vs
+0.229-0.308, `loop_big` 1.426-1.554 vs 1.545-1.772: since step (c) every builtin at top level flushed the redirected
+process stdout, an empty flush (~60 ns) per builtin (func: `[`, `local`, `:` an iteration).
+**Fix:** a thread-static `ConsoleMux.OutDirty`, set by every stdout write through the MuxWriter and by any change of the
+thread's stdout (`SetOut`, the state restore after a capture: the writer left may hold output); FlushBuffered returns at
+once when it is clear and clears it only when it flushes a buffered writer. Writers written outside the MuxWriter (the
+external pump, the descriptor adapter, HandOff) flush themselves. The stderr flush in FlushBuffered went: stderr flushes
+after every write already. After: `func` 0.217-0.228 vs 442's 0.217-0.316 (medians 0.220 / 0.222), `loop_big` 1.452-1.715
+vs 1.439-1.688 (medians 1.468 / 1.454): back to 442.
+**Tests:** the five buffering/ordering cases pass; suite 197 passed, 0 failed (both modes); battery 216/237, baseline
+216; `bash -n` corpus 850 = baseline.
+**Doc review for publishing (same commit):** README 206 cases; ARCHITECTURE: the buffered-output model (steps (a)-(c),
+stderr never buffered); IMPLEMENTATION: Lexer `_arithParens`, Builtins `FlushBuffered`, ConsoleMux `RealOutBuffered` /
+`OutDirty` / the stderr MuxWriter, sed's `//`, the runner's empty stdin. README's performance table waits for the
+re-run of compare3 on the deployed fix.
+**Implemented by:** rev (this commit). Files: `Bash/Evaluator/ConsoleMux.cs`, `Bash/Evaluator/Builtins.cs`, `README.md`,
+`ARCHITECTURE.md`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.

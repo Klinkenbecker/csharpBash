@@ -294,6 +294,16 @@ Builtins that must emit exact bytes (e.g. `cat`, `od`) bypass the text `Console`
 `$( )`. Console newlines are forced to LF, not CRLF. *(DECISIONS: 2026-06-14 — Byte-faithful
 stdout for builtins.)*
 
+**Buffered output, bash's model (2026-10-28).** Text output that is not going to a console (a redirected file, a
+pipeline's pipe, C#Bash's own redirected stdout: the pipe Claude Code reads) is buffered and written when each builtin
+finishes (`Builtins.FlushBuffered`, also in a `finally`), before any program starts (the one `ChildLauncher.Start`
+call site), when a redirect or a pipeline stage ends, and at exit; a raw-byte writer flushes the text first; a program is
+handed a redirected file only after it is flushed. So one tool writing many lines makes one write per ~4 KB, not one
+per line (`sed` of 20 MB to a file 5.8x faster), while the order and what a reader sees are as before: a builtin's
+output is out when it finishes, as bash's builtins flush theirs. stderr is never left buffered, as GNU's: its writer is
+flushed after every write, so through `2>&1` a message lands in its place. *(DECISIONS: 2026-10-28 — buffered output,
+steps (a) to (c).)*
+
 ### 9.4 No culture unless culture is the point
 
 bash compares bytes and reads integers the same way in every locale, so the shell's string tests are

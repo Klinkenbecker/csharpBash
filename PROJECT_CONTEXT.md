@@ -7,10 +7,10 @@
 >
 > **2026-10-27 (session 988ee3e2) — RESUME HERE** (rewritten when the greenlit list finished; the list's working notes
 > are in hg rev 424's PROJECT_CONTEXT.md). It SUPERSEDES the TRUE STATE block below wherever they differ.
-> - **TRUE STATE:** hg tip = rev 425 (this anchor), tree clean (two untracked files in the root are not ours:
+> - **TRUE STATE:** hg tip = rev 447 (the OutDirty fix: compare3 on 445 showed func +6% / loop_big +8% from an empty flush per builtin, now back to 442; + the publish doc review). NEXT: deploy 447, ask the peers for a quiet slot, re-run compare3, README table from it, publish. Help check stopped at 41/87, resumable; **DEPLOYED rev 445** ((3) step (c); rollback dist/Bash.exe.rev442; 442 = (2) step (b), 437 = (g2), 435 = (g1), 433 = (c) step (a)); revs 427-438 not published; **PUBLISHED: GitHub main = git 9a5a95c = hg rev 426** (2026-10-28) (two untracked files in the root are not ours:
 >   BENCHMARK-PROVENANCE.md, "The Windows Shell Tax.url"; leave them). **DEPLOYED rev 424** (`1.0.0+hg.e521ecbee024
 >   424`, AOT suite 193/0 both modes, battery 216/237 = baseline; rollbacks dist/Bash.exe.rev422 ... rev397), NOTIFIED
->   (koliada-net-28, kes-term-a1). GitHub csharpBash = hg rev 366: revs 367-425 NOT published.
+>   (koliada-net-28, kes-term-a1). Revs after 426 not published.
 > - **Scope (the architect):** PortableBash is a separate session; here C#Bash user support only.
 > - **DONE this session (DECISIONS 2026-10-27 has each, with measurements; do NOT re-open):** before 404: tail/head over
 >   2 GiB, help/--help -> GNU pages (help.json), enable, the unserviced log, wc + checksums, THE SHARED BYTE LAYER
@@ -24,22 +24,38 @@
 > - **Deliberate differences from GNU (stated in DECISIONS; do not "fix"):** on a PIPE, sed q / head -n leave the next
 >   command exactly the next line (GNU: whatever its block read left); sed `$F` after a lookahead names the line's
 >   file; comm -i kept (C#Bash's own); `tee /dev/stdout` with stdout a file writes two copies (Linux reopens it).
-> - **AWAITING THE ARCHITECT (do NOT start; each with Claude's position):**
->   (a) **PUBLISH** (next, ruled "when done we can publish"): needs a compare3 run on the deployed build on a QUIET
->   machine (`F:/Tools/PortableGit/bin/bash.exe tests/bench/compare3.sh`, unmodified), then `tools/publish.sh`. ASK
->   first (other sessions' perf tests disturb it).
+> - **GREENLIT 2026-10-28 (the architect: "I'd do 1 first ... then 2.'; Yes and 3 then publish?")**, in order, each its own
+>   test + commit + deploy (`bash tools/deploy.sh < /dev/null`) + notice: (1) the runner gives each case stdin NUL in
+>   console mode too (item (h)); (2) buffering step (b): pipeline-stage pipes; (3) step (c): C#Bash's own stdout when not
+>   a console (flush before any child inheriting it); then PUBLISH (compare3 on the deployed build when ListAgents shows
+>   the peers idle, or after asking them for a clear slot; never ask the architect; memory publish-at-end-of-run).
+> - **AWAITING THE ARCHITECT (do NOT start; each with Claude's position).** The architect, 2026-10-28: "Lets do 2 & 3 and then 6" = (c) the output buffering (design talk first), (d) the pipe read size (measure), then (g) the two held bugs.
+>   (a) PUBLISH: DONE 2026-10-28 (git 9a5a95c = hg 426; DECISIONS "PUBLISHED ... hg rev 426"; a clean benchmark, the
+>   architect confirms). Three expected files are CRLF in hg (fieldutils, path_lookup, unserviced_log): harmless, the runner
+>   ignores line endings (DECISIONS "CORRECTION ... CR expected files"); converted to LF in hg, rev 429 (no push).
 >   (b) the ruled, unstarted **"match GNU" item**: wc -w printable runs, -m invalid bytes, -L display width, padding;
 >   cmp's EOF text and -l layout; od -j addresses; base64 -w 0's newline, -d dropping spaces/CR, -i ignored; printf %q
 >   escaping '='; sed `l` not wrapped at 70; split -l/-b x|0|-1|'' accepted (one piece, rc 0; -b x falls through to the
 >   PATH split); `Opts.GetInt` takes a bad value as the default (other tools unsurveyed); `$( )` keeps NULs (bash drops
 >   them); sort + comm order is UTF-16 units, GNU's C locale bytes (change BOTH or neither).
->   (c) RAISED: line output to a redirected FILE is ~5.8 MB/s vs ~23 MB/s to a pipe (the shell's file writer flushes
+>   (c) AGREED + GO 2026-10-28 (DECISIONS "buffered output to redirected files"): step (a) file redirects BUILT + DEPLOYED rev 433 (sed 20 MB to a file 5.8x faster; DECISIONS "BUILT step (a)"); step (b) pipes BUILT + DEPLOYED rev 442 (2x; DECISIONS "BUILT step (b)"); step (c) own stdout BUILT + DEPLOYED rev 445 with the stderr-never-buffered fix (433-442 wrote a byte tool's error late through 2>&1); then (b) pipes, (c) own stdout. Was RAISED: line output to a redirected FILE is ~5.8 MB/s vs ~23 MB/s to a pipe (the shell's file writer flushes
 >   each write; every line tool; uniq -D in-process is slower than the PATH uniq.exe was for this reason). Position:
 >   buffer non-terminal output and flush at command end; needs a design talk (interleaving with children).
->   (d) RAISED: the byte tools (cat, wc, checksums) read whole 64 KiB blocks from pipes; tee measured 8 KiB reads 22%
+>   (d) DONE 2026-10-28, measured, no change (DECISIONS "cat, wc and the checksums keep 64 KiB reads"): 8 KiB is slower for them. Was: the byte tools read whole 64 KiB blocks from pipes; tee measured 8 KiB reads 22%
 >   faster on `cat f | tee g > h`. Position: measure cat/wc at 8 KiB before changing anything.
->   (e) xargs streaming (reads all input first; its own change). (f) `bash tools/check-help-urls.sh` once gnu.org
->   answers. (g) held from 373: arithmetic `<<` after `)` read as a here-document; sed's empty regex `s//x/`.
+>   (e) xargs streaming (reads all input first; its own change). (f) `bash tools/check-help-urls.sh`: gnu.org SILENTLY BLOCKS it (most likely bot detection; the architect, 2026-10-28: his to find a way round; not ours). Was: once gnu.org
+>   answers.
+>   (g) item 6: (g1) BUILT + DEPLOYED rev 435 (DECISIONS "`<<` inside an unquoted `$(( ))`"); (g2) sed BUILT + DEPLOYED rev 437 (DECISIONS "sed's empty regex"). Item 6 DONE. Findings (GNU vs 424, measured 2026-10-28): (g1) an UNQUOTED
+>   `$(( a << b ))` (assignment, argument, declare; with or without parentheses) computes right but makes the NEXT line
+>   a syntax error; quoted "$(( ))" and `>>` are fine (the lexer queues a HeredocPending for `<<` inside an unquoted
+>   `$(( ))`: Lexer.cs, line 8's rule). (g2) sed's empty regex is not implemented: every `s//x/`, `/re/s//x/` fails "no
+>   previous regular expression"; GNU uses the last regex EXECUTED (address or s, dynamic, kept across files), and only
+>   with none fails so, rc 1. Also found: `(( y = (y) <<= 1 )) 2>/dev/null` prints its error anyway (parse time) and rc 2
+>   (GNU: silent, rc 1) -> the "match GNU" item.
+>   (h) DONE rev 441 (DECISIONS "the console-mode test runner gives each case an empty, closed stdin"). Was RAISED: the console-mode suite hands each case
+>   the runner's own stdin; a run whose stdin never ends hangs on a case that reads it (awk.sh: 37 min). Position: NUL
+>   stdin per case in console mode (contract runner: his call); meanwhile start the suite and deploys `< /dev/null`.
+>   Also unexplained: in this session's shell a child inside `$( )` saw a stdin that never ended.
 > - **NOT moving (stated; do not re-litigate):** sort, diff, jq, mapfile (need all input).
 > - **How tests were made here (keep doing it):** GNU expected via `wsl.exe -e bash /mnt/f/.../tests/cases/X.sh
 >   < /dev/null 2>/dev/null > tests/expected/X.out`; C#Bash run as the runner runs it (`BASH_UNSERVICED_LOG=/dev/null

@@ -292,6 +292,11 @@ $tests = @(
     @{ Name = 'bytes_tools_large';  Script = 'cases\bytes_tools_large.sh';  Args = @() }   # 2026-10-27: cmp, od, hexdump, base64 past 2 GiB on sparse files (whole-input reads failed); the shared byte layer (expected = GNU via WSL; SKIP without fsutil or truncate)
     @{ Name = 'bytes_tools_exact';  Script = 'cases\bytes_tools_exact.sh';  Args = @() }   # 2026-10-27: cmp/od/hexdump/base64 across 64 KiB edges and skips; rev 397's overflow (cmp -i, hexdump -s without -n) fixed; base64 -d's partial output (expected = GNU via WSL)
     @{ Name = 'split_tac_exact';    Script = 'cases\split_tac_exact.sh';    Args = @() }   # 2026-10-27: split writes pieces as it reads; tac reads from the end (a pipe spooled), a last line without a newline kept so (was b\na\n) (expected = GNU via WSL)
+    @{ Name = 'stdout_buffered';    Script = 'cases\stdout_buffered.sh';    Args = @() }   # 2026-10-28: C#Bash's own redirected stdout buffered, written when each builtin finishes, before a program starts, at exit (was a write a line); order unchanged; proven to fail with that flush removed (expected = GNU via WSL)
+    @{ Name = 'pipe_buffered';      Script = 'cases\pipe_buffered.sh';      Args = @() }   # 2026-10-28: output into a pipeline's pipe buffered, written when each builtin finishes (was a write a line); order, a reader's view, SIGPIPE unchanged; proven to fail with the flush removed (expected = GNU via WSL)
+    @{ Name = 'sed_empty_regex';    Script = 'cases\sed_empty_regex.sh';    Args = @() }   # 2026-10-28: sed's `//` is the last regex executed (was refused in s//x/, and matched every line as an address); runtime error when none has run; modifiers refused (expected = GNU via WSL)
+    @{ Name = 'arith_shift_heredoc'; Script = 'cases\arith_shift_heredoc.sh'; Args = @() }   # 2026-10-28: `<<` inside an unquoted $(( )) is a shift: the lexer queued a here-document and the next line failed (expected = GNU via WSL)
+    @{ Name = 'redirect_buffered';  Script = 'cases\redirect_buffered.sh';  Args = @() }   # 2026-10-28: output to a redirected file buffered, written when each builtin finishes (was a write a line); order and visibility unchanged; proven to fail with the flush removed (expected = GNU via WSL)
     @{ Name = 'head_lines_exact';   Script = 'cases\head_lines_exact.sh';   Args = @() }   # 2026-10-27: head -n N keeps a last line's missing newline missing (one was added), still through the shared line reader (expected = GNU via WSL)
     @{ Name = 'tee_exact';          Script = 'cases\tee_exact.sh';          Args = @() }   # 2026-10-27: tee copies exactly: a here-doc's surrogate pair cut by a 4096-char chunk became two U+FFFD in files and stdout; pipes through a pooled block, one carrying decoder for text targets (expected = GNU via WSL)
     @{ Name = 'tail_follow_exact';  Script = 'cases\tail_follow_exact.sh';  Args = @() }   # 2026-10-27: tail -f writes each appended byte once (the next round began at the length seen before the read: a busy writer's lines came out twice) (expected = GNU via WSL)
@@ -322,7 +327,9 @@ try {
             Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
             $actual = @(if ($text.Length -gt 0) { $text -replace "`r?`n\z", '' -split "`r?`n" })   # \z: .NET's $ also matches before a final newline, dropping a last empty line (2026-10-12)
         } else {
-            $actual = @(& $exe $t.Script @a 2>$null)
+            # stdin empty and closed, as -Detached gives NUL: a case inherited the runner's own stdin, so one reading
+            # it (awk.sh's getline) waited on whoever started the run; one run hung 37 min (2026-10-28)
+            $actual = @($null | & $exe $t.Script @a 2>$null)
         }
 
         # a case whose program is missing says so as its only line, "SKIP: <reason>" (2026-10-20): never a pass, never

@@ -1,0 +1,17 @@
+a: 6
+after a
+b: 6
+after b
+c: 8 16
+after c
+d: 12
+after d
+e: 4 8
+after e
+f: 8
+g: 4
+1 2 4 h
+i: a here-document after arithmetic lines: 32
+3
+j: a stripped here-document 4
+the end
