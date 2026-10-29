@@ -1,12 +1,12 @@
-# C#Bash
+# C#Bash - A bash designed for Windows and Claude
 
-*(The GitHub repo is named `csharpBash` — GitHub doesn't allow `#` in repository names.)*
+You don't need WSL, MSYS2, Cygwin or .NET: it is one program. It also runs nearly 80 of the everyday Unix commands itself (`grep`, `sed`, `awk`, `ls`, `find`, `sort` and the rest), so a script doesn't start a new Windows process for every command in it.
 
-A standalone **bash interpreter for Windows, written in C#** — no WSL, no msys2, no Cygwin. It targets POSIX shell core plus the most-used bashisms, and runs the common Unix command set **in-process** so everyday scripts don't pay Windows' per-process spawn cost.
+It was built to be the shell Claude Code uses on Windows. Claude Code starts a fresh shell for every tool call, and that is exactly what C#Bash is fast at.
 
-**Download:** [the latest `Bash.exe`](https://github.com/Klinkenbecker/csharpBash/releases/latest/download/Bash.exe) (one file, no .NET runtime needed) · [all releases](https://github.com/Klinkenbecker/csharpBash/releases), each with its SHA-256. To use it as Claude Code's shell: [Using it as Claude Code's shell](#using-it-as-claude-codes-shell).
+**Download:** [the latest `Bash.exe`](https://github.com/Klinkenbecker/csharpBash/releases/latest/download/Bash.exe) (one file, no .NET runtime needed) · [all releases](https://github.com/Klinkenbecker/csharpBash/releases), each with its SHA-256.
 
-> **Provenance, stated plainly.** The architecture was human-directed; the code was written, tested, and optimised by Claude (Anthropic). It was developed under **Mercurial** — the full commit history is in [`MERCURIAL_HISTORY.md`](MERCURIAL_HISTORY.md), and the real repository ships as the `mercurial-history.hg` bundle (`hg unbundle mercurial-history.hg`). The story behind it: [*It's moosh all the way down*](https://www.linkedin.com/pulse/its-moosh-all-way-down-guy-mcilroy-mer9c/).
+> **Provenance, stated plainly.** The architecture was human-directed; the code was written, tested, and optimised by Claude (Anthropic). It was developed under **Mercurial**: the full commit history is in [`MERCURIAL_HISTORY.md`](MERCURIAL_HISTORY.md), and the real repository ships as the `mercurial-history.hg` bundle (`hg unbundle mercurial-history.hg`). The story behind it: [*It's moosh all the way down*](https://www.linkedin.com/pulse/its-moosh-all-way-down-guy-mcilroy-mer9c/).
 
 **Money talks, bullshit walks:**
 
@@ -21,160 +21,16 @@ A standalone **bash interpreter for Windows, written in C#** — no WSL, no msys
 | `find` — walk 400 files | **0.015** | 0.132 | 0.209 | 8.8× | 13.9× |
 | startup — `bash -c 'exit 0'` | **0.0086** | 0.0275 | 0.1087 | 3.2× | 12.6× |
 
-Every row's output is identical in all three shells. How it was measured, where it used to lose, and what a Claude Code call costs: [Performance](#performance).
+Every row gives the same output in all three shells, so a fast wrong answer can't count as a win. Where the speed
+comes from:
 
-## What it does
+- **No new process per command.** The `coreutils` row runs 900 small commands. Under Git Bash that is 900 Windows
+  processes; under C#Bash it is none.
+- **It starts fast:** 8.6 ms, against Git Bash's 27.5 ms or WSL's 108.7 ms. Claude Code pays that on every call.
+- **It remembers where programs are.** On Windows, finding a program on a long PATH is slow, and not finding one is
+  slower still. C#Bash remembers both, so a simple Claude Code call takes about 11 ms in all.
 
-**Language:** pipelines; lists (`&&`, `||`, `;`, `&`); redirections including fd-aware `2>`, `>>`, `<`, `&>`, `2>&1`, `1>&2`, numbered descriptors (`exec 3>f`, `exec 3>&1`, `>&3`); Linux's device files (`/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`, `/dev/fd/N`, `/dev/tty`, which is "No such device or address" where there is no terminal to type into, as in Claude Code) as redirect targets, as file arguments and under `test`; here-documents and here-strings; command substitution `$(…)` and backticks (nested, isolated like a subshell); arithmetic `$(( … ))`, `(( … ))` and `for (( ; ; ))` with assignment and `++`; brace expansion `{a,b}` / `{1..9}`; tilde and pathname (glob) expansion with `nullglob`/`dotglob`/`globstar`/`nocaseglob`; single / double / `$'…'` quoting with bash's exact backslash rules. A script, a `-c` string, `source` and `eval` are read and run one line at a time, as bash reads them: the lines before a syntax error run, and nothing after an `exit` is read (an installer's payload).
-
-**Variables & structure:** assignments and `+=` (to an array element too: `a[k]+=v`), `export`, `local`, `readonly`, `declare -i/-a/-A/-r/-x/-p/-f`, special parameters (`$?`, `$#`, `$@`, `$*`, `$0…`, `$!`, `$-`, `PIPESTATUS`, `BASH_REMATCH`, `LINENO`, `FUNCNAME`, `BASH_SOURCE`, `BASH_LINENO`, `RANDOM`, `PPID`, `UID`, `BASH_COMMAND`); the parameter-expansion operators (`${x:-y}` `${x:n:m}` `${x#pat}` `${x/pat/rep}` `${x^^}` `${!x}` `${arr[@]:n}` …); indexed and associative arrays; `if` / `while` / `until` / `for` / `case` (with `;&` and `;;&`); functions (both syntaxes), with bash's dynamic scoping (`local` arrays and attributes included); `[[ … ]]` with `&&`/`||`/`( )`, `=~` and pattern matching; `set -e/-u/-x/-T/-o pipefail`, `shopt`; field splitting by IFS as POSIX and bash define it (`IFS=` splits nothing, `IFS=,` keeps empty fields).
-
-**Paths:** MSYS drive-letter form (`/c/Users/…`) and `/tmp` are understood alongside native `C:\…`, and the conversion is symmetric — `pwd`, `$PWD`, `mktemp` and `realpath` hand back `E:/dir/file`, a valid Windows path containing no backslashes. That matters because backslash is the shell's *escape* character: a path with backslashes in it is a value the shell's own `${p#…}`, globs, `case` and `[[ … ]]` would misread.
-
-**Bytes:** a shell string is a byte sequence, so `printf '\377'` emits one byte, not the UTF-8 encoding of a character, and data that is not valid UTF-8 survives variables, `$(…)`, pipes and files intact. (It survives NUL too, which real bash cannot hold.)
-
-**Interactive & runtime:** a readline-style line editor with history (`~/.bash_history`), tab completion, and `PS1`/`PS2` prompts; startup-file sourcing (login + interactive); invocation flags (`-c`, `-l`/`--login`, `--norc`, `--rcfile`, script files, shebang dispatch); `trap` (EXIT, INT, ERR, DEBUG with `$BASH_COMMAND`, RETURN); background jobs (an and-or list ending in `&` is one job; jobspecs `%N` `%%` `%-` `%name` `%?text`); Ctrl-C handling. Restricted mode (`-r`, `--restricted`, `rbash`, `set -r`) is not implemented, so the shell refuses it rather than run unrestricted; POSIX mode (`--posix`, `set -o posix`) says it is not available and goes on. Both print a link that opens a prefilled GitHub issue to ask for the feature (nothing is sent by itself). `compgen` lists this shell's own names; programmable completion (`complete`, `compopt`) is not implemented and says so.
-
-## Embedded commands
-
-To avoid the Windows process-spawn cost, the common AT&T System V toolset is implemented in-process:
-
-- **Shell:** `echo` `printf` (incl. `-v`) `cd` `pwd` `pushd` `popd` `dirs` `export` `unset` `readonly` `set` `shopt` `shift` `read` `mapfile`/`readarray` `getopts` `test`/`[` `type` `command` `builtin` `alias` `unalias` `eval` `exec` `source`/`.` `local` `declare`/`typeset` `let` `trap` `jobs` `wait` `fg` `bg` `disown` `kill` `sleep` `env` `history` `times` `umask` (stored and printed only: Windows files have no mode bits, so it does not change the files C#Bash creates) `fc` (says history editing is not supported) `compgen` `hash` (incl. `-r`, `-d`, `-p`, `-t`, `-l`) `help` `enable` (lists; `-n` not available) `exit` `return` `break` `continue` `true` `false` `:`
-- **Text:** `cat` `head` `tail` `wc` `rev` `tac` `tr` `cut` `uniq` `nl` `fold` `paste` `comm` `seq` `split` `od` `sort` `tee` `base64` `md5sum`/`sha1sum`/`sha256sum`/`sha512sum` `hexdump` `strings` (GNU strings 2.38, with `-e l` for UTF-16) `yes`. They read as they go, so an input over 2 GiB or an endless pipe works (`yes | sed 3q` ends); `sort`, `diff` and `jq` hold their whole input, as they must, and `xargs` still reads all of its input before it runs anything.
-- **Files & dirs:** `touch` (incl. `-d '40 days ago'`-style dates) `mkdir` `rmdir` `rm` `mv` `cp` `cmp` `du` `ls` `find` (incl. `-name`, `-type`, `-mmin`) `stat` `mktemp` `realpath` `readlink` `chmod` `ln` `truncate` `basename` `dirname`
-- **Search & transform:** `grep`/`egrep`/`fgrep` (incl. `-P` with `\K`) `sed` `awk` (a documented subset, with user functions, `print > file`, `getline` and `getline < file`, 3-argument `match`) `jq` (a jq 1.6 subset, with `-R`/`-Rs`) `diff` (incl. `-u` and `--label`) `xargs` `expr` `factor` `cal`
-- **System:** `date` (incl. `-d` "3 days ago"-style parsing) `uname` `hostname` `arch` `nproc` `tty` `whoami` `id` `printenv` `timeout` `nohup` `setsid` `which` `kill` `pgrep` `pkill` `ps` (Windows has no procps; `pkill -f` never kills this shell's own ancestors) `df` (every drive, mapped shares included, in GNU's format)
-
-Every tool parses its options strictly: an option (or awk construct) that is not implemented is
-**never silently ignored** — the tool reports it and, when a real external of the same name is on
-PATH, re-runs the command there (`BASH_COREUTILS=builtin` forbids that, `=external` prefers it). Windows' own
-programs of the same name (System32's `find.exe`, `sort.exe`, `timeout.exe`) are other tools and are never used.
-`grep` and `sed` default to POSIX **BRE** (`-E`/`-r` for ERE). Process substitution `<( )` works
-(temp-file emulation); `>( )` is refused with a clear message. See [`ARCHITECTURE.md`](ARCHITECTURE.md) §10.
-
-**Help points at the manuals.** `help NAME` and every builtin's `NAME --help` print the manual page(s) of what was
-asked (GNU's, or the manual of the program a builtin imitates), from `%USERPROFILE%/.bash/help.json`: written from
-the built-in table when it is missing; your entries win name by name, the built-in table answers for the rest. A
-bash builtin or keyword C#Bash does not implement (`ulimit`, `bind`, `select`, `coproc`...) says so beside its page.
-`help` matches as bash's does (an exact name or glob, else every name it begins).
-
-**Requests C#Bash does not service are logged**, one JSON line each, in `%USERPROFILE%/.bash/unserviced.jsonl`: an
-unsupported option (whether a PATH program then ran it or not), a feature that is not available, a construct refused
-when parsed, a bash builtin C#Bash lacks, a help topic not implemented or not found. It is the list of things to
-consider implementing. The full arguments are kept, in your profile, as `~/.bash_history` keeps commands.
-`BASH_UNSERVICED_LOG` names another file; `/dev/null` turns the log off (the test runners do).
-
-## Startup and command lookup
-
-**Why it matters on Windows: finding a program is slow, and not finding one is slowest.** A bare command name is looked up by trying every PATH entry with every `PATHEXT` extension, each try a file-system probe; a hit stops early, but a miss makes every probe and fails them all. On the machine this was measured on, 51 PATH entries × 12 names is about 600 probes, **~15 ms for one miss**, 8.8 ms of it two entries on a slow drive. Claude Code's snapshot makes exactly such a miss (`hash rg`) on every Bash call, so it was half of what each call cost. So C#Bash controls where its PATH comes from and remembers what it finds, misses included, as below; the measurements are under [Performance](#performance) ("What a Claude Code call costs") and in [`DECISIONS.md`](DECISIONS.md) ("REVIEW R1 RESULT").
-
-**At startup**, in this order:
-
-1. The environment is imported; Windows' `Path` becomes `PATH`.
-2. **`BASH_PATH`**, if set and not empty, becomes `PATH` and is then removed, from the process environment too, so a nested shell keeps its parent's PATH. It lets a launcher keep its own PATH narrow and still hand the shell a full one (see [the start file](#start-claude-code-with-no-path-of-its-own) below).
-3. When `git.exe` is on PATH, Git for Windows' `usr/bin` and `mingw64/bin` are put in front of it, exactly as Git Bash does, so `tar`, `perl`, `ssh` and any tool outside the embedded set resolve the same way.
-4. The shell's own directory is added at the end of PATH, so a nested `bash` always resolves, Git or no Git.
-5. `HOME` (forward-slash form; the Windows profile when unset), `BASH`, `SHELL`, `SHLVL`, `UID`, `OSTYPE=msys` and the other bash variables are set; `PYTHONIOENCODING=utf-8` is exported when unset, so a piped Python prints UTF-8 instead of crashing on `✓`. Output is UTF-8, with or without a console.
-6. Startup files: a login shell (`-l`) reads `/etc/profile`, then the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`; an interactive shell reads `~/.bashrc` (or `--rcfile`); a non-interactive one (`-c`, a script, every Claude Code call) reads only `$BASH_ENV`.
-
-**Finding a command**, in this order: an alias, a keyword, a function, a builtin or embedded tool; a name with a slash (or a drive, `F:x`) is that path, from the shell's own directory and never searched for; anything else is searched on PATH, trying each entry as named and then with every `PATHEXT` extension (`.COM`, `.EXE`, `.BAT`, `.CMD`, …), and taking the first match that can run (a program Windows starts, `.com` `.exe` `.bat` `.cmd`, a `.sh` file, or a `#!` line: what `[ -x ]` says). A `.js`, `.vbs` or other `PATHEXT` file that runs only through a file association is passed over, as Git Bash does. A `#!` script runs by its interpreter line (bash and sh scripts in-process), found on PATH or by its path; a `.sh` file without one runs in-process too. A bare name never runs a script from the current directory: write `./script`, as in bash.
-
-- **Lookups are remembered across shells**, in `~/.bash/commands`, one small file per PATH value. A remembered program is used after one existence check, so a moved or deleted one is simply searched for again. A program installed later in a folder earlier on PATH stays hidden behind the remembered one until `hash -r`.
-- **`hash name` also remembers a miss.** In a later shell it answers `hash: x: not found (remembered miss: hash -r searches again)` without searching. Running a program, `command -v` and `type` always search, as bash does. After installing a tool you had probed with `hash`, run `hash -r` (or `hash -d name`).
-- **Windows limits that remain:** a program whose own path is over 260 characters, or one started from a directory over 258 characters, cannot be started (cmd cannot either; C#Bash says so, 126), though the shell itself can `cd` there and work with its files. A file name ending in a dot or a space cannot exist through Windows' file API, which drops it: a command name `s1.` finds nothing, but `cat s1.` reads `s1`.
-- **When the shell's own search finds nothing, C#Bash looks in three folders only**: its own, System32 and the Windows folder (`.exe` appended, as Windows' launcher would). So `cmd` runs even on an empty PATH, while `command -v cmd` reports nothing. Never the current directory: Windows' own launcher searched it (in an ordinary terminal, or through an empty PATH entry), so a `.exe` planted there could answer a command that is not installed.
-
-## Using it as Claude Code's shell
-
-Claude Code on Windows needs *a* `bash.exe`; it finds Git for Windows by default, or whatever `CLAUDE_CODE_GIT_BASH_PATH` names. C#Bash is built to be that shell (with or without Git installed):
-
-To skip building it: download [the latest `Bash.exe`](https://github.com/Klinkenbecker/csharpBash/releases/latest/download/Bash.exe) and its `Bash.exe.sha256` from [Releases](https://github.com/Klinkenbecker/csharpBash/releases), compare the two (`certutil -hashfile Bash.exe SHA256`), put it in a folder of its own, and go to step 2. It is not code-signed, so Windows may warn about it the first time.
-
-1. Publish the Native AOT build somewhere the build never touches:
-   ```cmd
-   tools\publish-aot.cmd            REM -> dist\Bash.exe, ~6.9 MB
-   ```
-   One static executable. No .NET runtime on the target, and **~9 ms startup, against Git Bash's ~23 ms as Claude Code starts it** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
-
-   The managed alternatives, if you cannot or would rather not build AOT:
-   ```sh
-   # self-contained, no runtime needed on the target: ~79 MB, ~74 ms
-   dotnet publish Bash/Bash.csproj -c Release -r win-x64 \
-       -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o dist
-   # framework-dependent, smallest download, needs .NET 8 installed: ~1.7 MB, ~68 ms
-   dotnet publish Bash/Bash.csproj -c Release -r win-x64 -p:SelfContained=false \
-       -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o dist
-   ```
-   ReadyToRun keeps the runtime and its JIT, so it is about 11 % faster than AOT in *steady state* — but only past roughly 1.2 million shell operations in a single invocation, which no Claude Code tool call approaches. Pointing Claude Code at `bin\Release` is a bad idea either way: every rebuild replaces the file under a live session, and the test runner kills stale interpreter processes before building.
-2. Set the variable for your user and restart Claude Code:
-   ```powershell
-   setx CLAUDE_CODE_GIT_BASH_PATH "C:\path\to\Bash.exe"
-   ```
-3. To go back to Git Bash, remove the variable (`setx` to an empty value, or System Properties → Environment Variables) and restart Claude Code.
-
-### Start Claude Code with no PATH of its own
-
-Claude Code builds a snapshot of your shell when a session starts and replays its PATH into every Bash call. With C#Bash the PATH's length no longer costs a call anything (lookups are remembered), but `claude.exe` itself has no need to search your PATH either. This start file keeps it narrow and hands the full PATH to the shell through `BASH_PATH`:
-
-```bat
-@echo off
-rem claude.cmd: Claude Code with no tool PATH of its own; C#Bash gets the full PATH through BASH_PATH
-rem Adjust the two C#Bash paths, and claude.exe's if your installer put it elsewhere.
-setlocal
-set "BASH_PATH=%PATH%"
-set "CLAUDE_CODE_GIT_BASH_PATH=C:/path/to/Bash.exe"
-set "PATH=C:/path/to"
-"%USERPROFILE%/.local/bin/claude.exe" %*
-endlocal
-```
-
-`setlocal` keeps the narrowed PATH out of the console you start it from, and `%*` passes your arguments (`--resume`, …) through. Anything `claude.exe` starts by itself rather than through the shell (the status line, hooks, MCP servers) then sees only that narrow PATH, so give those commands full paths: `C:/Windows/py.exe statusline.py`, not `py statusline.py`.
-
-### Getting the best out of it
-
-- **Write paths with forward slashes** (`C:/x/y` or `/c/x/y`). A backslash is the shell's escape character, and a Windows program handed `/c/x` gets `C:/x`, as under Git Bash; pass a switch to `cmd` as `cmd //c …`.
-- **There is no terminal.** `/dev/tty` reports "No such device or address" and a program that would prompt on one fails instead of hanging; give tools their input on stdin or their non-interactive flags.
-- **After installing a tool**, run `hash -r`.
-- **Reproduce from a script file, not through PowerShell.** Windows PowerShell 5.1 strips the inner double quotes when it hands `-c 'echo "x (y) z"'` to a native executable, so the shell receives `echo x (y) z` — and then correctly reports a syntax error. A report observed only through `& Bash.exe -c "..."` from PowerShell measures PowerShell's quoting, not the shell (2026-09-05, one full false report).
-- **Quote the build in a bug report.** `Bash.exe --version` prints a third line, `C#Bash build 1.0.0+hg.<hash> <rev>`, stamped from the Mercurial revision at build time (a trailing `+` means an uncommitted tree).
-- **Measure a call yourself** with `BASH_TIMING_LOG=<file>`: the shell appends where its time went (start, set-up, each `source`, `eval` and external program, exit) to that file when it exits. It costs about 2 ms a launch while set, nothing when not.
-
-Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracking, heredocs, process substitution, `timeout`, and the `rg`/`pkill` shims it defines have all been verified end to end, both with Git on PATH and on a PATH with no Git at all (`PROJECT_CONTEXT.md`, P5).
-
-## Performance
-
-The table at the top was measured on 2026-10-29 (build rev 472) on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched with `CreateProcess`, the way Claude Code launches one (Git Bash through its `bin\bash.exe` redirect, with no `LANG`; see [Benchmark provenance](#benchmark-provenance)), and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the median of five samples, each the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, run from Git Bash, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
-
-**Where it wins, and why.** Interpreter throughput is 8.5–11.1× Git Bash and 2.4–2.7× native Linux bash. Startup is under a third of Git Bash's (8.6 ms against 27.5 ms in this run, Git Bash started through its redirect, as Claude Code starts it) and twelve times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
-
-**Where it used to lose.** One row, until rev 445: the long streaming text pipeline against WSL (0.156 s against 0.119 s at build rev 424). This paragraph blamed managed code against native C `grep`/`sed`/`sort`. The bigger cost was C#Bash's own: output into a redirect file, a pipe or its own stdout was written to the OS a line at a time. Since revs 433, 442 and 445 it is buffered and written when each builtin finishes, as bash does, and stderr is still written at once. The row is now 0.081 s, against WSL's 0.116 s and Git Bash's 0.248 s. It is still the narrowest margin in the table (1.4×): C#Bash is fastest where a script does *many small things*, and a pipe pushing 50 k lines through five real tools is not that shape. [Benchmark provenance](#benchmark-provenance) explains why earlier tables showed different Git Bash numbers.
-
-**What a Claude Code call costs.** Every Bash tool call is a new shell running Claude Code's wrapper and sourcing its snapshot. `tests/bench/claudecall.sh` makes that exact call: a trivial one (`true`, `ls`, `cd && pwd`) takes **~11 ms** with a 50-entry PATH, against ~31 ms before lookups were remembered. Where it goes (the timing switch, rev 324):
-- **~7 ms from process creation to the shell's first line**, mostly the runtime's own start (an empty Native AOT program: 5.8–7.0 ms).
-- **~0.9 ms is C#Bash's own start-up**: the console 0.4, the environment and PATH 0.25, the options and parsing the call 0.25.
-- **~0.6 ms is the snapshot.** It was 15 ms: the snapshot's `hash rg` misses on every call (`rg` lives inside `claude.exe`), and that miss searched every PATH entry with every extension, 8.8 ms of it two entries on a slow drive. The miss is now remembered, so **PATH length no longer matters per call**.
-- **~0.6 ms writes the working directory back** (the wrapper's `pwd -P >| file`); the rest is ending the process.
-- **No Windows DLL loads that the call does not use.** Networking and security bind on first use, and `icu.dll` (Windows' Unicode library) loads only when a command needs culture data, such as `${x^^}` on non-ASCII text or a local time: a trivial call no longer pays for it (~1.6 ms a call, rev 320).
-
-**Caveats worth stating**, and they are in the harness rather than glossed. One machine, one run, no statistical treatment beyond the startup row: a single total of 100 launches moves by about ±1.5 ms from run to run on this machine, so that row is the median of five such totals, and a difference of a millisecond between two runs is still noise. WSL reaches these files over the 9P `/mnt` bridge, a real cost of using it on Windows files, and the filesystem rows are marked. A run started soon after a deploy measured the same C#Bash binary 5–20 % slower on the loop rows, twice on 2026-10-18 (a freshly written program's first launches are slower here, probably the virus scanner); this table is a run of rev 324 on 2026-10-19, with Git Bash started through its redirect, as Claude Code starts it. And C#Bash's startup moves with the machine's state: the same binary (rev 316) measured 14.4 ms at 08:02 and 10.6 ms at 09:21 that day while Git Bash's stayed at 15 ms, cause not found, so compare startup figures only between runs made back to back (that way rev 316 against 320: 10.6 against 9.5 ms; rev 320 against 324: 9.8 against 8.5). The `pipeline` row also writes its input to `$TMPDIR`, which for WSL is ext4 *inside* the VM and for the other two is the Windows temp directory — so that row hands WSL a filesystem advantage as well as a tool-speed one. Git Bash's bash is 4.4 where WSL's is 5.1. Git Bash's own times move between runs (`loop_big` took 18.9 s on 2026-10-03, 15.2 s on 2026-10-16, 15.2 s at 09:15 and 18.9 s at 17:30 on 2026-10-18, 15.0 s at 04:15 and 15.5 s at 18:45 on 2026-10-19, the latter in this table), and the "vs Git" ratios move with them. These numbers are for the Native AOT build; the managed builds start in 68–74 ms and are about 11 % faster than AOT past roughly 1.2 M shell operations in one invocation.
-
-### Benchmark provenance
-
-The benchmark scripts (`tests/bench/*.sh`) have not changed since hg rev 80 (2026-09-12), the run published with the companion article. However, we did change how the harness started and timed the three shells. Until hg rev 139, Git Bash both ran the benchmark and timed it: the harness ran in Git Bash, and every shell it timed, including the Git Bash being measured, was started from inside that Git Bash (a fork/exec of `usr\bin\bash.exe` by its direct path). That is not how Claude starts Git Bash: Claude starts `<Git>\bin\bash.exe` from claude.exe, a Windows program, and it matters, because a Git Bash started by another Git Bash pays more for every program it starts. Two changes shaped the tables published after the article, up to hg rev 329, the last one published.
-
-| hg rev | two changes | consequences against the article's table |
-|---|---|---|
-| **139** (2026-10-06, the first table published after the article) | 1. Git Bash ran with `LANG=en_US.UTF-8`, from the login launch used since Claude Code's shell became C#Bash.<br>2. benchtimer started and timed every shell, instead of Git Bash's `time`. | • C#Bash and WSL lost Git Bash's launcher overhead, measured that day at ~30 ms per launch (C#Bash 42 ms started through Git Bash, 11 ms started directly).<br>• Git Bash, no longer started by another Git Bash, ran its program-heavy rows faster: `coreutils` 20.3 → 13.7 s.<br>• Git Bash's text tools were slower under `LANG`, which partly offset that: `pipeline` only 0.353 → 0.310 s.<br>• The interpreter rows hardly moved. |
-
-**What this means for the article's table (hg rev 80, 2026-09-12).** Every shell was started and timed by Git Bash's `time`, and the Git Bash under test was the harness's own interpreter, started by it. The path was direct, but the measured Git Bash was a child of another Git Bash, so each of the ~25 programs in the `pipeline` row cost it ~5–6 ms more: that is the article's 0.353 s. Started by a Windows program, as Claude starts it, the same row takes 0.23–0.25 s. Run again unchanged on 2026-10-19, the article's harness reproduces its Git Bash figures (`coreutils` 20.0 s and `pipeline` 0.387 s, against the article's 20.3 s and 0.353 s), so the machine has not changed. Its interpreter rows (`loop`, `arith`, `func`, `loop_big`) stand. Its `coreutils`, `pipeline` and `find` rows overstate what Git Bash costs under Claude Code, and its startup row (C#Bash 30 ms against Git Bash's 27 ms) was measured through Git Bash's `time`, which added launcher overhead to C#Bash's launches but not to Git Bash's own, so it is not like for like: measured directly, in the first run of the new method (2026-10-06 19:00, C#Bash build rev 136), C#Bash took 15 ms and Git Bash 16 ms.
-
-**Tables published on 2026-10-18.** Three of them (git `32ad493`, `9943884`, `a8a90e2`) were measured, unknowingly, from a Git Bash started without its login profile, so without `LANG`: in that respect as Claude runs it, though without the redirect, and not the harness's documented login launch. They showed `pipeline` at 0.9×. A fourth (`b9067c8`) went back to the documented login launch, with `LANG`, which is not how Claude runs Git Bash, and showed 1.1×. While this benchmark provenance was established, on 2026-10-19, GitHub's `main` was force-pushed back to hg rev 317 (git `e13485f`).
-
-With hg rev 333 those commits are back in `main`'s history, unchanged, followed by this section. The hg history records every change to the harness and every logged run ([tests/bench/results.md](tests/bench/results.md)); the two things it does not record, the change to the machine on 2026-09-13/14 and how the harness was started for each run, are set out here.
-
-**From hg rev 333: Benchmarks Git Bash as Claude Code runs it.** Claude Code runs each Bash tool call as `<Git>\bin\bash.exe -c "<wrapper>"`: the `bin` redirect, which starts `usr\bin\bash.exe`, not a login shell, and with no `LANG` (the snapshot it sources carries `PATH`, not `LANG`). The benchmark now does the same: Git Bash is `<Git>/bin/bash.exe`, started by benchtimer, and no `LANG` or `LC_*` reaches any shell. The redirect's extra process costs ~8 ms per start (Git Bash startup 23 ms, against 15 ms when `usr\bin\bash.exe` is started directly, in two runs ten hours apart), and every Claude Code call pays it on a machine where Claude Code uses Git Bash. Dropping the fork/exec penalty counts in Git Bash's favour: about 5–8 ms less per program started. Claude Code never starts Git Bash from another Git Bash; claude.exe, a Windows program, starts it. So that penalty never belonged in the figure. Measured this way on 2026-10-19 (build rev 324): Git Bash's `pipeline` 0.253 s against C#Bash's 0.240 s (1.1×), startup 23.3 ms against 8.7 ms.
-
-That 8 ms can be avoided by starting `usr\bin\bash.exe` directly, but not for free: that bash misses the PATH set-up the redirect does, so Git's `/usr/bin` tools are not found first, and Claude Code took its bash from PATH rather than from `CLAUDE_CODE_GIT_BASH_PATH` on this machine (Claude Code issue #94077). It is not an obvious optimisation, and not one Claude would make without it being pointed out.
+How it is measured, the caveats, and where each millisecond of a call goes: [Performance](docs/PERFORMANCE.md).
 
 ## Architecture
 
@@ -187,51 +43,47 @@ A classic four-stage pipeline: **lexer → parser → AST → tree-walking evalu
 - [`DECISIONS.md`](DECISIONS.md) — the append-only design log.
 - [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) — current state and scope.
 
-## Build · run · test
+## Use it with Claude Code
 
-```sh
-dotnet build -c Release            # builds Bash.sln (.NET 8 SDK)
-Bash/bin/Release/net8.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-pwsh tests/run-tests.ps1           # 208 self-checking cases (two need the Native AOT build: -Interpreter <exe>)
-pwsh tests/compat/run-compat.ps1   # 237-probe differential battery against WSL's GNU bash
-```
+1. Download `Bash.exe` (above) and put it in a folder of its own, say `~/.bash/bin` (`%USERPROFILE%\.bash\bin`).
+2. Point Claude Code at it, in a Command Prompt: `setx CLAUDE_CODE_GIT_BASH_PATH "%USERPROFILE%\.bash\bin\Bash.exe"`.
+3. Restart Claude Code.
 
-The test suite's expected outputs are never captured from the interpreter: most are GNU bash's own output (bash 5.1, run under WSL, the reference every behaviour is matched against), the rest are authored from bash's documented behaviour where a case is Windows-specific — so a regression fails rather than being silently baked in. Windows-only.
+To go back to Git Bash, remove the variable and restart Claude Code. If Git for Windows is on your PATH, Claude Code may pick Git
+Bash anyway (Claude Code issue #94077); the start file in the guide avoids that, and keeps Claude Code's own PATH
+short. Building it yourself, the start file, and tips: [Using C#Bash](docs/USING.md).
 
-### What the build and the tests use: WSL, Git for Windows, MSYS2
+## What you get
 
-**C#Bash itself needs none of them.** The shipped `Bash.exe` is one static executable: no .NET runtime, no Git, no MSYS, no WSL. When Git for Windows *is* on PATH, C#Bash puts its `usr/bin` and `mingw64/bin` in front of it, as Git Bash does (startup, step 3 above), and an MSYS program (one with `msys-2.0.dll` or `cygwin1.dll` beside it) gets its arguments quoted and its file handles opened the way MSYS needs. Nothing of Git or MSYS ships with C#Bash.
+- **bash itself:** pipelines, redirections, here-documents, `$( )`, arithmetic, indexed and associative arrays,
+  functions with bash's scoping, `[[ ]]`, `case`, traps, background jobs, `set -euo pipefail`. Behaviour is matched
+  against GNU bash 5.1.
+- **The everyday tools, built in:** text (`grep`, `sed`, `awk`, `sort`, `cut`, `tr`, `head`, `tail`), files (`ls`,
+  `find`, `cp`, `mv`, `rm`, `stat`), and `jq`, `diff`, `xargs`, `date` and more. They stream, so a 2 GiB file or an
+  endless pipe is fine.
+- **Windows paths both ways:** `/c/Users/you` and `C:/Users/you` both work, and paths come back with forward slashes,
+  which a script can safely take apart.
+- **Bytes stay bytes:** data that isn't valid UTF-8 survives variables, `$( )`, pipes and files unchanged.
+- **Help that points at the manual:** `help grep` or `grep --help` gives you the GNU manual page for it.
+- **An interactive shell too:** line editing, history, tab completion, prompts.
 
-The development tooling is another matter. Each outside system has one job, and nothing reaches for one outside that job:
+Everything, in detail: [Features](docs/FEATURES.md).
 
-| | Used by | For |
-|---|---|---|
-| **WSL** (`wsl.exe -e bash`, Ubuntu: GNU bash 5.1, coreutils, gawk, jq) | the battery (`tests/compat/run-compat.ps1`), the `bash -n` corpus (`tests/corpus/run-n.sh`), the `df` check (`tests/df/compare-wsl.sh`), the benchmark's third column; and by hand, to produce a test case's expected output | **The reference.** Every behaviour is matched against GNU bash on Linux. The corpus and `df` scripts run *in* WSL's bash and start C#Bash through WSL's interop. |
-| **Git for Windows** (PortableGit, `F:/Tools/PortableGit`, configured at the top of each script) | the benchmark (`tests/bench/compare3.sh`, and the older `compare.sh`), `tools/publish.sh` | **Git Bash** is one of the shells the benchmark times, and the benchmark runs in it (it refuses C#Bash). **`git.exe`** is how `publish.sh` pushes to GitHub (the project's VCS is Mercurial). Nothing else reaches Git; the development machine keeps it off PATH. |
-| **Git for Windows on PATH** (`git.exe`, and the MSYS tools in its `usr/bin`) | seven suite cases: `msys_redirects`, `msys_arguments`, `msys_inherited_append`, `native_args_msys`, `native_args_git`, `dev_tty_git_prompt`, `coreutils_external` | They test how C#Bash runs MSYS programs and git. **Without them, the case prints `SKIP: <reason>`** and the runner names it in its summary: a skip, never a pass. |
-| **MSYS2** (`F:/Tools/msys64`) | one suite case, `msys_append_shared` (its `ls.exe`) | Same; SKIP without it. |
-| **A PATH `awk`** | one suite case, `awk_fallthrough` | What the in-process awk hands to an external awk; SKIP without one. |
-| **Visual Studio 2022 C++ tools** (`vcvars64.bat`, `vswhere.exe`) | `tools/publish-aot.cmd` (and so `tools/deploy.sh` and `compare3.sh --build`) | The Native AOT link step. |
+## What it won't do
 
-So a machine with the .NET 8 SDK and WSL runs the whole suite (with those nine skipped) and the battery. The benchmark and the push also need Git for Windows; the shipped build also needs the VS C++ tools. `tests/bench/claudecall.sh` (what a Claude Code call costs) still converts paths with `cygpath`, which comes with Git, so for now it runs only from Git Bash.
+- **Quietly ignore an option it doesn't support.** It says so, and if the real program is on your PATH, it runs that
+  instead. Each such request goes into a log in your own profile (nothing is sent anywhere), which is our list of what
+  to add next.
+- **A few bash features are missing,** and say so rather than pretend: restricted mode, POSIX mode, programmable
+  completion (`complete`), and `>( )`.
+- **Windows' own limits still apply:** a program whose path is over 260 characters can't be started, and a file name
+  can't end in a dot or a space.
 
-## Layout
+## How it's tested
 
-```
-Bash/        interpreter source (Lexer/ Parser/ Evaluator/ IO/) + Bash.csproj
-docs/        architecture diagrams (SVG) + bash startup reference
-tests/       PowerShell test runner + cases/ and expected/; compat/ (the differential battery); bench/compare3.sh (the benchmark;
-             --build measures the committed tree against the deployed build); bench/claudecall.sh (what a Claude Code
-             Bash call costs, and where it goes); corpus/run-n.sh (bash -n against GNU on 912 real scripts)
-tools/       publish-aot.cmd (the ship build); deploy.sh and publish.sh (the project's own deploy and push); benchtimer (the
-             benchmark's launcher and clock); bench.csx, attrib.csx
-*.md         README + the four project docs
-mercurial-history.hg   full Mercurial history (hg bundle)
-```
-
-## On Mercurial
-
-This was built in **Mercurial**, by preference. The git repository you're reading is a published snapshot; the genuine, commit-by-commit record lives in hg, preserved here in full as [`MERCURIAL_HISTORY.md`](MERCURIAL_HISTORY.md) and the `mercurial-history.hg` bundle — `hg unbundle mercurial-history.hg` reconstructs the lot.
+208 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
+bug fails a test instead of becoming its expected answer. A battery of 237 probes runs the same commands through both
+shells and compares them. Building and testing it yourself, and how the source is laid out: [Developing C#Bash](docs/DEVELOPING.md).
 
 ## License
 

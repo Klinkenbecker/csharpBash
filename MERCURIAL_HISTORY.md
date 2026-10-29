@@ -12,11 +12,14 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 474 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 477 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 476 | 2026-10-29 | README is the highlights (the architect's edit; Architecture kept); the detail moved to docs/USING, FEATURES, PERFORMANCE, DEVELOPING |
+| 475 | 2026-10-29 | Anchor: the README restructure is drafted, uncommitted, and the architect is editing it (do not commit or overwrite) |
+| 474 | 2026-10-29 | Published: GitHub main = git ec718e1 = hg rev 473, with the first release hg-473 (Bash.exe build 472 + SHA-256, downloaded back and checked); deployed 472 recorded |
 | 473 | 2026-10-29 | Publish doc review: README table and prose from compare3 on deployed 472 (all outputs agree), 208 cases; IMPLEMENTATION: tools/release.sh |
 | 472 | 2026-10-29 | Installer plan, phase 5: the architect's leaning (not a ruling): the README links both the installer and the bare Bash.exe |
 | 471 | 2026-10-29 | README links the releases: the latest Bash.exe (releases/latest/download) and the Releases page; skipping the build in the Claude Code setup |

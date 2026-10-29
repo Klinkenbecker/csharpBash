@@ -11,7 +11,8 @@
 # Until then each push was done by hand. Before it runs, by the push rule of 2026-10-10 ("another
 # benchmark and a doc review first"): `tests/bench/compare3.sh` on the DEPLOYED build (checked here: the
 # newest such table in results.md must carry dist/Bash.exe's stamp), and the doc review committed in hg
-# (README's performance table from that run and its case count, ARCHITECTURE, IMPLEMENTATION). The
+# (README's performance table from that run and its figures, docs/PERFORMANCE.md's prose from it, the case
+# count in README and docs/DEVELOPING.md, ARCHITECTURE, IMPLEMENTATION; the README split 2026-10-29). The
 # message file is the git commit message: its first line must be "C#Bash at hg rev <tip>: <headline>".
 # It runs one way:
 #   1. the hg tree must be clean; tip = rev N;

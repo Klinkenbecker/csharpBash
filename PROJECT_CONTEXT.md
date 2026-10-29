@@ -64,7 +64,12 @@
 >   unedited earlier built-in table is rewritten when help reads it; NOT deployed). INVARIANT: when Bash/help.json
 >   changes, add the outgoing table's SHA-256 to `EarlierHelpTables` (Builtins.Help.cs). Claude's proposal, NOT
 >   built (deploy.sh is a contract tool): deploy.sh refuses when help.json changed since the deployed rev and the
->   outgoing hash is missing. AWAITING: deploy 467-469 (mv fix + P2) on his word.
+>   outgoing hash is missing. **DEPLOYED rev 472** (suite 200/0 both modes, battery 216; rollback
+>   dist/Bash.exe.rev462). **PUBLISHED 2026-10-29: GitHub main = git ec718e1 = hg rev 473, and the FIRST RELEASE
+>   hg-473** (Bash.exe build 472 + SHA-256; checked through the README's latest link). Plan phases 1-2 DONE; 3-5
+>   BLOCKED on Installer INST-Q-046.
+>   README RESTRUCTURE (2026-10-29): Claude's draft, edited by the architect, Architecture kept in the README at his
+>   word; committed and published (DECISIONS "the README is the highlights"; "Documentation set" below).
 >   LOGGED, not fixed (found 2026-10-29): `mv file nodir/` renames to `nodir`, rc 0 (GNU: Not a directory, rc 1);
 >   `exec 4< <(PROGRAM)` may run PROGRAM to completion first [inferred, not investigated].
 >   Claude's position: first a GitHub Release asset per publish (Bash.exe + SHA-256), then the installer (rename the
@@ -353,6 +358,14 @@ for its maintenance contract):
   walk-through). Tracks the code surface; updated on any surface-texture change.
 
 Diagrams and the bash-startup reference live in `docs/`.
+
+**For readers of the repository** (2026-10-29, the architect: the README "should be highlights that are easily
+digested (by a human). Details into (an)other doc(s)"): `README.md` is the highlights (what it is, download, the
+benchmark table, architecture, Claude Code in three steps, what you get, what it won't do, testing); the detail is
+in `docs/USING.md` (setup, start file, tips, startup and lookup, help, the request log), `docs/FEATURES.md` (the
+language, every built-in command), `docs/PERFORMANCE.md` (method, caveats, a call's cost, benchmark provenance) and
+`docs/DEVELOPING.md` (build, test, tooling, layout, Mercurial). Publish's doc review updates the README's table AND
+docs/PERFORMANCE.md's prose (tools/publish.sh header).
 
 ## Architecture
 ```

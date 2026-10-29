@@ -22,7 +22,9 @@ upgrade replaces the running `Bash.exe` in place, through InstallGen (2026-10-29
    opening description and in "Using it as Claude Code's shell" (rev 471; they work from the first release on). *Done when:* the asset downloaded from the release URL matches its SHA-256 and
    prints the published rev in `--version`. *(Does not depend on InstallGen.)* **BUILT 2026-10-29 (rev 468):**
    `tools/release.sh` (publish.sh's step 6; re-runnable alone; `--dry-run`): release `hg-<rev>` at the pushed commit,
-   assets `Bash.exe` + `Bash.exe.sha256`, then downloaded back and compared. Its check is observed at the next publish.
+   assets `Bash.exe` + `Bash.exe.sha256`, then downloaded back and compared. **DONE 2026-10-29:** release hg-473 (the
+   first), its check observed: downloaded back matching; through the README's `releases/latest/download/Bash.exe`,
+   `sha256sum -c` OK and the download runs, reporting its build (472, the deployed one).
    (The binary is the deployed one, so it names its own rev, which may be older than the published rev, never newer.)
 2. **help.json kept fresh by Bash.exe itself.** Bash.exe carries the SHA-256 of every built-in table it has shipped;
    a `~/.bash/help.json` equal to one of them is replaced by the current table, an edited one is left alone and never

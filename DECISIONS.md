@@ -9536,3 +9536,44 @@ with Bash.exe.sha256 via `certutil -hashfile Bash.exe SHA256`, a folder of its o
 Windows may warn [recalled]). Written now because the publish that creates the first release pushes the README in its
 step 5 and makes the release in step 6: the links work from that publish on.
 **Implemented by:** rev 471. Files: `README.md`, `docs/installer-plan.md`, `DECISIONS.md`.
+
+## 2026-10-29 -- DEPLOYED rev 472; PUBLISHED: GitHub main = git ec718e1 = hg rev 473, and the FIRST RELEASE, hg-473
+**Status:** Active. The architect: "ok deploy and publish?" (after Claude's order: deploy, benchmark, doc review, publish).
+**Slot:** koliada-net-28, kes-term-a1 and koliada-net-forms-cb all said go (no builds, timing or heavy work); told
+"benchmark done" after.
+**Deployed:** `1.0.0+hg.90217e15c14f 472` over 462 (the mv fix, 467; the help.json refresh, 469; tools and records):
+suite 200 passed, 0 failed, both modes (mv_cross_volume and help_refresh among them); battery 216/237 = baseline;
+rollback dist/Bash.exe.rev462. Notified with the benchmark-done message.
+**Benchmark (push rule):** compare3 on deployed 472, 2026-10-29 07:10, every output identical in all three shells:
+loop 0.153, arith 0.242, func 0.211, loop_big 1.418, coreutils 0.053, pipeline 0.081, find 0.015, startup 0.0086
+(Git Bash 0.0275, WSL 0.1087); C#Bash within 1-2% of 448's run. Doc review (rev 473): README's table, prose (8.5-11.1x
+Git Bash, startup under a third of Git Bash's), 208 cases (two AOT-only); IMPLEMENTATION: tools/release.sh.
+**Published:** `bash tools/publish.sh` (message: scratchpad/msg473.txt): 474 changesets, the bundle verified; the two
+untracked root files left out; pushed 2876ef9..ec718e1. **Step 6, its first run:** release hg-473 created, Bash.exe and
+Bash.exe.sha256 uploaded, Bash.exe downloaded back, SHA-256 6bd640cf...0753d matching. Then, as a user would, through
+the README's link: `releases/latest/download/Bash.exe` HTTP 200 (7,642,112 bytes), `sha256sum -c Bash.exe.sha256` OK,
+the download runs and reports build 472. The token was allowed to make releases. Installer plan phase 1: DONE.
+**Implemented by:** revs 467-473; this entry rev 474.
+
+## 2026-10-29 -- The README is the highlights; the detail moved to docs/USING, FEATURES, PERFORMANCE, DEVELOPING
+**Status:** Active. The architect: "Time to look at the readme; it is too dense, should be highlights that are easily
+digested (by a human). Details into (an)other doc(s). Keep the voice 'human'?", "ok, go" to Claude's outline; he then
+edited the draft himself ("Edit finished"), asked for the Architecture section to stay in the README "between the
+intro and 'Use It with Claude' sections", and confirmed the step-2 fix ("you spotted my deliberate mistake! all good").
+**Decision:** README.md (5,534 words before) is the highlights, ~930 words: the title and pitch (his), download links,
+the provenance note, the benchmark table (kept: publish's doc review updates it) with three reasons it is fast, the
+Architecture section, Claude Code in three steps (`~/.bash/bin/Bash.exe`, his; `setx CLAUDE_CODE_GIT_BASH_PATH` naming
+the EXE, in a Command Prompt), what you get, what it won't do, how it's tested. The old sections moved, word for word,
+to docs/USING.md, docs/FEATURES.md, docs/PERFORMANCE.md and docs/DEVELOPING.md (links fixed for docs/; DEVELOPING points
+at the README's Architecture section rather than keep a second copy).
+**Not word for word (Claude's, each brought up to date):** USING says an unedited old help.json is refreshed (rev 469)
+and that the request log is local ("nothing is sent anywhere"); PERFORMANCE's caveats name the README's run (rev 472,
+2026-10-29) and add Git Bash's loop_big 15.7 s of that run, and "the last one published" became "the last one
+published before this section was written"; DEVELOPING's Layout lists the guides and release.sh. Claude's review of his
+edit: step 2 named the folder, not Bash.exe (his deliberate mistake), `%USERPROFILE%` expands only in a Command Prompt,
+"Behavior" against "optimised": both fixed (British, as the docs). publish.sh's header: the doc review now covers the
+README's table AND docs/PERFORMANCE.md's prose, and the case count in the README and docs/DEVELOPING.md.
+**Checks:** every relative link in the five files resolves, every in-page anchor used exists, LF only. NOT checked:
+GitHub's rendering.
+**Implemented by:** rev 476. Files: `README.md`, `docs/USING.md`, `docs/FEATURES.md`, `docs/PERFORMANCE.md`,
+`docs/DEVELOPING.md`, `tools/publish.sh`, `PROJECT_CONTEXT.md`, `DECISIONS.md`.
