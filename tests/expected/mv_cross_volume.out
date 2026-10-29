@@ -1,0 +1,9 @@
+--- a source that cannot be removed, to another filesystem
+mv: cannot remove 'SRC': Permission denied
+rc=1
+source kept: yes
+copy made: yes
+--- a plain file to another filesystem
+rc=0
+source kept: no
+plain

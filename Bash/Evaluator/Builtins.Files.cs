@@ -334,6 +334,15 @@ public sealed partial class Builtins
 					{
 					if (Directory.Exists(target)) { Console.Error.WriteLine($"mv: cannot overwrite directory '{shown}' with non-directory"); rc = 1; continue; }
 					File.Move(sp, target, overwrite: true);
+					// Across volumes a move is a copy then a delete, and Windows reports success when the delete is refused
+					// (a running program): the source is left. GNU says so and fails, the copy left (2026-10-29). Only
+					// across roots: a same-volume rename by case alone keeps a name that still "exists".
+					if (!string.Equals(Path.GetPathRoot(Path.GetFullPath(sp)), Path.GetPathRoot(Path.GetFullPath(target)), StringComparison.OrdinalIgnoreCase)
+						&& File.Exists(sp))
+						{
+						try { File.Delete(sp); }
+						catch (Exception ex) { Console.Error.WriteLine($"mv: cannot remove '{s}': {IoError(ex)}"); rc = 1; continue; }
+						}
 					}
 				else { Console.Error.WriteLine($"mv: cannot stat '{s}': No such file or directory"); rc = 1; continue; }
 				if (verbose) Console.WriteLine($"renamed '{s}' -> '{shown}'");

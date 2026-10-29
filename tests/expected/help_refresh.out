@@ -1,0 +1,13 @@
+--- a profile with no table: written from this build's, and it answers
+xargs: https://www.gnu.org/software/findutils/manual/html_node/Invoking-xargs.html
+a: not rev 397's table
+--- rev 397's table, unedited: replaced by this build's
+help: b/.bash/help.json: an earlier build's table, unedited: replaced by this build's
+xargs: https://www.gnu.org/software/findutils/manual/html_node/Invoking-xargs.html
+b: now this build's table
+--- asked again: nothing left to replace
+find: https://www.gnu.org/software/findutils/manual/html_node/Invoking-find.html
+--- rev 397's table with one name added by hand: left alone, and it answers
+xargs: https://www.gnu.org/software/findutils/manual/html_node/find_html/Invoking-xargs.html
+mytool: https://example.org/mytool
+c: untouched

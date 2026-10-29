@@ -23,7 +23,9 @@
 #      and deletions; any other untracked file is listed and never added;
 #   5. commit with the message file; push with the token as an http.extraHeader given on the command
 #      line only (git 2.28 here: its credential prompt needs /dev/tty and it predates GIT_CONFIG_COUNT),
-#      output masked; then the header must be absent from git config and the remote main must be HEAD.
+#      output masked; then the header must be absent from git config and the remote main must be HEAD;
+#   6. tools/release.sh: GitHub release hg-<tip> with the deployed dist/Bash.exe and its SHA-256, downloaded back
+#      and checked (2026-10-29, the installer plan's phase 1; the token on curl's stdin, never a command line).
 # The token is briefly visible on git's command line to processes of the same user.
 set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -87,3 +89,7 @@ unset token auth
 remote=$("$GIT" ls-remote origin refs/heads/main | cut -f1)
 [ "$remote" = "$head" ] || die "the push did not land: remote main is $remote, HEAD is $head"
 echo "publish: GitHub main = git $("$GIT" rev-parse --short HEAD) = hg rev $tip"
+
+# 6. the release: the deployed Bash.exe and its SHA-256 attached to GitHub release hg-<tip> (docs/installer-plan.md,
+#    phase 1); its own contract tool, so a release that fails after the push above can be retried alone
+bash "$root/tools/release.sh" "$tokfile" || die "pushed, but the release failed: retry with 'bash tools/release.sh <token-file>'"

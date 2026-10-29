@@ -7,10 +7,70 @@
 >
 > **2026-10-27 (session 988ee3e2) — RESUME HERE** (rewritten when the greenlit list finished; the list's working notes
 > are in hg rev 424's PROJECT_CONTEXT.md). It SUPERSEDES the TRUE STATE block below wherever they differ.
-> - **TRUE STATE:** hg tip = rev 447 (the OutDirty fix: compare3 on 445 showed func +6% / loop_big +8% from an empty flush per builtin, now back to 442; + the publish doc review). NEXT: deploy 447, ask the peers for a quiet slot, re-run compare3, README table from it, publish. Help check stopped at 41/87, resumable; **DEPLOYED rev 445** ((3) step (c); rollback dist/Bash.exe.rev442; 442 = (2) step (b), 437 = (g2), 435 = (g1), 433 = (c) step (a)); revs 427-438 not published; **PUBLISHED: GitHub main = git 9a5a95c = hg rev 426** (2026-10-28) (two untracked files in the root are not ours:
->   BENCHMARK-PROVENANCE.md, "The Windows Shell Tax.url"; leave them). **DEPLOYED rev 424** (`1.0.0+hg.e521ecbee024
->   424`, AOT suite 193/0 both modes, battery 216/237 = baseline; rollbacks dist/Bash.exe.rev422 ... rev397), NOTIFIED
->   (koliada-net-28, kes-term-a1). Revs after 426 not published.
+> - **TRUE STATE:** hg tip = rev 450 (this anchor + DECISIONS "DEPLOYED rev 448 ... PUBLISHED ... hg rev 449").
+>   **PUBLISHED: GitHub main = git 2876ef9 = hg rev 449** (2026-10-28; compare3 on deployed 448: pipeline 0.080 s, 1.3x
+>   WSL, no row loses). **DEPLOYED rev 448** (`1.0.0+hg.a65944c9ec7c 448`, AOT suite 198/0 both modes, battery 216 =
+>   baseline; rollback dist/Bash.exe.rev445; 445 = step (c), 442 = step (b), 437 = (g2), 435 = (g1), 433 = step (a)),
+>   NOTIFIED. Two untracked files in the root are not ours: BENCHMARK-PROVENANCE.md, "The Windows Shell Tax.url"; leave
+>   them. The help check stopped at 41/87 (curl 000 from gnu.org) under rev 440's script: NO cache was kept
+>   (DECISIONS "CORRECTION: the help check's first run left NO cache"), so a rerun fetches all 87 (~1 h, unmeasured).
+>   GREENLIT 2026-10-28 ("ok, go"): IN BATCHES, `HELP_CHECK_PAGES=15` a run (rev 452), one run every few hours, the
+>   first late on 2026-10-28; the cache carries each run on. If a batch of 15 is refused too: STOP, back to the architect.
+>   Batch 1 (16:17-16:31): 15 fetched, no refusal; 14 answered 200; FAIL 404 `xargs` -> findutils `.../find_html/Invoking-xargs.html`
+>   (WSL's find.info has node "Invoking xargs": the PATH is wrong, not the name; `find`'s Invoking-find.html, same folder, is
+>   not fetched yet: it tells whether the folder is wrong). A 404 is not cached, so each batch fetches it again. Do NOT
+>   guess a new URL; fix help.json from what the batches show, after the architect's word (a code change + deploy).
+>   Batch 2 (19:47-19:58): 15 fetched, no refusal, 0 FAIL; 29 of 87 pages cached, their 53 URLs pass (anchors too);
+>   87 URLs on the 58 pages left not checked yet (xargs's not refetched this time). Batch 3 scheduled 22:53.
+>   Batch 3 (22:53-23:04): 15 fetched, no refusal, 0 FAIL; 44 of 87 cached; 66 URLs on 43 pages left. It got
+>   Job-Control-Builtins.html, the page refused (000) at 10:24 this morning: so not that page. Batch 4 scheduled 02:03.
+>   Batch 4 (2026-10-29 02:03-02:04): STOPPED at its FIRST page, 000 (no answer) from sha1sum-invocation.html, rc 3;
+>   nothing fetched; still 44 of 87 cached, 66 URLs on 43 pages left. NOTHING SCHEDULED. Cause NOT concluded: a 000 at
+>   the first page fits the VPN being off (the architect, 2026-10-28: without it gnu.org does not answer) as well as a
+>   block; batches 2-3 (30 pages, 3 h apart) were not refused. The architect: VPN live (not browser-based), "try again?".
+>   Batch 4 retry (03:32-03:44): 15 fetched, no refusal, 0 FAIL, sha1sum-invocation.html among them: the 02:03 000 did not
+>   repeat (cause unknown; twice now a single 000 that a later run did not see). 59 of 87 cached; 31 URLs on 28 pages
+>   left. curl declares Chrome 129 / Windows (UA + Accept only; Schannel TLS): unchanged, it is getting through. Batch 5
+>   scheduled 06:47. Rev 459 (the architect: "ok, sounds good"): a no-answer (000) is retried ONCE after 30-90 s; a stop
+>   names curl's exit code. AWAITING THE ARCHITECT: his "this should become a real tool for generic use locally?" (a
+>   paced, polite fetcher any local session can use); Claude's position and questions in DECISIONS "no answer retried once".
+>   2026-10-29 04:4x, the architect: "switch to the packages" + "Go on the plan": batch 5 CANCELLED; coreutils' index
+>   lists coreutils.html_node.tar.gz (1 request, 04:41; then the archive, 04:42: all 55 coreutils links + anchors pass
+>   offline). Rev 460: the check makes ONE download per GNU manual (~16 downloads in all, not 87 pages), tested locally.
+>   The real run WAITS for the architect's word that the VPN is back on (he turned it off at ~04:45 to read his ISP
+>   address for the gnu.org email; draft in the session: VPN paragraph left out, his call). VPN back ~04:55.
+>   Run (04:56-05:04, 9 downloads): 140/140 passed, BUT a false pass: xargs (404 online in batch 1) passed against the
+>   findutils archive. findutils' index (05:05) links `html_node/index.html` (pages flat, NO find_html/ folder) and
+>   `find.html_node.tar.gz`. Rev 461: the archive name is READ FROM THE INDEX (kept), a page must be at its own path in
+>   the archive. Re-run (05:09-05:11, 2 downloads): 138 pass, FAIL find + xargs (`html_node/find_html/...`: not in the
+>   manual). The architect: "yes" -> rev 462: help.json's find + xargs = `.../findutils/manual/html_node/Invoking-find.html`
+>   and `.../Invoking-xargs.html`, in Bash/help.json AND this machine's `~/.bash/help.json` (byte-identical now; a
+>   written file answers for every name it has, Builtins.Help.cs:7-8, so OTHER machines' files keep the old two).
+>   Check from the cache: 140/140, 0 downloads. **DEPLOYED rev 462** (`1.0.0+hg.c26ff088761b 462`, suite 198/0 both
+>   modes, battery 216 = baseline; rollback dist/Bash.exe.rev448), NOTIFIED (koliada-net-28, kes-term-a1).
+>   AWAITING THE ARCHITECT (raised 2026-10-29): an INSTALLER for 1.x. Ruled 2026-10-20 (DECISIONS: InstallGen, per-user,
+>   everything under ~/.bash, ~/.bash/bin/Bash.exe, Authenticode on traction) but as phase 5 of the 2.0 plan, now
+>   PortableBash's. RULED 2026-10-29: C#Bash owns ITS installer; InstallGen = E:/Claude/Installer/release (DECISIONS
+>   "RULED: C#Bash owns its installer": help.json NOT payload; a plan to ratify first). RULED 2026-10-29: InstallGen
+>   learns to REPLACE A FILE IN USE (requested: Installer REGISTER INST-Q-046, its rev 26, with measurements and the
+>   trick); C#Bash's installer is BLOCKED on it: plan `docs/installer-plan.md`, not ratified, KEEP IT CURRENT.
+>   AWAITING THE ARCHITECT: phases 1 (release asset) and 2 (help.json refresh in Bash.exe) do not need InstallGen:
+>   do they wait too? INST-Q-046 now carries his refinement (Installer rev 27): set-aside files go to ONE `.deleted`
+>   folder on the target's drive (a running EXE moves within a drive; across drives it is COPIED and the move says
+>   success), swept at the start of every installer run.
+>   GREENLIT 2026-10-29 ("fix mv first and then P1 & 2 of the plan"): (1) mv FIXED rev 467 (DECISIONS "FIXED: `mv` to
+>   another drive"; NOT deployed: deploy only on his word); (2) P1 release asset: tools/release.sh + publish.sh step 6
+>   (dry-run tested; the real test is the next publish); (3) P2 help.json refresh in Bash.exe: BUILT rev 469 (an
+>   unedited earlier built-in table is rewritten when help reads it; NOT deployed). INVARIANT: when Bash/help.json
+>   changes, add the outgoing table's SHA-256 to `EarlierHelpTables` (Builtins.Help.cs). Claude's proposal, NOT
+>   built (deploy.sh is a contract tool): deploy.sh refuses when help.json changed since the deployed rev and the
+>   outgoing hash is missing. AWAITING: deploy 467-469 (mv fix + P2) on his word.
+>   LOGGED, not fixed (found 2026-10-29): `mv file nodir/` renames to `nodir`, rc 0 (GNU: Not a directory, rc 1);
+>   `exec 4< <(PROGRAM)` may run PROGRAM to completion first [inferred, not investigated].
+>   Claude's position: first a GitHub Release asset per publish (Bash.exe + SHA-256), then the installer (rename the
+>   running exe aside; write the claude.cmd start file, not a global CLAUDE_CODE_GIT_BASH_PATH: #94077; never
+>   overwrite the user's help.json; uninstall).
+>   Batches are one-shot CronCreate jobs in THIS session only (gone if it ends): a new session re-schedules by hand. NOTHING GREENLIT IS LEFT: the next step is the architect's steer.
 > - **Scope (the architect):** PortableBash is a separate session; here C#Bash user support only.
 > - **DONE this session (DECISIONS 2026-10-27 has each, with measurements; do NOT re-open):** before 404: tail/head over
 >   2 GiB, help/--help -> GNU pages (help.json), enable, the unserviced log, wc + checksums, THE SHARED BYTE LAYER
@@ -24,7 +84,7 @@
 > - **Deliberate differences from GNU (stated in DECISIONS; do not "fix"):** on a PIPE, sed q / head -n leave the next
 >   command exactly the next line (GNU: whatever its block read left); sed `$F` after a lookahead names the line's
 >   file; comm -i kept (C#Bash's own); `tee /dev/stdout` with stdout a file writes two copies (Linux reopens it).
-> - **GREENLIT 2026-10-28 (the architect: "I'd do 1 first ... then 2.'; Yes and 3 then publish?")**, in order, each its own
+> - **DONE (was GREENLIT 2026-10-28; (1) rev 441, (2) 442, (3) 445 + 447, published hg 449) (the architect: "I'd do 1 first ... then 2.'; Yes and 3 then publish?")**, in order, each its own
 >   test + commit + deploy (`bash tools/deploy.sh < /dev/null`) + notice: (1) the runner gives each case stdin NUL in
 >   console mode too (item (h)); (2) buffering step (b): pipeline-stage pipes; (3) step (c): C#Bash's own stdout when not
 >   a console (flush before any child inheriting it); then PUBLISH (compare3 on the deployed build when ListAgents shows

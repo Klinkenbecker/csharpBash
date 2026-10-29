@@ -97,9 +97,20 @@ public sealed partial class Builtins
 		if (missing) Unserviced.Log("help", topic, $"{topic}: not implemented in C#Bash", args, "not implemented: answered with its page");
 		}
 
+	/// <summary>The SHA-256 of every earlier built-in table (each `hg cat` of `hg log -r 'file("Bash/help.json")'` but the
+	/// current one). A file still byte-for-byte one of them was written by an earlier build and never edited, so it is
+	/// replaced by this build's table (2026-10-29: rev 397's sent find and xargs to a findutils folder that is not
+	/// online, and every profile written before kept it); an edited file is never touched. WHEN Bash/help.json CHANGES,
+	/// ADD THE OUTGOING TABLE'S HASH HERE (DECISIONS 2026-10-29).</summary>
+	private static readonly HashSet<string> EarlierHelpTables = new(StringComparer.Ordinal)
+		{
+		"70fcfdea5039e0a80fbe82b865299b81aa402218bbc9b7a6717bafc7b5364ef4",   // rev 397, 2026-10-27
+		};
+
 	/// <summary>The table, in the built-in order then the file's own names: the file's pages for every name it has, the
-	/// built-in pages for the rest. The file is written from the built-in table when it is missing; one that does not
-	/// parse is said once per request and the built-in table answers.</summary>
+	/// built-in pages for the rest. The file is written from the built-in table when it is missing, and again when it is
+	/// an earlier build's table unedited (<see cref="EarlierHelpTables"/>); one that does not parse is said once per
+	/// request and the built-in table answers.</summary>
 	private static List<(string Topic, List<string> Urls)> HelpTable()
 		{
 		var builtIn = BuiltInHelpJson();
@@ -109,6 +120,13 @@ public sealed partial class Builtins
 		try
 			{
 			if (!File.Exists(file)) { Directory.CreateDirectory(dir); File.WriteAllText(file, builtIn); return table; }
+			var sum = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(file))).ToLowerInvariant();
+			if (EarlierHelpTables.Contains(sum))
+				{
+				File.WriteAllText(file, builtIn);
+				Console.Error.WriteLine($"help: {file}: an earlier build's table, unedited: replaced by this build's");
+				return table;
+				}
 			var mine = Pages(Json.ParseOne(ShellEncoding.ReadAllText(file)) as JObj
 			                 ?? throw new Json.ParseException("not a JSON object"));
 			for (int k = 0; k < table.Count; k++)

@@ -12,11 +12,35 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 450 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 474 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 473 | 2026-10-29 | Publish doc review: README table and prose from compare3 on deployed 472 (all outputs agree), 208 cases; IMPLEMENTATION: tools/release.sh |
+| 472 | 2026-10-29 | Installer plan, phase 5: the architect's leaning (not a ruling): the README links both the installer and the bare Bash.exe |
+| 471 | 2026-10-29 | README links the releases: the latest Bash.exe (releases/latest/download) and the Releases page; skipping the build in the Claude Code setup |
+| 470 | 2026-10-29 | Ruled: releases go on the same GitHub repository as the source (its Releases page); the plan says so |
+| 469 | 2026-10-29 | Installer plan phase 2: an unedited earlier built-in help.json is rewritten with this build's when help reads it (an edited one never touched); rev 397's find/xargs reach old profiles |
+| 468 | 2026-10-29 | Installer plan phase 1: tools/release.sh attaches the deployed Bash.exe and its SHA-256 to GitHub release hg-<rev>, run by publish.sh after its push (first real run: the next publish) |
+| 467 | 2026-10-29 | mv to another drive whose source cannot be removed (a running program) says 'cannot remove' and fails, as GNU (was silent success, both files left) |
+| 466 | 2026-10-29 | Logged: mv to another drive reports success when the source could not be removed (Builtins.Files.cs:336); INST-Q-046 refined with the architect's .deleted folder and sweeper |
+| 465 | 2026-10-29 | Ruled: InstallGen learns to replace a file in use (flagged as Installer INST-Q-046, measured); C#Bash's installer plan written, blocked on it |
+| 464 | 2026-10-29 | Ruled: C#Bash owns its installer, PortableBash its own; InstallGen at E:/Claude/Installer/release; help.json is not installer payload |
+| 463 | 2026-10-29 | Deployed rev 462 (help's find/xargs; suite 198/0 both modes, battery 216); notified; an installer raised, awaiting the architect |
+| 462 | 2026-10-29 | help: find and xargs point at findutils' html_node/ pages (find_html/ is not online; found by check-help-urls); this machine's ~/.bash/help.json too |
+| 461 | 2026-10-29 | check-help-urls reads each archive's name from the manual's index (a name rule passed find/xargs, whose folder is not online); 138/140 pass, find + xargs fail |
+| 460 | 2026-10-29 | check-help-urls: one download per GNU manual (its html_node archive), not a request per page: 79 gnu.org requests -> 8 |
+| 459 | 2026-10-29 | check-help-urls retries a no-answer once after 30-90 s (the architect: 'just to retry'); a stop names curl's exit code |
+| 458 | 2026-10-29 | Anchor: help check batch 4 retry (15 pages, 0 FAIL; the 02:03 000 did not repeat); 59 of 87 cached; batch 5 scheduled 06:47 |
+| 457 | 2026-10-29 | Anchor: help check batch 4 stopped at its first page (000 at 02:03; VPN or a block, not concluded); nothing scheduled, awaiting the architect |
+| 456 | 2026-10-28 | Anchor: help check batch 3 (15 pages, no refusal, 0 FAIL; 44 of 87 cached; this morning's refused page answered); batch 4 scheduled 02:03 |
+| 455 | 2026-10-28 | Anchor: batch 2 ended 19:58 |
+| 454 | 2026-10-28 | Anchor: help check batch 2 (15 pages, no refusal, 0 FAIL; 29 of 87 cached); batch 3 scheduled 22:53 |
+| 453 | 2026-10-28 | Anchor: help check batch 1 (15 pages, no refusal; FAIL 404 xargs's findutils URL); batch 2 scheduled 19:47 |
+| 452 | 2026-10-28 | check-help-urls in batches: HELP_CHECK_PAGES=N pages a run, exit 4 when pages are left (the architect: 'get the next N pages, and so on') |
+| 451 | 2026-10-28 | Correction: the help check's first run (rev 440) kept no cache; a rerun fetches all 87 pages, not 47 |
+| 450 | 2026-10-28 | Published: GitHub main = git 2876ef9 = hg rev 449 by tools/publish.sh (compare3 on deployed 448: pipeline 0.080 s, 1.3x WSL); deployed 448 recorded; nothing greenlit left |
 | 449 | 2026-10-28 | README: table and prose from compare3 on deployed 448 (pipeline 0.080 s, 1.3x WSL: no row loses now); benchmark log appended |
 | 448 | 2026-10-28 | Benchmark log: compare3 on deployed 445 (pipeline 0.080 s, 1.4x WSL; func/loop_big 6-8% slower: fixed in 447, re-run to follow) |
 | 447 | 2026-10-28 | No empty flush after every builtin (step (c) made func +6%, loop_big +8%); the publish doc review |

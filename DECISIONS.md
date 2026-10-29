@@ -9214,3 +9214,325 @@ stderr never buffered); IMPLEMENTATION: Lexer `_arithParens`, Builtins `FlushBuf
 re-run of compare3 on the deployed fix.
 **Implemented by:** rev (this commit). Files: `Bash/Evaluator/ConsoleMux.cs`, `Bash/Evaluator/Builtins.cs`, `README.md`,
 `ARCHITECTURE.md`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-28 -- DEPLOYED rev 448 (the OutDirty fix) and NOTIFIED; PUBLISHED: GitHub main = git 2876ef9 = hg rev 449
+**Status:** Active. The last step of the list greenlit 2026-10-28 ("'I'd do 1 first ...'; Yes and 3 then publish?").
+**Deployed:** `bash tools/deploy.sh < /dev/null`: C#Bash build `1.0.0+hg.a65944c9ec7c 448` (447's fix, 448 the 445 benchmark
+log); AOT suite 198 passed, 0 failed, both modes; battery 216/237 = baseline; rollback dist/Bash.exe.rev445. Notified
+koliada-net-28, kes-term-a1, koliada-net-forms-e9, each asked for a quiet window; all three said go.
+**Benchmark (push rule):** `compare3.sh` on deployed 448, all outputs agree with Git Bash and WSL: loop 0.154, arith 0.244,
+func 0.216, loop_big 1.435 (back from 445's 0.228 / 1.534), coreutils 0.055, pipeline 0.080 (Git Bash 0.243, WSL 0.105:
+3.0x / 1.3x; at 424 it was 0.156 against WSL's 0.119, 0.8x), find 0.015, startup 0.0086 (Git Bash 0.0236, WSL 0.1035).
+Peers told "benchmark done". Doc review: 447 (DECISIONS "FIXED: an empty flush"), and rev 449: README's table from this
+run; "Where it loses" became "Where it used to lose" (the pipeline loss was mainly the line-at-a-time writes, not managed
+code against native C: buffering alone took the row from 0.156 to 0.080 s).
+**Published:** `bash tools/publish.sh` under C#Bash (deployed 448): MERCURIAL_HISTORY.md (450 changesets) and
+mercurial-history.hg (verified) written; untracked BENCHMARK-PROVENANCE.md and "The Windows Shell Tax.url" left out;
+pushed 9a5a95c..2876ef9; remote main = git 2876ef9 = hg rev 449. Message file:
+`F:/TEMP/claude/F--Koliada-Tools-bash/988ee3e2-f1b4-4772-913a-37e408930e46/scratchpad/msg449.txt`.
+**Implemented by:** revs 447-449; this entry rev 450. Affects `PROJECT_CONTEXT.md`: the RESUME anchor.
+
+## 2026-10-28 -- CORRECTION: the help check's first run left NO cache; a rerun fetches all 87 pages
+**Status:** Corrects one line of the 2026-10-28 "BUILT step (c)" entry ("Help-link check (rev 440, 444): ... pages are
+now kept between runs, so the next run fetches only the 47 left") and of the anchor (rev 450: "resumable from its cache").
+**Found (2026-10-28, 14:18):** the cache folder (`$TEMP/check-help-urls` = `F:/TEMP/check-help-urls`) holds nothing (shell
+`ls`, and the Glob tool over F:/TEMP: no files). The run that stopped at page 41 of 87 ran rev 440's script, before rev
+444 added the cache: its output has no "N of 87 pages from earlier runs" line, and 440 kept nothing and checked no
+anchors on a stop. So that run's only result is: 40 pages answered 200, then no answer (curl 000) at page 41. A rerun
+fetches all 87 pages, paced 20-70 s each (~1 h [unmeasured estimate from the pacing range]), and it passes again the
+count at which the first run was refused.
+**Affects `PROJECT_CONTEXT.md`:** the RESUME anchor's help-check line.
+
+## 2026-10-28 -- BUILT: the help check runs in batches (HELP_CHECK_PAGES=N pages a run; exit 4 when pages are left)
+**Status:** Active. The architect, on the empty cache (entry above): "If you have 40 or 41 pages, why not start there and
+get the next N pages, and so on?"; then "ok, go" to Claude's plan: a per-run page limit, N = 15, one run every few hours,
+the first late today.
+**Why not "start there":** the 40 pages were not kept (only their names, in the session transcript), and 61 of the 151
+links in `~/.bash/help.json` carry an `#anchor`, which can only be checked against the page's text; so they are fetched
+once more anyway, and skipping them by name only reorders. From rev 444 on, the cache already makes a run start where
+the last one ended; the missing piece was N.
+**Decision:** `HELP_CHECK_PAGES=N` (0 or unset: no limit, as before; not a number: exit 2). Before each page not in the
+cache, once N were fetched this run, the run ends: "PAUSED after N pages this run", the rest counted "not checked yet",
+exit 4 (failures found so far still exit 1; a refusal still exit 3). N = 15: well under the 40 the first run got before
+gnu.org stopped answering; whether that was a count, a rate or a one-off is unknown. **Falsifier:** a batch of 15 refused
+too means the count is not the trigger: stop, back to the architect.
+**Tests (local only, no outside host):** `hg serve` on 127.0.0.1 as the web server, 0 s pauses, a fresh cache, a 3-page
+table: HELP_CHECK_PAGES=1 three times = 1, 2, 3 pages kept, rc 4, 4, 0, "2 / 1 / 0 not checked yet"; `x` rc 2; no limit:
+all 3, rc 0. A missing anchor on a cached page with a pause: rc 1, PAUSED in the summary. Mutation (the limit check
+deleted): HELP_CHECK_PAGES=1 fetched all 3, rc 0, so the test fails without it.
+**Implemented by:** rev 452. Files: `tools/check-help-urls.sh`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-29 -- BUILT: the help check retries a no-answer once (as a browser, then a person, would); a stop names curl's exit code
+**Status:** Active. The architect: "Maybe the next change should be just to retry - what is a browser typical retry?",
+then "ok, sounds good" to Claude's answer.
+**Context:** twice a single no-answer (curl 000) stopped a run (2026-10-28 10:24 at page 41; 2026-10-29 02:03 at page 1)
+and a later run fetched the same page without trouble (Job-Control-Builtins.html in batch 3, sha1sum-invocation.html in
+the batch 4 retry, 03:32). The architect: the VPN is system-wide (not browser-based) and was live.
+**Decision:** on 000 only, wait HELP_CHECK_RETRY_MIN..MAX s (default 30..90; random) and fetch the page once more; a second
+000 stops the run as before (exit 3). 403, 429 and 503 still stop at once, never retried. The stop line names curl's exit
+code (6 name lookup, 7 connect, 28 timed out, 35 TLS, 52/56 dropped), so the next stop tells a dead network from a dropped
+connection instead of leaving Claude to guess.
+**Why one retry:** a browser silently retries a request that died before any reply once, on a new connection, then
+shows the error and a person reloads after seconds to a minute [recalled from Chrome's behaviour; not checked against its
+source]. **Falsifier:** if retries after a 000 mostly fail too, the retry only adds load on the host: take it out, keep
+the exit code.
+**Tests (local only):** no server: "no answer (curl exit 7); one retry in 0s", then STOPPED "(curl exit 7; ...)", rc 3.
+No server at the first try, `hg serve` on 127.0.0.1 started during a 25 s retry pause: the retry got the page and the run
+finished all 3 pages, rc 0. Mutation (the retry block deleted): no server, STOPPED at the first try with no retry line.
+Not tested: a 403/429/503 not being retried (no local server answers so; the guard is `[ "$status" = 000 ]`).
+**Raised, AWAITING THE ARCHITECT:** "feels like this should become a real tool for generic use locally?" Claude's
+position: yes, as a standalone script on curl (shuffled list, random pauses, browser headers, one retry on no-answer,
+stop at a refusal, a cache, N a run), with check-help-urls becoming help.json -> that tool -> the anchor check; not a C#Bash
+builtin (it would mean HTTP inside the interpreter for one use). The part worth having machine-wide is a per-host budget
+shared by every session, so two sessions never both fetch from gnu.org at once. Open: which other uses he has in mind
+(that shapes the interface), and where machine-wide tools live.
+**Implemented by:** rev 459. Files: `tools/check-help-urls.sh`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-29 -- BUILT: the help check makes ONE download per GNU manual (its html_node archive), not a request per page
+**Status:** Active. The architect: "maybe we should switch to the packages you mentioned?", then "Go on the plan"
+(cancel batch 5; one request to confirm the archives; rework the check; test locally; run once).
+**Spike (2 requests to gnu.org, 04:41 and 04:42, through the VPN, the Chrome User-Agent):** the coreutils manual's index
+page links `coreutils.html_node.tar.gz` (also .html.gz, .info.tar.gz, .txt.gz, .dvi.gz, .texi.tar.gz); the archive is
+415 KB, 253 pages, unpacked flat with the same names as under html_node/. Offline, all 55 coreutils links of help.json
+and their anchors resolve in it, and tail-invocation.html carries the same `id`s as the page fetched online.
+**Decision:** a page `.../software/PKG/manual/html_node/X.html` is checked as `X.html` inside ONE download of
+`.../software/PKG/manual/PKG.html_node.tar.gz` (Windows' own tar unpacks it into the cache, then writes a `.unpacked`
+marker, the only sign that it is cached: a half-unpacked folder is downloaded again); `html_node/SUB_html/X.html`
+(findutils) inside `SUB.html_node.tar.gz`. Every other page is fetched itself, as before. Downloads are what is paced,
+shuffled, retried once on no answer, stopped at a refusal, limited by HELP_CHECK_PAGES and cached; a page missing from
+its archive is "FAIL not in the manual", a missing archive "FAIL 404 ... (from ARCHIVE)" for each of its pages. The
+table's 87 pages are 16 downloads: 4 archives (bash, coreutils, diffutils, findutils), gawk.html, grep.html, sed.html,
+/software/which/, and 8 pages on man7.org, jqlang.org, sourceware.org. Requests to gnu.org per full check: 79 -> 8.
+**Alternatives:** the index page before each archive (robust to any name, but 2 requests a manual; the name rule held
+for coreutils, and a wrong one shows as FAIL 404); the single-page manuals (bash.html, coreutils.html: one request each
+too, but a page's own file name is not in them, only its id).
+**Not verified:** findutils' archive name `find.html_node.tar.gz` (taken from its `html_node/find_html/` folder).
+**Tests (local only):** `hg serve` of a scratch repository holding two archives and a plain page, a 7-URL table:
+4 downloads, exactly 3 FAILs (an anchor not on its page, a page not in its archive, an archive missing), rc 1; again:
+3 of 4 from the cache, the missing archive asked for again, the same 3 FAILs. A half-unpacked folder (marker and a page
+deleted): downloaded again, the page back. HELP_CHECK_PAGES=1: 1 download, PAUSED. Nothing listening: one retry, then
+STOPPED with curl exit 7, rc 3. Mutations: the archive mapping deleted = 6 page fetches and 6 false FAILs; the marker
+replaced by the folder itself = every archive downloaded again on every run (3 this run, not 1).
+**Implemented by:** rev 460. Files: `tools/check-help-urls.sh`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-29 -- FIXED: the help check read each archive's name from a rule; it now reads it from the manual's index page
+**Status:** Active. Supersedes the name rule in the 2026-10-29 entry "BUILT: the help check makes ONE download per GNU
+manual" (`PKG.html_node.tar.gz`; `html_node/SUB_html/` -> `SUB.html_node.tar.gz`). Found by its own first real run.
+**Found:** the run of rev 460 (04:56-05:04, 9 downloads, rc 0) passed all 140 URLs, but one of those passes was false:
+xargs (`.../findutils/manual/html_node/find_html/Invoking-xargs.html`, 404 online in batch 1) passed because
+`find.html_node.tar.gz` holds `Invoking-xargs.html`. Offline, the 52 pages fetched online in the batches have the same
+`id`s as in their archives (none differ), so the archives are a faithful copy; the RULE was wrong. One request to
+findutils' index (05:05): it links `html_node/index.html` (the pages are flat under html_node/, there is no find_html/
+folder online) and `find.html_node.tar.gz` (not findutils.*).
+**Decision:** each manual's index page (`.../manual/`) is a download like any other (paced, kept); the archive is the
+first `*.html_node.tar.gz` it links; a page `html_node/REL` must be the file REL in that archive, at the same path. An
+index that links no archive: "FAIL no per-node archive on ROOT". A full check is 8 requests to gnu.org for the four
+manuals (4 once the indexes are kept), plus gawk/grep/sed/which.
+**Tests (local only):** busybox httpd in WSL serving a scratch site (index pages for three manuals, one of them naming
+its archive unlike its package, one linking no archive; a manual with no index; a plain page), a 9-URL table: 7
+downloads, exactly the 5 planted FAILs (an anchor, a page not in its archive, a SUB_html path, no archive, no index),
+rc 1; again: 1 download (the missing index), the same 5. Rev 460's script on the same table: a false FAIL 404 (the
+archive named unlike its package) and NO FAIL for the SUB_html path (the false pass) -- the two errors this fixes.
+HELP_CHECK_PAGES=1: 1 download, PAUSED, rc 4. Nothing listening: one retry, STOPPED, curl exit 7, rc 3.
+**Real re-run (05:09-05:11; coreutils' and findutils' index pages, fetched at 04:41 and 05:05, seeded into the cache):
+2 downloads (bash's and diffutils' index pages); the archives came from the cache; 138 of 140 URLs pass; FAIL find and
+xargs (`html_node/find_html/...`: not in the manual).**
+**Raised, AWAITING THE ARCHITECT:** help.json's find and xargs to `.../findutils/manual/html_node/Invoking-find.html`
+and `.../Invoking-xargs.html` (the index's folder + the archive's files; not fetched online). A code change + deploy;
+and a `%USERPROFILE%/.bash/help.json` already written keeps the old two (Builtins.Help.cs:7-8: the file answers for every
+name it has), so this machine's file needs the same two lines changed.
+**Implemented by:** rev 461. Files: `tools/check-help-urls.sh`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-29 -- FIXED: help's find and xargs pointed into a findutils folder that is not online (find_html/)
+**Status:** Active. The architect: "yes" (to fixing both tables and deploying).
+**Found by:** tools/check-help-urls.sh, rev 461 (entry above): `html_node/find_html/Invoking-{find,xargs}.html` are not in
+findutils' manual; its index links `html_node/index.html`, and the archive holds both pages at its top level. xargs's old
+URL answered 404 online (2026-10-28, batch 1).
+**Decision:** `find` -> `https://www.gnu.org/software/findutils/manual/html_node/Invoking-find.html`, `xargs` ->
+`.../html_node/Invoking-xargs.html`, in the built-in Bash/help.json and in this machine's %USERPROFILE%/.bash/help.json
+(written 2026-10-27 from the old table; a written file answers for every name it has, Builtins.Help.cs:7-8, so a deploy
+alone would not have changed this machine's answer). After: the two files are byte-identical; the check, all from its
+cache (0 requests), 140 of 140 URLs pass; the deployed 448, reading the file, already answers `help xargs` / `help find`
+with the new URLs. The new URLs were not fetched online: they are the index's folder + the archive's files.
+**Not done:** other machines' or users' %USERPROFILE%/.bash/help.json keep the old two until edited or deleted (C#Bash
+then writes the built-in table again). A way for a build to correct a written table's known-wrong entries would be a
+design change; not raised before now.
+**Also seen:** C#Bash's jq has no `-S` ("not implemented in-process and no external 'jq' on PATH").
+**Implemented by:** rev 462. Files: `Bash/help.json`, `PROJECT_CONTEXT.md`; outside the repository
+`C:/Users/guy/.bash/help.json`.
+
+## 2026-10-29 -- DEPLOYED rev 462 (help's find and xargs fixed) and NOTIFIED; an installer RAISED
+**Status:** Active. The architect: "yes" (both fixes and the deploy). Slot: koliada-net-forms-e9 and koliada-net-28 both
+said go (no timing).
+**Deployed:** `bash tools/deploy.sh < /dev/null`: C#Bash build `1.0.0+hg.c26ff088761b 462` over 448; suite 198 passed,
+0 failed, both modes; battery 216/237 = baseline; rollback dist/Bash.exe.rev448. Checked after: with USERPROFILE and HOME
+a fresh folder, the deployed build wrote `.bash/help.json` byte-identical to rev 462's Bash/help.json and answered
+`help xargs` with the new URL. Notified koliada-net-28 and kes-term-a1 (koliada-net-forms-e9 had ended).
+**Raised by the architect, AWAITING him:** "We should also start talking about an installer so people don't have to
+re-build the project to use it?" The 2026-10-20 rulings stand (InstallGen; per-user, no elevation; everything under
+~/.bash, `~/.bash/bin/Bash.exe` alone for PATH; Authenticode if the project gets public traction), but they were made
+as phase 5 of the 2.0 plan, which moved to PortableBash on 2026-10-27. Open: whether C#Bash 1.x owns an installer now;
+where InstallGen lives (a Glob for `InstallGen*` under F:/Koliada found nothing; not concluded absent). Claude's position:
+first a GitHub Release asset on each publish (the AOT Bash.exe and its SHA-256), which alone ends the rebuild; then the
+installer: Bash.exe into ~/.bash/bin, a running one renamed aside and kept as the rollback (as deploy.sh does), the
+README's claude.cmd start file written (not a global CLAUDE_CODE_GIT_BASH_PATH, which loses to PATH: Claude Code issue
+#94077), the user's help.json never overwritten (a refresh offered: today's find/xargs case), an uninstall. Expect
+SmartScreen's warning on an unsigned download until Authenticode [recalled, not tested].
+**Implemented by:** rev 463 (records only).
+
+## 2026-10-29 -- RULED: C#Bash owns its installer (PortableBash its own); InstallGen at E:/Claude/Installer/release
+**Status:** Active. The architect: "1/ C#Bash owns _its_ installer, PortableBash owns its own installer as and when it
+needs it. 2/ Currently; E:\Claude\Installer\release" (answering the two open items of the entry above), and asked
+"Won't it also need the help index file?"
+**Found (read this turn):** release/ holds InstallGen.exe (177 KB) and stub.bin (2026-09-14); E: is local here (guy-windows8).
+Its CONTRACT.md (specification version 1): a manifest maps payload paths to places (`fixed` or `default`, nested as
+`place:sub/path`, `%USERPROFILE%` not `%HOMEPATH%`); deployment is check-and-repair, writes only missing or differing
+files, never deletes (345-347); `links` are created if absent and never repointed (305-307); `path.add` is the one
+change to the environment; no uninstall (466); its own rule, no environment variables anywhere (CONTRACT-PLAN.md 297,
+the architect 2026-09-12). Nothing in its documents on replacing a file in use (searched; not tested).
+**Claude's answers and positions (AWAITING the architect; a plan to ratify comes first):**
+- help.json is NOT installer payload: Bash.exe writes it from its built-in table when it is missing (Builtins.Help.cs:7;
+  the fresh-profile test of 2026-10-29), and as payload check-and-repair would overwrite a user's edits on every
+  re-run. The stale-table case (find/xargs) is Bash.exe's to fix: a file byte-identical to an earlier built-in table
+  is replaced, an edited one left alone; it then reaches every machine with its next deploy.
+- Upgrade under live sessions: each build into its own folder (`~/.bash/<version>/Bash.exe`), the installer writing
+  the claude.cmd start file that names it; running sessions keep their file; old folders stay until removed by hand.
+  Alternative: "replace a file in use" in InstallGen itself (generic; its own plan and ratification).
+- No persistent variables (his Installer ruling): the start file sets them for its one claude process; the README's
+  `setx CLAUDE_CODE_GIT_BASH_PATH` step to change accordingly. Uninstalling: by hand, documented.
+**Implemented by:** rev 464 (records only). Affects `PROJECT_CONTEXT.md`: the anchor's installer item.
+
+## 2026-10-29 -- RULED: InstallGen learns to replace a file in use; C#Bash's installer BLOCKED on it (Installer INST-Q-046)
+**Status:** Active. Supersedes Claude's "per-version folders + start file" position in the entry above (never ruled).
+The architect: "InstallGen should learn to replace a file in use. Implementing c#Bash installer plan is blocked until
+then (keep it current for fix). InstallGen is not live right now - flag that project that it needs to learn the
+replace trick and provide details?"
+**Done:** the request is `INST-Q-046` in `E:/Claude/Installer/REGISTER.md` (OPEN, top; Installer hg rev 26), in the
+form of DAQ's INST-Q-045: the case; the stub today (`main.zig:1364` deployOne -> `:443` writeFileBytes opens the target
+GENERIC_WRITE, share 0, CREATE_ALWAYS: an in-use EXE fails as an uncounted-reason `failed`, and no write is atomic);
+the trick (temporary file in the same folder; MoveFileEx REPLACE_EXISTING first; when in use, rename the target aside
+then the new one in, undo on failure; a holder without share-delete refused with its own exit code; the installer's own
+set-aside files cleaned on a later run, a ruling of that project's since it touches "never deletes"; report lines; the
+test with a running payload EXE and a negative control); why it is generic.
+**Measured (a running copy of Bash.exe, C#Bash's cp / mv / rm):** overwrite in place refused ("being used by another
+process"); delete refused (access denied); rename aside works and the process keeps running; a new file renamed into
+the old name works and a new launch runs it; the set-aside copy cannot be deleted while it runs, and can after.
+**Plan:** `docs/installer-plan.md`, BLOCKED, not ratified, kept current: (1) a GitHub Release asset per publish, (2)
+help.json kept fresh by Bash.exe (a file equal to an earlier built-in table replaced, an edited one never touched),
+(3) the InstallGen manifest and installer (the upgrade case blocked on INST-Q-046), (4) the start file, (5) the README;
+what must not be decided during the work listed there. Phases 1 and 2 do not depend on InstallGen: whether they also
+wait is the architect's (AWAITING).
+**Implemented by:** rev 465 (records and the plan). Files: `docs/installer-plan.md`, `DECISIONS.md`,
+`PROJECT_CONTEXT.md`; outside: `E:/Claude/Installer/REGISTER.md` (its rev 26).
+
+## 2026-10-29 -- FOUND (logged, not fixed): `mv` to another drive reports success when the source could not be removed
+**Status:** Logged as a C#Bash fix to make (the architect: "Yes" to "log the mv bug as a C#Bash fix"); not started.
+**Measured 2026-10-29** (a copy of Bash.exe running, while testing the architect's `.deleted` idea for InstallGen):
+`mv <running>.exe C:/Users/guy/.deleted-spike/b.exe.old` from F: returned rc 0 with no message, and left BOTH files:
+the source still in place (in use, so not deletable) and a copy on C:. Within one drive the same move of a running
+file works (a rename).
+**Where:** `Bash/Evaluator/Builtins.Files.cs:336`, `File.Move(sp, target, overwrite: true)`, then success: nothing checks
+that the source is gone. Across volumes .NET's move copies and then deletes; Windows' MoveFileEx with
+MOVEFILE_COPY_ALLOWED "succeeds leaving the source file intact" when it cannot delete the source [recalled; consistent
+with the measurement, not read in .NET's source]. The directory branch (`:330-331`, Directory.Move, else CopyDir then
+Directory.Delete) can leave a partial state the same way [inferred; not measured].
+**GNU (to confirm in WSL before the fix, [recalled]):** a cross-device mv whose source cannot be removed prints
+`mv: cannot remove 'SRC': Permission denied` and exits 1, the copy left at the destination. Repro for GNU: a source in
+a read-only directory on one filesystem, moved to another (/tmp to /mnt/f).
+**Fix sketch:** after a move that may have copied (different volume), if the source still exists, report GNU's line and
+rc 1; a test with a held-open source on another volume, made red on 462 first.
+**Implemented by:** rev 466 (the log only).
+
+## 2026-10-29 -- FIXED: `mv` to another drive whose source cannot be removed now says so and fails (GNU), not silent success
+**Status:** Active. The architect: "fix mv first and then P1 & 2 of the plan". Closes the FOUND entry above.
+**GNU, confirmed (coreutils 8.32, WSL):** a source in a read-only directory moved from /tmp to /mnt/f prints
+`mv: cannot remove '/tmp/.../ro/f': Permission denied`, exits 1, and leaves both the source and the copy.
+**What makes it happen on Windows (measured):** only a file that can be opened for deletion but not deleted: a RUNNING
+program. A deny-delete ACL (icacls /deny (D) + the folder's (DC)) is refused up front by 462 already ("Permission
+denied", rc 1, no copy); a read-only attribute is moved and deleted; a file this shell holds open (`exec 3<`) is
+deleted, C#Bash opening with delete sharing. A program copied and started at once races a brief hold on the fresh copy
+(the start or the move refused "being used by another process"; after ~3 s the bug, both directions); a program known
+to be running because it has written its pid into a pipe shows the bug 5 times out of 5, no pause.
+**Fix:** `Builtins.Files.cs`, after `File.Move` of a file: if source and target have different path roots and the source
+still exists, it is deleted once more, and a refusal prints `mv: cannot remove '<src as typed>': <reason>` (IoError:
+Permission denied), rc 1, the copy left as GNU leaves it. Roots, not "source exists": a case-only rename on one volume
+keeps a name that still exists (checked: `mv File file` rc 0).
+**Test:** `mv_cross_volume` (AotOnly: the held program is a lone copy of the shell, which the managed build's apphost
+cannot run; SKIP with one filesystem; expected = GNU via WSL, the source path printed as SRC): red on deployed 462 three
+times out of three (no message, rc 0); green on the AOT staging build three times; mutation (the check disabled,
+AOT-built into the scratchpad) red. Suite on the AOT staging build: 199 passed, 0 failed, both modes; battery 216/237 = baseline.
+**Not covered:** the directory branch (Directory.Move, else CopyDir + Directory.Delete) when a file inside is in use:
+it throws and says "cannot move", not GNU's per-file "cannot remove" [inferred; not measured].
+**Also found, logged, NOT fixed (pre-existing, 462 too):** `mv file nodir/` (a directory that does not exist, written
+with a slash) renames the file to `nodir` and returns 0; GNU: `mv: cannot move 'file' to 'nodir/': Not a directory`, rc 1,
+the file left. And `exec 4< <(PROGRAM)` seemed to run PROGRAM to completion before `read -u 4` got its first line (a
+pid printed first was no longer a process) [inferred from one test; bash streams it; not investigated].
+**Implemented by:** rev 467. Files: `Bash/Evaluator/Builtins.Files.cs`, `tests/cases/mv_cross_volume.sh`,
+`tests/expected/mv_cross_volume.out`, `tests/run-tests.ps1`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-29 -- BUILT: installer plan phase 1, a GitHub Release per publish carrying the deployed Bash.exe and its SHA-256
+**Status:** Active; its acceptance check is observed at the next publish (only "publish" creates a release). The
+architect: "fix mv first and then P1 & 2 of the plan".
+**Decision:** a new contract tool, `tools/release.sh <token-file> [--dry-run]`, which `tools/publish.sh` runs as step 6
+once its push has landed; alone it retries a release that failed after a push. One way: the release is for git HEAD,
+tagged `hg-<rev>` from HEAD's first line ("C#Bash at hg rev <rev>: "); its text is the commit message plus the asset's
+stamp and SHA-256; assets `Bash.exe` (dist/, the deployed build, whose stamp names its own rev) and `Bash.exe.sha256`
+(sha256sum's format); a release already there for the tag is reused, an asset already on it left; then Bash.exe is
+downloaded back from its public URL and must match, or exit 1. Refused: a binary newer than the published rev
+(dist/Bash.exe rev 462 against HEAD's hg 449 today). The token reaches curl on stdin (`--config -`): never a command
+line, never printed. GitHub's REST API (releases, uploads.github.com), the jq C#Bash has (`--arg`, `sub`, `select`:
+checked).
+**Alternatives:** the release inside publish.sh (a failure after the push could then not be retried without a new
+commit); gh CLI (not installed here; publish uses git + the token file); a release for a binary built at publish time
+(publish benchmarks and ships the DEPLOYED build; building again would ship an unbenchmarked one).
+**Tests:** `bash -n` both; `--dry-run` printed the release JSON (tag, commit, name, the message body, the asset's stamp
+and SHA-256) before the guard was added, then refused 462 over hg 449, rc 2; no token file / no arguments: rc 2.
+NOT tested: any request to GitHub (the API calls, the token's permission for releases, the upload, the download
+check): the next publish is their first run.
+**Implemented by:** rev 468. Files: `tools/release.sh`, `tools/publish.sh`, `docs/installer-plan.md`, `DECISIONS.md`.
+
+## 2026-10-29 -- BUILT: installer plan phase 2, Bash.exe rewrites an unedited earlier built-in help.json with its own
+**Status:** Active; not deployed (467-469 wait for the architect's word). The architect: "fix mv first and then P1 & 2".
+**Context:** a written %USERPROFILE%/.bash/help.json answers for every name it has (Builtins.Help.cs), so rev 462's
+find/xargs fix reached no profile written before it; help.json is not installer payload either (check-and-repair would
+overwrite a user's edits, Installer CONTRACT.md 345-347).
+**Decision:** `EarlierHelpTables`, the SHA-256 of every earlier built-in table (from `hg log -r 'file("Bash/help.json")'`:
+revs 397 and 462 only, so one hash, rev 397's `70fcfdea...`; no version ever had a CR). When `help` reads the file
+and it is byte-for-byte one of them, the file is rewritten from this build's table, and stderr says so once
+("help: FILE: an earlier build's table, unedited: replaced by this build's"); any other file is never touched. The
+check runs only when help reads the table (help, `--help`): nothing on the shell's start. SHA-256 already ships
+(sha256sum's IncrementalHash), so no size. INVARIANT: when Bash/help.json changes, its outgoing hash is added.
+**Alternatives:** compare names and URLs instead of bytes (would also replace a table a user edited back to an old
+URL on purpose; bytes say "never edited" exactly); refresh by the installer (only installer users, and InstallGen's
+check-and-repair cannot tell edited from stale); a version field inside help.json (a schema change, and the tables
+already written have none).
+**Tests:** `help_refresh` (cases/help_rev397.json = `hg cat -r 397 Bash/help.json`; expected authored): a profile with
+no table gets this build's; rev 397's unedited is replaced (the note, the new URL, the file now this build's); asked
+again, nothing more; rev 397's with one name added by hand is untouched byte for byte and answers with its own pages,
+the added name too. Red on deployed 462 (old table kept, the find_html/ URLs); mutation (the check disabled) red;
+restored green. Suite on the Release build 198 passed, 0 failed, both modes. Battery not re-run (help only; deploy runs
+it). Proposed, NOT built: deploy.sh refusing when help.json changed since the deployed rev and the outgoing hash is
+missing from Builtins.Help.cs (deploy.sh is a contract tool: the architect's call).
+**Implemented by:** rev 469. Files: `Bash/Evaluator/Builtins.Help.cs`, `tests/cases/help_refresh.sh`,
+`tests/cases/help_rev397.json`, `tests/expected/help_refresh.out`, `tests/run-tests.ps1`, `IMPLEMENTATION.md`,
+`PROJECT_CONTEXT.md`, `docs/installer-plan.md`.
+
+## 2026-10-29 -- RULED: releases (Bash.exe, later the installer) go on the SAME GitHub repository as the source
+**Status:** Active. The architect: "I agreee - same repo", to Claude's recommendation (a project's Releases page beside
+its source is what users expect; each release tagged hg-<rev> on the commit it was published from; one token, one
+repository). Rejected: a releases repository of its own (it would keep binaries and the GitHub-only hg-<rev> tags out
+of the source mirror; not wanted). As built in rev 468 (`tools/release.sh`: REPO=Klinkenbecker/csharpBash).
+Prompted by Claude's unclear wording "publish.sh now runs [release.sh] after its push": the push (step 5) updates
+`main`; the release (step 6) adds an entry to the same repository's Releases page, after the push has landed.
+**Implemented by:** rev 470 (records: `docs/installer-plan.md`, `DECISIONS.md`).
+
+## 2026-10-29 -- README links the releases: the latest Bash.exe directly, and the Releases page
+**Status:** Active. The architect: "Don't forget we will want the README to show a link to the releases and, perhaps,
+the 'Latest' link?"
+**Decision:** under the opening description, "Download:" with `https://github.com/Klinkenbecker/csharpBash/releases/
+latest/download/Bash.exe` (GitHub's always-newest asset link [recalled; untested until a release exists]) and the
+Releases page; in "Using it as Claude Code's shell", a paragraph before step 1 for skipping the build (download, compare
+with Bash.exe.sha256 via `certutil -hashfile Bash.exe SHA256`, a folder of its own, then step 2; not code-signed, so
+Windows may warn [recalled]). Written now because the publish that creates the first release pushes the README in its
+step 5 and makes the release in step 6: the links work from that publish on.
+**Implemented by:** rev 471. Files: `README.md`, `docs/installer-plan.md`, `DECISIONS.md`.
