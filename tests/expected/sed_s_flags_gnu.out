@@ -1,0 +1,25 @@
+--- an unknown flag after e: sed's own error, the file unchanged
+rc=1
+x
+</Project>
+err: sed: -e expression #1, char 31: unknown option to `s'
+--- an unknown flag
+rc=1
+err: sed: -e expression #1, char 7: unknown option to `s'
+--- blanks among the flags
+b
+c
+--- a number and g
+abb
+--- an unknown command
+rc=1
+err: sed: -e expression #1, char 3: unknown command: `k'
+--- y's lengths
+rc=1
+err: sed: -e expression #1, char 7: strings for `y' command are different lengths
+--- an empty regex with I
+rc=1
+err: sed: -e expression #1, char 6: cannot specify modifiers on empty regexp
+--- unmatched {
+rc=1
+err: sed: -e expression #1, char 0: unmatched `{'

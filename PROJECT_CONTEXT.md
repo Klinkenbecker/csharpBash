@@ -54,8 +54,7 @@
 >   "RULED: C#Bash owns its installer": help.json NOT payload; a plan to ratify first). RULED 2026-10-29: InstallGen
 >   learns to REPLACE A FILE IN USE (requested: Installer REGISTER INST-Q-046, its rev 26, with measurements and the
 >   trick); C#Bash's installer is BLOCKED on it: plan `docs/installer-plan.md`, not ratified, KEEP IT CURRENT.
->   AWAITING THE ARCHITECT: phases 1 (release asset) and 2 (help.json refresh in Bash.exe) do not need InstallGen:
->   do they wait too? INST-Q-046 now carries his refinement (Installer rev 27): set-aside files go to ONE `.deleted`
+>   (Phases 1 and 2 did not wait: both built and released, 2026-10-29.) INST-Q-046 now carries his refinement (Installer rev 27): set-aside files go to ONE `.deleted`
 >   folder on the target's drive (a running EXE moves within a drive; across drives it is COPIED and the move says
 >   success), swept at the start of every installer run.
 >   GREENLIT 2026-10-29 ("fix mv first and then P1 & 2 of the plan"): (1) mv FIXED rev 467 (DECISIONS "FIXED: `mv` to
@@ -70,9 +69,57 @@
 >   BLOCKED on Installer INST-Q-046.
 >   README RESTRUCTURE (2026-10-29): Claude's draft, edited by the architect, Architecture kept in the README at his
 >   word; committed rev 476 and PUBLISHED: GitHub main = git 3312e22, release hg-476 (same Bash.exe as hg-473).
->   PUBLISHED 2026-10-30: GitHub main = git eb6ed20 = hg rev 480 (gnu.org promises, README step 2); no release (Bash.exe unchanged).
->   LOGGED, not fixed (found 2026-10-29): `mv file nodir/` renames to `nodir`, rc 0 (GNU: Not a directory, rc 1);
->   `exec 4< <(PROGRAM)` may run PROGRAM to completion first [inferred, not investigated].
+>   PUBLISHED 2026-10-30: GitHub main = git 017986f = hg rev 482 (+ README thanks, ARCHITECTURE §15); no release (Bash.exe 472 unchanged; latest = hg-476).
+>   **GREENLIT 2026-10-30** (the architect: "Yes, if I don't respond in ~10 mins, move on to the next. Commit and
+>   deploy each one?"), in order, each its own test + commit + deploy (peer slot asked, then notified), then ~10 min
+>   for his reply before the next: (1) `mv file nodir/` (and cp): FIXED rev 485, DEPLOYED (rollback dist/Bash.exe.rev472), NOT published; (2) `<( )` NOT streaming: NOT a bug, the ratified 2026-09-04 design (rev 487); `exec 4< <(PROGRAM)` may run
+>   PROGRAM to completion first [inferred, not investigated; maybe the old unexplained `$( )` stdin]; (3) the "match GNU" batch, ONE deploy at its end (Claude's reading, told 03:39): wc DONE rev 488; cmp DONE rev 489; od DONE rev 490; base64 DONE rev 491; printf %q DONE rev 492; sed l DONE rev 493; split DONE rev 494; GetInt (option values) DONE rev 495; (( )) error DONE rev 496; $( ) NULs AWAITING the architect (FEATURES advertises keeping them); sort+comm DONE rev 497; ADDED to the batch (the architect 2026-10-30, "Yes ... go"): `sh` = dist/sh.exe, a copy deploy.sh makes (no interpreter code; DECISIONS "RULED: `sh`"), rev 498. **DEPLOYED rev 499** (Bash.exe + the first dist/sh.exe; suite 212/0 both modes, battery 216 = baseline;
+>   rollback dist/Bash.exe.rev485; all four notified; NOT published). RULED (the architect, 2026-10-30): sh.exe ships
+>   although GNU make then runs every recipe without SHELL through it (C#Bash's mandate; builds fixed one at a time);
+>   the installer carries sh.exe and is released with each publish (DECISIONS "RULED: dist/sh.exe ships"). Do NOT
+>   re-open. NEXT: ~10 min for his reply, then item 4. (was: the "match
+>   GNU" batch (list under AWAITING (b) below; one tool at a time); (4) xargs streaming: FIXED rev 503 (case
+>   xargs_stream_gnu, 8 mutations red), DEPLOYED rev 503 (suite 213/0 both modes, battery 217; rollback dist/Bash.exe.rev499,
+>   dist/sh.exe.rev499; NOT published). THE GREENLIT LIST IS DONE.
+>   **GREENLIT 2026-10-30 (the architect: "yes fix, publish, do (unless you have fork, abiguity or inconsistency)"), on
+>   Claude's positions below, one tool at a time, commit each, ONE deploy, then PUBLISH:** (a) sed's s flags all checked
+>   first, GNU's message + char, then a valid `e` refused; (b) redirection words: brace + pathname expansion, >1 word
+>   "ambiguous redirect" rc 1, none the literal word, an impossible Windows name: read "No such file or directory",
+>   write "Invalid argument"; (c) m1 BY PATH only: a no-#! text file run by path runs as a script (binary: "cannot
+>   execute binary file", 126), `[ -x ]` unchanged (msys: same; checked); (d) m2: `/bin/NAME`, `/usr/bin/NAME` as a
+>   command that does not exist on the drive runs NAME; (e) xargs: an EXTERNAL program's batch capped to fit Windows'
+>   command line; a too-long command line says "Argument list too long", not "path over 260"; (f) docs/PERFORMANCE.md:
+>   the ESDK build timing (esdk-a2's, with its caveats), not the README; (g) `$( )` NULs CLOSED: settled by DECISIONS
+>   rev 72 ("a deliberate divergence from bash, in our favour"), no change. **STATE: (a) rev 509, (b) rev 510, (c)-(g)
+>   rev 511 (one commit, interleaved in Evaluator.cs), DEPLOYED rev 511 (suite 219/0 both modes, battery 217; rollback
+>   dist/Bash.exe.rev503; all notified); NEXT: PUBLISH (benchmark: a quiet slot from the peers).**
+>   **RAISED, bug fixes (kes-term-a1, 2026-10-30, verified against GNU; under the "wait 10 mins and keep going" rule,
+>   fixed after the publish):** find -printf ignores widths/flags/precision (`%10s`, `%-6f`, `%.1f`; GNU pads `%05s`
+>   with spaces) and prints the directive literally; ls --time-style honours only full-iso (long-iso, iso, +FORMAT,
+>   posix-, locale ignored; a bad style accepted, GNU: "invalid argument ... for 'time style'", rc 2). Seen, not in it:
+>   ls ignores TZ.
+>   NOT done, still AWAITING: m1 FROM PATH
+>   (msys runs a no-#! file found on PATH; Claude: no, any extensionless file on PATH would become a command); m3
+>   (Claude's position: when a real script needs it). Note: the ESDK CC8051 build now runs on dist/sh.exe
+>   and dist/Bash.exe (ESDK DECISIONS 13): every deploy changes it; tell esdk-a2 "done". Raised with it, AWAITING: the
+>   Windows cap for an EXTERNAL command's batch (GNU-Linux 131072 > CreateProcess 32767; Git's xargs 24228, MSYS2's
+>   24222), and the misleading "path is over 260 characters" for a too-long command line (rc 126).
+>   **AWAITING THE ARCHITECT, msys compatibility (esdk-a2, 2026-10-30, verified on 499; do NOT build before he
+>   rules):** (m1) a file with no #! run BY PATH is "Permission denied" 126 (IsExecutable: program ext, .sh, #!); msys
+>   runs it. (m2) `/bin/sed`, `/usr/bin/env` as COMMANDS: 127 (only #! lines map them by name); buildLib line 14 needs
+>   it. (m3) argument conversion: a bare `/x/...` IS converted; `--opt=/f/a`, `-I/f/b`, `x=/f/c` are not (msys 1.0
+>   converts all three).
+>   **AWAITING, sed (koliada-net-forms-cb, 2026-10-30, verified on 503):** an `s` command's flags are refused one by one:
+>   `e` (s///e, unsupported, Builtins.Search.cs:878) hands the WHOLE command to PATH's old UnixUtils sed.exe before a
+>   later invalid flag is seen (`s#..#..#31 exclusion` -> "sed.exe: invalid option -- i", exit 4; GNU: "char 31:
+>   unknown option to `s'", rc 1); a plain bad flag says "char 0" (GNU: its position). Claude: check all flags first,
+>   GNU's message and char, then refuse a valid `e`.
+>   **AWAITING, redirection words (esdk-a2, 2026-10-30, verified on 503 against GNU 5.1):** no pathname or brace
+>   expansion (`< *.sdk` with one match fails; two matches / `> {c,d}.txt` give no "ambiguous redirect"); a name Windows
+>   cannot have (`*`, `?`) gets the raw .NET message with a backslash path, a quoted `"*.sdk"` too (GNU: "No such file
+>   or directory"); no match on a write: GNU makes a file literally `*.none`, Windows cannot. Claude: expand as bash
+>   (brace, glob; >1 word "ambiguous redirect", rc 1; none: the literal word), reads of an impossible name "No such
+>   file or directory", writes "Invalid argument".
 >   Claude's position: first a GitHub Release asset per publish (Bash.exe + SHA-256), then the installer (rename the
 >   running exe aside; write the claude.cmd start file, not a global CLAUDE_CODE_GIT_BASH_PATH: #94077; never
 >   overwrite the user's help.json; uninstall).
@@ -183,7 +230,8 @@
 >   after PortableBash's design record, spec and architecture are ratified, together (2026-10-20: the first two rebuilt
 >   and an initial architecture drafted in PortableBash's working tree; ruled there: PortableBash's own standard
 >   library, one shared runtime in Zig; PortableBash's anchor has the state).
->   (e) Raised, no position: should C#Bash answer to a bare `sh` (POSIX mode is not available)?
+>   (e) RULED 2026-10-30 (DECISIONS "RULED: `sh`"): `sh` = a copy of the build named sh.exe beside Bash.exe, made by
+>   deploy.sh (and the installer, phase 3); bash's default mode, silently; no interpreter code. Do NOT re-open.
 >   (f) Raised: the battery in deploy.sh tests the managed Release build, not the shipped AOT one; Claude: give
 >   run-compat.ps1 `-Interpreter` and run it on the staged binary (falsifier in DECISIONS "DEPLOY REFUSED (rev 369)").
 >   NOT MSYS in C#Bash, NOT msys64 as a test reference (the architect, 2026-10-20; do NOT re-propose).

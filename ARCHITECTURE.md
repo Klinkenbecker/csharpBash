@@ -19,7 +19,7 @@ bashisms (`[[ ]]`, indexed & associative arrays, `local`, arithmetic expansion, 
 expansion), and ships an in-process implementation of the common AT&T System V command set so
 everyday scripts run without paying Windows' process-spawn cost.
 
-Non-goals: full bash 5.x fidelity (no `coproc`, no process substitution `<()`), no true
+Non-goals: full bash 5.x fidelity (no `coproc`; process substitution only as `<()` by a temp file, not streamed, §10), no true
 job-control process groups, no real Unix VFS. See [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md)
 §"Out of Scope" for the live list, and §9 below for the platform divergences that follow from
 "no `fork()`".
@@ -345,7 +345,8 @@ Two model points:
   (`ShellEncoding.ReadRecord`, which says whether the newline was there, so a missing one stays
   missing). Stdin is read through the shell's shared reader and never past what a tool took, so the
   next command reads on from there (`{ head -n 1; cat; } < f`, `sed q`). Only tools that need all of
-  their input hold it: sort, diff, jq, mapfile, xargs.
+  their input hold it: sort, diff, jq, mapfile. xargs reads as it runs: a batch runs the moment it is full
+  (rev 503), its commands on /dev/null so they cannot eat the items to come.
 - **Loud, never silent (DECISIONS 2026-09-04 #2).** Every tool parses its options with the
   strict `Opts` parser; an option or construct it does not implement raises
   `UnsupportedOptionException`. `Builtins.TryExecute` then re-runs the command through a PATH

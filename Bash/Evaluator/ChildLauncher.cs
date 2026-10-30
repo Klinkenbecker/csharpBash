@@ -211,8 +211,17 @@ public static class ChildLauncher
 		2 => new FileNotFoundException(null, path),
 		3 => new DirectoryNotFoundException(),
 		5 => new UnauthorizedAccessException(),
-		_ => new IOException(new Win32Exception(err).Message),
+		_ => new IOException(new Win32Exception(err).Message, unchecked((int)(0x80070000u | (uint)err))),   // the code kept (HRESULT_FROM_WIN32): an invalid name is told apart (2026-10-30)
 		};
+
+	/// <summary>The characters one argument takes on a command line, quoted as an MSYS program's (the longer form): xargs
+	/// keeps an external program's batch within Windows' limit by it.</summary>
+	internal static int QuotedLength(string arg)
+		{
+		var sb = new StringBuilder(arg.Length + 2);
+		AppendArgument(sb, arg, msys: true);
+		return sb.Length;
+		}
 
 	/// <summary>One argument, quoted the way .NET's own command-line builder (PasteArguments)
 	/// quotes it, so the child parses exactly what Process.Start would have given it. An MSYS program

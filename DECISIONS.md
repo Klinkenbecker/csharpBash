@@ -9657,3 +9657,491 @@ and §10, which are cited, unchanged). README: a "Thanks" section before the lic
 Project and the FSF for the manuals, man7.org, jqlang.org and sourceware.org too, and the FSF's administrators "for
 their patience when an early version of our link checker went too fast".
 **Implemented by:** rev 482. Files: `ARCHITECTURE.md`, `README.md`, `DECISIONS.md`.
+
+## 2026-10-30 -- PUBLISHED: GitHub main = git 017986f = hg rev 482 (README thanks; ARCHITECTURE §15); no release
+**Status:** Active. The architect: "ok, lets publish as well, to get the readme out." `bash tools/publish.sh`
+(scratchpad/msg482.txt): 483 changesets, bundle verified; pushed eb6ed20..017986f; release step: the newest release
+already carries this Bash.exe (472): none made. Checked after: README.md on GitHub has "## Thanks", ARCHITECTURE.md
+has "## 15. Help".
+**Implemented by:** this entry rev 483.
+
+## 2026-10-30 -- FIXED: a destination with a trailing slash names a directory (mv renamed `file` to `nodir`; cp gave Windows' error)
+**Status:** Active. The architect: "Yes, if I don't respond in ~10 mins, move on to the next. Commit and deploy each
+one?" (item 1 of the list: the bug logged 2026-10-29).
+**GNU (coreutils 8.32, WSL, the case's expected output):** `mv f nodir/` (missing): "mv: cannot move 'f' to 'nodir/':
+Not a directory", rc 1, f left; `mv f g/` (g a file): "mv: failed to access 'g/': Not a directory", rc 1; `mv f dir/`
+moves in; `mv src newdir/` (a directory, newdir missing): a rename, rc 0; `mv g h nodir/`: "target 'nodir/' is not a
+directory" (C#Bash already); `cp g nodir/`: "cp: cannot create regular file 'nodir/': Not a directory"; `cp g h/`:
+"cp: failed to access 'h/': Not a directory", rc 1.
+**Was (deployed 472):** mv renamed f to nodir, rc 0 (every later step then differed); cp printed Windows' "The
+filename, directory name, or volume label syntax is incorrect" with the resolved path.
+**Fix:** `Builtins.Files.cs`, Mv and Cp: when the destination as typed ends in `/` and is not an existing directory, a
+file source is refused with GNU's words (an existing file at the name without the slash: "failed to access"; else
+mv's "cannot move", cp's "cannot create regular file"), rc 1. A directory source is untouched (a rename, as GNU).
+**Test:** `mv_trailing_slash` (expected = GNU via WSL, each command 2>&1): red on 472; green on the fix; mutations
+(each check disabled in turn, built): red at its own block. Suite (Release) 199 passed, 0 failed, both modes;
+battery 216/237 = baseline. Not covered: `ln` and `-T` with a trailing slash (not
+measured).
+**Implemented by:** rev 485. Files: `Bash/Evaluator/Builtins.Files.cs`, `tests/cases/mv_trailing_slash.sh`,
+`tests/expected/mv_trailing_slash.out`, `tests/run-tests.ps1`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- DEPLOYED rev 485 (the trailing-slash fix) and NOTIFIED
+**Status:** Active. Item 1 of the list greenlit 2026-10-30. Slot: koliada-net-28, kes-term-a1, koliada-net-forms-cb and
+esdk-a2 all said go. `bash tools/deploy.sh`: `1.0.0+hg.b839f91cf3c7 485` over 472; suite 201 passed, 0 failed, both
+modes; battery 216/237 = baseline; rollback dist/Bash.exe.rev472. All four notified ("done", with the change).
+Not published (publish on the architect's word). Next: ~10 minutes for his reply, then item 2.
+**Implemented by:** this entry rev 486.
+
+## 2026-10-30 -- Item 2: `<( )` not streaming is NOT a bug; it is the ratified design (2026-09-04 #6). Recorded, moved on
+**Status:** Active. Item 2 of the list greenlit 2026-10-30 ("If it is NOT a bug, record that and move on"; no reply
+from the architect in the ~10 minutes after item 1).
+**Measured (the deployed 485, GNU bash 5.1 in WSL):** `read -r first < <(echo a; sleep 2; echo b)`: GNU hands over
+`a` after 0 s; C#Bash after 2 s, when the command has finished. That is DECISIONS 2026-09-04 #6, ratified by the
+architect: "`<(cmd)` is emulated with a temp file ... runs to completion"; its known limits ("streaming producers
+(`<(tail -f …)`) never complete"); its revisit condition ("if streaming scripts become a target, switch to named
+pipes"). The 2026-10-29 observation (a pid read through `exec 4< <(...)` no longer a process) was this design.
+**Also:** ARCHITECTURE §1's non-goals said "no process substitution `<()`", contradicting its own §10 and the README
+since 2026-09-04: now "process substitution only as `<()` by a temp file, not streamed, §10". The old unexplained
+case (a child inside `$( )` saw a stdin that never ended) is NOT explained by this (`$( )` is not `<( )`); still open.
+**Revisit (unchanged):** streaming `<( )` (named pipes) only if streaming scripts become a target; the architect's call.
+**Implemented by:** rev 487 (records). Files: `ARCHITECTURE.md`, `DECISIONS.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 1/11: wc's words, characters, display widths and padding are GNU's
+**Status:** Active. Item 3 of the list greenlit 2026-10-30 (the "match GNU" item ruled 2026-10-27; found then, entry
+"wc and the checksums ... Found, NOT fixed"). One tool at a time; commit each; ONE deploy at the end of the batch
+(Claude's reading of "deploy each one", told to the architect at 03:39).
+**GNU (coreutils 8.32, WSL, LC_ALL=C.UTF-8; the case's expected output and probes):** a word is a run of printable
+characters between separators; separators are white space (glibc: NOT NEL U+0085) and GNU's no-break spaces (U+00A0,
+U+2007, U+202F, U+2060); NUL, controls, DEL and undecodable bytes neither make nor end a word (`a\0b` one word,
+`\0\0\0` none). -m counts characters, an undecodable byte (a cut sequence too) none, an astral one 1. -L is display
+width: a tab to the next multiple of 8, East Asian wide 2 (CJK, Hangul, fullwidth, U+3000, emoji), combining marks,
+format characters (the soft hyphen 1), NUL, DEL, undecodable bytes 0; CR and FF start the width again, VT is 0.
+Padding: one count of one input none; else the digit count of the regular files' total size (stdin's too), at
+least 7 when any input is not a regular file (a pipe, a here-string, /dev/null, a directory); a missing input counts
+for nothing.
+**Was (deployed 485):** words were runs of anything non-white-space (`\0\0\0\n` 1), -m counted decoded UTF-16 units
+(invalid bytes 1 each, an astral character 2), -L counted characters, one count of one file was padded, a pipe never.
+**Fix:** `Builtins.Text.cs`: `WcAscii.Kind` (GNU's kind of each ASCII byte), `WcKind`/`WcWidth` (above ASCII: the
+separator set, printable or not, a wcwidth with a table of East Asian wide ranges, close to glibc 2.35 but not exact),
+`Step` and an inlined ASCII loop on locals; `Wc`'s width rule. `WcAscii.White` stays for base64 -d.
+**Speed (a diagnostic, AOT vs deployed 485, 3 interleaved rounds, in-process):** 19 MB ASCII `wc`/-w/-L 24 -> 27 ms
+(+12%), 21 MB UTF-8 27 -> 29 ms (+7%), -m unchanged; through Step on captured counters it was 34 ms, hence the
+inlined loop.
+**Test:** `wc_gnu` (expected = GNU via WSL): 56 lines red on 485; green on the fix (Release and AOT); mutations, each
+built: undecodable bytes counted again 6 lines red, a tab as width 1 6 red, the one-count rule dropped 86 red.
+**Also:** the suite then failed `textutils` (both modes): its expected file held C#Bash's OLD padding, ` 5 cases/lines.txt`
+for `wc -l cases/lines.txt`; GNU (run on that case in WSL) prints `5 cases/lines.txt` and differs on nothing else, so
+the file was regenerated from GNU. Suite otherwise 199 passed (both modes); battery 216/237 = baseline.
+**Implemented by:** rev 488. Files: `Bash/Evaluator/Builtins.Text.cs`, `tests/cases/wc_gnu.sh`,
+`tests/expected/wc_gnu.out`, `tests/expected/textutils.out`, `tests/run-tests.ps1`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 2/11: cmp's EOF message, -b and -l's columns are GNU's
+**Status:** Active. Item 3 of the list greenlit 2026-10-30, one tool at a time.
+**GNU (diffutils 3.8, WSL):** EOF: "cmp: EOF on NAME after byte N, line L" when the shorter input ended at the end of
+a line, "..., in line L" inside one, "cmp: EOF on NAME which is empty" for an empty one, and under -l only "after byte
+N". -b: "... differ: byte N, line L is 143 c 130 X" (each byte "%3o" and as cat -v shows it). -l: the offset padded to
+the digit count of the smaller input (a regular file's size; a pipe's leaves the other's), each byte "%3o" (no
+leading zero); -lb adds each as cat -v, the first padded to 4 (0x80: M-^@). (GNU's cmp is silent when its output is
+/dev/null, as -s: seen while writing the case, not copied.)
+**Was (deployed 485):** "cmp: EOF on NAME" only; -b ignored; -l "%7d %03o %03o".
+**Fix:** `Builtins.Files.cs` Cmp: the width from the inputs' remaining sizes (min, with -n), the last byte compared kept
+for the EOF wording, -b in both forms; `CatV`.
+**Test:** `cmp_gnu` (expected = GNU via WSL; the -l list and its EOF message taken apart, as GNU's stderr runs ahead of
+its buffered stdout): 41 lines red on 485; green on the fix; mutations (built): the EOF wording undone 2 red, a width
+of 7 24 red, "%03o" 2 red. Suite 201 passed, 0 failed, both modes.
+**Implemented by:** rev 489. Files: `Bash/Evaluator/Builtins.Files.cs`, `tests/cases/cmp_gnu.sh`,
+`tests/expected/cmp_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 3/11: od's combined input: addresses from its start, -j across files, a skip past its end an error
+**Status:** Active. Item 3 of the list greenlit 2026-10-30, one tool at a time.
+**GNU (coreutils 8.32, WSL):** after -j N the addresses count from the start of the input (`od -j 5` begins 0000005);
+the operands are one "combined input", -j skipping across them; a skip past its end: "od: cannot skip past end of
+combined input", rc 1; -j and -N take 0x (hex) and a leading 0 (octal), with the size suffixes.
+**Was (deployed 485):** addresses from after the skip; the first operand only; a skip past the end an empty dump, rc 0;
+-j/-N decimal only: `od -j 0x10` was "invalid number" and fell through to a PATH od (here UnixUtils' od.exe, whose
+CRLF lines were the case's one puzzling diff: found by reading the unserviced log, not guessed).
+**Fix:** `Builtins.Text.cs` Od: every operand opened, the skip taken across them (`SkipBytes`), the rest read as one
+(`ConcatStream`, new in `Builtins.Bytes.cs`), addresses `skip + offset`, the past-the-end error, an operand that cannot
+be opened reported and passed over (rc 1); `OdCount` (0x, 0, decimal, then `ParseCount`'s suffix; in `0xb` the b is a
+digit).
+**Test:** `od_gnu` (expected = GNU via WSL): red on 485 (the addresses, the files, the end, 0x10 through UnixUtils);
+green on the fix (no CR left); mutations (built): addresses from the skip 26 red, no past-the-end error 4 red, no 0x
+form 4 red. Suite 202 passed, 0 failed, both modes.
+**Implemented by:** rev 490. Files: `Bash/Evaluator/Builtins.Text.cs`, `Bash/Evaluator/Builtins.Bytes.cs`,
+`tests/cases/od_gnu.sh`, `tests/expected/od_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 4/11: base64 -w 0 writes no newline; -d skips newlines only; -i ignores garbage
+**Status:** Active. Item 3 of the list greenlit 2026-10-30, one tool at a time.
+**GNU (coreutils 8.32, WSL):** -w 0: one line and no newline (empty input: nothing). -d: newlines are skipped; a space,
+a tab or a CR (so CRLF lines) is "base64: invalid input", rc 1, after writing what decoded, a group cut by it as far
+as it goes (`aG!` writes `h`, `aGVs bG8=` writes `hel`); -i (--ignore-garbage) skips every character outside the
+alphabet (A-Z a-z 0-9 + / =).
+**Was (deployed 485):** -w 0 ended with a newline; -d dropped all white space (char.IsWhiteSpace) and decoded CRLF,
+spaces and tabs; -i was accepted and did nothing (garbage failed); the cut group before invalid input was not written.
+**Fix:** `Builtins.Text.cs` Base64Encode (the newline only for a wrapped last line) and Base64Decode(ignoreGarbage):
+the alphabet test per byte, newline skipped, else invalid unless -i; at the invalid character the whole groups and a
+cut one padded. `WcAscii.White`, kept for base64 by the wc fix, is gone.
+**Test:** `base64_gnu` (expected = GNU via WSL): red on 485; green on the fix; mutations (built): the -w 0 newline 4
+red, invalid characters dropped 12 red, -i ignored 6 red, the cut group not written 2 red. Suite 203 passed, 0
+failed, both modes.
+**Implemented by:** rev 491. Files: `Bash/Evaluator/Builtins.Text.cs`, `tests/cases/base64_gnu.sh`,
+`tests/expected/base64_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 5/11: printf %q quotes as bash's sh_backslash_quote (= and % never; ~ and # only first)
+**Status:** Active. Item 3 of the list greenlit 2026-10-30, one tool at a time.
+**bash 5.1 (WSL):** escaped always: white space, quotes, backslash, `| & ; ( ) < > ! { } * [ ? ] ^ $` backquote and
+the comma; `~` and `#` only as the first character; `=`, `%`, `+`, `-`, `@`, `:` never; a non-printable character
+turns the word into `$'...'` (octal escapes; unchanged).
+**Was (deployed 485):** `=`, `%` escaped everywhere, `~` and `#` everywhere (`a=b` -> `a\=b`; `printf -v v %q 'x=y z'`
+-> `x\=y\ z`).
+**Fix:** `Printf.cs` ShellQuote: the specials without `=`, `%`, `#`, `~`; `~` and `#` at index 0. Its xtrace callers
+reach it only for words with control characters (the `$'...'` path), unchanged.
+**Test:** `printf_q_gnu` (expected = GNU bash 5.1 via WSL): red on 485 (6 lines); green; mutations (built): `=`
+escaped again 6 red, `~`/`#` anywhere 4 red. Suite 205 passed, 0 failed, both modes (with sed l's case).
+**Implemented by:** rev 492. Files: `Bash/Evaluator/Printf.cs`, `tests/cases/printf_q_gnu.sh`,
+`tests/expected/printf_q_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 6/11: sed's `l` wraps at 70 (GNU's rule), `l N` / `-l N` set the width, bytes as \ooo
+**Status:** Active. Item 3 of the list greenlit 2026-10-30, one tool at a time.
+**GNU (sed 4.8, WSL, LC_ALL=C.UTF-8):** before writing an item (a byte, or its escape as one), a line already holding
+width-1 or more of it if the item were added ends in `\`; so with width 1 the first line is a lone `\`; default 70
+(lines of 69 and `\`); `l N` sets it for that command, `-l N` for every `l` without one; 0 never wraps; the trailing `$`
+is not counted; every byte above ASCII as \ooo (`é` = \303\251), the C escapes and `\\` as before.
+**Was (deployed 485):** never wrapped (`l N` parsed and ignored, `-l` accepted and ignored; `l` and `l 0` both 0);
+escaped a character at a time (a 4-byte character's halves encoded one by one).
+**Fix:** `Builtins.Search.cs`: SedProgram.LineLength (-l, default 70), `l` without a number -1 (the program's width),
+SedVisible(s, width) over the bytes with the wrap rule.
+**Test:** `sed_l_gnu` (expected = GNU sed 4.8 via WSL): red on 485; green; mutations (built): no wrap 36 red, `l` = `l 0`
+11 red, -l ignored 9 red. Suite 205 passed, 0 failed, both modes.
+**Implemented by:** rev 493. Files: `Bash/Evaluator/Builtins.Search.cs`, `tests/cases/sed_l_gnu.sh`,
+`tests/expected/sed_l_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 7/11: split refuses a bad -l count or -b size, as GNU does
+**Status:** Active. Item 3 of the list greenlit 2026-10-30, one tool at a time.
+**GNU (coreutils 8.32, WSL, LC_ALL=C: plain quotes, as Claude Code runs its shell):** -l takes a positive decimal (no
+suffix), -b a positive size with its suffix; 0 is "split: invalid number of lines: '0': Numerical result out of
+range" (bytes: "invalid number of bytes"), anything else (x, -1, '', 2x, 1.5, 2Q) "split: invalid number of lines:
+'x'"; rc 1, no piece.
+**Was (deployed 485):** -l x, 0, -1, '', 2x, 1.5 made one piece and returned 0 (Opts.GetInt took them as the default);
+-b 0 and -1 the same; -b x fell through to a PATH split (UnixUtils' here, its own words, rc 255).
+**Fix:** `Builtins.Text.cs` Split: `SplitCount` (a digit first; -l digits only; -b through ParseCount; 0 out of range).
+-n (chunk mode) is still not implemented: any -n falls through to a PATH split, as before; the case does not probe it.
+**Test:** `split_gnu` (expected = GNU via WSL): 44 lines red on 485; green; mutations (built): 0 accepted 6 red, the
+first-character check gone 3 red, -b unchecked 18 red. Suite 206 passed, 0 failed, both modes.
+**Implemented by:** rev 494. Files: `Bash/Evaluator/Builtins.Text.cs`, `tests/cases/split_gnu.sh`,
+`tests/expected/split_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 8/11: a numeric option refuses a bad value in GNU's words and exit code (Opts.GetInt removed)
+**Status:** Active. Item 3 of the list greenlit 2026-10-30 ("Opts.GetInt takes a bad value as the default; other tools
+unsurveyed"), one tool at a time.
+**Survey:** GetInt's 14 calls, in uniq (-f -s -w), nl (-w -v -i), fold (-w), od (-w), base64 (-w), grep (-A -B),
+xargs (-n -L), du (-d); all took a value that did not parse as the default (or 0 / no limit), silently. grep's -C and
+-m used int.Parse (-m x: rc 1, no word).
+**GNU (coreutils 8.32, grep 3.7, findutils, WSL, LC_ALL=C), x / -1 / 0:** uniq "uniq: x: invalid number of fields to
+skip" (bytes to skip, bytes to compare), 0 good (-w 0 compares nothing); nl "invalid line number field width: 'x'",
+-w and -i at least 1 (0 and -1 "...: Numerical result out of range"), -v any; fold "invalid number of columns: 'x'"
+(-1 plain, 0 out of range); od "invalid -w argument 'x'", -w0 a warning and 2; base64 "invalid wrap size: 'x'", 0 good;
+grep "grep: x: invalid context length argument" exit 2, -m x "grep: invalid max count" exit 2, -m -1 no limit, -m 0
+reads and prints nothing, rc 1 (-c too); xargs "invalid number \"x\" for -n option" / "value 0 for -n option should be
+>= 1" plus "Try 'xargs --help' ..."; du "invalid maximum depth 'x'" plus "Try 'du --help' ...". All exit 1 but grep.
+**Fix:** `Opts.Int(c, def, least, refuse, exitCode)` (refuse gets the value as given and why: not a number, negative,
+below the least) throwing `OptionValueException`, which the dispatcher prints with its exit code (no fall-through, not
+an unserviced request); every call site carries GNU's words; GetInt removed (no caller left). uniq -w's "not given"
+is -1 (0 compares nothing), od -w0 warns and takes 2, grep -m 0 returns 1 before reading.
+**Test:** `opts_int_gnu` (expected = GNU via WSL; du's sizes left out): 163 lines red on 485; green; mutations (built):
+a non-number taken as the default 66 red, the least not enforced 82 red, uniq -w 0 as "no limit" 1 red, grep -m 0's
+early return gone 6 red. Suite 208 passed, 0 failed, both modes.
+**Lesson (cost a confusing run):** the suite runner builds at the start of EACH mode; a source edit made while the
+-Detached half was due built a half-done fix into it (`nounset` failed, then passed once the edit was finished). No
+source edits until a suite run has finished, both modes.
+**Implemented by:** rev 495. Files: `Bash/Evaluator/Opts.cs`, `Bash/Evaluator/Builtins.cs`, `Builtins.Text.cs`,
+`Builtins.Search.cs`, `Builtins.Find.cs`, `Builtins.Files.cs`, `tests/cases/opts_int_gnu.sh`,
+`tests/expected/opts_int_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 9/11: an arithmetic error in (( )) is the command's own: inside its redirections, status 1
+**Status:** Active. Item 3 of the list greenlit 2026-10-30 (found 2026-10-28: `(( y = (y) <<= 1 )) 2>/dev/null` printed
+its error anyway, rc 2; bash: silent, rc 1).
+**bash 5.1 (WSL):** an arithmetic error in (( )) (an assignment to a non-variable, a missing operand, division by 0)
+fails that command with status 1 and its message goes where its redirections say (`2>/dev/null` silences it, `2>&1 |`
+pipes it); in a function and in `if` the same. set -u's unbound variable inside (( )) still ends the shell (subshell
+rc 1). All compound assignments (`<<=` etc.) work in both shells: the recorded error was the non-variable, not `<<=`.
+**Was (deployed 485):** the EvalException escaped ExecArithmeticCommand, past the redirect scope, and the statement's
+handler printed it on the original stderr with status 2 (`2>&1 | wc -l` counted 0 lines).
+**Fix:** `Evaluator.cs` ExecArithmeticCommand: caught inside the scope, printed as "((: EXPR : message", status 1;
+FatalShellException (unbound, ${x:?}, readonly) excluded: it goes on up as before (its message still escapes the
+redirection, where bash's does not: not matched). The message's words stay C#Bash's (bash's "attempted assignment to
+non-variable (error token is ...)" would be a separate change to ArithParser's errors).
+**Test:** `arith_cmd_err_gnu` (expected = GNU bash 5.1 via WSL; words not compared): red on 485; green; mutation (the
+catch disabled, built) 12 red. Suite 208 passed, 0 failed, both modes.
+**Not done:** `x=$(( 1 + )) 2>/dev/null; echo` (bash prints the error and drops the rest of that line; C#Bash goes on,
+status 2): an expansion error's flow, not this item.
+**Implemented by:** rev 496. Files: `Bash/Evaluator/Evaluator.cs`, `tests/cases/arith_cmd_err_gnu.sh`,
+`tests/expected/arith_cmd_err_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- "match GNU" 10/11: sort and comm order lines by their bytes, as GNU's in the C locale
+**Status:** Active. Item 3 of the list greenlit 2026-10-30 ("sort+comm order: both or neither": comm needs the order
+sort makes).
+**GNU (coreutils 8.32, WSL, LC_ALL=C, how Claude Code runs its shell: no LANG):** lines compare as unsigned bytes:
+`z` < U+00E9 < U+05FF < U+E000 < U+FF21 < U+1F600 < U+1F601, and an undecodable byte at its own value (`\x80` and
+`\xC3` before U+00E9, `\xFF` last).
+**Was (deployed 485):** sort's keys, its last-resort whole-line compare and comm all compared UTF-16 units (ordinal):
+an astral character (a surrogate pair, D800-DFFF) came before U+E000-FFFF, and an undecodable byte (carried as
+U+DC80-DCFF, ShellEncoding's surrogateescape) sorted between U+00E9 and U+E000 whatever its value.
+**Fix:** `ShellEncoding.CompareBytes`: UTF-16 order equals UTF-8 byte order except where a surrogate is involved, so
+it compares chars up to the first difference and only there, when either side is a surrogate, encodes the rest of
+both (from the pair's start) and compares the bytes. Used by sort's key compare (not `-f`, which stays
+OrdinalIgnoreCase), its last-resort compare, and comm (not `-i`). The common case (no surrogate at the difference)
+costs what Ordinal did [unmeasured estimate: no benchmark run; the extra work is one surrogate test per compare].
+**Test:** `sort_order_gnu` (expected = GNU via WSL, LC_ALL=C; plain, -r, -k1,1, -u, -c, comm -12/-3/status, and
+equal keys that the whole line decides): 7 lines red on 485; green; mutations (built), each must be red: the
+surrogate step skipped 6, comm back to Ordinal 3, sort's key compare back to Ordinal 7, the last-resort compare back
+to Ordinal 1 (0 before the equal-keys lines were added: that mutation found the gap).
+Suite 209 passed, 0 failed, both modes.
+**Implemented by:** rev 497. Files: `Bash/Evaluator/ShellEncoding.cs`, `Bash/Evaluator/Builtins.Text.cs`,
+`tests/cases/sort_order_gnu.sh`, `tests/expected/sort_order_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- RULED: `sh` is a copy of the build named sh.exe beside Bash.exe (deploy.sh makes it); no interpreter code
+**Status:** Active. Closes PROJECT_CONTEXT open item (e) ("should C#Bash answer to a bare `sh`?", raised 2026-10-20 in
+"Raised: a bare `sh` finds nothing"). The architect: "Bash has no sh command - what is the best way to handle. Not used
+by claude but is used when scripting windows using bash?"; on Claude's position, "Yes, and run your 'Not Checked'
+item too - go".
+**Measured (this machine):** Git for Windows' `usr/bin/sh.exe` and MSYS2's are each byte-identical to their
+`bash.exe` (same size, same SHA-256): bash sees its name and enters POSIX mode. Under C#Bash `type -a sh` found
+nothing. GNU bash started as `sh` (WSL, `exec -a sh`): messages `sh: line 1: ...`, posix on, `$BASH_VERSION` set,
+`a-b()` refused (POSIX mode); `<( )` works.
+**Decision:** ship `dist/sh.exe`, a plain copy of the deployed build, as Git and MSYS2 do. Started as `sh` it runs
+bash's default mode and says nothing about POSIX mode (as a `#!/bin/sh` script already does; a notice on every `sh -c`
+would be noise; `--posix` still prints its notice). No code: only `rbash` is checked by name (`Program.cs`), and `$0`
+is argv[0] in forward slashes, the path the launcher passed (2026-10-11), so its messages name `.../sh.exe` as
+`Bash.exe`'s name `.../Bash.exe`.
+**Criteria (stated before the ruling):** it serves scripts that type `sh` AND programs that start `sh` themselves; it
+claims no POSIX mode; least added to deploy and the installer. **Would change it:** a real script or program that
+needs POSIX-mode behaviour (dash-style `echo` escapes, special-builtin rules) and breaks in bash's default mode.
+**Alternatives rejected:** `sh` inside the shell only (a name resolving to itself): scripts yes, `make`/npm/configure
+no. A hardlink (0 bytes): deploy's rename-and-swap would leave it on the old build, and the installer may not make
+one. A small launcher exe: a second process per call and still a second file. Nothing ("use bash"): fails both.
+A second release asset: 7.6 MB for one `cp`; the README says to copy it.
+**Found (the 'not checked' item, answered from the code):** find -exec/-execdir (`Builtins.Find.cs` RunExec) and xargs
+run their command through `Evaluator.RunCommand` (function, builtin, then PATH), so `sh` there is found as typed.
+And the shell appends its own folder to the END of PATH (`ShellEnvironment.AppendOwnDirectoryToPath`, documented in
+USING step 4; Claude had said in conversation it did not, wrongly), so an sh.exe beside Bash.exe is found from inside
+C#Bash and by the programs it starts with no PATH change; a real `sh` earlier on PATH (Git's `usr/bin`, when git.exe
+is on PATH) still wins. Started outside C#Bash, the folder must be on the caller's PATH.
+**Done:** `tools/deploy.sh` step 5 renames a running dist/sh.exe to `sh.exe.rev<old>` (guarded like Bash.exe's), copies
+the new build in, checks its stamp. README ("What you get"), USING (command lookup), FEATURES (invocation),
+installer-plan phase 3 (`Bash.exe` -> `bin:sh.exe`, the same in-use case). The release stays one asset.
+**Test:** `sh_name` (authored; AOT only, run by deploy.sh's suite on the staged build): a lone copy of the shell
+named sh.exe, first on PATH, serves -c, a script, stdin, `xargs sh -c`, `find -exec sh -c`, an exit status, and names
+itself by its path. On deployed 485 (AOT) all lines as expected; with the copy off PATH 9 lines differ.
+**Implemented by:** rev 498. Files: `tools/deploy.sh`, `tests/cases/sh_name.sh`, `tests/expected/sh_name.out`,
+`tests/run-tests.ps1`, `README.md`, `docs/USING.md`, `docs/FEATURES.md`, `docs/installer-plan.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- RULED: dist/sh.exe ships although it switches GNU make's recipe shell; the installer carries sh.exe and is released with each publish
+**Status:** Active. Extends "RULED: `sh`" (same day).
+**Found (esdk-a2, confirmed by Claude):** GNU make for Windows (UnixUtils make 3.78.1) runs every recipe through an
+`sh.exe` it finds on PATH, and through cmd when there is none: measured, a recipe expanded `%OS%` with no sh.exe on
+PATH, and `$BASH_VERSION` (`5.1.0-koliada`) with a copy of Bash.exe named sh.exe first on PATH. dist/ is first on this
+machine's PATH, so dist/sh.exe switches every make here without `SHELL` from cmd to C#Bash. esdk-a2 asked for a hold;
+Claude held the deploy and changed position, from new evidence, to sh.exe opt-in plus an in-shell `sh`. The ruling
+went the other way.
+**The architect:** (relayed by esdk-a2) "C#Bash replacing the MinGW baggage is its mandate, so ship it; other builds
+will be fixed one at a time"; then in this session: "Yes, ok to deploy sh.exe. We will need to include in the
+installer and release the installer when we publish." Claude's stated falsifier ("if you want make here to run
+recipes through bash") is what fired.
+**Consequences:** a cmd-syntax recipe (`del`, `copy`, `%VAR%`) in a makefile without `SHELL` now runs under C#Bash and
+needs `SHELL` set or the recipe fixed (the ESDK CC8051 build is immune: `SHELL:=$(ESDK_SH)`, verified by esdk-a2; it
+also saw a foreign zsh break `[...]` in a recipe outright). All four sessions told with the deploy. The installer
+(plan phase 3, still blocked on INST-Q-046) installs sh.exe, and release.sh will attach the installer and its
+SHA-256 to each release. Open, not decided: whether `~/.bash/bin` goes on a user's PATH (`path.add`), which would
+switch that user's makes the same way.
+**Affects:** `docs/installer-plan.md` phase 3; PROJECT_CONTEXT anchor.
+
+## 2026-10-30 -- DEPLOYED rev 499 (the "match GNU" batch, `sh`): suite 212/0 both modes, battery 216 = baseline
+**Status:** Active. Item 3 of the list greenlit 2026-10-30, its one deploy, with `sh` added (the architect: "Yes, ok to
+deploy sh.exe"). Slot: koliada-net-28, kes-term-a1, koliada-net-forms-cb and esdk-a2 all said go (esdk-a2 at first
+without sh.exe, then on the ruling above).
+`bash tools/deploy.sh`: `1.0.0+hg.c8d92098cd13 499` over 485, Bash.exe and (first time) sh.exe; suite 212 passed, 0
+failed, both modes on the staged AOT build (sh_name ran there); battery 216/237 = baseline; rollback
+dist/Bash.exe.rev485 (no sh.exe before). Live check from a Claude Code Bash call: `$BASH_VERSION` 5.1.0-koliada,
+build 499; `type -a sh` = dist/sh.exe, `sh -c` runs as build 499; sort puts U+E000 before U+1F600; wc. All four
+notified ("done", leading with make's recipe shell). Not published (on the architect's word). Next: ~10 minutes for
+his reply, then item 4 (xargs streaming).
+
+## 2026-10-30 -- RATIFIED: the installer ASKS whether ~/.bash/bin goes on PATH, default NO; filed as INST-Q-047
+**Status:** Active, ratified (locked). The architect: "Users PATH - this should be an installer question for the
+user?"; then, to Claude's default (no) and to filing the InstallGen ask: "1/ ratified 2/ yes, concur".
+**Why no:** Claude Code needs no PATH (the start file hands it the shell); on PATH, `bash` and `sh` answer in cmd and
+PowerShell, `Bash.exe` may shadow or be shadowed, and GNU make runs every recipe without `SHELL` through `sh.exe`
+(measured, same day). Off PATH the shell still finds its own sh.exe. The question's text names all of that.
+**InstallGen (verified, read-only):** `path.add` is unconditional (`main.zig:1740`); `confirm` returns yes under
+`--silent`, so a default-no question needs new behaviour: filed as INST-Q-047 (Installer REGISTER, its rev 28): a
+declared `prompt` + `default` on `path.add`, `--silent` taking the declared default, a flag to answer it, a report line
+for each outcome. The plan's phase 3 uses it.
+**Affects:** `docs/installer-plan.md` ("Must NOT be decided": the PATH item now ruled).
+
+## 2026-10-30 -- FIXED (item 4): xargs runs each batch as soon as it is full, reading as it goes, with GNU's reader
+**Status:** Active. Item 4 of the list greenlit 2026-10-30 (the 2026-10-27 entry's "Not streamed: xargs reads its whole
+input before running anything ... a change of its own").
+**GNU (findutils 4.8, WSL):** `(echo a; sleep 1; echo b) | xargs -n1` runs a at 0 ms, b at 1000; a command exiting 255
+stops xargs ("xargs: CMD: exited with status 255; aborting", 124) and a 3-million-line producer is cut off. A batch
+is -n args, -L lines, one -I line, or (default) what fits in -s chars, 131072: every word, the command's own included,
+counts its length + 1 (`seq 1 100000 | xargs echo` is 5 commands); an item that cannot fit is "argument line too long"
+(rc 1), under -L "argument list too long". A command's stdin is /dev/null unless -a. Reader: a quote must close on its
+line ("unmatched single|double quote ...", the items before it still run, rc 1); backslash-newline joins; -I keeps
+quotes and backslashes, drops leading blanks, skips a blank line; -0 and -d keep empty items (not after a trailing
+separator); -E compares after quote removal, and under -0/-d is ignored with a warning; -n and -L: the later wins,
+with a warning.
+**Was (499):** `ReadToEnd` / `ReadAllText`, then split, then run: nothing ran before EOF, an early stop still read it
+all, one command for everything without -n (no -s at all), quotes spanning lines accepted, -I quotes literal, -0
+dropping empty items, a generic "unmatched quote" running nothing, no 255 message, -L always winning over -n.
+**Fix:** `Builtins.Find.cs` Xargs: one reader (`Items()`, an iterator over `ShellEncoding.ReadRecord`: a record per
+-0/-d, else a line at a time through GNU's tokenizer; null marks a logical line end for -L), and the batch runs the
+moment it is full (-n count, -L lines, -s size, -I each line). `Evaluator.StdinFromNull()` (the nohup redirect, made
+internal) gives the commands /dev/null; xargs's own reader is resolved before it (Console.In wrapped in an LfReader, so
+ReadRecord does not re-resolve it to /dev/null).
+**Not matched, on purpose:** GNU starts a command and reads on (with -P 1 it waits only before the next or at exit), so
+its messages can come before the output of a command just started (`printf "a\n'b\n" | xargs -n1 ...`: GNU prints the
+quote error, then a); C#Bash runs each command to its end. Found by a probe that first looked like a lazy-batch rule;
+the lazy version was built, then reverted when the line-end probe contradicted it.
+**Not done (raised, AWAITING):** the Windows cap for an EXTERNAL program's batch (131072 > CreateProcess's 32767; Git's
+xargs uses 24228, MSYS2's 24222; 499 fails such a line too); a too-long command line reports "path is over 260
+characters" (rc 126; bash: "Argument list too long"); the 127 message (the shell's "command not found", GNU "xargs:
+CMD: No such file or directory"; shared with find -exec); --show-limits (falls through to UnixUtils xargs.exe); -P, -x,
+-o unchanged (-o's commands now get /dev/null too).
+**Test:** `xargs_stream_gnu` (expected = GNU via WSL, LC_ALL=C; errors in their own file): 36 lines red on 499; green;
+mutations (built), each red: read everything first 2, commands' stdin not /dev/null 1, no run when full 16, no size
+limit 14, quotes spanning lines 7, empty records dropped 2, -L always winning 3, -I keeping leading blanks 1. Suite
+210 passed, 0 failed, both modes.
+**Implemented by:** rev 503. Files: `Bash/Evaluator/Builtins.Find.cs`, `Bash/Evaluator/Evaluator.cs`,
+`tests/cases/xargs_stream_gnu.sh`, `tests/expected/xargs_stream_gnu.out`, `tests/run-tests.ps1`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- DEPLOYED rev 503 (item 4, xargs streaming): suite 213/0 both modes, battery 217 (baseline 216)
+**Status:** Record. Item 4 of the list greenlit 2026-10-30. Slot: kes-term-a1, koliada-net-forms-cb, esdk-a2 said go;
+koliada-net-28 did not answer; the architect: "they're asleep at the wheel (or the message missed) - override, go".
+(Its session had ended: by the notice it was gone, and koliada-net-73 had started after the deploy.)
+`bash tools/deploy.sh`: `1.0.0+hg.1db7b8d3daa8 503` over 499, Bash.exe and sh.exe; suite 213 passed, 0 failed, both
+modes on the staged AOT build; battery 217/237 against baseline 216 (one more pass, not investigated); rollback
+dist/Bash.exe.rev499 and dist/sh.exe.rev499. Live check from a Claude Code Bash call: build 503 as `bash` and `sh`;
+`(echo a; sleep 1; echo b) | xargs -n1 sh -c ...` ran a at 0 ms, b at 1000; a command's `cat` read /dev/null.
+Notified: esdk-a2, kes-term-a1, koliada-net-forms-cb ("done", with the change), koliada-net-73 (new, told the deploy and
+the slot practice). **New since this deploy (esdk-a2):** the ESDK CC8051 build runs on dist/sh.exe (make's recipes) and
+dist/Bash.exe (packaging) (E:/Projects/KoliadaES/ESDK DECISIONS 13), so each deploy now changes a production build's
+shell; esdk-a2 re-runs it on each "done". Not published.
+
+## 2026-10-30 -- RECEIVED (esdk-a2, for the docs): a real make build, msys 1.0 75-76 s against C#Bash 46-48 s
+**Status:** Record; peer-measured, NOT reproduced here. Sent "at the architect's request" (relayed); where it goes in
+the docs is AWAITING the architect.
+**Workload:** the ESDK CC8051 library build (E:/Projects/KoliadaES/ESDK, `build 5.4`) from scratch (468 objects
+deleted): GNU make 3.78.1 (UnixUtils) runs ~470 recipe shells through the makefile's `SHELL:=` (466 IAR EW5.4 compiles,
+icc8051/a8051, plus archive steps), then a bash packaging script per code model (IAR xlib/xar). PATH =
+C:\Windows\System32;C:\Windows only, every tool by full path. guy-windows8, same afternoon, consecutive runs, the
+shell the only change.
+**Wall time** (start: cmd %TIME%; end: mtime of the last packaged library; 1 s resolution): msys 1.0 (sh.exe, bash
+3.1.23 i686-pc-msys) 75 s, 76 s; C#Bash rev 499 (dist/sh.exe, dist/Bash.exe) 46 s; rev 503 48 s: about 38-40 % less
+(~28 s). Compile phase ~68 s against ~40 s; packaging 1-3 s either way. Same output: zero errors, the same 4 IAR
+warnings, 6 libraries of the same sizes and module lists.
+**Caveats (the sender's):** two runs per shell (each pair within 2 s; one for 499, one for 503); the cause (faster
+per-recipe shell start-up) is inference, not measured per process. Records: ESDK PROJECT_CONTEXT.md, DECISIONS 13.
+
+## 2026-10-30 -- FIXED (a): sed reads an `s` command's flags as GNU does, and its compile errors carry their char
+**Status:** Active. koliada-net-forms-cb's report; GREENLIT (a) ("yes fix, publish, do").
+**Was (503):** the flag loop stopped at a blank, so `s#^</Project>#  <X/><!-- #31 exclusion -->\n</Project>#` (the
+`#` of "#31" ends the replacement) ended at "31" and the rest was read as more commands: "exclusion" is the `e`
+command, not available, so the WHOLE command went to PATH's UnixUtils sed.exe (no `-i`: "invalid option -- i", exit 4).
+Every compile error said "char 0".
+**GNU (sed 4.8, WSL):** blanks among the flags are skipped (`s/a/b/ p` is p), the flags end at `;`, newline, `}`, `#`;
+an unknown one is "-e expression #1, char N: unknown option to `s'", N the characters read (31 there, 7 for
+`s/a/b/q`), status 1. Errors found while parsing carry N (`p;k` 3, `y/ab/c/` 7, `s//x/I` 6); those found after it
+(unmatched `{`) say char 0.
+**Fix:** `Builtins.Search.cs`: the flag loop skips blanks; `e` is noted and refused (UnsupportedOptionException, the
+hand-over to PATH's sed) only after every flag is valid; SedCompile's in-parse throws are `Bad(message)`, a
+SedSyntaxException carrying the position, which the compile catch prints.
+**Test:** `sed_s_flags_gnu` (expected = GNU via WSL, LC_ALL=C): 7 lines red on 503; green; mutations (built): blanks end
+the flags 3, `e` refused at once 2, char always 0 5. Suite: see (b), one run covered both.
+**Implemented by:** rev 509. Files: `Bash/Evaluator/Builtins.Search.cs`, `tests/cases/sed_s_flags_gnu.sh`,
+`tests/expected/sed_s_flags_gnu.out`, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- FIXED (b): a redirection's word is expanded as bash's (braces, globs, splitting; "ambiguous redirect"); a name Windows cannot have gets bash's words
+**Status:** Active. esdk-a2's report; GREENLIT (b).
+**GNU bash 5.1 (WSL):** the word gets brace and pathname expansion and splitting; anything but one word is "WORD:
+ambiguous redirect" (the word as written: `*.sdk`, `{c,d}.txt`, `$x` empty, `$f` holding a blank, `*.zzz` under
+nullglob), status 1; one match is used (`read l < *.sdk`, `$(< *.sdk)`, `>`, `>>`, an external program's `<`); no match
+is the word itself. `$(< missing)`: "missing: No such file or directory".
+**Was (503):** one string (`ExpandToString`): `< *.sdk` opened a file named "*.sdk"; a name Windows cannot have (`*`,
+`?`) got .NET's "The filename, directory name, or volume label syntax is incorrect. : 'F:\...'"; `$(< missing)` .NET's
+"Could not find a part of the path 'F:\...'".
+**Fix:** `Evaluator.ExpandRedirectWord` (a plain word keeps the one-string path; else ExpandToFields, one field or
+RedirectException "ambiguous redirect") at all three places: ApplyRedirects, the external program's redirections, and
+`$(< )` (which also maps its error through RedirectMessage now). A name Windows cannot have (ERROR_INVALID_NAME,
+HRESULT 0x8007007B): `Builtins.IoError` says "No such file or directory" (every tool: `cat '*.none'`), RedirectMessage
+"Invalid argument" for a write (GNU would create the file); `ChildLauncher.IoException` keeps the Win32 code in the
+HResult (it was lost, so the external path and append could not tell). Claude's position, greenlit.
+**Tests:** `redirect_glob_gnu` (expected = GNU via WSL, LC_ALL=C): 14 lines red on 503 (15 with `$(< missing)`);
+`redirect_badname` (authored, Windows: no such names on Linux): 8 red on 503. Mutations (built): one string again 14,
+no ambiguity check 8, no write mapping 4, no read mapping 4, ChildLauncher's code dropped 3.
+Suite 213 passed, 0 failed, both modes (one run covered (a) and (b)).
+**Implemented by:** rev 510. Files: `Bash/Evaluator/Evaluator.cs`, `Bash/Evaluator/Builtins.Text.cs`,
+`Bash/Evaluator/ChildLauncher.cs`, `tests/cases/redirect_{glob_gnu,badname}.sh`, their expected, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- FIXED (c) m1, (d) m2, (e): a no-#! script by path runs; /bin/NAME runs NAME; xargs fits Windows' command line
+**Status:** Active. GREENLIT (c), (d), (e) ("yes fix, publish, do"); esdk-a2's msys findings m1 and m2, and the Windows
+limit raised with item 4. One commit (the three changes interleave in Evaluator.cs), one suite run.
+**(c) m1, by path only.** GNU bash 5.1 (WSL): an executable text file with no #! runs as a script in a child ($0 the
+path, its variables its own, status 3 kept); binary content: "cannot execute binary file: Exec format error", 126.
+msys 1.0 (checked): runs it by path AND as a bare name from PATH, `[ -x ]` false; binary the same refusal. Was (503):
+"Permission denied", 126 (IsExecutable: program extension, .sh, #!). Fix: TryResolveScriptFile takes `byPath`; a
+non-program file named by path with no #! runs in-process as a script; `LooksBinary` (a NUL before the first newline
+in the first 80 bytes, bash's test) refuses it with bash's words. `[ -x ]` and PATH lookup unchanged: running a no-#!
+file found on PATH (msys does) stays AWAITING the architect (Claude: no; any extensionless file on PATH would become a
+command and shadow a real one later on PATH).
+**(d) m2.** `/bin/NAME`, `/usr/bin/NAME` (one component after) when that folder is not on the drive (here `F:/bin`,
+`F:/usr` are not) run NAME, function/builtin first then PATH, as a #! line already did (`UnixBinName`, at the simple
+command's dispatch and in RunCommand: xargs, find -exec, env). A real folder of that name is left alone. Was 127.
+**(e).** CreateProcess takes a command line of at most 32767 characters; GNU's 131072 batch could not start ("Argument
+list too long" now, below). xargs caps an EXTERNAL program's batch at 32767 - 1 - 262 (room for a quoted 260-character
+program path), each argument counted as quoted (`ChildLauncher.QuotedLength`, MSYS quoting, the longer form) plus a
+space; a function or builtin (`Evaluator.RunsInProcess`) keeps GNU's batches only. Git's xargs uses 24228 (its
+`--show-limits`), MSYS2's 24222: not copied, they count their own environment. Error 206 is also a command line too
+long: "Argument list too long" (bash's E2BIG), 126, unless the program's path really is 260+ characters; it named the
+path for both.
+**Tests:** `script_noshebang_gnu` (GNU via WSL): 5 red on 503; `unix_bin_names_gnu` (GNU via WSL): 4 red;
+`xargs_windows_limit` (authored, Windows: 20000 items to an external program in several batches, a builtin's one
+batch, the 206 message): 4 red. Mutations (built): by-path ignored 5, the /bin mapping undone 4, the 206 message always
+the path's 1, no Windows cap 3; the binary test switched off turned the case red by hand three times (127 "echo bin:
+command not found" against 126), but the mutation script reported 0 for it, not explained (its `||`-pattern runs also
+built garbage until the patterns avoided its `|` separator).
+Suite 216 passed, 0 failed, both modes.
+**Implemented by:** rev 511. Files: `Bash/Evaluator/Evaluator.cs`, `Bash/Evaluator/Builtins.Find.cs`,
+`Bash/Evaluator/ChildLauncher.cs`, `tests/cases/{script_noshebang_gnu,unix_bin_names_gnu,xargs_windows_limit}.sh`,
+their expected, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- (f) the ESDK build timing in docs/PERFORMANCE.md; (g) `$( )` NULs CLOSED as settled
+**(f)** "A real build: make through C#Bash", before Caveats: esdk-a2's measurement (RECEIVED entry above) with its
+limits stated (two msys runs, one per C#Bash build, 1 s resolution, the start-up cause inferred). Not the README (the
+architect's text; Claude's position: not until a finer rerun).
+**(g)** The "match GNU" item's `$( )` NULs: settled by the rev-72 entry ("A deliberate divergence from bash, in our
+favour ... documented rather than emulated"): C#Bash keeps NULs in `$( )`; bash drops them with a warning. No change.
+
+## 2026-10-30 -- DEPLOYED rev 511 ((a)-(g)): suite 219/0 both modes, battery 217 (baseline 216)
+**Status:** Record. GREENLIT (a)-(g) ("yes fix, publish, do"). Slot: koliada-net-73, kes-term-a1,
+koliada-net-forms-cb, esdk-a2 all said go. `bash tools/deploy.sh`: `1.0.0+hg.0e51bfc3ec9c 511` over 503, Bash.exe and
+sh.exe; suite 219 passed, 0 failed, both modes on the staged AOT build; battery 217/237; rollback dist/Bash.exe.rev503,
+dist/sh.exe.rev503. Live check from a Claude Code Bash call (a fresh scratch folder): build 511; the reported sed
+command says "char 31: unknown option to `s'", rc 1; `read l < *.sdk` reads the one match; `./noshe` (no #!) runs;
+`/bin/sed` works; 20000 items to an external program in 4 batches. All four notified ("done"); esdk-a2 re-runs the
+ESDK build, koliada-net-forms-cb its sed repro. Next: publish (the benchmark wants a quiet machine), then kes-term-a1's
+two (raised below).
+
+## 2026-10-30 -- Publish preparation: benchmark on deployed 511; doc review
+**Status:** Record. GREENLIT "publish". Quiet slot: koliada-net-73, kes-term-a1, koliada-net-forms-cb said go,
+esdk-a2 after its ESDK rebuild ("done, go"); all told "benchmark done" after.
+**Benchmark** (`F:/Tools/PortableGit/bin/bash.exe tests/bench/compare3.sh`, dist = build 511, 2026-10-30 11:15, appended
+to results.md): loop 0.152 (9.8x Git, 2.7x WSL), arith 0.235 (8.8x, 2.6x), func 0.210 (10.9x, 2.7x), loop_big 1.403
+(13.7x, 2.4x), coreutils 0.053 (273x, 15.4x), pipeline 0.081 (3.0x, 1.5x), find 0.014 (9.2x, 14.9x), startup 8.6 ms
+(Git 23.6, WSL 101.8: 2.7x, 11.8x); every output identical in all three. Against rev 472's run: C#Bash's rows within
+1-3 % (noise); Git Bash's loop_big 19.2 s against 15.7 and its startup 23.6 ms against 27.5: the other shells move,
+not ours [not investigated].
+**Doc review:** README table, its startup line (23.6 / 101.8 ms) and the case count (227, as the registered count:
+208 at rev 482 was the same count); docs/DEVELOPING (227, three need AOT); docs/PERFORMANCE (the run's date and rev,
+8.8-13.7x, "about a third" of Git Bash's startup: "under a third" no longer held); ARCHITECTURE (xargs no longer holds
+its input). IMPLEMENTATION: nothing stale found (xargs, RunCommand, Find rows checked).

@@ -1,0 +1,44 @@
+--- -j 5
+0000005 063546 064550 065552 066554 067556 070560 071562 072564
+0000025 073566 074570 000172
+0000032
+rc=0
+--- -j 5 -N 4 -c
+0000005   f   g   h   i
+0000011
+rc=0
+--- -A x -j 16
+000010 071161 072163 073165 074167 075171
+00001a
+rc=0
+--- -A n -j 2 -c
+   c   d   e   f   g   h   i   j   k   l   m   n   o   p   q   r
+   s   t   u   v   w   x   y   z
+rc=0
+--- -j 0x10 -c
+0000020   q   r   s   t   u   v   w   x   y   z
+0000032
+rc=0
+--- -t x1 -j 20
+0000024 75 76 77 78 79 7a
+0000032
+rc=0
+--- -j across files
+0000030   y   z   0   1   2   3   4   5   6   7   8   9
+0000044
+rc=0
+--- -j past the end
+od: cannot skip past end of combined input
+rc=1
+--- from a pipe
+0000003   d   e   f   g   h   i   j
+0000012
+rc=0
+--- -j 8 -w4 -c
+0000010   i   j   k   l
+0000014   m   n   o   p
+0000020   q   r   s   t
+0000024   u   v   w   x
+0000030   y   z
+0000032
+rc=0

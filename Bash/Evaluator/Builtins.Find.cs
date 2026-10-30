@@ -716,110 +716,171 @@ public sealed partial class Builtins
 			 "max-procs=:P", "max-chars=:s", "eof=:E", "interactive:p", "exit:x", "open-tty:o", "process-slot-var="], stopAtFirstOperand: true);
 		if (o.Has('p')) throw new UnsupportedOptionException("xargs", "-p", "interactive mode is not available");
 		bool nullSep = o.Has('0'), noRunIfEmpty = o.Has('r'), verbose = o.Has('t');
-		int maxArgs = o.GetInt('n', 0), maxLines = o.GetInt('L', 0);
+		// GNU's refusals (2026-10-30): at least 1; a bad value was taken as "not given"
+		static Func<string, IntProblem, string> Bad(char c) => (v, p) => (p == IntProblem.NotANumber
+			? $"xargs: invalid number \"{v}\" for -{c} option" : $"xargs: value {v} for -{c} option should be >= 1")
+			+ "\nTry 'xargs --help' for more information.";
+		int maxArgs = o.Int('n', 0, 1, Bad('n')), maxLines = o.Int('L', 0, 1, Bad('L'));
+		if (maxArgs > 0 && maxLines > 0)   // the later wins, with GNU's warning (2026-10-30; -L always won)
+			{
+			int lastN = -1, lastL = -1;
+			for (int i = 0; i < o.Sequence.Count; i++) { if (o.Sequence[i].opt == 'n') lastN = i; else if (o.Sequence[i].opt == 'L') lastL = i; }
+			if (lastL > lastN) { Console.Error.WriteLine("xargs: warning: options --max-args and -L are mutually exclusive, ignoring previous --max-args value"); maxArgs = 0; }
+			else { Console.Error.WriteLine("xargs: warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value"); maxLines = 0; }
+			}
 		string? replace = o.Get('I') ?? (o.Has('i') ? "{}" : null);
 		string? eof = o.Get('E');
 		char? delim = o.Get('d') is string ds ? UnescapeDelims(ds)[0] : null;
 		var cmd = o.Operands.Count > 0 ? o.Operands : ["echo"];
+		// -s: GNU's command buffer, 131072 unless given; every word, the command's own included, counts its length + 1
+		int maxChars = o.Int('s', 131072, 1, Bad('s'));
+		if (eof is not null && (nullSep || delim is not null))
+			{
+			Console.Error.WriteLine("xargs: warning: the -E option has no effect if -0 or -d is used.\n");
+			eof = null;
+			}
 
-		string input;
+		// Read while the commands run, a batch run as soon as it is full, as GNU's (2026-10-30): it read all its
+		// input first, so nothing ran before the input ended and an early stop (255, -E) still read it to the end.
+		TextReader src;
+		LfReader? file = null;
 		if (o.Get('a') is string af)
 			{
-			try { input = ShellEncoding.ReadAllText(ShellEnvironment.TranslatePath(af)); }
+			try { src = file = new LfReader(ShellFile.OpenInput(ShellEnvironment.TranslatePath(af))); }
 			catch (Exception ex) { Console.Error.WriteLine($"xargs: {af}: {IoError(ex)}"); return 1; }
-			}
-		else input = Console.In.ReadToEnd();
-
-		List<string> items;
-		List<List<string>> lines = [];
-		if (nullSep) items = input.Split('\0', StringSplitOptions.RemoveEmptyEntries).ToList();
-		else if (delim is char d) items = input.Split(d).Where((s, i) => !(s.Length == 0 && i == input.Split(d).Length - 1)).ToList();
-		else if (replace is not null)
-			{
-			// -I: each input line is one item (leading blanks stripped, quotes not special)
-			items = input.Split('\n').Where(l => l.Length > 0).Select(l => l.TrimStart(' ', '\t')).ToList();   // a CR is data (GNU)
 			}
 		else
 			{
-			// xargs quoting: blanks separate; single/double quotes group; backslash escapes; a
-			// trailing blank on a line continues the line for -L
-			items = [];
-			var cur = new StringBuilder(); bool inItem = false; char quote = '\0';
-			var lineItems = new List<string>();
-			for (int i = 0; i < input.Length; i++)
-				{
-				char ch = input[i];
-				if (quote != '\0') { if (ch == quote) quote = '\0'; else cur.Append(ch); continue; }
-				if (ch == '\\' && i + 1 < input.Length) { cur.Append(input[++i]); inItem = true; continue; }
-				if (ch is '\'' or '"') { quote = ch; inItem = true; continue; }
-				if (ch == '\n')
-					{
-					if (inItem) { lineItems.Add(cur.ToString()); cur.Clear(); inItem = false; }
-					bool continued = i > 0 && input[i - 1] is ' ' or '\t';
-					if (!continued && lineItems.Count > 0) { lines.Add(lineItems); lineItems = []; }
-					continue;
-					}
-				if (ch is ' ' or '\t') { if (inItem) { lineItems.Add(cur.ToString()); cur.Clear(); inItem = false; } continue; }   // CR is not a blank to GNU xargs
-				cur.Append(ch); inItem = true;
-				}
-			if (quote != '\0') { Console.Error.WriteLine("xargs: unmatched quote; by default quotes are special to xargs unless you use the -0 option"); return 1; }
-			if (inItem) lineItems.Add(cur.ToString());
-			if (lineItems.Count > 0) lines.Add(lineItems);
-			items = lines.SelectMany(l => l).ToList();
+			src = ConsoleMux.In;
+			if (ReferenceEquals(src, Console.In)) src = new LfReader(src);   // resolved now: the commands' stdin changes below
 			}
-		if (eof is not null)
+		using var fileOwner = file;
+		// a command's stdin is /dev/null unless the items come from -a (GNU's): streaming, it would eat the items to come
+		using var nullIn = file is null ? _eval.StdinFromNull() : null;
+
+		string? unmatched = null;   // "single" / "double": a quote still open at its line's end
+		// The items in order; null marks an input line's end (-L counts them; a line ending in a blank goes on). -0 and
+		// -d: a record each, empty ones kept, a trailing separator ending nothing (GNU). Otherwise blanks separate, quotes
+		// group within a line, a backslash takes the next character (a newline too); -I: one item a line, leading blanks
+		// dropped, a blank line skipped, quotes and backslashes as before. A CR is data. -E's word ends the input.
+		IEnumerable<string?> Items()
 			{
-			int e = items.IndexOf(eof);
-			if (e >= 0) items = items.Take(e).ToList();
+			if (nullSep || delim is not null)
+				{
+				char sep = nullSep ? '\0' : delim!.Value;
+				string? rec;
+				while ((rec = ShellEncoding.ReadRecord(src, sep, out _)) is not null) yield return rec;
+				yield break;
+				}
+			bool perLine = replace is not null;
+			var cur = new StringBuilder();
+			bool inItem = false, escape = false, blankLast = false;
+			char quote = '\0';
+			string? text;
+			while ((text = ShellEncoding.ReadRecord(src, '\n', out bool ended)) is not null)
+				{
+				int end = ended ? text.Length + 1 : text.Length;   // the newline, when there was one, is the last character
+				for (int i = 0; i < end; i++)
+					{
+					char ch = i < text.Length ? text[i] : '\n';
+					if (escape) { cur.Append(ch); escape = false; continue; }
+					if (quote != '\0')
+						{
+						if (ch == '\n') { unmatched = quote == '\'' ? "single" : "double"; yield break; }
+						if (ch == quote) quote = '\0'; else cur.Append(ch);
+						continue;
+						}
+					bool ends = ch == '\n' || (!perLine && ch is ' ' or '\t');
+					if (!ends)
+						{
+						blankLast = false;
+						if (perLine && !inItem && ch is ' ' or '\t') continue;
+						inItem = true;
+						if (ch == '\\') escape = true;
+						else if (ch is '\'' or '"') quote = ch;
+						else cur.Append(ch);
+						continue;
+						}
+					if (inItem)
+						{
+						string item = cur.ToString(); cur.Clear(); inItem = false;
+						if (item == eof) yield break;
+						yield return item;
+						}
+					if (ch == '\n') { if (!blankLast && !perLine) yield return null; blankLast = false; }
+					else blankLast = true;
+					}
+				}
+			if (quote != '\0') { unmatched = quote == '\'' ? "single" : "double"; yield break; }
+			if (escape) cur.Append('\\');
+			if (inItem && cur.ToString() is var last && last != eof) yield return last;
 			}
 
 		int worst = 0;
-		int Run(List<string> line)
+		bool Run(List<string> line)   // false: stop here (126, 127, 255: GNU's)
 			{
 			if (verbose) Console.Error.WriteLine(string.Join(" ", line));
 			int rc;
 			try { rc = _eval.RunCommand(line[0], line.GetRange(1, line.Count - 1)); }
 			catch (ExitException ex) { rc = ex.Code; }
-			if (rc == 127 || rc == 126) { worst = rc; return rc; }
-			if (rc == 255) { worst = 124; return rc; }
+			if (rc == 127 || rc == 126) { worst = rc; return false; }
+			if (rc == 255) { Console.Error.WriteLine($"xargs: {line[0]}: exited with status 255; aborting"); worst = 124; return false; }
 			if (rc != 0 && worst == 0) worst = 123;
-			return rc;
+			return true;
 			}
 
-		if (items.Count == 0)
+		int baseChars = 0;
+		foreach (var w in cmd) baseChars += ShellEncoding.Utf8.GetByteCount(w) + 1;
+		// An EXTERNAL program's batch must also fit Windows' command line: 32767 characters (CreateProcess), less room
+		// for the program's own path (at most 260, quoted). GNU's 131072 did not: the batch could not start (2026-10-30;
+		// Git's xargs uses 24228). Each argument counts as quoted, and a space.
+		const int WindowsLine = 32767 - 1 - 262;
+		bool external = !_eval.RunsInProcess(cmd[0]);
+		int winBase = 0;
+		if (external) foreach (var w in cmd.Skip(1)) winBase += ChildLauncher.QuotedLength(w) + 1;
+		var batch = new List<string>(cmd);
+		int chars = baseChars, winChars = winBase, lines = 0;
+		bool any = false, lineHasItems = false;
+		bool RunBatch()
 			{
-			if (!noRunIfEmpty && replace is null) Run(new List<string>(cmd));
-			return worst;
+			var line = batch;
+			batch = new List<string>(cmd); chars = baseChars; winChars = winBase; lines = 0;
+			return Run(line);
 			}
-		if (replace is not null)
+		foreach (var item in Items())
 			{
-			foreach (var item in items)
+			if (item is null)
 				{
-				var line = cmd.Select(w => w.Replace(replace, item)).ToList();
-				Run(line);
-				if (worst is 126 or 127 or 124) break;
+				if (maxLines > 0 && lineHasItems && ++lines == maxLines && !RunBatch()) return worst;
+				lineHasItems = false;
+				continue;
 				}
-			return worst;
-			}
-		if (maxLines > 0 && lines.Count > 0)
-			{
-			for (int k = 0; k < lines.Count; k += maxLines)
+			any = true;
+			if (replace is not null)
 				{
-				var line = new List<string>(cmd);
-				foreach (var l in lines.Skip(k).Take(maxLines)) line.AddRange(l);
-				Run(line);
-				if (worst is 126 or 127 or 124) break;
+				if (!Run(cmd.Select(w => w.Replace(replace, item)).ToList())) return worst;
+				continue;
 				}
-			return worst;
+			int len = ShellEncoding.Utf8.GetByteCount(item) + 1, wlen = external ? ChildLauncher.QuotedLength(item) + 1 : 0;
+			if (chars + len > maxChars || winChars + wlen > WindowsLine)
+				{
+				if (maxLines > 0) { Console.Error.WriteLine("xargs: argument list too long"); return 1; }   // -L implies -x (GNU)
+				if (batch.Count > cmd.Count && !RunBatch()) return worst;
+				if (chars + len > maxChars || winChars + wlen > WindowsLine) { Console.Error.WriteLine("xargs: argument line too long"); return 1; }
+				}
+			batch.Add(item); chars += len; winChars += wlen; lineHasItems = true;
+			// a full batch runs at once, as GNU's (whose command then runs on while it reads: its messages can come
+			// before that command's output; here each command finishes first)
+			if (maxLines == 0 && maxArgs > 0 && batch.Count - cmd.Count == maxArgs && !RunBatch()) return worst;
 			}
-		int batch = maxArgs > 0 ? maxArgs : items.Count;
-		for (int k = 0; k < items.Count; k += batch)
+		if (unmatched is not null)
 			{
-			var line = new List<string>(cmd);
-			line.AddRange(items.Skip(k).Take(batch));
-			Run(line);
-			if (worst is 126 or 127 or 124) break;
+			Console.Error.WriteLine($"xargs: unmatched {unmatched} quote; by default quotes are special to xargs unless you use the -0 option");
+			if (batch.Count > cmd.Count) Run(batch);   // the items before it still run (GNU), and the status is 1
+			return 1;
 			}
+		if (batch.Count > cmd.Count) RunBatch();
+		else if (!any && !noRunIfEmpty && replace is null) Run(new List<string>(cmd));
 		return worst;
 		}
 	}

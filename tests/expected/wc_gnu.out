@@ -1,0 +1,65 @@
+--- -w
+NULs                        0
+a NUL b                     1
+a NUL space b               2
+control chars               1
+invalid bytes               1
+invalid between letters     2
+tab and CR                  3
+form feed, vtab             3
+no-break space U+00A0       2
+ideographic space U+3000    2
+CJK                         2
+--- -m
+invalid bytes               4
+a 2-byte char               5
+a cut 3-byte char           2
+NUL                         4
+--- -L
+tab                         9
+tab at 8                    17
+CJK wide                    4
+NUL and CR                  2
+combining accent            1
+longest of lines            6
+invalid byte                2
+--- padding
+1 f1
+17 f1
+ 1  4 17 f1
+ 1 f1
+ 3 f2
+ 4 total
+ 1  4 17 f1
+ 3  3  6 f2
+ 4  7 23 total
+2
+      2       2       4
+      2       2
+1
+ 1  4 17
+      1       3       6
+      0       0       0 /dev/null
+wc: missing: No such file or directory
+ 1  4 17 f1
+ 1  4 17 total
+--- edges
+emoji -m                    2
+emoji -L                    2
+emoji -w                    1
+ZWSP -w                     1
+ZWSP -L                     2
+word joiner -w              2
+figure space -w             2
+figure space -L             3
+soft hyphen -L              3
+NEL U+0085 -w               1
+DEL -w                      2
+DEL -L                      2
+fullwidth A -L              2
+hangul -L                   2
+ideographic sp -L           2
+vtab -L                     4
+FF -L                       3
+no newline -L               5
+all, mixed                        2       5      10      14      11

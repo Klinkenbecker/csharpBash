@@ -1,0 +1,103 @@
+--- a command exiting 255 stops it: the producer is cut off
+got 1
+rc=124
+err: xargs: BASH: exited with status 255; aborting
+producer cut off
+--- -E's word stops it: the producer is cut off
+a
+producer cut off
+--- a command's stdin is /dev/null
+[a]
+[b]
+--- default batches: what fits in 131072
+23695 131063
+21844 131063
+21844 131063
+21844 131063
+10773 64638
+--- -s 13
+aa bb
+cc
+rc=0
+--- -s 14
+aa bb cc
+rc=0
+--- -s 8
+aa
+bb
+cc
+rc=0
+--- -s 7
+rc=1
+err: xargs: argument line too long
+--- -s counts the initial args
+x aa bb
+--- -n2 -s 11
+aa bb
+cc
+--- -L1 -s 11
+rc=1
+err: xargs: argument list too long
+--- -L1, a trailing blank continues
+a b
+c
+--- -L2
+a b c
+d e
+--- a quote across a newline
+a
+rc=1
+err: xargs: unmatched single quote; by default quotes are special to xargs unless you use the -0 option
+--- the same, -n1
+x
+y
+rc=1
+err: xargs: unmatched single quote; by default quotes are special to xargs unless you use the -0 option
+--- -n2 then -L1: the later wins
+a b c
+d
+err: xargs: warning: options --max-args and -L are mutually exclusive, ignoring previous --max-args value
+--- -L1 then -n2
+a b
+c d
+err: xargs: warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value
+--- an unmatched double quote
+a
+rc=1
+err: xargs: unmatched double quote; by default quotes are special to xargs unless you use the -0 option
+--- backslash-newline joins
+0000000   a  \n   b  \n   c  \n
+--- -I: quotes and backslashes work, blanks do not split
+[a b  c x]
+--- -I: leading blanks go, a blank line is skipped
+[a]
+[b ]
+--- -I: a quote across a newline
+rc=1
+err: xargs: unmatched single quote; by default quotes are special to xargs unless you use the -0 option
+--- -0 keeps empty items
+x a
+x 
+x b
+--- -d keeps empty items, not a trailing one
+x a
+x 
+x b
+--- -E after quote removal
+a
+--- -E under -0
+a STOP b
+err: xargs: warning: the -E option has no effect if -0 or -d is used.
+err: 
+--- 255's message
+a
+rc=124
+err: xargs: BASH: exited with status 255; aborting
+--- 123
+rc=123
+--- no input runs once; -r does not
+hi
+hi
+rc=0
+--- a CR is data
+0000000   a  \r  \n   b  \n

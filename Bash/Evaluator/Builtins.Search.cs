@@ -229,9 +229,13 @@ public sealed partial class Builtins
 		     wordMatch = o.Has('w'), lineMatch = o.Has('x'), fixedStr = o.Has('F'), ere = o.Has('E'), pcre = o.Has('P'), recursive = o.Has('r') || o.Has('R'),
 		     quiet = o.Has('q'), noMessages = o.Has('s'), noFilename = o.Has('h'), withFilename = o.Has('H'), onlyMatching = o.Has('o'), text = o.Has('a'),
 		     byteOffset = o.Has('b'), nullData = o.Has('z'), nullAfterName = o.Has('Z');
-		int maxCount = o.Get('m') is string ms ? int.Parse(ms, System.Globalization.CultureInfo.InvariantCulture) : -1;
-		int after = o.GetInt('A', 0), before = o.GetInt('B', 0);
-		if (o.Get('C') is string cs) { after = before = int.Parse(cs, System.Globalization.CultureInfo.InvariantCulture); }
+		// a negative count is no limit, as GNU's; a non-number is its "invalid max count", exit 2 (it was rc 1, no word)
+		int maxCount = o.Int('m', -1, int.MinValue, (_, _) => "grep: invalid max count", 2);
+		if (maxCount == 0) return 1;   // -m 0: GNU reads nothing and prints nothing, -c included (it was no limit)
+		// GNU's refusal (2026-10-30), exit 2: a bad -A/-B was taken as 0, a bad -C threw
+		static string BadContext(string v, IntProblem _) => $"grep: {v}: invalid context length argument";
+		int after = o.Int('A', 0, 0, BadContext, 2), before = o.Int('B', 0, 0, BadContext, 2);
+		if (o.Get('C') is not null) after = before = o.Int('C', 0, 0, BadContext, 2);
 		if (o.Numeric is not null) { after = before = int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture); }
 		bool skipBinary = o.Has('I') || o.GetLong("binary-files") == "without-match";
 		string groupSep = o.HasLong("no-group-separator") ? "" : (o.GetLong("group-separator") ?? "--");
@@ -464,6 +468,8 @@ public sealed partial class Builtins
 		{
 		public List<SedCmd> Cmds = [];
 		public Dictionary<string, int> Labels = new(StringComparer.Ordinal);
+		/// <summary>`l`'s wrap width when it names none: -l N, else GNU's 70; 0 never wraps.</summary>
+		public int LineLength = 70;
 		}
 
 	private int Sed(List<string> args)
@@ -489,7 +495,10 @@ public sealed partial class Builtins
 		SedProgram prog;
 		try { prog = SedCompile(string.Join("\n", scripts), ere); }
 		catch (UnsupportedOptionException) { throw; }
-		catch (Exception ex) { Console.Error.WriteLine($"sed: -e expression #1, char 0: {ex.Message}"); return 1; }
+		catch (Exception ex) { Console.Error.WriteLine($"sed: -e expression #1, char {(ex as SedSyntaxException)?.At ?? 0}: {ex.Message}"); return 1; }
+		if (o.Get('l') is string ll)
+			prog.LineLength = int.TryParse(ll, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var width)
+				? width : throw new UnsupportedOptionException("sed", $"-l {ll}", "invalid line length");
 
 		// Lines are read as the script asks for them: each file was read whole first, which failed over 2 GiB and never
 		// ended on endless input (`yes | sed 3q`). What lasts across files is `shared`: the `w` files, opened (so
@@ -697,6 +706,12 @@ public sealed partial class Builtins
 		public void Dispose() { foreach (var o in _files.Values) o.W.Dispose(); }
 		}
 
+	/// <summary>A sed script error found while parsing, at GNU's "char N": the characters read so far.</summary>
+	private sealed class SedSyntaxException(string message, int at) : Exception(message)
+		{
+		public int At { get; } = at;
+		}
+
 	private static SedProgram SedCompile(string script, bool ere)
 		{
 		var prog = new SedProgram();
@@ -706,6 +721,7 @@ public sealed partial class Builtins
 		string s = script;
 		void SkipWs() { while (p < s.Length && (s[p] == ' ' || s[p] == '\t')) p++; }
 		void SkipSep() { while (p < s.Length && (s[p] == ';' || s[p] == '\n' || s[p] == ' ' || s[p] == '\t')) p++; }
+		Exception Bad(string message) => new SedSyntaxException(message, p);   // it said char 0 for every error (2026-10-30)
 		SedAddr? ReadAddr()
 			{
 			if (p >= s.Length) return null;
@@ -720,7 +736,7 @@ public sealed partial class Builtins
 			if (c == '/' || c == '\\')
 				{
 				char delim = '/';
-				if (c == '\\') { p++; if (p >= s.Length) throw new Exception("unexpected end of script"); delim = s[p]; }
+				if (c == '\\') { p++; if (p >= s.Length) throw Bad("unexpected end of script"); delim = s[p]; }
 				p++;
 				var re = SedReadDelim(s, ref p, delim);
 				bool ic = false, modifier = false;
@@ -729,8 +745,8 @@ public sealed partial class Builtins
 				// with a modifier, an error. It was Regex(""), which matched every line.
 				if (re.Length == 0)
 					{
-					if (modifier) throw new Exception("cannot specify modifiers on empty regexp");
-					return anyRe ? new SedAddr { Kind = 3, Re = null } : throw new Exception("no previous regular expression");
+					if (modifier) throw Bad("cannot specify modifiers on empty regexp");
+					return anyRe ? new SedAddr { Kind = 3, Re = null } : throw Bad("no previous regular expression");
 					}
 				anyRe = true;
 				return new SedAddr { Kind = 3, Re = new Regex(ere ? EreToNet(re) : BreToNet(re), ic ? RegexOptions.IgnoreCase : RegexOptions.None) };
@@ -777,12 +793,12 @@ public sealed partial class Builtins
 					p++; SkipWs();
 					if (p < s.Length && s[p] == '+') { p++; int n = 0; while (p < s.Length && char.IsDigit(s[p])) n = n * 10 + (s[p++] - '0'); cmd.A2 = new SedAddr { Kind = 1, Num = n }; cmd.A2Plus = true; }
 					else if (p < s.Length && s[p] == '~') { p++; int n = 0; while (p < s.Length && char.IsDigit(s[p])) n = n * 10 + (s[p++] - '0'); cmd.A2 = new SedAddr { Kind = 1, Num = n }; cmd.A2Tilde = true; }
-					else cmd.A2 = ReadAddr() ?? throw new Exception("unexpected `,'");
+					else cmd.A2 = ReadAddr() ?? throw Bad("unexpected `,'");
 					}
 				}
 			SkipWs();
 			while (p < s.Length && s[p] == '!') { cmd.Negate = !cmd.Negate; p++; SkipWs(); }
-			if (p >= s.Length) throw new Exception("missing command");
+			if (p >= s.Length) throw Bad("missing command");
 			char c = s[p++];
 			cmd.Cmd = c;
 			switch (c)
@@ -790,36 +806,41 @@ public sealed partial class Builtins
 				case '{': blockStack.Push(prog.Cmds.Count); break;
 				case '}':
 					{
-					if (blockStack.Count == 0) throw new Exception("unexpected `}'");
+					if (blockStack.Count == 0) throw Bad("unexpected `}'");
 					int open = blockStack.Pop();
 					prog.Cmds[open].JumpTo = prog.Cmds.Count;   // index of this '}' command
 					break;
 					}
 				case 's':
 					{
-					if (p >= s.Length) throw new Exception("unterminated `s' command");
+					if (p >= s.Length) throw Bad("unterminated `s' command");
 					char delim = s[p++];
 					string pat = SedReadDelim(s, ref p, delim);
 					cmd.SRepl = SedReadDelim(s, ref p, delim, regex: false);
-					bool ic = false, multiline = false;
-					while (p < s.Length && s[p] is not (';' or '\n' or '}' or ' ' or '\t' or '#'))
+					bool ic = false, multiline = false, exec = false;
+					// GNU skips blanks among the flags (`s/a/b/ p` is p) and refuses an unknown one where it stands. A blank
+					// ended them, so the rest was read as more commands: `s#..#..#31 exclusion` ran `e` (2026-10-30)
+					while (p < s.Length && s[p] is not (';' or '\n' or '}' or '#'))
 						{
 						char f = s[p++];
+						if (f is ' ' or '\t') continue;
 						if (f == 'g') cmd.SGlobal = true;
 						else if (f == 'p') cmd.SPrint = true;
 						else if (f == 'i' || f == 'I') ic = true;
 						else if (f == 'm' || f == 'M') multiline = true;
 						else if (f == 'w') { SkipWs(); cmd.SWriteFile = ReadToEol().Trim(); }
-						else if (f == 'e') throw new UnsupportedOptionException("sed", "s///e", "executing the pattern space as a command is not available");
+						else if (f == 'e') exec = true;
 						else if (char.IsDigit(f)) cmd.SNth = cmd.SNth * 10 + (f - '0');
-						else throw new Exception($"unknown option to `s'");
+						else throw Bad($"unknown option to `s'");
 						}
+					// only a command that is otherwise valid goes elsewhere for `e`
+					if (exec) throw new UnsupportedOptionException("sed", "s///e", "executing the pattern space as a command is not available");
 					var opts = (ic ? RegexOptions.IgnoreCase : RegexOptions.None) | (multiline ? RegexOptions.Multiline : RegexOptions.None);
 					// `s//x/`: the last regex used (null here), as GNU; it was refused always (2026-10-28)
 					if (pat.Length == 0)
 						{
-						if (ic || multiline) throw new Exception("cannot specify modifiers on empty regexp");
-						if (!anyRe) throw new Exception("no previous regular expression");
+						if (ic || multiline) throw Bad("cannot specify modifiers on empty regexp");
+						if (!anyRe) throw Bad("no previous regular expression");
 						cmd.SRe = null;
 						}
 					else { cmd.SRe = new Regex(ere ? EreToNet(pat) : BreToNet(pat), opts); anyRe = true; }
@@ -830,7 +851,7 @@ public sealed partial class Builtins
 					char delim = s[p++];
 					cmd.YFrom = SedUnescapeText(SedReadDelim(s, ref p, delim, regex: false));
 					cmd.YTo = SedUnescapeText(SedReadDelim(s, ref p, delim, regex: false));
-					if (cmd.YFrom.Length != cmd.YTo.Length) throw new Exception("strings for `y' command are different lengths");
+					if (cmd.YFrom.Length != cmd.YTo.Length) throw Bad("strings for `y' command are different lengths");
 					break;
 					}
 				case 'a': case 'i': case 'c': cmd.Text = ReadText(); break;
@@ -840,7 +861,7 @@ public sealed partial class Builtins
 					var label = ReadToEol().Trim();
 					int semi = label.IndexOf(';');
 					if (semi >= 0) { p -= label.Length - semi; label = label[..semi]; }
-					if (label.Length == 0) throw new Exception("\":\" lacks a label");
+					if (label.Length == 0) throw Bad("\":\" lacks a label");
 					prog.Labels[label] = prog.Cmds.Count;
 					break;
 					}
@@ -861,13 +882,13 @@ public sealed partial class Builtins
 					SkipWs();
 					int n = 0; bool any = false;
 					while (p < s.Length && char.IsDigit(s[p])) { n = n * 10 + (s[p++] - '0'); any = true; }
-					cmd.QCode = any ? n : 0;
+					cmd.QCode = any ? n : c == 'l' ? -1 : 0;   // `l` with no width takes the program's (`l 0`: never wrap)
 					break;
 					}
 				case 'd': case 'D': case 'p': case 'P': case 'n': case 'N': case '=': case 'h': case 'H': case 'g': case 'G': case 'x': case 'z': case 'F':
 					break;
 				case 'e': throw new UnsupportedOptionException("sed", "e", "executing commands is not available");
-				default: throw new Exception($"unknown command: `{c}'");
+				default: throw Bad($"unknown command: `{c}'");
 				}
 			prog.Cmds.Add(cmd);
 			}
@@ -1009,7 +1030,7 @@ public sealed partial class Builtins
 						deleted = true; break;
 						}
 					case '=': output.Text(lineNo + "\n"); pc++; continue;
-					case 'l': output.Text(SedVisible(ps) + "\n"); pc++; continue;
+					case 'l': output.Text(SedVisible(ps, cmd.QCode >= 0 ? cmd.QCode : prog.LineLength) + "\n"); pc++; continue;
 					case 'h': hold = ps; holdEnded = psEnded; pc++; continue;
 					case 'H': hold = hold + "\n" + ps; holdEnded = psEnded; pc++; continue;
 					case 'g': ps = hold; psEnded = holdEnded; pc++; continue;
@@ -1085,26 +1106,25 @@ public sealed partial class Builtins
 		return true;
 		}
 
-	private static string SedVisible(string s)
+	/// <summary>GNU sed's `l` (4.8, checked 2026-10-30): each byte as it is, `\\` and the C escapes, any other
+	/// non-printable or non-ASCII byte as \ooo; the output wrapped so that no line holds more than
+	/// <paramref name="width"/> - 1 of it, each ending in `\`, an escape never split (with width 1 the first line is a
+	/// lone `\`, as GNU's); width 0 never wraps; `$` at the end. It never wrapped, and took a character at a time (each
+	/// half of a 4-byte character encoded alone).</summary>
+	private static string SedVisible(string s, int width)
 		{
 		var sb = new StringBuilder();
-		foreach (var ch in s)
+		int col = 0;
+		foreach (var b in ShellEncoding.Utf8.GetBytes(s))
 			{
-			switch (ch)
+			string item = b switch
 				{
-				case '\\': sb.Append("\\\\"); break;
-				case '\a': sb.Append("\\a"); break;
-				case '\b': sb.Append("\\b"); break;
-				case '\f': sb.Append("\\f"); break;
-				case '\n': sb.Append("\\n"); break;
-				case '\r': sb.Append("\\r"); break;
-				case '\t': sb.Append("\\t"); break;
-				case '\v': sb.Append("\\v"); break;
-				default:
-					if (ch < ' ' || ch > '~') foreach (var b in ShellEncoding.Utf8.GetBytes(ch.ToString())) sb.Append('\\').Append(Convert.ToString(b, 8).PadLeft(3, '0'));
-					else sb.Append(ch);
-					break;
-				}
+				(byte)'\\' => "\\\\", 7 => "\\a", 8 => "\\b", 12 => "\\f", 10 => "\\n", 13 => "\\r", 9 => "\\t", 11 => "\\v",
+				< 32 or > 126 => "\\" + Convert.ToString(b, 8).PadLeft(3, '0'),
+				_ => ((char)b).ToString(),
+				};
+			if (width > 0 && col + item.Length > width - 1) { sb.Append("\\\n"); col = 0; }
+			sb.Append(item); col += item.Length;
 			}
 		return sb.Append('$').ToString();
 		}

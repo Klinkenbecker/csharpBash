@@ -115,6 +115,8 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			FlushBuffered();   // here, so a write error (a full disk) is this builtin's, reported below
 			}
 		catch (HelpRequestedException) { exitCode = HelpFor(name, args); }
+		// a value the option cannot take: the tool's own refusal, as GNU's (no fall-through: it is not missing)
+		catch (OptionValueException ex) { Console.Error.WriteLine(ex.Message); exitCode = ex.ExitCode; }
 		catch (UnsupportedOptionException ex)
 			{
 			// either way a request C#Bash did not service itself: logged (Unserviced, 2026-10-27)

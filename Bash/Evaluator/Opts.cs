@@ -13,6 +13,16 @@ public sealed class UnsupportedOptionException(string tool, string option, strin
 	public string Option { get; } = option;
 	}
 
+/// <summary>A value an option cannot take (a number that is not one, or below its least): the tool refuses it in
+/// GNU's own words and exit code, as GNU does. Not a fall-through, not an unserviced request (2026-10-30).</summary>
+public sealed class OptionValueException(string message, int exitCode) : Exception(message)
+	{
+	public int ExitCode { get; } = exitCode;
+	}
+
+/// <summary>Why <see cref="Opts.Int"/> refused a value, for the tool's own words.</summary>
+public enum IntProblem { NotANumber, Negative, BelowLeast }
+
 /// <summary>`--help` met as an option (not as an option's value, nor after the operands of a tool that stops at its
 /// first one): the builtin answers with its manual page from help.json (DECISIONS 2026-10-27).</summary>
 public sealed class HelpRequestedException(string tool) : Exception($"{tool}: --help")
@@ -50,10 +60,18 @@ public sealed class Opts
 	/// <summary>Every value of a repeated long option, in order (`diff --label A --label B`).</summary>
 	public IEnumerable<string> AllLong(string name) => _longAll.Where(p => p.name == name && p.val is not null).Select(p => p.val!);
 
-	public int GetInt(char c, int def)
+	/// <summary>-<paramref name="c"/> as an integer: <paramref name="def"/> when it is absent; when it is not a whole
+	/// number, or below <paramref name="least"/>, the tool refuses it with <paramref name="refuse"/>'s words (from the
+	/// value as given and why) and <paramref name="exitCode"/>, as GNU's do. It replaces GetInt (removed 2026-10-30),
+	/// which took such a value as the default (`fold -w x` folded at 80, `uniq -f x` skipped nothing).</summary>
+	public int Int(char c, int def, int least, Func<string, IntProblem, string> refuse, int exitCode = 1)
 		{
 		var v = Get(c);
-		return v is not null && int.TryParse(v, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : def;
+		if (v is null) return def;
+		if (!int.TryParse(v, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var n))
+			throw new OptionValueException(refuse(v, IntProblem.NotANumber), exitCode);
+		if (n < least) throw new OptionValueException(refuse(v, n < 0 ? IntProblem.Negative : IntProblem.BelowLeast), exitCode);
+		return n;
 		}
 
 	/// <param name="tool">Tool name for messages.</param>

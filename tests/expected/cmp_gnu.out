@@ -1,0 +1,60 @@
+--- differ
+a b differ: byte 3, line 1
+rc=1
+--- same
+rc=0
+--- EOF, mid-line
+cmp: EOF on short after byte 3, in line 1
+rc=1
+--- EOF, other side
+cmp: EOF on short after byte 3, in line 1
+rc=1
+--- EOF, after a line
+cmp: EOF on part after byte 9, in line 2
+rc=1
+--- EOF, whole lines
+cmp: EOF on a after byte 13, line 2
+rc=1
+--- empty
+cmp: EOF on empty which is empty
+rc=1
+--- empty, other side
+cmp: EOF on empty which is empty
+rc=1
+--- -s differ
+rc=1
+--- -s EOF
+rc=1
+--- -b
+a b differ: byte 3, line 1 is 143 c 130 X
+rc=1
+--- -l
+ 3 143 130
+rc=1
+--- -l EOF
+cmp: EOF on short after byte 3
+rc=1
+--- -lb
+ 3 143 c    130 X
+rc=1
+--- -l, larger offsets
+   5 170 131
+1000 170 132
+1500 170 200
+rc=1
+--- -lb, larger offsets
+   5 170 x    131 Y
+1000 170 x    132 Z
+1500 170 x    200 M-^@
+rc=1
+--- -i 2
+a b differ: byte 1, line 1
+rc=1
+--- -l, sizes 13 and 3013 (the list, then the message)
+ 1 141 170
+ 2 142 170
+13  12 170
+cmp: EOF on a after byte 13
+--- -l, from a pipe
+ 3 143 130
+rc=1

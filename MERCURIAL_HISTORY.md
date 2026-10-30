@@ -12,11 +12,42 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 483 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 514 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 513 | 2026-10-30 | Publish preparation: benchmark on deployed 511 (results.md), README table/startup/case count, PERFORMANCE figures, DEVELOPING count, ARCHITECTURE (xargs streams) |
+| 512 | 2026-10-30 | Deployed rev 511 ((a)-(g); suite 219/0 both modes, battery 217); raised: find -printf widths, ls --time-style (kes-term-a1) |
+| 511 | 2026-10-30 | (c) a no-#! text file run by path runs as a script (binary: Exec format error); (d) /bin/NAME and /usr/bin/NAME run NAME when the drive has no such folder; (e) xargs fits an external batch to Windows' 32767 command line, and a too-long line is Argument list too long; (f) the ESDK build timing in PERFORMANCE.md; (g) $( ) NULs closed as settled |
+| 510 | 2026-10-30 | (b) a redirection's word is expanded as bash's (braces, globs, splitting; not one word is ambiguous redirect); a name Windows cannot have: No such file or directory / Invalid argument, not .NET's text |
+| 509 | 2026-10-30 | (a) sed reads an s command's flags as GNU does (blanks skipped; an unknown one refused at its char, before a valid e goes elsewhere); compile errors carry their char (always 0) |
+| 508 | 2026-10-30 | anchor: GREENLIT (a)-(g): sed flags, redirection expansion, m1 by path, m2 /bin names, xargs external cap, ESDK timing doc; $( ) NULs closed as settled; one deploy, then publish |
+| 507 | 2026-10-30 | anchor: AWAITING the architect: redirection words get no pathname or brace expansion, and an impossible Windows name gets the raw .NET message (esdk-a2, verified against GNU) |
+| 506 | 2026-10-30 | RECEIVED (esdk-a2): a real make build, msys 1.0 75-76 s against C#Bash 46-48 s, same output; placement in the docs awaits the architect |
+| 505 | 2026-10-30 | anchor: AWAITING the architect: sed hands an s command with an e flag to PATH's old sed before checking the rest (koliada-net-forms-cb, verified); ESDK build passes on 503 |
+| 504 | 2026-10-30 | Deployed rev 503 (xargs streaming; suite 213/0 both modes, battery 217); the greenlit list is done; the ESDK build now runs on dist/sh.exe and dist/Bash.exe |
+| 503 | 2026-10-30 | Item 4: xargs runs each batch as soon as it is full (-n, -L, -I, -s 131072), reading as it goes, commands on /dev/null; GNU's reader (quotes close on their line, -I quotes, -0/-d empty items, -E after quotes); -n/-L later wins; 255 message |
+| 502 | 2026-10-30 | RATIFIED: the installer asks whether ~/.bash/bin goes on PATH, default no; filed InstallGen ask INST-Q-047 |
+| 501 | 2026-10-30 | installer plan: PATH is the user's choice, asked by the installer (the architect); needs an InstallGen ask; the default awaits him |
+| 500 | 2026-10-30 | Deployed rev 499 (match GNU batch + dist/sh.exe; suite 212/0 both modes, battery 216); RULED: sh.exe ships despite make's recipe shell switch; the installer carries sh.exe and is released with each publish |
+| 499 | 2026-10-30 | anchor: deploy held, AWAITING the architect: an sh.exe on PATH makes GNU make run every recipe through it (esdk-a2, confirmed) |
+| 498 | 2026-10-30 | sh: deploy.sh ships dist/sh.exe, a copy of the build, as Git for Windows and MSYS2 ship theirs (bash default mode, no interpreter code); case sh_name; docs |
+| 497 | 2026-10-30 | match GNU 10/11: sort and comm order lines by their bytes, as GNU in the C locale (they compared UTF-16 units: astral characters before U+E000, an undecodable byte out of place) |
+| 496 | 2026-10-30 | match GNU 9/11: an arithmetic error in (( )) is reported inside its redirections with status 1, as bash's (it escaped them, status 2) |
+| 495 | 2026-10-30 | match GNU 8/11: a numeric option refuses a bad value in GNU's words and exit code (uniq nl fold od base64 grep xargs du); GetInt removed |
+| 494 | 2026-10-30 | match GNU 7/11: split refuses a bad -l count or -b size as GNU does (they made one piece, rc 0) |
+| 493 | 2026-10-30 | match GNU 6/11: sed's l wraps at 70 by GNU's rule, l N and -l N set the width, bytes as \ooo |
+| 492 | 2026-10-30 | match GNU 5/11: printf %q quotes as bash's sh_backslash_quote (= and % never escaped; ~ and # only first) |
+| 491 | 2026-10-30 | match GNU 4/11: base64 -w 0 writes no newline; -d skips newlines only (space, tab, CR invalid); -i ignores garbage |
+| 490 | 2026-10-30 | match GNU 3/11: od's combined input: addresses from its start, -j across files, a skip past its end an error; -j/-N take 0x and 0 forms |
+| 489 | 2026-10-30 | match GNU 2/11: cmp's EOF message (after byte N, line L / in line L; which is empty), -b, and -l's columns are GNU's |
+| 488 | 2026-10-30 | match GNU 1/11: wc's words (printable runs), characters (no invalid bytes), display widths (-L) and padding are GNU's; textutils' expected file had the old padding |
+| 487 | 2026-10-30 | Item 2: <( ) not streaming is the ratified temp-file design (2026-09-04), not a bug; ARCHITECTURE's non-goals line corrected |
+| 486 | 2026-10-30 | Deployed rev 485 (trailing-slash fix; suite 201/0 both modes, battery 216); notified |
+| 485 | 2026-10-30 | A destination with a trailing slash names a directory: mv file nodir/ refused as GNU (it renamed to nodir, rc 0); cp gives GNU's words (was Windows' error) |
+| 484 | 2026-10-30 | Anchor: the installer plan's phases 1-2 question is answered (both built and released) |
+| 483 | 2026-10-30 | Published: GitHub main = git 017986f = hg rev 482 (README thanks, ARCHITECTURE §15); no release |
 | 482 | 2026-10-30 | ARCHITECTURE §15: help and the record of what C#Bash cannot do (the map is now §16); README thanks the GNU Project, the FSF and the other manual sites |
 | 481 | 2026-10-30 | Published: GitHub main = git eb6ed20 = hg rev 480; release step skipped (Bash.exe unchanged) |
 | 480 | 2026-10-30 | README step 2: setx for Command Prompt (quoted) and PowerShell (the architect's edit) |

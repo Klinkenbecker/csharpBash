@@ -1,0 +1,26 @@
+--- read, quoted
+rc=1
+err: *.none: No such file or directory
+--- write, quoted
+rc=1
+err: *.none: Invalid argument
+--- write, no match
+rc=1
+err: *.none: Invalid argument
+--- append
+rc=1
+err: a?b: Invalid argument
+--- external, write
+rc=1
+err: ?.none: Invalid argument
+--- external, read
+rc=1
+err: ?.none: No such file or directory
+--- $(< )
+rc=1
+err: *.none: No such file or directory
+--- cat's own open
+rc=1
+err: cat: *.none: No such file or directory
+--- nothing created
+0

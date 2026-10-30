@@ -18,7 +18,9 @@
 #   3. the suite runs on that exact binary, with a console and -Detached: any failure stops here;
 #   4. the battery runs (its Release build is the same tree): a baseline regression stops here;
 #   5. the running dist/Bash.exe is RENAMED to dist/Bash.exe.rev<old> (Windows renames a running image
-#      and cannot overwrite it) and the new one copied in; its stamp is checked again;
+#      and cannot overwrite it) and the new one copied in; its stamp is checked again; dist/sh.exe likewise, a
+#      copy of the same build (2026-10-30), as Git for Windows and MSYS2 ship theirs, for scripts and programs
+#      that run `sh`;
 #   6. it prints the notice material: the revisions now deployed (hg log since the old one).
 # What it does not do, and Claude does next, by the same rule every time: a live check from a Claude
 # Code Bash call (`echo $BASH_VERSION; "$BASH" --version`, plus the deploy's headline fixes), then the
@@ -42,6 +44,7 @@ old_rev=${old_stamp##* }
 [ -n "$old_rev" ] || die "cannot read the deployed build's stamp ($dist/Bash.exe --version)"
 [ "$old_rev" != "$rev" ] || die "rev $rev is already deployed ($old_stamp)"
 [ ! -e "$dist/Bash.exe.rev$old_rev" ] || die "a rollback copy dist/Bash.exe.rev$old_rev already exists; resolve it by hand"
+[ ! -e "$dist/sh.exe.rev$old_rev" ] || die "a rollback copy dist/sh.exe.rev$old_rev already exists; resolve it by hand"
 echo "deploy: rev $rev ($node) over the deployed rev $old_rev"
 
 # 2. publish to staging
@@ -72,7 +75,15 @@ mv "$dist/Bash.exe" "$dist/Bash.exe.rev$old_rev" || die "could not rename the ru
 cp "$new" "$dist/Bash.exe" || { mv "$dist/Bash.exe.rev$old_rev" "$dist/Bash.exe"; die "copy failed; the old build is back"; }
 got=$("$dist/Bash.exe" --version 2>/dev/null | tail -1)
 [ "$got" = "$new_stamp" ] || die "dist/Bash.exe reads '$got' after the copy, not '$new_stamp'"
-echo "deploy: DEPLOYED $got; rollback: dist/Bash.exe.rev$old_rev"
+sh_back=
+if [ -e "$dist/sh.exe" ]; then
+  mv "$dist/sh.exe" "$dist/sh.exe.rev$old_rev" || die "could not rename the running dist/sh.exe (dist/Bash.exe IS deployed)"
+  sh_back=" and dist/sh.exe.rev$old_rev"
+fi
+cp "$new" "$dist/sh.exe" || die "could not copy dist/sh.exe (dist/Bash.exe IS deployed)"
+got_sh=$("$dist/sh.exe" --version 2>/dev/null | tail -1)
+[ "$got_sh" = "$new_stamp" ] || die "dist/sh.exe reads '$got_sh' after the copy, not '$new_stamp' (dist/Bash.exe IS deployed)"
+echo "deploy: DEPLOYED $got (Bash.exe and sh.exe); rollback: dist/Bash.exe.rev$old_rev$sh_back"
 
 # 6. notice material
 echo

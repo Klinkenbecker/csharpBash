@@ -43,6 +43,20 @@ public sealed class ShellEncoding : Encoding
 	/// corrupted valid 4-byte UTF-8; caught by the 64 KB random round-trip check, 2026-09-12.</summary>
 	public static bool IsByteChar(char c) => c is >= '\uDC80' and <= '\uDCFF';
 
+	/// <summary>The order of two strings' bytes, GNU's order in the C locale (sort, comm; 2026-10-30). Up to their first
+	/// difference UTF-16 order IS byte order, unless a surrogate is there: an astral character (a pair, which UTF-16 puts
+	/// before U+E000-FFFF) or a carried byte (U+DC80-DCFF, which belongs at its byte value). Only then are the rest of
+	/// both encoded and compared byte by byte, from the start of the character the difference falls in.</summary>
+	public static int CompareBytes(string a, string b)
+		{
+		int i = a.AsSpan().CommonPrefixLength(b);
+		if (i == a.Length || i == b.Length) return a.Length.CompareTo(b.Length);
+		char x = a[i], y = b[i];
+		if (!char.IsSurrogate(x) && !char.IsSurrogate(y)) return x.CompareTo(y);
+		if (i > 0 && char.IsHighSurrogate(a[i - 1])) i--;   // the difference is in a pair's low half: from the pair
+		return Utf8.GetBytes(a[i..]).AsSpan().SequenceCompareTo(Utf8.GetBytes(b[i..]));
+		}
+
 	/// <summary>True if the character at <paramref name="i"/> is a carried byte rather than the
 	/// low half of a surrogate pair.</summary>
 	private static bool IsLoneByte(ReadOnlySpan<char> s, int i) =>

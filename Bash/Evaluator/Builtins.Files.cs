@@ -324,6 +324,14 @@ public sealed partial class Builtins
 				// the destination as typed, for messages: `target` is resolved, and absolute in a background job
 				var shown = dstIsDir ? dst.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp.TrimEnd('/', '\\')) : dst;
 				if (noClobber && (File.Exists(target) || Directory.Exists(target))) continue;
+				// A destination written with a trailing slash names a directory (POSIX): a file is never moved onto a missing
+				// name or an existing file through it (it was renamed to the bare name, rc 0); a directory to a missing name
+				// is a rename, as in GNU (2026-10-30)
+				if (!dstIsDir && dst.EndsWith('/'))
+					{
+					if (File.Exists(dstP.TrimEnd('/', '\\'))) { Console.Error.WriteLine($"mv: failed to access '{dst}': Not a directory"); rc = 1; continue; }
+					if (File.Exists(sp)) { Console.Error.WriteLine($"mv: cannot move '{s}' to '{dst}': Not a directory"); rc = 1; continue; }
+					}
 				if (Directory.Exists(sp))
 					{
 					if (Directory.Exists(target)) { Console.Error.WriteLine($"mv: cannot overwrite directory '{shown}' with directory '{s}'"); rc = 1; continue; }
@@ -390,6 +398,15 @@ public sealed partial class Builtins
 					}
 				else if (File.Exists(sp))
 					{
+					// a trailing slash names a directory: a file is never copied to a missing name or an existing file
+					// through it (Windows' own error came out instead; GNU's words, 2026-10-30)
+					if (!dstIsDir && dst.EndsWith('/'))
+						{
+						Console.Error.WriteLine(File.Exists(dstP.TrimEnd('/', '\\'))
+							? $"cp: failed to access '{dst}': Not a directory"
+							: $"cp: cannot create regular file '{dst}': Not a directory");
+						rc = 1; continue;
+						}
 					if (Directory.Exists(target)) { target = Path.Combine(target, Path.GetFileName(sp)); shown = shown.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp); }
 					if (noClobber && File.Exists(target)) continue;
 					if (update && File.Exists(target) && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(sp)) continue;
@@ -597,7 +614,9 @@ public sealed partial class Builtins
 		{
 		var o = Opts.Parse("du", args, "sabhckmd:xL0", ["summarize:s", "all:a", "bytes:b", "human-readable:h", "total:c", "max-depth=:d", "apparent-size", "one-file-system:x", "dereference:L", "null:0", "block-size=", "time", "exclude="]);
 		bool summary = o.Has('s'), all = o.Has('a'), bytes = o.Has('b') || o.HasLong("apparent-size"), human = o.Has('h'), total = o.Has('c'), kilo = o.Has('k'), mega = o.Has('m');
-		int maxDepth = summary ? 0 : o.GetInt('d', int.MaxValue);
+		// GNU's refusal (2026-10-30); a bad depth was taken as no limit
+		int maxDepth = o.Int('d', int.MaxValue, 0, (v, _) => $"du: invalid maximum depth '{v}'\nTry 'du --help' for more information.");
+		if (summary) maxDepth = 0;
 		var exclude = o.All('e').ToList(); // unused placeholder
 		var paths = o.Operands.Count == 0 ? ["."] : o.Operands;
 		int rc = 0; long grand = 0;
@@ -645,7 +664,7 @@ public sealed partial class Builtins
 	private static int Cmp(List<string> args)
 		{
 		var o = Opts.Parse("cmp", args, "slbn:i:", ["silent:s", "quiet:s", "verbose:l", "print-bytes:b", "bytes=:n", "ignore-initial=:i"]);
-		bool silent = o.Has('s'), verbose = o.Has('l');
+		bool silent = o.Has('s'), verbose = o.Has('l'), printBytes = o.Has('b');
 		if (o.Operands.Count < 1) { Console.Error.WriteLine("cmp: missing operand"); return 2; }
 		string f1 = o.Operands[0], f2 = o.Operands.Count > 1 ? o.Operands[1] : "-";
 		long limit = o.Get('n') is string ns ? ParseCount("cmp", ns, 'n') : long.MaxValue;
@@ -661,8 +680,14 @@ public sealed partial class Builtins
 			// what follows the skip is compared, and byte numbers count from it, as GNU's (`cmp -i 2`: byte 15 where
 			// the files differ at their 17th); rev 397 compared nothing after any -i (start + long.MaxValue wrapped)
 			SkipBytes(a, skip, ba.Bytes); SkipBytes(b, skip, bb.Bytes);
+			// -l's offset column is as wide as the smaller input's byte count, the size of a regular file (what is left
+			// after -i, at most -n); a pipe's is unknown and leaves the other's (GNU diffutils 3.8, 2026-10-30)
+			long known = limit;
+			foreach (var s in new[] { a, b }) if (s is FileStream { CanSeek: true } fs) known = Math.Min(known, Math.Max(0, fs.Length - fs.Position));
+			int width = Math.Max(1, known.ToString().Length);
 			long pos = 0, line = 1, compared = 0;
 			int la = 0, pa = 0, lb = 0, pb = 0; bool differ = false;
+			byte last = 0;   // the last byte compared: whether an EOF is "after byte N, line L" or "in line L"
 			while (compared < limit)
 				{
 				if (pa == la) { la = Math.Max(0, a.Read(ba.Bytes, 0, IoBlock)); pa = 0; }
@@ -672,11 +697,16 @@ public sealed partial class Builtins
 				var sa = ba.Bytes.AsSpan(pa, n); var sb = bb.Bytes.AsSpan(pb, n);
 				if (verbose)
 					{
+					// GNU's columns: the offset to the width above, each byte "%3o" (it was "%7d" and "%03o"); -b adds
+					// each as cat -v shows it, the first padded to 4
 					for (int i = 0; i < n; i++)
 						if (sa[i] != sb[i])
 							{
 							differ = true;
-							Console.WriteLine($"{pos + i + 1,7} {Convert.ToString(sa[i], 8).PadLeft(3, '0')} {Convert.ToString(sb[i], 8).PadLeft(3, '0')}");
+							string o1 = Convert.ToString(sa[i], 8).PadLeft(3), o2 = Convert.ToString(sb[i], 8).PadLeft(3);
+							Console.WriteLine(printBytes
+								? $"{(pos + i + 1).ToString().PadLeft(width)} {o1} {CatV(sa[i]),-4} {o2} {CatV(sb[i])}"
+								: $"{(pos + i + 1).ToString().PadLeft(width)} {o1} {o2}");
 							}
 					}
 				else
@@ -685,23 +715,44 @@ public sealed partial class Builtins
 					if (same < n)
 						{
 						line += sa[..same].Count((byte)'\n');
-						if (!silent) Console.WriteLine($"{f1} {f2} differ: byte {pos + same + 1}, line {line}");
+						if (!silent)
+							Console.WriteLine($"{f1} {f2} differ: byte {pos + same + 1}, line {line}" + (printBytes
+								? $" is {Convert.ToString(sa[same], 8),3} {CatV(sa[same])} {Convert.ToString(sb[same], 8),3} {CatV(sb[same])}" : ""));
 						return 1;
 						}
 					line += sa.Count((byte)'\n');
 					}
+				last = sa[n - 1];
 				pa += n; pb += n; pos += n; compared += n;
 				}
-			if (differ) return 1;
-			if (limit != long.MaxValue) return 0;
+			if (limit != long.MaxValue) return differ ? 1 : 0;
 			// the remainders differ in length when one has more after the other ended (both empty: equal, as GNU's)
 			bool aMore = pa < la || a.Read(ba.Bytes, 0, 1) > 0, bMore = pb < lb || b.Read(bb.Bytes, 0, 1) > 0;
-			if (aMore == bMore) return 0;
-			if (!silent) Console.Error.WriteLine($"cmp: EOF on {(bMore ? f1 : f2)}");
+			if (aMore == bMore) return differ ? 1 : 0;
+			// GNU's words: which ended, after which byte and, but under -l, in which line ("line L" when it ended at the
+			// end of one, "in line L" inside one); an empty one "which is empty". It said only "EOF on NAME".
+			if (!silent)
+				{
+				string ended = bMore ? f1 : f2;
+				Console.Error.WriteLine(pos == 0 ? $"cmp: EOF on {ended} which is empty"
+					: verbose ? $"cmp: EOF on {ended} after byte {pos}"
+					: last == '\n' ? $"cmp: EOF on {ended} after byte {pos}, line {line - 1}"
+					: $"cmp: EOF on {ended} after byte {pos}, in line {line}");
+				}
 			return 1;
 			}
 		catch (Exception ex) { Console.Error.WriteLine($"cmp: {IoError(ex)}"); return 2; }
 		finally { if (f1 != "-") a?.Dispose(); if (f2 != "-") b?.Dispose(); }
+		}
+
+	/// <summary>A byte as cat -v shows it, as GNU cmp's -b does: "M-" for the high bit, then "^X" for a control
+	/// character, "^?" for DEL, else the character.</summary>
+	private static string CatV(byte b)
+		{
+		int c = b;
+		string high = "";
+		if (c >= 128) { high = "M-"; c -= 128; }
+		return high + (c < 32 ? "^" + (char)(c + 64) : c == 127 ? "^?" : ((char)c).ToString());
 		}
 
 	/// <summary>Move past up to <paramref name="n"/> bytes (a seek when the input can, else a read); how many it moved.</summary>

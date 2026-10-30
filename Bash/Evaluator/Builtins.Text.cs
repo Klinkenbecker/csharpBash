@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace Bash.Evaluator;
@@ -43,10 +44,15 @@ public sealed partial class Builtins
 		catch { return null; }
 		}
 
+	/// <summary>A name Windows cannot have (`*`, `?`, `<`, `>`, `|`, `"`): no such file can exist, so a read is "No such file or
+	/// directory", as GNU's on a name that is not there; it was .NET's "syntax is incorrect" text with a backslash path.</summary>
+	internal const int ErrorInvalidName = unchecked((int)0x8007007B);
+
 	internal static string IoError(Exception ex) => ex switch
 		{
 		FileNotFoundException or DirectoryNotFoundException => "No such file or directory",
 		UnauthorizedAccessException => "Permission denied",
+		_ when ex.HResult == ErrorInvalidName => "No such file or directory",
 		_ => ex.Message,
 		};
 
@@ -315,15 +321,28 @@ public sealed partial class Builtins
 		bool multi = files.Count > 1;
 		long tl = 0, tw = 0, tc = 0, tm = 0, tL = 0; int rc = 0;
 
-		// GNU column width: the digit count of the summed sizes of the regular-file operands;
-		// stdin gets no padding.
-		long sizeSum = 0;
-		foreach (var f in files)
+		// GNU's column width (coreutils 8.32, checked 2026-10-30): one count of one input is not padded; otherwise the
+		// digit count of the summed sizes of the regular files (stdin too, when it is one), and at least 7 when any input
+		// is not a regular file (a pipe, a here-string, /dev/null); an input that cannot be opened counts for nothing.
+		// It padded one count of one file, never padded a pipe, and ignored stdin's file.
+		int width = 1;
+		if ((cl ? 1 : 0) + (cw ? 1 : 0) + (cc ? 1 : 0) + (cm ? 1 : 0) + (cL ? 1 : 0) > 1 || files.Count > 1)
 			{
-			if (f == "-") continue;
-			try { sizeSum += new FileInfo(ShellEnvironment.TranslatePath(f)).Length; } catch { }
+			long sizeSum = 0; int least = 1;
+			foreach (var f in files)
+				{
+				if (f == "-")
+					{
+					if (Evaluator.CurrentRawStdin() is FileStream { CanSeek: true } fs) sizeSum += fs.Length; else least = 7;
+					continue;
+					}
+				var p = ShellEnvironment.TranslatePath(f);
+				if (File.Exists(p)) { try { sizeSum += new FileInfo(p).Length; } catch (IOException) { } }
+				else if (Directory.Exists(p) || f.StartsWith("/dev/", StringComparison.Ordinal)
+				         || Path.GetFileName(p).Equals("NUL", StringComparison.OrdinalIgnoreCase)) least = 7;   // there, not a regular file
+				}
+			width = Math.Max(least, sizeSum.ToString().Length);
 			}
-		int width = Math.Max(1, sizeSum.ToString().Length);
 
 		void Emit(long l, long w, long c, long m, long L, string name)
 			{
@@ -357,16 +376,68 @@ public sealed partial class Builtins
 
 	/// <summary>One input's counts, taken as it is read, a block at a time: the whole input was one array and then one
 	/// string, which failed over 2 GiB, file or pipe (koliada-net-28, 2026-10-27). The counts are the ones the whole-
-	/// string code gave: lines and bytes on the bytes; words (runs of non-white-space), characters and the longest line
-	/// (in characters) on the text, decoded only when asked, by the carrying decoder (a character split between two
-	/// blocks is one). `-c` alone on a seekable input takes its length and moves past it, as GNU does. For speed: blocks
-	/// and characters are rented (<see cref="Block"/>); an ASCII block with nothing carried is counted on its bytes, with
-	/// no decoding (an ASCII byte is the character it encodes; <see cref="WcAscii"/> holds char.IsWhiteSpace for each);
-	/// characters alone (-m) need no look at each one (<paramref name="perChar"/> false).</summary>
-	/// <summary>char.IsWhiteSpace of each ASCII character, built on first use (not at the shell's start).</summary>
+	/// string code gave: lines and bytes on the bytes; words, characters and the longest line on the text, decoded only
+	/// when asked, by the carrying decoder (a character split between two blocks is one). Words, characters and widths
+	/// are GNU's (2026-10-30): a word is a run of printable characters between separators, an undecodable byte is no
+	/// character, the longest line is in display columns (<see cref="WcKind"/>, <see cref="WcWidth"/>). `-c` alone on a
+	/// seekable input takes its length and moves past it, as GNU does. For speed: blocks and characters are rented
+	/// (<see cref="Block"/>); an ASCII block with nothing carried is counted on its bytes, with no decoding (an ASCII
+	/// byte is the character it encodes; <see cref="WcAscii"/> holds GNU's kind of each); characters alone (-m) on an
+	/// ASCII block need no look at each one (<paramref name="perChar"/> false).</summary>
+	/// <summary>GNU wc's kind of each ASCII byte (coreutils 8.32 in a UTF-8 locale, checked 2026-10-30), built on first
+	/// use: 0 neither a word nor a separator (NUL, the other controls, DEL: they were word characters here), 1 printable
+	/// (a word, width 1), 2 space (a separator, width 1), 3 tab (a separator, to the next multiple of 8), 4 CR or FF (a
+	/// separator; the line's width starts again), 5 newline (the same), 6 vertical tab (a separator, width 0).</summary>
 	private static class WcAscii
 		{
-		public static readonly bool[] White = [.. Enumerable.Range(0, 128).Select(c => char.IsWhiteSpace((char)c))];
+		public static readonly byte[] Kind = [.. Enumerable.Range(0, 128).Select(c => (byte)(c switch
+			{
+			32 => 2, 9 => 3, 13 or 12 => 4, 10 => 5, 11 => 6,
+			< 32 or 127 => 0,
+			_ => 1,
+			}))];
+		}
+
+	/// <summary>GNU wc's kind (as <see cref="WcAscii"/>) and display width of a character above ASCII: a separator when
+	/// it is white space (as .NET says, but NEL U+0085, which glibc does not call space) or one of GNU's no-break spaces
+	/// (U+00A0, U+2007, U+202F, U+2060); nothing when it is a control, unassigned or a lone surrogate; else part of a
+	/// word.</summary>
+	private static (int Kind, int Width) WcKind(int cp)
+		{
+		if (cp == 0x2060 || (cp <= 0xFFFF && cp != 0x85 && char.IsWhiteSpace((char)cp))) return (2, WcWidth(cp));
+		return CharUnicodeInfo.GetUnicodeCategory(cp) is UnicodeCategory.Control or UnicodeCategory.OtherNotAssigned
+			or UnicodeCategory.Surrogate ? (0, 0) : (1, WcWidth(cp));
+		}
+
+	/// <summary>A character's columns, as glibc's wcwidth: 0 for a combining mark, a format character (the soft hyphen
+	/// is 1), a line or paragraph separator and Hangul's medial and final jamo; 2 for East Asian Wide and Fullwidth
+	/// (the ranges below: CJK, Hangul syllables, fullwidth forms, emoji); else 1. The wide ranges follow Unicode's
+	/// EastAsianWidth W/F and glibc 2.35 closely but not exactly (checked: CJK, Hangul, fullwidth A, U+3000, an emoji).</summary>
+	private static int WcWidth(int cp)
+		{
+		if (cp == 0xAD) return 1;
+		if (cp is >= 0x1160 and <= 0x11FF) return 0;
+		if (CharUnicodeInfo.GetUnicodeCategory(cp) is UnicodeCategory.NonSpacingMark or UnicodeCategory.EnclosingMark
+			or UnicodeCategory.Format or UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator) return 0;
+		ReadOnlySpan<int> wide =
+			[
+			0x1100, 0x115F, 0x231A, 0x231B, 0x2329, 0x232A, 0x23E9, 0x23EC, 0x23F0, 0x23F0, 0x23F3, 0x23F3, 0x25FD, 0x25FE,
+			0x2614, 0x2615, 0x2648, 0x2653, 0x267F, 0x267F, 0x2693, 0x2693, 0x26A1, 0x26A1, 0x26AA, 0x26AB, 0x26BD, 0x26BE,
+			0x26C4, 0x26C5, 0x26CE, 0x26CE, 0x26D4, 0x26D4, 0x26EA, 0x26EA, 0x26F2, 0x26F3, 0x26F5, 0x26F5, 0x26FA, 0x26FA,
+			0x26FD, 0x26FD, 0x2705, 0x2705, 0x270A, 0x270B, 0x2728, 0x2728, 0x274C, 0x274C, 0x274E, 0x274E, 0x2753, 0x2755,
+			0x2757, 0x2757, 0x2795, 0x2797, 0x27B0, 0x27B0, 0x27BF, 0x27BF, 0x2B1B, 0x2B1C, 0x2B50, 0x2B50, 0x2B55, 0x2B55,
+			0x2E80, 0x303E, 0x3041, 0x33FF, 0x3400, 0x4DBF, 0x4E00, 0x9FFF, 0xA000, 0xA4CF, 0xA960, 0xA97F, 0xAC00, 0xD7A3,
+			0xF900, 0xFAFF, 0xFE10, 0xFE19, 0xFE30, 0xFE6F, 0xFF00, 0xFF60, 0xFFE0, 0xFFE6, 0x16FE0, 0x16FE4, 0x17000, 0x18CFF,
+			0x1B000, 0x1B2FF, 0x1F004, 0x1F004, 0x1F0CF, 0x1F0CF, 0x1F18E, 0x1F18E, 0x1F191, 0x1F19A, 0x1F200, 0x1F202,
+			0x1F210, 0x1F23B, 0x1F240, 0x1F248, 0x1F250, 0x1F251, 0x1F260, 0x1F265, 0x1F300, 0x1F320, 0x1F32D, 0x1F335,
+			0x1F337, 0x1F37C, 0x1F37E, 0x1F393, 0x1F3A0, 0x1F3CA, 0x1F3CF, 0x1F3D3, 0x1F3E0, 0x1F3F0, 0x1F3F4, 0x1F3F4,
+			0x1F3F8, 0x1F43E, 0x1F440, 0x1F440, 0x1F442, 0x1F4FC, 0x1F4FF, 0x1F53D, 0x1F54B, 0x1F54E, 0x1F550, 0x1F567,
+			0x1F57A, 0x1F57A, 0x1F595, 0x1F596, 0x1F5A4, 0x1F5A4, 0x1F5FB, 0x1F64F, 0x1F680, 0x1F6C5, 0x1F6CC, 0x1F6CC,
+			0x1F6D0, 0x1F6D2, 0x1F6D5, 0x1F6D7, 0x1F6EB, 0x1F6EC, 0x1F6F4, 0x1F6FC, 0x1F7E0, 0x1F7EB, 0x1F90C, 0x1F93A,
+			0x1F93C, 0x1F945, 0x1F947, 0x1F9FF, 0x1FA70, 0x1FAFF, 0x20000, 0x2FFFD, 0x30000, 0x3FFFD,
+			];
+		for (int i = 0; i < wide.Length && cp >= wide[i]; i += 2) if (cp <= wide[i + 1]) return 2;
+		return 1;
 		}
 
 	private static (long Lines, long Words, long Bytes, long Chars, long MaxLen) WcCount(Stream s, bool text, bool perChar, bool bytesOnly)
@@ -406,31 +477,56 @@ public sealed partial class Builtins
 		if (cur > maxLen) maxLen = cur;
 		return (lines, words, bytes, chars, maxLen);
 
+		// Characters are code points: a surrogate pair is one, and an undecodable byte (carried as U+DC80-DCFF) is none,
+		// with no width and no effect on words (GNU; it was a character and a word character here).
 		void Count(int n, bool flush)
 			{
 			cs ??= System.Buffers.ArrayPool<char>.Shared.Rent(IoBlock + 4);   // up to 3 carried bytes come out with a block
 			int k = decoder!.GetChars(buf, 0, n, cs, 0, flush);
-			chars += k;
-			if (!perChar) return;
 			for (int i = 0; i < k; i++)
 				{
 				char ch = cs[i];
-				if (ch == '\n') { if (cur > maxLen) maxLen = cur; cur = 0; } else cur++;
-				bool white = char.IsWhiteSpace(ch);
-				if (!white && !inWord) words++;
-				inWord = !white;
+				int cp = ch;
+				if (char.IsHighSurrogate(ch) && i + 1 < k && char.IsLowSurrogate(cs[i + 1])) cp = char.ConvertToUtf32(ch, cs[++i]);
+				else if (ShellEncoding.IsByteChar(ch)) continue;
+				chars++;
+				if (!perChar) continue;
+				if (cp < 128) Step(WcAscii.Kind[cp], 1);
+				else { var (kind, width) = WcKind(cp); Step(kind, width); }
 				}
 			}
 
+		// Step's rules inlined, on locals written back once a block: through Step and the captured counters an ASCII
+		// block took ~40% longer than the old bool-table count (24 -> 34 ms for 19 MB, measured 2026-10-30)
 		void CountAscii(ReadOnlySpan<byte> span)
 			{
-			var white = WcAscii.White;
+			var kind = WcAscii.Kind;
+			long c = cur, mx = maxLen, wd = words;
+			bool inw = inWord;
 			foreach (var b in span)
 				{
-				if (b == '\n') { if (cur > maxLen) maxLen = cur; cur = 0; } else cur++;
-				bool w = white[b];
-				if (!w && !inWord) words++;
-				inWord = !w;
+				switch (kind[b])
+					{
+					case 1: c++; if (!inw) { wd++; inw = true; } break;
+					case 2: c++; inw = false; break;
+					case 3: c += 8 - (c & 7); inw = false; break;
+					case 4: case 5: if (c > mx) mx = c; c = 0; inw = false; break;
+					case 6: inw = false; break;
+					}
+				}
+			cur = c; maxLen = mx; words = wd; inWord = inw;
+			}
+
+		// GNU's rules for one character of WcAscii's KIND and WIDTH columns: words, and the line's display width
+		void Step(int kind, int width)
+			{
+			switch (kind)
+				{
+				case 1: cur += width; if (!inWord) { words++; inWord = true; } break;
+				case 2: cur += width; inWord = false; break;
+				case 3: cur += 8 - cur % 8; inWord = false; break;
+				case 4: case 5: if (cur > maxLen) maxLen = cur; cur = 0; inWord = false; break;
+				case 6: inWord = false; break;
 				}
 			}
 		}
@@ -732,7 +828,10 @@ public sealed partial class Builtins
 			return 1;
 			}
 		char sep = o.Has('z') ? '\0' : '\n';
-		int skipFields = o.GetInt('f', 0), skipChars = o.GetInt('s', 0), checkChars = o.GetInt('w', 0);
+		// GNU's refusals (2026-10-30); -w 0 compares nothing (every line equal), so "not given" is -1, not 0
+		int skipFields = o.Int('f', 0, 0, (v, _) => $"uniq: {v}: invalid number of fields to skip"),
+		    skipChars = o.Int('s', 0, 0, (v, _) => $"uniq: {v}: invalid number of bytes to skip"),
+		    checkChars = o.Int('w', -1, 0, (v, _) => $"uniq: {v}: invalid number of bytes to compare");
 		string input = o.Operands.Count > 0 ? o.Operands[0] : "-";
 		string? output = o.Operands.Count > 1 ? o.Operands[1] : null;
 
@@ -748,7 +847,7 @@ public sealed partial class Builtins
 				k = k[p..];
 				}
 			if (skipChars > 0) k = skipChars < k.Length ? k[skipChars..] : "";
-			if (checkChars > 0 && k.Length > checkChars) k = k[..checkChars];
+			if (checkChars >= 0 && k.Length > checkChars) k = k[..checkChars];
 			return icase ? k.ToLowerInvariant() : k;
 			}
 
@@ -793,7 +892,11 @@ public sealed partial class Builtins
 		{
 		var o = Opts.Parse("nl", args, "b:n:w:s:v:i:p", ["body-numbering=:b", "number-format=:n", "number-width=:w", "number-separator=:s", "starting-line-number=:v", "line-increment=:i"]);
 		string style = o.Get('b') ?? "t", fmt = o.Get('n') ?? "rn", sep = o.Get('s') ?? "\t";
-		int width = o.GetInt('w', 6), n = o.GetInt('v', 1) - o.GetInt('i', 1), incr = o.GetInt('i', 1);
+		// GNU's refusals (2026-10-30): the width and increment at least 1 (0 and below "out of range"), the start any
+		static string Range(string what, string v, IntProblem p) => $"nl: invalid {what}: '{v}'" + (p == IntProblem.NotANumber ? "" : ": Numerical result out of range");
+		int width = o.Int('w', 6, 1, (v, p) => Range("line number field width", v, p)),
+		    incr = o.Int('i', 1, 1, (v, p) => Range("line number increment", v, p)),
+		    n = o.Int('v', 1, int.MinValue, (v, _) => $"nl: invalid starting line number: '{v}'") - incr;
 		System.Text.RegularExpressions.Regex? bodyRe = style.StartsWith('p') ? new System.Text.RegularExpressions.Regex(BreToNet(style[1..])) : null;
 		int rc = 0;
 		foreach (var f in FilesOrStdin(o))
@@ -828,7 +931,9 @@ public sealed partial class Builtins
 	private static int Fold(List<string> args)
 		{
 		var o = Opts.Parse("fold", args, "w:sb", ["width=:w", "spaces:s", "bytes:b"], allowNumeric: true);
-		int width = o.Numeric is not null ? int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture) : o.GetInt('w', 80);
+		// GNU's refusals (2026-10-30): 0 is "out of range", a negative or a non-number invalid (it took them as 80 or 1)
+		int width = o.Numeric is not null ? int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture)
+			: o.Int('w', 80, 1, (v, p) => $"fold: invalid number of columns: '{v}'" + (p == IntProblem.BelowLeast ? ": Numerical result out of range" : ""));
 		bool breakSpaces = o.Has('s'), countBytes = o.Has('b');
 		if (width < 1) width = 1;
 		var rout = Evaluator.CurrentRawStdout();
@@ -1005,7 +1110,8 @@ public sealed partial class Builtins
 		// checked only once an unpairable line has been seen, warned once, and the status is 1 at the end;
 		// --nocheck-order never checks.
 		int check = o.HasLong("check-order") ? 2 : o.HasLong("nocheck-order") ? 0 : 1;
-		var cmp = icase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+		// byte order, as GNU's in the C locale and as sort's (2026-10-30: it was UTF-16 order, and so was sort's)
+		IComparer<string> cmp = icase ? StringComparer.OrdinalIgnoreCase : Comparer<string>.Create(ShellEncoding.CompareBytes);
 		var r = new TextReader?[2];
 		try
 			{
@@ -1242,7 +1348,7 @@ public sealed partial class Builtins
 			if (k.Numeric) c = NumericPrefix(ka).CompareTo(NumericPrefix(kb));
 			else if (k.Human) c = HumanValue(ka).CompareTo(HumanValue(kb));
 			else if (k.Version) c = VersionCompare(ka, kb);
-			else c = string.Compare(ka, kb, k.Fold ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+			else c = k.Fold ? string.Compare(ka, kb, StringComparison.OrdinalIgnoreCase) : ShellEncoding.CompareBytes(ka, kb);   // byte order, GNU's in the C locale (2026-10-30)
 			return k.Reverse ? -c : c;
 			}
 
@@ -1250,7 +1356,7 @@ public sealed partial class Builtins
 			{
 			foreach (var k in keys) { int c = CompareKey(a, b, k); if (c != 0) return c; }
 			if (o.Has('s') || unique) return 0;
-			int last = string.CompareOrdinal(a, b);           // last-resort whole-line compare
+			int last = ShellEncoding.CompareBytes(a, b);      // last-resort whole-line compare, in byte order
 			return gReverse ? -last : last;
 			}
 
@@ -1331,11 +1437,34 @@ public sealed partial class Builtins
 
 	// ── split ───────────────────────────────────────────────────────────────────
 
+	/// <summary>A split count as GNU's xdectoumax with a minimum of 1: decimal digits first (no sign, no space), a size
+	/// suffix only for <paramref name="sizes"/> (-b); null when it is good, else the tail of the message ("" invalid,
+	/// ": Numerical result out of range" for 0).</summary>
+	private static string? SplitCount(string v, bool sizes, out long n)
+		{
+		n = 0;
+		if (v.Length == 0 || !char.IsAsciiDigit(v[0])) return "";
+		if (sizes)
+			{
+			try { n = ParseCount("split", v, 'b'); }
+			catch (UnsupportedOptionException) { return ""; }
+			}
+		else if (!v.All(char.IsAsciiDigit) || !long.TryParse(v, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out n)) return "";
+		return n == 0 ? ": Numerical result out of range" : null;
+		}
+
 	private static int Split(List<string> args)
 		{
 		var o = Opts.Parse("split", args, "l:b:a:dn:e", ["lines=:l", "bytes=:b", "suffix-length=:a", "numeric-suffixes:d", "additional-suffix=", "elide-empty-files:e", "number=:n"], allowNumeric: true);
-		int lines = o.Numeric is not null ? int.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture) : o.GetInt('l', 1000);
-		long byteSize = o.Get('b') is string bs ? ParseCount("split", bs, 'b') : 0;
+		// GNU's counts (coreutils 8.32, checked 2026-10-30): -l a positive decimal, -b a positive size with its suffix;
+		// 0 is "out of range", anything else invalid, rc 1 and no piece. -l x, 0, -1 and '' made one piece and returned
+		// 0 (GetInt took them as the default), -b 0 and -1 the same, -b x fell through to a PATH split.
+		long lines = 1000, byteSize = 0;
+		if (o.Numeric is not null) lines = long.Parse(o.Numeric, System.Globalization.CultureInfo.InvariantCulture);
+		else if (o.Get('l') is string lv && SplitCount(lv, sizes: false, out lines) is string le)
+			{ Console.Error.WriteLine($"split: invalid number of lines: '{lv}'{le}"); return 1; }
+		if (o.Get('b') is string bs && SplitCount(bs, sizes: true, out byteSize) is string be)
+			{ Console.Error.WriteLine($"split: invalid number of bytes: '{bs}'{be}"); return 1; }
 		if (o.Get('n') is not null) throw new UnsupportedOptionException("split", "-n", "chunk mode is not implemented");
 		// -a 0 is the default length, as GNU; -a x / -a -1 were taken as the default and as no suffix at all.
 		int suffixLen = 2;
@@ -1431,11 +1560,12 @@ public sealed partial class Builtins
 		string addr = o.Get('A') ?? "o";
 		string fmt = o.Get('t') ?? (o.Has('c') ? "c" : o.Has('b') ? "o1" : o.Has('x') ? "x2" : o.Has('d') ? "d2" : "o2");
 		if (o.Has('c')) fmt = "c";
-		long skip = o.Get('j') is string js ? ParseCount("od", js, 'j') : 0;
-		long limit = o.Get('N') is string ns ? ParseCount("od", ns, 'N') : long.MaxValue;
-		int width = o.GetInt('w', 16);
-		string file = o.Operands.Count > 0 ? o.Operands[0] : "-";
-		width = Math.Max(1, width);   // -w 0 looped forever
+		long skip = o.Get('j') is string js ? OdCount(js, 'j') : 0;
+		long limit = o.Get('N') is string ns ? OdCount(ns, 'N') : long.MaxValue;
+		int width = o.Int('w', 16, 0, (v, _) => $"od: invalid -w argument '{v}'");
+		var files = o.Operands.Count > 0 ? o.Operands : ["-"];
+		// -w 0 looped forever; GNU warns and takes 2 (2026-10-30)
+		if (width == 0) { Console.Error.WriteLine("od: warning: invalid width 0; using 2 instead"); width = 2; }
 
 		string Addr(long off) => addr switch
 			{
@@ -1448,7 +1578,7 @@ public sealed partial class Builtins
 		char kind = fmt[0];
 		void Line(long off, ReadOnlySpan<byte> line)
 			{
-			var sb = new StringBuilder(Addr(off));
+			var sb = new StringBuilder(Addr(skip + off));
 			for (int i = 0; i < line.Length; i += size)
 				{
 				if (kind == 'c') { sb.Append(' ').Append(OdChar(line[i]).PadLeft(3)); continue; }
@@ -1465,20 +1595,50 @@ public sealed partial class Builtins
 				}
 			Console.WriteLine(sb.ToString());
 			}
-		// a line at a time as it is read (it read the whole input, which failed over 2 GiB, 2026-10-27)
-		Stream? input = null;
-		long total;
+		// a line at a time as it is read (it read the whole input, which failed over 2 GiB, 2026-10-27). GNU's
+		// "combined input" (2026-10-30): every operand in turn, -j skipping across them (it read the first only), the
+		// addresses counting from the start of it all (they counted from after the skip), and a skip past its end an
+		// error (it printed an empty dump)
+		var opened = new List<(string Name, Stream S)>();
+		int rc = 0;
+		long total, left = skip;
 		try
 			{
-			input = OpenBytes(file);
-			using (var block = Block.Rent()) SkipBytes(input, skip, block.Bytes);
-			total = ForEachPiece(input, limit, width, Line);
+			using (var block = Block.Rent())
+				foreach (var f in files)
+					{
+					Stream s;
+					try { s = OpenBytes(f); }
+					catch (Exception ex) when (ex is not BrokenPipeException) { Console.Error.WriteLine($"od: {f}: {IoError(ex)}"); rc = 1; continue; }
+					opened.Add((f, s));
+					if (left > 0) left -= SkipBytes(s, left, block.Bytes);
+					}
+			if (left > 0) { Console.Error.WriteLine("od: cannot skip past end of combined input"); return 1; }
+			total = ForEachPiece(new ConcatStream([.. opened.Select(p => p.S)]), limit, width, Line);
 			}
 		catch (BrokenPipeException) { throw; }
-		catch (Exception ex) { Console.Error.WriteLine($"od: {file}: {IoError(ex)}"); return 1; }
-		finally { if (file != "-") input?.Dispose(); }
-		if (addr != "n") Console.WriteLine(Addr(total));   // GNU prints it for empty input too (`0000000`)
-		return 0;
+		catch (Exception ex) { Console.Error.WriteLine($"od: {IoError(ex)}"); return 1; }
+		finally { foreach (var (name, s) in opened) if (name != "-") s.Dispose(); }
+		if (addr != "n") Console.WriteLine(Addr(skip + total));   // GNU prints it for empty input too (`0000000`)
+		return rc;
+		}
+
+	/// <summary>od's -j and -N: GNU's forms, a hexadecimal number after 0x, an octal one after a leading 0, else decimal,
+	/// then an optional size suffix as <see cref="ParseCount"/> takes it (b 512, K 1024, kB 1000, ...). It took decimal
+	/// only, so `od -j 0x10` fell through to a PATH od (2026-10-30).</summary>
+	private static long OdCount(string v, char opt)
+		{
+		var s = v.Trim();
+		int radix = 10, i = 0;
+		if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) { radix = 16; i = 2; }
+		else if (s.Length > 1 && s[0] == '0' && char.IsAsciiDigit(s[1])) { radix = 8; i = 1; }
+		int j = i;
+		while (j < s.Length && (radix == 16 ? char.IsAsciiHexDigit(s[j]) : char.IsAsciiDigit(s[j]))) j++;
+		if (j == i) throw new UnsupportedOptionException("od", $"-{opt} {v}", "invalid number");
+		long n;
+		try { n = Convert.ToInt64(s[i..j], radix); }
+		catch (Exception ex) when (ex is FormatException or OverflowException) { throw new UnsupportedOptionException("od", $"-{opt} {v}", "invalid number"); }
+		return j < s.Length ? checked(n * ParseCount("od", "1" + s[j..], opt)) : n;
 		}
 
 	private static string OdChar(byte b) => b switch
@@ -1571,13 +1731,13 @@ public sealed partial class Builtins
 		{
 		var o = Opts.Parse("base64", args, "dw:i", ["decode:d", "wrap=:w", "ignore-garbage:i"]);
 		string file = o.Operands.Count > 0 ? o.Operands[0] : "-";
-		int wrap = o.Has('d') ? 0 : o.GetInt('w', 76);
+		int wrap = o.Has('d') ? 0 : o.Int('w', 76, 0, (v, _) => $"base64: invalid wrap size: '{v}'");
 		// a block at a time as it is read (it read the whole input, which failed over 2 GiB, 2026-10-27)
 		Stream? input = null;
 		try
 			{
 			input = OpenBytes(file);
-			return o.Has('d') ? Base64Decode(input) : Base64Encode(input, wrap);
+			return o.Has('d') ? Base64Decode(input, ignoreGarbage: o.Has('i')) : Base64Encode(input, wrap);
 			}
 		catch (BrokenPipeException) { throw; }
 		catch (Exception ex) { Console.Error.WriteLine($"base64: {file}: {IoError(ex)}"); return 1; }
@@ -1585,7 +1745,8 @@ public sealed partial class Builtins
 		}
 
 	/// <summary>Whole groups of 3 bytes encoded as they come, the 0-2 left over carried to the next block; lines of
-	/// <paramref name="wrap"/> characters (none for 0: one line, and a newline even for no input, as before).</summary>
+	/// <paramref name="wrap"/> characters; -w 0 is one line with no newline after it, as GNU's (it wrote one,
+	/// 2026-10-30).</summary>
 	private static int Base64Encode(Stream src, int wrap)
 		{
 		using var block = Block.Rent();
@@ -1605,7 +1766,7 @@ public sealed partial class Builtins
 				carry = total - whole;
 				buf.AsSpan(whole, carry).CopyTo(buf);
 				}
-			if (wrap <= 0 || col > 0) Console.WriteLine();
+			if (wrap > 0 && col > 0) Console.WriteLine();
 			return 0;
 			}
 		finally { System.Buffers.ArrayPool<char>.Shared.Return(chars); }
@@ -1623,28 +1784,41 @@ public sealed partial class Builtins
 			}
 		}
 
-	/// <summary>White space dropped (char.IsWhiteSpace, as before), whole groups of 4 decoded as they come; the last
-	/// group, which may hold the padding, waits for the next block or the end. Invalid input: what came before it is
-	/// written, then "invalid input", 1 (it wrote nothing then, the whole input decoded at once).</summary>
-	private static int Base64Decode(Stream src)
+	/// <summary>GNU's decoding (coreutils 8.32, checked 2026-10-30): newlines are skipped, and any other character
+	/// outside the alphabet (a space, a tab, a CR) is invalid input, unless -i (<paramref name="ignoreGarbage"/>), which
+	/// skips them all; it dropped all white space and took -i without doing anything. Whole groups of 4 are decoded as
+	/// they come; the last group, which may hold the padding, waits for the next block or the end. Invalid input: what
+	/// came before it is written, a group cut short by it as far as it goes (`aG!` writes `h`), then "invalid input", 1.</summary>
+	private static int Base64Decode(Stream src, bool ignoreGarbage)
 		{
 		using var inBlock = Block.Rent();
 		using var pendBlock = Block.Rent();
 		using var outBlock = Block.Rent();
 		byte[] input = inBlock.Bytes, pend = pendBlock.Bytes, output = outBlock.Bytes;
-		var white = WcAscii.White;
 		var sink = new ByteSink();
 		int have = 0;
-		bool ok = true;
-		for (int n; ok && (n = src.Read(input, 0, IoBlock - 4)) > 0; )   // room for the group held back
+		bool ok = true, bad = false;
+		for (int n; ok && !bad && (n = src.Read(input, 0, IoBlock - 4)) > 0; )   // room for the group held back
 			{
-			foreach (var b in input.AsSpan(0, n)) if (b >= 128 || !white[b]) pend[have++] = b;
+			foreach (var b in input.AsSpan(0, n))
+				{
+				if (b is (>= (byte)'A' and <= (byte)'Z') or (>= (byte)'a' and <= (byte)'z') or (>= (byte)'0' and <= (byte)'9') or (byte)'+' or (byte)'/' or (byte)'=')
+					pend[have++] = b;
+				else if (b != '\n' && !ignoreGarbage) { bad = true; break; }
+				}
 			int keep = have % 4 == 0 ? Math.Min(4, have) : have % 4, ready = have - keep;
 			ok = Decode(ready, final: true);
 			pend.AsSpan(ready, keep).CopyTo(pend);
 			have = keep;
 			}
-		if (ok && have % 4 is 2 or 3)
+		if (ok && bad)
+			{
+			// what came before the invalid character: the whole groups, and a cut one as far as it goes
+			if (have % 4 is 2 or 3) { pend.AsSpan(have, 4 - have % 4).Fill((byte)'='); have += 4 - have % 4; }
+			if (have % 4 == 0) Decode(have, final: true);
+			ok = false;
+			}
+		else if (ok && have % 4 is 2 or 3)
 			{
 			// a last group cut short (no padding): written as GNU's base64 writes it, then invalid
 			pend.AsSpan(have, 4 - have % 4).Fill((byte)'=');

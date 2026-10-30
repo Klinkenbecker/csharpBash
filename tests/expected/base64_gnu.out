@@ -1,0 +1,29 @@
+--- -w 0
+ 61 47 56 73 62 47 38 67 64 32 39 79 62 47 51 3d 
+--- -w 0, empty
+
+--- -w 8
+ 61 47 56 73 62 47 38 67 0a 64 32 39 79 62 47 51  3d 0a 
+--- default
+ 61 47 56 73 62 47 38 67 64 32 39 79 62 47 51 3d  0a 
+--- -d, wrapped lines
+hello world rc=0
+--- -d, CRLF lines
+helbase64: invalid input
+ rc=1
+--- -d, a space
+helbase64: invalid input
+ rc=1
+--- -d, a tab
+helbase64: invalid input
+ rc=1
+--- -d -i, a space
+hello rc=0
+--- -d -i, CR and garbage
+hello rc=0
+--- -d, garbage
+hbase64: invalid input
+ rc=1
+--- -i without -d
+aGk=
+rc=0

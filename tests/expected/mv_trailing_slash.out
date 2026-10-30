@@ -1,0 +1,27 @@
+--- a file to a missing name/
+mv: cannot move 'f' to 'nodir/': Not a directory
+rc=1
+dir/ f g src/ 
+--- a file to an existing file/
+mv: failed to access 'g/': Not a directory
+rc=1
+dir/ f g src/ 
+--- a file into an existing dir/
+rc=0
+dir/ g src/ 
+f
+--- a directory to a missing name/: a rename
+rc=0
+dir/ g newdir/ 
+--- two files to a missing name/
+mv: target 'nodir/' is not a directory
+rc=1
+dir/ g h newdir/ 
+--- cp: a file to a missing name/
+cp: cannot create regular file 'nodir/': Not a directory
+rc=1
+dir/ g h newdir/ 
+--- cp: a file to an existing file/
+cp: failed to access 'h/': Not a directory
+rc=1
+dir/ g h newdir/ 

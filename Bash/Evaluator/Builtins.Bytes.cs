@@ -31,6 +31,27 @@ public sealed partial class Builtins
 		f != "-" ? ShellFile.OpenInput(ShellEnvironment.TranslatePath(f))
 		: Evaluator.CurrentRawStdin() ?? new MemoryStream(ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd()));
 
+	/// <summary>Several inputs read as one, each to its end in turn (od's "combined input"). Disposes none of them.</summary>
+	private sealed class ConcatStream(List<Stream> parts) : Stream
+		{
+		private int _at;
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+		public override int Read(byte[] buffer, int offset, int count)
+			{
+			for (; _at < parts.Count; _at++)
+				if (parts[_at].Read(buffer, offset, count) is var n and > 0) return n;
+			return 0;
+			}
+		public override void Flush() { }
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+		public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+		}
+
 	/// <summary>Where copied bytes go: the raw sink when there is one, else decoded text (a capture), the decoder
 	/// carrying a character split across two writes. Flush once, at the end.</summary>
 	private sealed class ByteSink

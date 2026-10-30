@@ -1,0 +1,41 @@
+--- one match: read
+got=one
+--- one match: $(< )
+sub=one
+--- one match: write
+two
+--- one match: append
+two
+three
+--- an external program
+ext=two
+--- two matches
+rc=1
+err: *.sdk: ambiguous redirect
+--- two, external
+rc=1
+err: *.sdk: ambiguous redirect
+--- braces
+rc=1
+err: {c,d}.txt: ambiguous redirect
+--- no match: the word
+z
+--- unquoted, empty
+rc=1
+err: $x: ambiguous redirect
+--- unquoted, two words
+rc=1
+err: $f: ambiguous redirect
+--- quoted: one word
+a
+--- nullglob, no match
+rc=1
+err: *.zzz: ambiguous redirect
+--- $(< missing)
+rc=1
+err: missing.txt: No such file or directory
+--- the files
+[z].txt
+a b
+b.sdk
+only.sdk

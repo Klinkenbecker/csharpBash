@@ -1,0 +1,32 @@
+equals             a=b
+leading equals     =x
+space              a\ b
+quote              it\'s
+double quote       say\ \"hi\"
+tab                $'a\tb'
+newline            $'a\nb'
+empty              ''
+tilde first        \~user
+tilde later        a~b
+hash first         \#x
+hash later         a#b
+glob               \*.txt
+brackets           a\[1\]
+bang               hi\!
+dollar             \$HOME
+backslash          a\\b
+parens             f\(x\)
+braces             \{a\,b\}
+comma              a\,b
+colon at           u@h:p
+percent            50%
+plus minus         +-x
+semicolon          a\;b
+pipe amp           a\|b\&c
+lt gt              \<a\>
+caret              a\^b
+non-ASCII          café
+control            $'\001x'
+DEL                $'\177'
+one two\ words
+x=y\ z

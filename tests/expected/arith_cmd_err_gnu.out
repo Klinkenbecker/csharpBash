@@ -1,0 +1,10 @@
+non-variable: rc=1
+operand missing: rc=1
+divide by 0: rc=1
+true: rc=0
+false: rc=1
+in a function: rc=1
+in an if: rc=1
+message lines into a pipe: 1
+set -u: the subshell ended, rc=1
+end

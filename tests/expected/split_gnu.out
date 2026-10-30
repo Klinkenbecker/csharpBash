@@ -1,0 +1,40 @@
+--- -l 'x'
+split: invalid number of lines: 'x'
+rc=1, pieces: 
+--- -l '0'
+split: invalid number of lines: '0': Numerical result out of range
+rc=1, pieces: 
+--- -l '-1'
+split: invalid number of lines: '-1'
+rc=1, pieces: 
+--- -l ''
+split: invalid number of lines: ''
+rc=1, pieces: 
+--- -l '2x'
+split: invalid number of lines: '2x'
+rc=1, pieces: 
+--- -l '1.5'
+split: invalid number of lines: '1.5'
+rc=1, pieces: 
+--- -b 'x'
+split: invalid number of bytes: 'x'
+rc=1, pieces: 
+--- -b '0'
+split: invalid number of bytes: '0': Numerical result out of range
+rc=1, pieces: 
+--- -b '-1'
+split: invalid number of bytes: '-1'
+rc=1, pieces: 
+--- -b ''
+split: invalid number of bytes: ''
+rc=1, pieces: 
+--- -b '2Q'
+split: invalid number of bytes: '2Q'
+rc=1, pieces: 
+--- -b '1.5'
+split: invalid number of bytes: '1.5'
+rc=1, pieces: 
+--- -l 2 (good)
+rc=0, pieces: p-aa p-ab 
+--- -b 2K (good)
+rc=0, pieces: p-aa 

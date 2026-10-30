@@ -1,0 +1,16 @@
+--- found
+sh.exe, first on PATH
+--- -c
+name ran with 2 args: a b
+--- script
+script one
+--- stdin
+from stdin
+--- xargs
+xargs: x y
+--- find -exec
+find: ./f
+--- status
+rc=3
+--- message
+sh.exe: line 1: nosuch: command not found

@@ -5,9 +5,9 @@ why, what one Claude Code call costs, the caveats, and how the benchmark itself 
 
 ## How the table is measured
 
-The README's table was measured on 2026-10-29 (build rev 472) on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched with `CreateProcess`, the way Claude Code launches one (Git Bash through its `bin\bash.exe` redirect, with no `LANG`; see [Benchmark provenance](#benchmark-provenance)), and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the median of five samples, each the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, run from Git Bash, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
+The README's table was measured on 2026-10-30 (build rev 511) on one Windows 10 machine against the two other bash shells available on it: **Git for Windows** bash 4.4 (bash on the MSYS2 POSIX emulation layer) and **WSL 2** bash 5.1 (native Linux bash, reaching Windows files over `/mnt`). Same scripts, wall clock in seconds including process startup. Every shell is launched with `CreateProcess`, the way Claude Code launches one (Git Bash through its `bin\bash.exe` redirect, with no `LANG`; see [Benchmark provenance](#benchmark-provenance)), and timed on the high-resolution clock by `tools/benchtimer`; C#Bash best of nine, the other two best of three; startup is the median of five samples, each the average over 100 consecutive launches. The C#Bash build is the one that runs every pipeline stage in its own subshell, as bash does. Reproduce with `tests/bench/compare3.sh`, run from Git Bash, after building the timer: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. **The outputs of every row were compared and are identical in all three shells** — a fast wrong answer would not count as a win.
 
-**Where it wins, and why.** Interpreter throughput is 8.5–11.1× Git Bash and 2.4–2.7× native Linux bash. Startup is under a third of Git Bash's (8.6 ms against 27.5 ms in this run, Git Bash started through its redirect, as Claude Code starts it) and twelve times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
+**Where it wins, and why.** Interpreter throughput is 8.8–13.7× Git Bash and 2.4–2.7× native Linux bash. Startup is about a third of Git Bash's (8.6 ms against 23.6 ms in this run, Git Bash started through its redirect, as Claude Code starts it) and twelve times faster than WSL. The `coreutils` row is the project's premise made visible: 900 tool invocations that are 900 `CreateProcess` calls under Git Bash and zero under C#Bash.
 
 **Where it used to lose.** One row, until rev 445: the long streaming text pipeline against WSL (0.156 s against 0.119 s at build rev 424). This paragraph blamed managed code against native C `grep`/`sed`/`sort`. The bigger cost was C#Bash's own: output into a redirect file, a pipe or its own stdout was written to the OS a line at a time. Since revs 433, 442 and 445 it is buffered and written when each builtin finishes, as bash does, and stderr is still written at once. The row is now 0.081 s, against WSL's 0.116 s and Git Bash's 0.248 s. It is still the narrowest margin in the table (1.4×): C#Bash is fastest where a script does *many small things*, and a pipe pushing 50 k lines through five real tools is not that shape. [Benchmark provenance](#benchmark-provenance) explains why earlier tables showed different Git Bash numbers.
 
@@ -19,6 +19,20 @@ Every Bash tool call is a new shell running Claude Code's wrapper and sourcing i
 - **~0.6 ms is the snapshot.** It was 15 ms: the snapshot's `hash rg` misses on every call (`rg` lives inside `claude.exe`), and that miss searched every PATH entry with every extension, 8.8 ms of it two entries on a slow drive. The miss is now remembered, so **PATH length no longer matters per call**.
 - **~0.6 ms writes the working directory back** (the wrapper's `pwd -P >| file`); the rest is ending the process.
 - **No Windows DLL loads that the call does not use.** Networking and security bind on first use, and `icu.dll` (Windows' Unicode library) loads only when a command needs culture data, such as `${x^^}` on non-ASCII text or a local time: a trivial call no longer pays for it (~1.6 ms a call, rev 320).
+
+## A real build: make through C#Bash
+
+The numbers above are benchmarks. This one is a real job, measured by another session on the same machine (2026-10-30) and not reproduced here: an embedded library build (466 C and assembler sources for the IAR 8051 compiler) run from scratch by GNU make 3.78.1, which starts a shell for every recipe, about 470 of them, then one bash packaging script per code model. PATH held only `System32` and `Windows`; every tool was called by its full path. The only change between runs was the shell.
+
+| shell | wall time |
+|---|---|
+| msys 1.0 (bash 3.1.23) | 75 s, 76 s |
+| C#Bash (`sh.exe` and `Bash.exe`, rev 499) | 46 s |
+| C#Bash (rev 503) | 48 s |
+
+About 40 % less time, almost all of it in the compile phase (~68 s against ~40 s); packaging took 1 to 3 s either way. The output was the same: no errors, the same four compiler warnings, six libraries of the same sizes and module lists.
+
+Read it with its limits: two runs for msys and one for each C#Bash build, times to the second (the build start from `cmd`'s clock, the end from the last library's file time). That the gain is the per-recipe shell start-up is the measurer's inference; it was not timed per process.
 
 ## Caveats
 

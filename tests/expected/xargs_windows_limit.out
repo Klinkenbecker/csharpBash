@@ -1,0 +1,9 @@
+--- an external program: every item, in several batches
+rc=0
+items 20000
+batches: more than one
+--- a builtin: GNU's 131072
+1
+--- a command line too long
+Argument list too long
+rc=126

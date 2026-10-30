@@ -35,9 +35,16 @@ upgrade replaces the running `Bash.exe` in place, through InstallGen (2026-10-29
    `Builtins.Help.cs` (rev 397's hash, the only earlier table); test `help_refresh` (all three cases plus an edited
    table's own added name still answering), red on 462 and with the refresh disabled. Not deployed yet.
 3. **The manifest and the installer.** An InstallGen manifest (schema 1): place `home` fixed `%USERPROFILE%/.bash`,
-   `bin` = `home:bin`; artefacts `Bash.exe` -> `bin:Bash.exe` and the start file (below) -> `bin:`. Built by
+   `bin` = `home:bin`; artefacts `Bash.exe` -> `bin:Bash.exe`, `Bash.exe` -> `bin:sh.exe` (the same build again, for
+   `sh`, as Git for Windows ships its own; ruled 2026-10-30) and the start file (below) -> `bin:`. Built by
    `InstallGen --manifest ... --payload ... --out ...`, its `.sha256` beside it. *Done when:* under the test-redirection
-   spec, a fresh install puts both files in place and the report lists them. **BLOCKED on INST-Q-046** for the upgrade
+   spec, a fresh install puts the three files in place and the report lists them (`sh.exe` running is the same
+   in-use case as `Bash.exe`). **Released with each publish** (the architect, 2026-10-30: "include in the installer
+   and release the installer when we publish"): `tools/release.sh` attaches the installer and its `.sha256` beside
+   `Bash.exe`; *done when* the installer downloaded from the release matches its SHA-256 and installs the rev it names.
+   Note for the `path.add` question below: with `bin` on PATH, its `sh.exe` makes GNU make run every recipe through it
+   (measured 2026-10-30), as `dist/sh.exe` does here; ruled acceptable for this machine (C#Bash's mandate), not yet
+   for a user's. **BLOCKED on INST-Q-046** for the upgrade
    case: *done when* a re-run with a newer Bash.exe, while a copy of the old one runs, completes; the running process
    is unaffected; a new launch prints the new rev; the report says the old copy was set aside (in INST-Q-046's form as
    refined by the architect: a `.deleted` folder on the same drive, swept at the start of the next run).
@@ -55,5 +62,12 @@ upgrade replaces the running `Bash.exe` in place, through InstallGen (2026-10-29
 
 - The start file's name and whether `~/.bash/bin` goes on PATH (`path.add`): on PATH, `Bash.exe` could shadow other
   `bash` programs for cmd and PowerShell, and a `claude.cmd` there loses to `claude.exe` earlier on PATH.
+  **Direction (the architect, 2026-10-30, Claude agrees): PATH is the user's choice, asked by the installer.** InstallGen
+  cannot ask it today (`path.add` is unconditional; its prompts are for places only, CONTRACT.md "path" and
+  "Installing"): it needs an InstallGen ask, a yes/no on `path.add` with a default that `--silent` takes: **filed as
+  INST-Q-047** (Installer REGISTER, rev 28; the architect: "yes, concur"). The question's text names what yes does:
+  `bash` and `sh` reachable from cmd and PowerShell, GNU make's recipes run through this `sh`, `bash` may shadow or be
+  shadowed. Off PATH, sh.exe is found only from inside C#Bash and what it starts (its own folder is appended to PATH).
+  **The default: NO, RATIFIED** (the architect, 2026-10-30; the start file needs no PATH). Do NOT re-open.
 - The installer's name. (Where: the same repository's Releases, ruled 2026-10-29.)
 - Anything about PortableBash's installer.

@@ -1513,16 +1513,29 @@ public sealed class Evaluator
 	private int ExecArithmeticCommand(ArithmeticCommand am)
 		{
 		using var scope = am.Redirects.Count > 0 ? ApplyRedirects(am.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
-		// set -x shows the expression after its expansions, which run once (bash: `((  x = 5 + 1  ))`, after a `$( )`'s own
-		// trace); it showed the text as written, `$y` and all (red team F12, 2026-10-19)
-		if (Options.XTrace)
+		// An arithmetic error is this command's own failure, as bash's: reported here, inside its redirections (so
+		// `2>/dev/null` silences it), status 1, in bash's "((: EXPR : " shape. It escaped as an exception past them and
+		// was reported outside with status 2 (2026-10-30). The message's words are still C#Bash's, not bash's.
+		try
 			{
-			var expanded = _expander.ExpandArithText(am.Expression);
-			Xtrace($"(( {expanded} ))");
-			return _expander.EvalExpandedArithmetic(expanded) != 0 ? 0 : 1;
+			// set -x shows the expression after its expansions, which run once (bash: `((  x = 5 + 1  ))`, after a `$( )`'s
+			// own trace); it showed the text as written, `$y` and all (red team F12, 2026-10-19)
+			if (Options.XTrace)
+				{
+				var expanded = _expander.ExpandArithText(am.Expression);
+				Xtrace($"(( {expanded} ))");
+				return _expander.EvalExpandedArithmetic(expanded) != 0 ? 0 : 1;
+				}
+			long v = _expander.EvalArithmetic(am.Expression);
+			return v != 0 ? 0 : 1;
 			}
-		long v = _expander.EvalArithmetic(am.Expression);
-		return v != 0 ? 0 : 1;
+		// not a fatal one (set -u's unbound variable, ${x:?}, a readonly assigned): that ends a non-interactive shell, as
+		// bash's, and goes on up as before (its message still escapes the redirection, where bash's does not: not matched)
+		catch (EvalException ex) when (ex is not FatalShellException)
+			{
+			Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}((: {am.Expression.Trim()} : {ex.Message}");
+			return 1;
+			}
 		}
 
 	// ── simple command ────────────────────────────────────────────────────────
@@ -1591,9 +1604,12 @@ public sealed class Evaluator
 			if (cmd.Assignments.Count == 0 && ConsoleMux.Capturing
 			    && cmd.Redirects is [{ Kind: RedirectKind.Input } only])
 				{
-				var path = _expander.ExpandToPath(only.Target);
+				string word;
+				try { word = ExpandRedirectWord(only.Target); }
+				catch (RedirectException ex) { Console.Error.WriteLine($"{ErrorPrefix}{ex.Message}"); return 1; }
+				var path = ShellEnvironment.TranslatePath(word);
 				try { Console.Out.Write(ShellEncoding.ReadAllText(path)); return 0; }
-				catch (Exception ex) { Console.Error.WriteLine($"{ErrorPrefix}{_expander.ExpandToString(only.Target)}: {ex.Message}"); return 1; }
+				catch (Exception ex) { Console.Error.WriteLine($"{ErrorPrefix}{word}: {RedirectMessage(path, ex)}"); return 1; }   // was .NET's text
 				}
 			if (cmd.Redirects.Count > 0)
 				{
@@ -1699,6 +1715,7 @@ public sealed class Evaluator
 		// Bash's lookup order: function, then builtin, then PATH. A function named after a builtin
 		// utility (`rev(){ ...; }`) must shadow it, as `type` (Classify) already reports; until
 		// 2026-10-04 the builtin was tried first and the function never ran.
+		namStr = UnixBinName(namStr);
 		_functions.TryGetValue(namStr, out var fn);
 		if (fn is not null || Builtins.Has(namStr))
 			{
@@ -2030,6 +2047,9 @@ public sealed class Evaluator
 	/// invoke other commands (e.g. <c>xargs</c>). Output goes to the current Console/pipe.</summary>
 	public int RunCommand(string name, List<string> args) => RunCommand(name, args, false, [], false);
 
+	/// <summary>Whether RunCommand runs this name in the shell (a function or builtin), with no command line to start.</summary>
+	internal bool RunsInProcess(string name) => _functions.ContainsKey(UnixBinName(name)) || Builtins.Has(UnixBinName(name));
+
 	/// <summary>Run a command on the calling thread with <paramref name="job"/> as the current
 	/// job, so an external child it spawns is recorded in <see cref="BackgroundJob.ChildPid"/>
 	/// (used by `timeout` to kill the child on expiry).</summary>
@@ -2046,6 +2066,7 @@ public sealed class Evaluator
 	public int RunCommand(string name, List<string> args, bool skipFunctions,
 		List<(string, string)> extraEnv, bool clearEnv, IReadOnlyCollection<string>? unsetEnv = null)
 		{
+		name = UnixBinName(name);
 		bool function = !skipFunctions && _functions.ContainsKey(name);
 		if (!function && !Builtins.Has(name)) return ExecExternal(name, args, extraEnv, [], clearEnv, unsetEnv);
 		// In process, `env -i` / `env -u NAME` act on what the command sees as its environment, the
@@ -2099,9 +2120,9 @@ public sealed class Evaluator
 	/// empty when there's no shebang). Native executables (no #!, not .sh) return false
 	/// so normal process launch handles them.
 	/// </summary>
-	private static bool TryResolveScriptFile(string name, out string path, out string shebang)
+	private static bool TryResolveScriptFile(string name, bool byPath, out string path, out string shebang, out bool binary)
 		{
-		path = ""; shebang = "";
+		path = ""; shebang = ""; binary = false;
 		var p = ShellEnvironment.TranslatePath(name);
 		if (!File.Exists(p)) return false;
 
@@ -2111,11 +2132,39 @@ public sealed class Evaluator
 
 		bool hasShebang = first.StartsWith("#!", StringComparison.Ordinal);
 		bool isShExt    = p.EndsWith(".sh", StringComparison.OrdinalIgnoreCase);
-		if (!hasShebang && !isShExt) return false;
+		// A file named BY PATH that is not a Windows program runs as a shell script: bash's fallback for an executable
+		// with no #! (ENOEXEC), and msys's; binary content (a NUL before the first newline in its first 80 bytes, bash's
+		// test) is refused instead. It was "Permission denied" (2026-10-30, esdk-a2: an msys build's no-#! script). A
+		// bare name found on PATH is not run so (AWAITING the architect: msys does).
+		if (!hasShebang && !isShExt && (!byPath || IsProgramFile(p) || (binary = LooksBinary(p)))) return false;
 
 		path    = p;
 		shebang = hasShebang ? first[2..].Trim() : "";
 		return true;
+		}
+
+	/// <summary>`/bin/NAME` or `/usr/bin/NAME` when that folder is not on the drive: NAME, a builtin first and then PATH,
+	/// as a #! line already resolves its interpreter. msys build scripts call `/bin/sed`; it was "No such file or
+	/// directory", 127 (2026-10-30, esdk-a2). A real folder of that name is left alone.</summary>
+	private static string UnixBinName(string name)
+		{
+		int at = name.StartsWith("/bin/", StringComparison.Ordinal) ? 5 : name.StartsWith("/usr/bin/", StringComparison.Ordinal) ? 9 : 0;
+		if (at == 0 || at == name.Length || name.IndexOf('/', at) >= 0) return name;
+		try { if (Directory.Exists(ShellEnvironment.TranslatePath(name[..(at - 1)]))) return name; } catch { return name; }
+		return name[at..];
+		}
+
+	private static bool LooksBinary(string path)
+		{
+		try
+			{
+			using var fs = ShellFile.OpenRead(path);
+			Span<byte> head = stackalloc byte[80];
+			int n = fs.Read(head);
+			for (int i = 0; i < n; i++) { if (head[i] == '\n') return false; if (head[i] == 0) return true; }
+			return false;
+			}
+		catch { return false; }
 		}
 
 	/// <summary>Resolve a shebang body to (interpreter, extra-args), honouring
@@ -2213,7 +2262,8 @@ public sealed class Evaluator
 		// there ran instead of git.exe, and a script found on PATH said "Permission denied"
 		// (2026-10-17). A PATHEXT match is a program: never opened for its first line.
 		var script = bare ? (found is not null && !IsProgramFile(found) ? found : null) : name;
-		if (script is not null && TryResolveScriptFile(script, out var scriptPath, out var shebang))
+		bool binary = false;
+		if (script is not null && TryResolveScriptFile(script, !bare, out var scriptPath, out var shebang, out binary))
 			{
 			var (interp, interpArgs) = ResolveInterpreter(shebang);
 			var ib = Path.GetFileNameWithoutExtension(interp).ToLowerInvariant();
@@ -2253,6 +2303,7 @@ public sealed class Evaluator
 			try     { return ExecExternal(Path.GetFileName(interp), spawn, tempAssign, redirects, clearEnv, unsetEnv); }
 			finally { _interpreterDepth--; }
 			}
+		if (binary) return NotFound(name, redirects, "cannot execute binary file: Exec format error", 126);   // bash's words
 
 		// a name with a slash is a path from this shell's directory, as bash. Handed over relative, Windows SEARCHED
 		// for it (C#Bash's folder, the cwd unless NoDefaultCurrentDirectoryInExePath, PATH): under Claude Code
@@ -2386,7 +2437,7 @@ public sealed class Evaluator
 				return new HandleFd(how == ChildLauncher.Access.AppendAtEnd ? OneMsysAppend(h) : Keep(h));
 				}
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-				{ throw new RedirectException($"{raw}: {RedirectMessage(target, ex)}"); }
+				{ throw new RedirectException($"{raw}: {RedirectMessage(target, ex, how != ChildLauncher.Access.Read)}"); }
 			}
 		// /dev/tty: the console itself; with none, bash's "No such device or address"
 		ChildFd ConsoleTarget(string device, string raw)
@@ -2415,7 +2466,7 @@ public sealed class Evaluator
 				if (r.Kind == RedirectKind.HereString)
 					{ fds[0] = new InPumpFd(null, null, ExpandRedirectBody(r.Target) + "\n"); continue; }
 
-				var raw    = _expander.ExpandToString(r.Target);
+				var raw    = ExpandRedirectWord(r.Target);
 				var target = ShellEnvironment.TranslatePath(raw);
 				int fd     = r.Fd ?? (r.Kind is RedirectKind.Input or RedirectKind.InputDup or RedirectKind.ReadWrite ? 0 : 1);
 				var kind   = DeviceRedirect(r.Kind, ref raw);   // /dev/zero, /dev/fd/N, ... as what they amount to
@@ -2512,7 +2563,10 @@ public sealed class Evaluator
 			// while the shell's directory exists can only be the length
 			if (ex.NativeErrorCode == 267 && Directory.Exists(_env.Cwd)) notRunnable = "cannot start a program in a directory over 258 characters (a Windows limit)";
 			// nor one whose own path is (error 206, "The filename or extension is too long"; cmd cannot either)
-			if (ex.NativeErrorCode == 206) notRunnable = "cannot start a program whose path is over 260 characters (a Windows limit)";
+			// Error 206 is also a command line over 32767 characters: bash's E2BIG, "Argument list too long". It named the
+			// path for both (2026-10-30: a big `xargs` batch said "path is over 260 characters")
+			if (ex.NativeErrorCode == 206)
+				notRunnable = fileName.Length >= 260 ? "cannot start a program whose path is over 260 characters (a Windows limit)" : "Argument list too long";
 			// a refusal of ChildLauncher's own (a batch file's argument it cannot pass safely): its message, 126
 			if (ex.NativeErrorCode == ChildLauncher.ErrorBadArguments) notRunnable = ex.Message;
 			bool denied = notRunnable is not null || ex.NativeErrorCode is 5 or 193;
@@ -2691,8 +2745,20 @@ public sealed class Evaluator
 
 	/// <summary>bash wording for a redirect that could not be opened: a directory target reports
 	/// "Is a directory" rather than the platform permission error it actually raises.</summary>
-	private static string RedirectMessage(string target, Exception ex)
+	/// <summary>A redirection's word, expanded as bash expands it: braces, pathname expansion and splitting too, and
+	/// anything but exactly one word is "WORD: ambiguous redirect", the word as written. It was expanded to one string,
+	/// so `read l < *.sdk` opened a file named "*.sdk" (2026-10-30). A plain word keeps the one-string path.</summary>
+	private string ExpandRedirectWord(Word w)
 		{
+		if (w.IsPlainLiteral) return _expander.ExpandToString(w);
+		var fields = _expander.ExpandToFields(w);
+		return fields.Count == 1 ? fields[0] : throw new RedirectException($"{w.Raw ?? _expander.ExpandToString(w)}: ambiguous redirect");
+		}
+
+	private static string RedirectMessage(string target, Exception ex, bool write = false)
+		{
+		// a pattern that matched nothing is the word itself, which Windows cannot create (GNU would make the file)
+		if (write && ex.HResult == Builtins.ErrorInvalidName) return "Invalid argument";
 		try { if (Directory.Exists(target)) return "Is a directory"; } catch { }
 		if (ex is DirectoryNotFoundException && ShellFile.ThroughAFile(target)) return "Not a directory";   // a child's own redirect
 		return Builtins.IoError(ex);
@@ -2765,6 +2831,9 @@ public sealed class Evaluator
 		return kind;
 		}
 
+	/// <summary>Stdin from /dev/null for the scope: xargs's commands (GNU's), so one cannot eat the items still to come.</summary>
+	internal RedirectScope StdinFromNull() => ApplyRedirects([new Redirect(0, RedirectKind.Input, Word.Literal("/dev/null"))]);
+
 	private RedirectScope ApplyRedirects(List<Redirect> redirects)
 		{
 		var scope = new RedirectScope();
@@ -2781,7 +2850,9 @@ public sealed class Evaluator
 				continue;
 				}
 
-			var rawTarget = _expander.ExpandToString(r.Target);
+			string rawTarget;
+			try { rawTarget = ExpandRedirectWord(r.Target); }
+			catch (RedirectException ex) { throw RedirectFailed(scope, ex.Message); }
 			var target    = ShellEnvironment.TranslatePath(rawTarget);
 			int fd        = r.Fd ?? 1;
 			var kind      = DeviceRedirect(r.Kind, ref rawTarget);
@@ -2800,7 +2871,7 @@ public sealed class Evaluator
 						}
 					System.IO.FileStream fs;
 					try { fs = append ? ShellFile.Append(target) : ShellFile.Create(target); }
-					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
 					// ShellEncoding, not the default: StreamWriter's default UTF-8 THROWS on a lone
 					// surrogate, so `printf '\xff' > file` died with an encoder error (2026-09-12).
 					// Buffered, written when each builtin finishes (Builtins.FlushBuffered, 2026-10-28); one writer for
@@ -2842,7 +2913,7 @@ public sealed class Evaluator
 						// 3>file: open a numbered descriptor for later `>&3` / `read -u 3`
 						System.IO.FileStream nfs;
 						try { nfs = append ? ShellFile.Append(target) : ShellFile.Create(target); }
-						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
 						scope.TrackFd(_fds, ShellToken,fd, nfs);
 						break;
 						}
@@ -2851,7 +2922,7 @@ public sealed class Evaluator
 						{ throw RedirectFailed(scope, $"{rawTarget}: cannot overwrite existing file"); }
 					System.IO.FileStream fs;
 					try { fs = append ? ShellFile.Append(target) : ShellFile.Create(target); }
-					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
 					// ShellEncoding, not the default: StreamWriter's default UTF-8 THROWS on a lone
 					// surrogate, so `printf '\xff' > file` died with an encoder error (2026-09-12).
 					// stdout buffered, written when each builtin finishes (Builtins.FlushBuffered, 2026-10-28: it was a
@@ -2869,7 +2940,7 @@ public sealed class Evaluator
 					int rfd = r.Fd ?? 0;
 					System.IO.FileStream rws;
 					try { rws = new System.IO.FileStream(target, System.IO.FileMode.OpenOrCreate, System.IO.FileAccess.ReadWrite, System.IO.FileShare.ReadWrite | System.IO.FileShare.Delete); }
-					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
 					if (rfd > 2) { scope.TrackFd(_fds, ShellToken,rfd, rws); break; }
 					if (rfd == 0)
 						{
@@ -2893,7 +2964,7 @@ public sealed class Evaluator
 						// 3<file: open a numbered descriptor for `<&3` / `read -u 3`
 						System.IO.Stream ifs;
 						try { ifs = ShellFile.OpenInput(target); }   // a file or a device (`3< /dev/zero`)
-						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
 						scope.TrackFd(_fds, ShellToken,ifd, ifs);
 						break;
 						}
@@ -2901,7 +2972,7 @@ public sealed class Evaluator
 					if (rawTarget == "/dev/null") { ConsoleMux.SetIn(new System.IO.StringReader("")); ConsoleMux.RawIn = System.IO.Stream.Null; break; }
 					System.IO.Stream inFs;
 					try { inFs = ShellFile.OpenInput(target); }   // a file or a device (`< /dev/zero`, `< /dev/tty`)
-					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex)}"); }
+					catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
 					var reader = new LfReader(inFs);   // buffers nothing until first read; no BOM sniffing; LF-only lines
 					scope.TrackInstalled(reader);
 					ConsoleMux.SetIn(reader);

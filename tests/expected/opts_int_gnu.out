@@ -1,0 +1,151 @@
+=== value 'x'
+--- uniq -f
+uniq: x: invalid number of fields to skip
+rc=1
+--- uniq -s
+uniq: x: invalid number of bytes to skip
+rc=1
+--- uniq -w
+uniq: x: invalid number of bytes to compare
+rc=1
+--- nl -w
+nl: invalid line number field width: 'x'
+rc=1
+--- nl -v
+nl: invalid starting line number: 'x'
+rc=1
+--- nl -i
+nl: invalid line number increment: 'x'
+rc=1
+--- fold -w
+fold: invalid number of columns: 'x'
+rc=1
+--- od -w
+od: invalid -w argument 'x'
+rc=1
+--- base64 -w
+base64: invalid wrap size: 'x'
+rc=1
+--- grep -A
+grep: x: invalid context length argument
+rc=2
+--- grep -B
+grep: x: invalid context length argument
+rc=2
+--- grep -m
+grep: invalid max count
+rc=2
+--- xargs -n
+xargs: invalid number "x" for -n option
+Try 'xargs --help' for more information.
+rc=1
+--- xargs -L
+xargs: invalid number "x" for -L option
+Try 'xargs --help' for more information.
+rc=1
+--- du -d
+du: invalid maximum depth 'x'
+Try 'du --help' for more information.
+rc=1
+=== value '-1'
+--- uniq -f
+uniq: -1: invalid number of fields to skip
+rc=1
+--- uniq -s
+uniq: -1: invalid number of bytes to skip
+rc=1
+--- uniq -w
+uniq: -1: invalid number of bytes to compare
+rc=1
+--- nl -w
+nl: invalid line number field width: '-1': Numerical result out of range
+rc=1
+--- nl -v
+    -1	a b
+     0	c d
+rc=0
+--- nl -i
+nl: invalid line number increment: '-1': Numerical result out of range
+rc=1
+--- fold -w
+fold: invalid number of columns: '-1'
+rc=1
+--- od -w
+od: invalid -w argument '-1'
+rc=1
+--- base64 -w
+base64: invalid wrap size: '-1'
+rc=1
+--- grep -A
+grep: -1: invalid context length argument
+rc=2
+--- grep -B
+grep: -1: invalid context length argument
+rc=2
+--- grep -m
+a b
+rc=0
+--- xargs -n
+xargs: value -1 for -n option should be >= 1
+Try 'xargs --help' for more information.
+rc=1
+--- xargs -L
+xargs: value -1 for -L option should be >= 1
+Try 'xargs --help' for more information.
+rc=1
+--- du -d
+du: invalid maximum depth '-1'
+Try 'du --help' for more information.
+rc=1
+=== value '0'
+--- uniq -f
+a b
+c d
+rc=0
+--- uniq -s
+a b
+c d
+rc=0
+--- uniq -w
+a b
+rc=0
+--- nl -w
+nl: invalid line number field width: '0': Numerical result out of range
+rc=1
+--- nl -v
+     0	a b
+     1	c d
+rc=0
+--- nl -i
+nl: invalid line number increment: '0': Numerical result out of range
+rc=1
+--- fold -w
+fold: invalid number of columns: '0': Numerical result out of range
+rc=1
+--- od -w
+od: warning: invalid width 0; using 2 instead
+0000000 020141
+0000002 005142
+rc=0
+--- base64 -w
+YSBiCmMgZAo=rc=0
+--- grep -A
+a b
+rc=0
+--- grep -B
+a b
+rc=0
+--- grep -m
+rc=1
+--- xargs -n
+xargs: value 0 for -n option should be >= 1
+Try 'xargs --help' for more information.
+rc=1
+--- xargs -L
+xargs: value 0 for -L option should be >= 1
+Try 'xargs --help' for more information.
+rc=1
+--- du -d
+rc=0
+--- grep -c -m 0
+rc=1

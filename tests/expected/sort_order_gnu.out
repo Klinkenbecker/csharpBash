@@ -1,0 +1,18 @@
+--- sort
+7A x80 xC3 E9 E9+E000 E9+1F600 5FF E000 FF21 1F600 1F601 xFF 
+--- sort -r
+xFF 1F601 1F600 FF21 E000 5FF E9+1F600 E9+E000 E9 xC3 x80 7A 
+--- sort -k1,1
+7A x80 xC3 E9 E9+E000 E9+1F600 5FF E000 FF21 1F600 1F601 xFF 
+--- sort -u
+7A x80 xC3 E9 E9+E000 E9+1F600 5FF E000 FF21 1F600 1F601 xFF 
+--- comm -12
+E000 1F600 xFF 
+--- comm -3
+0 7A x80 xC3 E9 E9+E000 E9+1F600 5FF FF21 1F601 
+--- comm, status
+rc=0
+--- sort -c
+rc=0
+--- sort -k1,1, keys tie
+7A E000 1F600 xFF 

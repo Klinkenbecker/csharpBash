@@ -1,0 +1,44 @@
+--- l, 100 characters
+abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghi\
+jabcdefghijabcdefghijabcdefghij$
+--- l 20
+abcdefghijabcdefghi\
+jabcdefghijabcdefgh\
+ijabcdefghijabcdefg\
+hijabcdefghijabcdef\
+ghijabcdefghijabcde\
+fghij$
+--- l 0
+abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij$
+--- -l 30
+abcdefghijabcdefghijabcdefghi\
+jabcdefghijabcdefghijabcdefgh\
+ijabcdefghijabcdefghijabcdefg\
+hijabcdefghij$
+--- -l 0
+abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij$
+--- l 1
+\
+a\
+b\
+c$
+--- l 2
+a\
+b\
+c$
+--- escapes near the edge
+abcdefghi\
+jklmn\top\
+qrstu\001\
+vwxyz\\yz$
+--- non-ASCII
+caf\303\251 na\303\257ve$
+--- non-ASCII wrapped
+aaaaaaaa\
+\303\251b\
+bbbbbb$
+--- exactly 69
+abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghi$
+--- exactly 70
+abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghi\
+j$

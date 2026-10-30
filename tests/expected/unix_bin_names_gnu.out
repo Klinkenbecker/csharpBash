@@ -1,0 +1,6 @@
+ex
+env ok
+echo ok
+printf ok
+/nonexistent/sed: No such file or directory
+rc=127

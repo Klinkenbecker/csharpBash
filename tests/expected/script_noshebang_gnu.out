@@ -1,0 +1,9 @@
+--- a text file by path
+ran ./noshe a
+rc=3 x=unset
+--- by a longer path
+rc=3
+ran PWD/noshe b
+--- binary content
+./binfile: cannot execute binary file: Exec format error
+rc=126

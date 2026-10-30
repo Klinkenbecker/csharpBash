@@ -363,11 +363,14 @@ public static class PrintfFormatter
 				}
 			return sb.Append('\'').ToString();
 			}
-		const string specials = "|&;<>()$`\\\"' \t*?[]#~=%{}!^,";
+		// bash 5.1's sh_backslash_quote (checked against it 2026-10-30): these always, `~` and `#` only as the first
+		// character (where they would expand or start a comment); `=` and `%` never (they were escaped here)
+		const string specials = "|&;<>()$`\\\"' \t*?[]{}!^,";
 		var o = new StringBuilder();
-		foreach (var ch in s)
+		for (int i = 0; i < s.Length; i++)
 			{
-			if (specials.IndexOf(ch) >= 0) o.Append('\\');
+			char ch = s[i];
+			if (specials.IndexOf(ch) >= 0 || (i == 0 && ch is '~' or '#')) o.Append('\\');
 			o.Append(ch);
 			}
 		return o.ToString();
