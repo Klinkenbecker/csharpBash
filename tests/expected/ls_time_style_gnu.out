@@ -1,0 +1,34 @@
+--- long-iso
+N NNNN-NN-NN NN:NN new
+N NNNN-NN-NN NN:NN old
+--- iso
+N NN-NN NN:NN new
+N NNNN-NN-NN  old
+--- +%Y/%m/%d
+N NNNN/NN/NN new
+N NNNN/NN/NN old
+--- +old %Y
+new %H
+N new NN new
+N old NNNN old
+--- locale
+N Oct NN NN:NN new
+N Jan  N  NNNN old
+--- posix-long-iso
+N Oct NN NN:NN new
+N Jan  N  NNNN old
+--- full-iso
+N NNNN-NN-NN NN:NN:NN.NNNNNNNNN ZONE new
+N NNNN-NN-NN NN:NN:NN.NNNNNNNNN ZONE old
+--- --full-time
+N NNNN-NN-NN NN:NN:NN.NNNNNNNNN ZONE old
+--- a bad style
+ls: invalid argument 'bogus' for 'time style'
+Valid arguments are:
+  - [posix-]full-iso
+  - [posix-]long-iso
+  - [posix-]iso
+  - [posix-]locale
+  - +FORMAT (e.g., +%H:%M) for a 'date'-style format
+Try 'ls --help' for more information.
+rc=2

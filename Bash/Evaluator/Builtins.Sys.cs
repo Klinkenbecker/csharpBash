@@ -16,14 +16,14 @@ public sealed partial class Builtins
 		var o = Opts.Parse("date", args, "d:r:uRI::s:f:", ["date=:d", "reference=:r", "utc:u", "universal:u", "rfc-email:R", "rfc-2822:R", "iso-8601=?:I", "rfc-3339=", "set=:s", "file=:f", "debug"]);
 		if (o.Get('s') is not null) throw new UnsupportedOptionException("date", "-s", "setting the system clock is not supported");
 		bool utc = o.Has('u');
-		DateTime when = utc ? DateTime.UtcNow : DateTime.Now;
+		DateTime when = utc ? DateTime.UtcNow : ShellClock.Now;   // TZ honoured (ShellClock, 2026-10-30)
 		if (o.Get('d') is string ds)
 			{
 			if (!GnuDate.TryParse(ds, utc, out when)) { Console.Error.WriteLine($"date: invalid date '{ds}'"); return 1; }
 			}
 		if (o.Get('r') is string rf)
 			{
-			try { var p = ShellEnvironment.TranslatePath(rf); when = utc ? File.GetLastWriteTimeUtc(p) : File.GetLastWriteTime(p); }
+			try { var p = ShellEnvironment.TranslatePath(rf); when = utc ? File.GetLastWriteTimeUtc(p) : ShellClock.ToShell(File.GetLastWriteTimeUtc(p)); }
 			catch (Exception ex) { Console.Error.WriteLine($"date: {rf}: {IoError(ex)}"); return 1; }
 			}
 		var fmtArg = o.Operands.FirstOrDefault(a => a.StartsWith('+'));
@@ -67,7 +67,8 @@ public sealed partial class Builtins
 		{
 		var inv = System.Globalization.CultureInfo.InvariantCulture;
 		var sb = new StringBuilder();
-		var dto = utc ? new DateTimeOffset(d, TimeSpan.Zero) : new DateTimeOffset(d);
+		var wall = DateTime.SpecifyKind(d, DateTimeKind.Unspecified);
+		var dto = new DateTimeOffset(wall, utc ? TimeSpan.Zero : ShellClock.Offset(d));   // the shell zone's offset (TZ)
 		for (int i = 0; i < f.Length; i++)
 			{
 			if (f[i] != '%' || i + 1 >= f.Length) { sb.Append(f[i]); continue; }
@@ -96,7 +97,7 @@ public sealed partial class Builtins
 				'T' => d.ToString("HH:mm:ss"), 'R' => d.ToString("HH:mm"), 'r' => d.ToString("hh:mm:ss tt", inv), 'D' => d.ToString("MM/dd/yy"), 'F' => d.ToString("yyyy-MM-dd"),
 				'c' => d.ToString("ddd MMM d HH:mm:ss yyyy", inv), 'x' => d.ToString("MM/dd/yyyy"), 'X' => d.ToString("HH:mm:ss"),
 				's' => dto.ToUnixTimeSeconds().ToString(),
-				'z' => Zone(dto.Offset, colon ? 1 : 0), 'Z' => utc ? "UTC" : TimeZoneAbbrev(d),
+				'z' => Zone(dto.Offset, colon ? 1 : 0), 'Z' => utc ? "UTC" : ShellClock.Abbrev(d) ?? TimeZoneAbbrev(d),
 				'n' => "\n", 't' => "\t", '%' => "%",
 				_ => "%" + c,
 				};

@@ -24,7 +24,7 @@ public static class GnuDate
 
 	public static bool TryParse(string input, bool utc, out DateTime result)
 		{
-		var now = utc ? DateTime.UtcNow : DateTime.Now;
+		var now = utc ? DateTime.UtcNow : ShellClock.Now;   // the shell's zone (TZ, 2026-10-30)
 		result = now;
 		var text = input.Trim().ToLowerInvariant();
 		if (text.Length == 0) return false;
@@ -133,7 +133,7 @@ public static class GnuDate
 		if (epochTicks is long e)
 			{
 			var dto = new DateTimeOffset(DateTime.UnixEpoch.AddTicks(e), TimeSpan.Zero);
-			dt = utc ? dto.UtcDateTime : dto.LocalDateTime;
+			dt = utc ? dto.UtcDateTime : ShellClock.ToShell(dto.UtcDateTime);
 			}
 		else
 			{
@@ -143,12 +143,12 @@ public static class GnuDate
 			if (hour is not null) { h = hour.Value; mi = minute ?? 0; s = second ?? 0; }
 			else if (dateGiven) { h = mi = s = 0; }
 			else { h = now.Hour; mi = now.Minute; s = now.Second; }
-			try { dt = new DateTime(y, mo, d, h, mi, s, utc ? DateTimeKind.Utc : DateTimeKind.Local); }
+			try { dt = new DateTime(y, mo, d, h, mi, s, utc ? DateTimeKind.Utc : ShellClock.IsMachineZone ? DateTimeKind.Local : DateTimeKind.Unspecified); }
 			catch (ArgumentOutOfRangeException) { return false; }
 			if (zone is TimeSpan z)
 				{
 				var dto = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Unspecified), z);
-				dt = utc ? dto.UtcDateTime : dto.LocalDateTime;
+				dt = utc ? dto.UtcDateTime : ShellClock.ToShell(dto.UtcDateTime);
 				}
 			if (weekday is int wd)
 				{

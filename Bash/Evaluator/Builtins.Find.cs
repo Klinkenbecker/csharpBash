@@ -208,7 +208,8 @@ public sealed partial class Builtins
 				{
 				var spec = FindArg(a, ref i, t);
 				if (!TryParseDate(spec, out var when)) throw new Exception($"I cannot figure out how to interpret '{spec}' as a date or time");
-				return new FindPred((e, s, b) => e.Info.LastWriteTime > when);
+				var whenUtc = ShellClock.ToUtc(when);   // a time in the shell's zone (TZ, 2026-10-30)
+				return new FindPred((e, s, b) => e.Info.LastWriteTimeUtc > whenUtc);
 				}
 			case "-mtime": case "-ctime": case "-atime":
 				{
@@ -239,7 +240,7 @@ public sealed partial class Builtins
 			case "-quit": st.AnyAction = true; return new FindPred((e, s, b) => { s.Quit = true; return true; });
 			case "-print": st.AnyAction = true; return new FindPred((e, s, b) => { Console.WriteLine(e.Display); return true; });
 			case "-print0": st.AnyAction = true; return new FindPred((e, s, b) => { Console.Out.Write(e.Display + "\0"); return true; });
-			case "-ls": st.AnyAction = true; return new FindPred((e, s, b) => { Console.WriteLine($"0 {(e.Size + 1023) / 1024,4} {LongLine(e.Info, false, false, false)} {e.Display}"); return true; });
+			case "-ls": st.AnyAction = true; return new FindPred((e, s, b) => { Console.WriteLine($"0 {(e.Size + 1023) / 1024,4} {LongLine(e.Info, false, false, null)} {e.Display}"); return true; });
 			case "-printf":
 				{
 				var fmt = FindArg(a, ref i, t); st.AnyAction = true;
@@ -390,35 +391,47 @@ public sealed partial class Builtins
 			char c = fmt[i];
 			if (c == '\\' && i + 1 < fmt.Length) { i = PrintfFormatter.AppendEscape(fmt, i + 1, sb, out _) - 1; continue; }
 			if (c != '%' || i + 1 >= fmt.Length) { sb.Append(c); continue; }
-			char k = fmt[++i];
-			var mt = e.Info.LastWriteTime;
+			// a field: flags, width and precision before any directive, as GNU's (`%10s`, `%-6f`, `%.1f`): the text cut to
+			// the precision, then padded with spaces (GNU's `%05s` too), on the right under `-`. They printed literally
+			// (2026-10-30, kes-term-a1)
+			int j = i + 1, width = 0, prec = -1;
+			bool left = false;
+			while (j < fmt.Length && fmt[j] is '-' or '+' or ' ' or '#' or '0') { if (fmt[j] == '-') left = true; j++; }
+			while (j < fmt.Length && char.IsAsciiDigit(fmt[j])) width = width * 10 + (fmt[j++] - '0');
+			if (j < fmt.Length && fmt[j] == '.') { prec = 0; j++; while (j < fmt.Length && char.IsAsciiDigit(fmt[j])) prec = prec * 10 + (fmt[j++] - '0'); }
+			if (j >= fmt.Length) { sb.Append(fmt, i, fmt.Length - i); break; }
+			i = j;
+			char k = fmt[i];
+			var vb = new StringBuilder();
+			var mt = ShellClock.ToShell(e.Info.LastWriteTimeUtc);   // in the shell's zone (TZ, 2026-10-30)
 			switch (k)
 				{
-				case 'p': sb.Append(e.Display); break;
-				case 'P': { var rel = e.Display.Length > e.Start.Length ? e.Display[(e.Start.Length + 1)..] : ""; sb.Append(rel); break; }
-				case 'f': sb.Append(e.Depth == 0 ? e.Display : e.Info.Name); break;
-				case 'h': { int s = e.Display.LastIndexOf('/'); sb.Append(s < 0 ? "." : s == 0 ? "/" : e.Display[..s]); break; }
-				case 'H': sb.Append(e.Start); break;
-				case 's': sb.Append(e.Size); break;
-				case 'd': sb.Append(e.Depth); break;
-				case 'y': sb.Append(e.IsLink ? 'l' : e.IsDir ? 'd' : 'f'); break;
-				case 'm': { var ms = ModeString(e.Info); int o = (ms[1] == 'r' ? 4 : 0) + (ms[2] == 'w' ? 2 : 0) + (ms[3] == 'x' ? 1 : 0); sb.Append($"{o}{o}{o}"); break; }
-				case 'M': sb.Append(ModeString(e.Info)); break;
-				case 'u': case 'U': sb.Append(Environment.UserName); break;
-				case 'g': case 'G': sb.Append("None"); break;
-				case 'n': sb.Append('1'); break;
-				case 'i': sb.Append('0'); break;
-				case 'k': sb.Append((e.Size + 1023) / 1024); break;
-				case 'b': sb.Append((e.Size + 511) / 512); break;
-				case 't': sb.Append(mt.ToString("ddd MMM d HH:mm:ss.fffffff00 yyyy", System.Globalization.CultureInfo.InvariantCulture)); break;
+				case 'p': vb.Append(e.Display); break;
+				case 'P': { var rel = e.Display.Length > e.Start.Length ? e.Display[(e.Start.Length + 1)..] : ""; vb.Append(rel); break; }
+				case 'f': vb.Append(e.Depth == 0 ? e.Display : e.Info.Name); break;
+				case 'h': { int s = e.Display.LastIndexOf('/'); vb.Append(s < 0 ? "." : s == 0 ? "/" : e.Display[..s]); break; }
+				case 'H': vb.Append(e.Start); break;
+				case 's': vb.Append(e.Size); break;
+				case 'd': vb.Append(e.Depth); break;
+				case 'y': vb.Append(e.IsLink ? 'l' : e.IsDir ? 'd' : 'f'); break;
+				case 'm': { var ms = ModeString(e.Info); int o = (ms[1] == 'r' ? 4 : 0) + (ms[2] == 'w' ? 2 : 0) + (ms[3] == 'x' ? 1 : 0); vb.Append($"{o}{o}{o}"); break; }
+				case 'M': vb.Append(ModeString(e.Info)); break;
+				case 'u': case 'U': vb.Append(Environment.UserName); break;
+				case 'g': case 'G': vb.Append("None"); break;
+				case 'n': vb.Append('1'); break;
+				case 'i': vb.Append('0'); break;
+				case 'k': vb.Append((e.Size + 1023) / 1024); break;
+				case 'b': vb.Append((e.Size + 511) / 512); break;
+				case 't': vb.Append(mt.ToString("ddd MMM d HH:mm:ss.fffffff00 yyyy", System.Globalization.CultureInfo.InvariantCulture)); break;
 				case 'T': case 'A': case 'C':
 					{
-					if (i + 1 >= fmt.Length) { sb.Append('%').Append(k); break; }
+					if (i + 1 >= fmt.Length) { vb.Append('%').Append(k); break; }
 					char sub = fmt[++i];
-					var d = k == 'A' ? e.Info.LastAccessTime : mt;
-					sb.Append(sub switch
+					var d = k == 'A' ? ShellClock.ToShell(e.Info.LastAccessTimeUtc) : mt;
+					var du = k == 'A' ? e.Info.LastAccessTimeUtc : e.Info.LastWriteTimeUtc;
+					vb.Append(sub switch
 						{
-						'@' => (((DateTimeOffset)d).ToUnixTimeSeconds() + (d.Millisecond / 1000.0)).ToString("F10", System.Globalization.CultureInfo.InvariantCulture).Replace(".", ".").TrimEnd('0'),
+						'@' => (new DateTimeOffset(du).ToUnixTimeSeconds() + (d.Millisecond / 1000.0)).ToString("F10", System.Globalization.CultureInfo.InvariantCulture).Replace(".", ".").TrimEnd('0'),
 						'Y' => d.ToString("yyyy"), 'y' => d.ToString("yy"), 'm' => d.ToString("MM"), 'd' => d.ToString("dd"),
 						'H' => d.ToString("HH"), 'M' => d.ToString("mm"), 'S' => d.ToString("ss.fffffff00", System.Globalization.CultureInfo.InvariantCulture),
 						'T' => d.ToString("HH:mm:ss.fffffff00", System.Globalization.CultureInfo.InvariantCulture),
@@ -426,13 +439,17 @@ public sealed partial class Builtins
 						'+' => d.ToString("yyyy-MM-dd+HH:mm:ss.fffffff00", System.Globalization.CultureInfo.InvariantCulture),
 						'a' => d.ToString("ddd", System.Globalization.CultureInfo.InvariantCulture), 'b' => d.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture),
 						'j' => d.DayOfYear.ToString("D3"),
+						'z' => Zone(ShellClock.Offset(d), 0), 'Z' => ShellClock.Abbrev(d) ?? TimeZoneAbbrev(d),   // were printed literally (2026-10-30)
 						_ => "%" + k + sub,
 						});
 					break;
 					}
-				case '%': sb.Append('%'); break;
-				default: sb.Append('%').Append(k); break;
+				case '%': vb.Append('%'); break;
+				default: vb.Append('%').Append(k); break;
 				}
+			string v = vb.ToString();
+			if (prec >= 0 && v.Length > prec) v = v[..prec];
+			sb.Append(v.Length >= width ? v : left ? v.PadRight(width) : v.PadLeft(width));
 			}
 		return sb.ToString();
 		}
@@ -657,7 +674,7 @@ public sealed partial class Builtins
 
 		// unified format
 		string Stamp(string p) => File.Exists(p)
-			? File.GetLastWriteTime(p).ToString("yyyy-MM-dd HH:mm:ss.fffffff00 ", System.Globalization.CultureInfo.InvariantCulture) + File.GetLastWriteTime(p).ToString("zzz").Replace(":", "")
+			? ShellClock.FullIso(File.GetLastWriteTimeUtc(p))   // in the shell's zone (TZ, 2026-10-30)
 			: "1970-01-01 00:00:00.000000000 +0000";
 		Console.WriteLine(opt.LabelA is { } lblA ? $"--- {lblA}" : $"--- {a}\t{Stamp(pa)}");
 		Console.WriteLine(opt.LabelB is { } lblB ? $"+++ {lblB}" : $"+++ {b}\t{Stamp(pb)}");

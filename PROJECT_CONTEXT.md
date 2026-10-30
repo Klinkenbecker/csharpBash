@@ -92,15 +92,26 @@
 >   the ESDK build timing (esdk-a2's, with its caveats), not the README; (g) `$( )` NULs CLOSED: settled by DECISIONS
 >   rev 72 ("a deliberate divergence from bash, in our favour"), no change. **STATE: (a) rev 509, (b) rev 510, (c)-(g)
 >   rev 511 (one commit, interleaved in Evaluator.cs), DEPLOYED rev 511 (suite 219/0 both modes, battery 217; rollback
->   dist/Bash.exe.rev503; all notified); NEXT: PUBLISH (benchmark: a quiet slot from the peers).**
+>   dist/Bash.exe.rev503; all notified); **PUBLISHED 2026-10-30: GitHub main = git 87a79e3 = hg rev 513, release hg-513
+>   (Bash.exe build 511, SHA-256 checked); the benchmark re-run at 511 (README table updated).** NEXT (bug-fix rule,
+>   the architect 2026-10-30 "wait 10 mins and keep going (bug fixes)"): kes-term-a1's two below: FIXED rev 515,
+>   DEPLOYED rev 515 (suite 221/0 both modes, battery 217; rollback dist/Bash.exe.rev511); NOT published (GitHub at
+>   hg 513). New peer bug reports follow the bug-fix rule (raise + position, ~10 min, then fix).**
+>   **GREENLIT 2026-10-30 (the architect: "Ok, fix it"): TZ.** C#Bash ignored TZ everywhere (date, date -r, ls, stat,
+>   find -printf; %Tz literal). Claude's design, accepted: ONE resolver (glibc's rules: unset = Windows local; UTC, GMT,
+>   UTC0, Etc/UTC = UTC; POSIX `NAME[+-]h[:mm]` = fixed offset, sign WEST; IANA names via TimeZoneInfo; anything else
+>   UTC) used by every time-printing tool, + find's %Tz. **DONE: rev 520 (Evaluator/ShellClock.cs), DEPLOYED rev 520
+>   (suite 222/0 both modes on the AOT build: IANA names resolve there; battery 217; rollback dist/Bash.exe.rev515).**
+>   Not matched (documented): an IANA zone's %Z is numeric (+09). Publishing 515+ still on his word (GitHub at 513).
 >   **RAISED, bug fixes (kes-term-a1, 2026-10-30, verified against GNU; under the "wait 10 mins and keep going" rule,
 >   fixed after the publish):** find -printf ignores widths/flags/precision (`%10s`, `%-6f`, `%.1f`; GNU pads `%05s`
 >   with spaces) and prints the directive literally; ls --time-style honours only full-iso (long-iso, iso, +FORMAT,
 >   posix-, locale ignored; a bad style accepted, GNU: "invalid argument ... for 'time style'", rc 2). Seen, not in it:
 >   ls ignores TZ.
->   NOT done, still AWAITING: m1 FROM PATH
->   (msys runs a no-#! file found on PATH; Claude: no, any extensionless file on PATH would become a command); m3
->   (Claude's position: when a real script needs it). Note: the ESDK CC8051 build now runs on dist/sh.exe
+>   m1 FROM PATH: RULED NO (the architect 2026-10-30: "no, it is easy to fix the files!"): a no-#! file found by a
+>   bare name on PATH is not run; add a #! line to it. Do NOT re-open. m3 (MSYS paths inside `--opt=/f/a`, `-I/f/b`,
+>   `x=/f/c` arguments): RULED DEFERRED (the architect: "concur, wait until demanded"): build it only when a real
+>   script needs it. Note: the ESDK CC8051 build now runs on dist/sh.exe
 >   and dist/Bash.exe (ESDK DECISIONS 13): every deploy changes it; tell esdk-a2 "done". Raised with it, AWAITING: the
 >   Windows cap for an EXTERNAL command's batch (GNU-Linux 131072 > CreateProcess 32767; Git's xargs 24228, MSYS2's
 >   24222), and the misleading "path is over 260 characters" for a too-long command line (rc 126).

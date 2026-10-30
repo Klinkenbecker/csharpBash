@@ -12,11 +12,20 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 514 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 523 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 522 | 2026-10-30 | Publish preparation: benchmark on deployed 520 (results.md), README table/startup/case count, PERFORMANCE figures, DEVELOPING count, FEATURES (TZ), IMPLEMENTATION (ShellClock) |
+| 521 | 2026-10-30 | Deployed rev 520 (TZ; suite 222/0 both modes on the AOT build, IANA names resolve; battery 217); not published |
+| 520 | 2026-10-30 | TZ is read as glibc reads it (UTC/GMT names, empty = UTC, POSIX offsets, IANA zones, unknown = UTC) by date, date -d/-r, touch, ls, stat, find -printf (+%Tz/%TZ) and diff: one resolver, ShellClock |
+| 519 | 2026-10-30 | anchor: GREENLIT TZ (one resolver, glibc rules, every time-printing tool) |
+| 518 | 2026-10-30 | RULED DEFERRED: MSYS paths inside --opt=/x, -I/x, x=/x arguments, until a real script needs them (the architect) |
+| 517 | 2026-10-30 | RULED: a no-#! file found by a bare name on PATH is not run (the architect: fix the files); comments updated, no behaviour change |
+| 516 | 2026-10-30 | Deployed rev 515 (find -printf widths, ls --time-style; suite 221/0 both modes, battery 217); not published |
+| 515 | 2026-10-30 | find -printf takes flags, width and precision for every directive; ls --time-style honours long-iso, iso, +FORMAT, posix- and locale, and refuses a bad style (kes-term-a1) |
+| 514 | 2026-10-30 | PUBLISHED: GitHub main = git 87a79e3 = hg rev 513, release hg-513 (Bash.exe build 511); next: find -printf widths, ls --time-style |
 | 513 | 2026-10-30 | Publish preparation: benchmark on deployed 511 (results.md), README table/startup/case count, PERFORMANCE figures, DEVELOPING count, ARCHITECTURE (xargs streams) |
 | 512 | 2026-10-30 | Deployed rev 511 ((a)-(g); suite 219/0 both modes, battery 217); raised: find -printf widths, ls --time-style (kes-term-a1) |
 | 511 | 2026-10-30 | (c) a no-#! text file run by path runs as a script (binary: Exec format error); (d) /bin/NAME and /usr/bin/NAME run NAME when the drive has no such folder; (e) xargs fits an external batch to Windows' 32767 command line, and a too-long line is Argument list too long; (f) the ESDK build timing in PERFORMANCE.md; (g) $( ) NULs closed as settled |

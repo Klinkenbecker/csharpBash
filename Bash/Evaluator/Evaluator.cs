@@ -2135,7 +2135,7 @@ public sealed class Evaluator
 		// A file named BY PATH that is not a Windows program runs as a shell script: bash's fallback for an executable
 		// with no #! (ENOEXEC), and msys's; binary content (a NUL before the first newline in its first 80 bytes, bash's
 		// test) is refused instead. It was "Permission denied" (2026-10-30, esdk-a2: an msys build's no-#! script). A
-		// bare name found on PATH is not run so (AWAITING the architect: msys does).
+		// bare name found on PATH is not run so, though msys does (ruled 2026-10-30: add a #! line to the file).
 		if (!hasShebang && !isShExt && (!byPath || IsProgramFile(p) || (binary = LooksBinary(p)))) return false;
 
 		path    = p;

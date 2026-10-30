@@ -12,7 +12,7 @@ The pipeline and the four design documents: [the README's Architecture section](
 ```sh
 dotnet build -c Release            # builds Bash.sln (.NET 8 SDK)
 Bash/bin/Release/net8.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-pwsh tests/run-tests.ps1           # 227 self-checking cases (three need the Native AOT build: -Interpreter <exe>)
+pwsh tests/run-tests.ps1           # 230 self-checking cases (three need the Native AOT build: -Interpreter <exe>)
 pwsh tests/compat/run-compat.ps1   # 237-probe differential battery against WSL's GNU bash
 ```
 

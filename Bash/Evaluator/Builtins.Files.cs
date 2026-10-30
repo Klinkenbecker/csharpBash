@@ -147,6 +147,8 @@ public sealed partial class Builtins
 			}
 		if (o.Operands.Count == 0) { Console.Error.WriteLine("touch: missing file operand"); return 1; }
 		int rc = 0;
+		// -d and -t name a time in the shell's zone (TZ, 2026-10-30): set as UTC so `TZ=UTC touch -d` means UTC
+		var whenUtc = ShellClock.ToUtc(when);
 		foreach (var f in o.Operands)
 			{
 			try
@@ -154,18 +156,18 @@ public sealed partial class Builtins
 				var p = P(f);
 				if (File.Exists(p))
 					{
-					if (mtime) File.SetLastWriteTime(p, when);
-					if (atime) File.SetLastAccessTime(p, when);
+					if (mtime) File.SetLastWriteTimeUtc(p, whenUtc);
+					if (atime) File.SetLastAccessTimeUtc(p, whenUtc);
 					}
 				else if (Directory.Exists(p))
 					{
-					if (mtime) Directory.SetLastWriteTime(p, when);
-					if (atime) Directory.SetLastAccessTime(p, when);
+					if (mtime) Directory.SetLastWriteTimeUtc(p, whenUtc);
+					if (atime) Directory.SetLastAccessTimeUtc(p, whenUtc);
 					}
 				else if (!noCreate)
 					{
 					File.Create(p).Dispose();
-					if (o.Get('d') is not null || o.Get('t') is not null || o.Get('r') is not null) File.SetLastWriteTime(p, when);
+					if (o.Get('d') is not null || o.Get('t') is not null || o.Get('r') is not null) File.SetLastWriteTimeUtc(p, whenUtc);
 					}
 				}
 			catch (Exception ex) { Console.Error.WriteLine($"touch: cannot touch '{f}': {IoError(ex)}"); rc = 1; }
@@ -467,7 +469,20 @@ public sealed partial class Builtins
 		     inode = o.Has('i'), blocks = o.Has('s'), byExt = o.Has('X'), byVersion = o.Has('v'), noSort = o.Has('U') || o.GetLong("sort") == "none";
 		if (o.GetLong("sort") is string sk) { if (sk == "time") byTime = true; else if (sk == "size") bySize = true; else if (sk == "extension") byExt = true; else if (sk == "version") byVersion = true; }
 		if (o.Has('m') || o.Has('x') || o.Has('C')) throw new UnsupportedOptionException("ls", o.Has('m') ? "-m" : o.Has('x') ? "-x" : "-C", "column output is not implemented (output is one entry per line)");
-		bool fullTime = o.HasLong("full-time") || o.GetLong("time-style") == "full-iso";
+		// --time-style as GNU's: full-iso, long-iso, iso, locale, +FORMAT (with a newline: old files' format, then recent
+		// ones'), each with an optional posix- that means the default under the C/POSIX locale; anything else refused, 2.
+		// Only full-iso was honoured, the rest silently ignored (2026-10-30, kes-term-a1)
+		string? timeStyle = o.HasLong("full-time") ? "full-iso" : o.GetLong("time-style");
+		if (timeStyle is not null)
+			{
+			if (timeStyle.StartsWith("posix-", StringComparison.Ordinal)) timeStyle = PosixTimeLocale() ? "locale" : timeStyle[6..];
+			if (timeStyle is not ("full-iso" or "long-iso" or "iso" or "locale") && !timeStyle.StartsWith('+'))
+				{
+				Console.Error.WriteLine($"ls: invalid argument '{timeStyle}' for 'time style'\nValid arguments are:\n  - [posix-]full-iso\n  - [posix-]long-iso\n  - [posix-]iso\n  - [posix-]locale\n  - +FORMAT (e.g., +%H:%M) for a 'date'-style format\nTry 'ls --help' for more information.");
+				return 2;
+				}
+			if (timeStyle == "locale") timeStyle = null;
+			}
 		var ignorePats = o.All('I').ToList();
 		var operands = o.Operands.Count == 0 ? ["."] : o.Operands;
 
@@ -534,7 +549,7 @@ public sealed partial class Builtins
 				var sb = new StringBuilder();
 				if (inode) sb.Append("0 ");
 				if (blocks) sb.Append(((info is FileInfo f0 ? (f0.Length + 1023) / 1024 : 0)).ToString().PadLeft(4)).Append(' ');
-				if (longFmt) sb.Append(LongLine(info, human, noGroup, fullTime)).Append(' ');
+				if (longFmt) sb.Append(LongLine(info, human, noGroup, timeStyle)).Append(' ');
 				sb.Append(Name(display, info));
 				if (longFmt && info.LinkTarget is string lt) sb.Append(" -> ").Append(lt);
 				Console.WriteLine(sb.ToString());
@@ -593,15 +608,36 @@ public sealed partial class Builtins
 		return (link ? "l" : dir ? "d" : "-") + perm + perm + perm;
 		}
 
-	private static string LongLine(FileSystemInfo info, bool human, bool noGroup, bool fullTime)
+	/// <summary>GNU's posix- prefix: the default format when the time locale is C/POSIX (LC_ALL, LC_TIME, LANG; none set is
+	/// POSIX, how Claude Code runs the shell).</summary>
+	private static bool PosixTimeLocale()
+		{
+		foreach (var n in new[] { "LC_ALL", "LC_TIME", "LANG" })
+			{
+			var v = ShellEnvironment.Active?.Get(n) ?? Environment.GetEnvironmentVariable(n);
+			if (!string.IsNullOrEmpty(v)) return v is "C" or "POSIX";
+			}
+		return true;
+		}
+
+	/// <param name="timeStyle">null: the default; "full-iso", "long-iso", "iso", or "+FORMAT" (see Ls).</param>
+	private static string LongLine(FileSystemInfo info, bool human, bool noGroup, string? timeStyle)
 		{
 		long size = info is FileInfo fi ? fi.Length : 0;
-		var mtime = info.LastWriteTime;
-		string when = fullTime
-			? mtime.ToString("yyyy-MM-dd HH:mm:ss.fffffff00 ", System.Globalization.CultureInfo.InvariantCulture) + mtime.ToString("zzz").Replace(":", "")
-			: (DateTime.Now - mtime).TotalDays < 183 && mtime <= DateTime.Now.AddHours(1)
-				? mtime.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture) + " " + mtime.Day.ToString().PadLeft(2) + " " + mtime.ToString("HH:mm")
-				: mtime.ToString("MMM", System.Globalization.CultureInfo.InvariantCulture) + " " + mtime.Day.ToString().PadLeft(2) + "  " + mtime.ToString("yyyy");
+		var mtime = ShellClock.ToShell(info.LastWriteTimeUtc);   // in the shell's zone (TZ, 2026-10-30)
+		var now = ShellClock.Now;
+		bool recent = (now - mtime).TotalDays < 183 && mtime <= now.AddHours(1);
+		var inv = System.Globalization.CultureInfo.InvariantCulture;
+		string when = timeStyle switch
+			{
+			"full-iso" => ShellClock.FullIso(info.LastWriteTimeUtc),
+			"long-iso" => mtime.ToString("yyyy-MM-dd HH:mm", inv),
+			"iso"      => recent ? mtime.ToString("MM-dd HH:mm", inv) : mtime.ToString("yyyy-MM-dd ", inv),
+			['+', ..]  => Strftime(timeStyle.IndexOf('\n') is int nl and >= 0 ? (recent ? timeStyle[(nl + 1)..] : timeStyle[1..nl]) : timeStyle[1..], mtime, false),
+			_ => recent
+				? mtime.ToString("MMM", inv) + " " + mtime.Day.ToString().PadLeft(2) + " " + mtime.ToString("HH:mm")
+				: mtime.ToString("MMM", inv) + " " + mtime.Day.ToString().PadLeft(2) + "  " + mtime.ToString("yyyy"),
+			};
 		string owner = Environment.UserName;
 		string group = noGroup ? "" : " " + (OperatingSystem.IsWindows() ? "None" : "users");
 		string sizeStr = (human ? Human1024(size) : size.ToString()).PadLeft(human ? 4 : 5);
@@ -800,7 +836,7 @@ public sealed partial class Builtins
 			string type = device ? "character special file" : info!.LinkTarget is not null ? "symbolic link" : dir ? "directory" : size == 0 ? "regular empty file" : "regular file";
 			var boot = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);   // a device's times: boot, as on Linux
 			var mt = info?.LastWriteTime ?? boot; var at = info?.LastAccessTime ?? boot; var ct = info?.CreationTime ?? boot;
-			string Iso(DateTime d) => d.ToString("yyyy-MM-dd HH:mm:ss.fffffff00 ", System.Globalization.CultureInfo.InvariantCulture) + d.ToString("zzz").Replace(":", "");
+			string Iso(DateTime d) => ShellClock.FullIso(d);   // in the shell's zone (TZ, 2026-10-30)
 			if (o.Has('t')) fmt ??= "%n %s %b %f %u %g %D %i %h %t %T %X %Y %Z %W %o %C";
 			if (fmt is null)
 				{

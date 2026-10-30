@@ -10145,3 +10145,97 @@ not ours [not investigated].
 208 at rev 482 was the same count); docs/DEVELOPING (227, three need AOT); docs/PERFORMANCE (the run's date and rev,
 8.8-13.7x, "about a third" of Git Bash's startup: "under a third" no longer held); ARCHITECTURE (xargs no longer holds
 its input). IMPLEMENTATION: nothing stale found (xargs, RunCommand, Find rows checked).
+
+## 2026-10-30 -- PUBLISHED: GitHub main = git 87a79e3 = hg rev 513; release hg-513 (Bash.exe build 511)
+**Status:** Record. GREENLIT "yes fix, publish, do". `bash tools/publish.sh <message> <token-file>`: tree clean, the
+benchmark of deployed 511 found in results.md, MERCURIAL_HISTORY.md (514 changesets) and mercurial-history.hg
+(verified), 017986f..87a79e3 pushed; release hg-513 created, Bash.exe (build 511) and Bash.exe.sha256 uploaded and
+downloaded back: SHA-256 70327f73...d60d matches. Not published (untracked in hg, the architect's): BENCHMARK-PROVENANCE.md,
+"The Windows Shell Tax.url". No installer yet (phase 3 blocked on INST-Q-046).
+
+## 2026-10-30 -- FIXED (kes-term-a1's two): find -printf widths, flags and precision; ls --time-style as GNU's
+**Status:** Active. kes-term-a1's report; raised with a position, then built under the bug-fix rule (the architect:
+"wait 10 mins and keep going (bug fixes)"), after the rev-513 publish.
+**find -printf (GNU findutils 4.8):** flags, a width and a precision may come before any directive: the text is cut
+to the precision, then padded with spaces (`%05s` too), on the right under `-` (`[%10s]` `[         1]`, `[%-6f]`
+`[f     ]`, `[%.3f]` `[lon]`, `[%.0f]` empty). Was: the directive printed literally. Fix: FindPrintf parses the field
+spec, builds each directive into its own buffer, then cuts and pads.
+**ls --time-style (GNU coreutils 8.32):** full-iso, long-iso (`2026-10-30 11:05`), iso (recent `10-30 11:05`; old the
+date and a space), locale (the default), +FORMAT (the `date` formatter; with a newline, old files' format then recent
+ones'), each with an optional posix- (the default when LC_ALL/LC_TIME/LANG is C, POSIX or unset: how Claude Code runs
+the shell); anything else "invalid argument 'X' for 'time style'" with the valid list, 2. Was: only full-iso (and
+--full-time) honoured, everything else silently the default (kes-term-a1's awk then took the wrong columns). Fix:
+LongLine takes the resolved style; `PosixTimeLocale` reads the shell's variables. Not done: TIME_STYLE in the
+environment; ls ignores TZ (local time always; seen, raised).
+**Tests:** `find_printf_width_gnu` (`%k` left out: WSL's file system allocates 4 KiB, a disk fact, not this bug): 3
+red on 511; `ls_time_style_gnu` (shapes: digits N, zone ZONE): 17 red on 511. Mutations (built): no width 3, no
+precision 2, no `-` 3; iso as the default 2, posix- ignored 2, a bad style accepted 9.
+Suite 218 passed, 0 failed, both modes.
+**Implemented by:** rev 515. Files: `Bash/Evaluator/Builtins.Find.cs`, `Bash/Evaluator/Builtins.Files.cs`,
+`tests/cases/{find_printf_width_gnu,ls_time_style_gnu}.sh`, their expected, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- DEPLOYED rev 515 (find -printf widths, ls --time-style): suite 221/0 both modes, battery 217
+**Status:** Record. Slot: koliada-net-73, koliada-net-forms-cb, kes-term-a1, esdk-a2 all said go. `bash tools/deploy.sh`:
+`1.0.0+hg.455ac957211d 515` over 511, Bash.exe and sh.exe; suite 221 passed, 0 failed, both modes; battery 217/237;
+rollback dist/Bash.exe.rev511, dist/sh.exe.rev511. Live check: `[%10s][%-6f]` gives `[         1][f     ]`; long-iso
+`2026-10-30 11:38`; `+%Y-%m-%d` `2026-10-30`; bogus refused. All four notified; kes-term-a1 re-runs its repros. Not
+published (publish on the architect's word; GitHub is at hg 513).
+
+## 2026-10-30 -- RULED: a file with no #! found by a bare name on PATH is NOT run (fix the file instead)
+**Status:** Active, ruled. The architect, on the question left open by (c) m1 ("whether to run a no-#! file found by
+bare name on PATH, as msys does"): "no, it is easy to fix the files!" Claude's position was the same (any
+extensionless file on PATH would become a command, and could shadow a real program later on PATH).
+**So:** a no-#! text file runs only when named by its path (rev 511, bash's and msys's ENOEXEC fallback); found on
+PATH by a bare name it stays not runnable, as today. The remedy for such a script is a `#!/bin/bash` (or `#!/bin/sh`)
+first line, which C#Bash runs in-process. msys differs here, on purpose. Comments updated (Evaluator.cs
+TryResolveScriptFile, tests/cases/script_noshebang_gnu.sh); no behaviour change. Do not re-open.
+
+## 2026-10-30 -- RULED DEFERRED: MSYS paths inside arguments (`--opt=/f/a`, `-I/f/b`, `x=/f/c`) until a script needs them
+**Status:** Active, ruled. esdk-a2's m3: C#Bash converts a bare MSYS-rooted argument for a native program (`/e/x` to
+`E:/x`), not one inside `--opt=`, `-I` or `x=` (msys 1.0 converts all three, measured). Claude's position: when a real
+script needs it (the ESDK script passes bare paths; false conversions are the risk). The architect: "concur, wait
+until demanded". Revisit when a real script fails for it.
+
+## 2026-10-30 -- FIXED: TZ is read as glibc reads it, by every tool that prints or parses a time (ShellClock)
+**Status:** Active. The architect: "Ok, fix it", on Claude's position (fix, one resolver; not "leave", which writes
+wrong timestamps silently, nor "hard error", which breaks correct scripts).
+**Was (515):** TZ ignored everywhere (`TZ=UTC` and `TZ=Asia/Tokyo` changed nothing for date, date -r, ls, stat, find
+-printf); find's %Tz printed literally. `TZ=UTC date +%Y%m%dT%H%M%SZ` stamped local time with a Z.
+**glibc (WSL, a fixed epoch, measured):** unset: the machine's zone; set but empty: UTC; UTC, UTC0, Etc/UTC: UTC
+"UTC"; GMT: UTC "GMT"; an unknown name: UTC under its leading letters (`Foo/Bar`: Foo); POSIX `EST5` -0500 EST,
+`UTC+3` -0300 (the sign WEST), `<+0530>-5:30` +0530; `EST5EDT`, `CET-1CEST`, IANA names: their zone's rules (in
+November EST, CET); IANA abbreviations from tzdata (JST).
+**Fix:** `Evaluator/ShellClock.cs`: one resolver (cached per TZ value, per thread) and ToShell / ToUtc / Offset /
+Abbrev / FullIso / Now. Used by date (now, -r, Strftime's %z and %Z), GnuDate (now, @epoch, explicit zones, a parsed
+time's kind: Local only when TZ is unset, else a wall time in the zone), touch (-d/-t set as UTC from the zone), ls
+(the time column, "recent", full-iso), stat (%x %y %z and the default), find (-printf %T/%A, %@ from true UTC, new
+%Tz/%TZ; -newermt compared in UTC), diff -u's headers. Order: UTC/GMT names, an IANA/Windows id (TimeZoneInfo; covers
+EST5EDT), a POSIX form (a DST part through the IANA zone of its standard name, else a fixed offset), else UTC. TZ
+unset is the old path exactly (Windows local, Kind Local).
+**Not matched (documented):** an IANA zone's %Z is numeric (`+09`): .NET has no zone abbreviations; a POSIX DST rule
+given inline (`,M3.2.0,M11.1.0`) is not parsed (its zone's rules come from the standard name's IANA zone, if any).
+If ICU is missing, an IANA-looking name gets one warning and UTC, never silently local.
+**Test:** `tz_gnu` (expected = GNU via WSL, LC_ALL=C; a fixed epoch, so the machine's zone never shows): 22 red on
+515; green; mutations (built): TZ ignored 22, the POSIX sign 5, an unknown name's letters 1, touch read as local 7, a
+parsed time as local 7, Strftime's offset local 17.
+Suite 219 passed, 0 failed, both modes (TZ unset: nothing else changed).
+**Implemented by:** rev 520. Files: `Bash/Evaluator/ShellClock.cs` (new), `Builtins.Sys.cs`, `GnuDate.cs`,
+`Builtins.Files.cs`, `Builtins.Find.cs`, `tests/cases/tz_gnu.sh`, `tests/expected/tz_gnu.out`, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- DEPLOYED rev 520 (TZ): suite 222/0 both modes on the AOT build (IANA names resolve there), battery 217
+**Status:** Record. Slot: koliada-net-73, esdk-a2, kes-term-a1, koliada-net-forms-cb all said go. `bash tools/deploy.sh`:
+`1.0.0+hg.0aba68e3e960 520` over 515; suite 222 passed, 0 failed, both modes on the staged Native AOT build, so tz_gnu's
+IANA rows (Asia/Tokyo, Europe/London, America/New_York, EST5EDT) resolve in the shipped build (ICU present); battery
+217/237; rollback dist/Bash.exe.rev515, dist/sh.exe.rev515. Live: local -0800; TZ=UTC 22:13:20 +0000 UTC; Asia/Tokyo
+07:13:20 +0900 +09; UTC+3 19:13:20 -0300 UTC. All four notified. Not published (GitHub at hg 513).
+
+## 2026-10-30 -- Publish preparation (second): benchmark on deployed 520; doc review
+**Status:** Record. The architect: "Nice; publish =:)". Quiet slot: esdk-a2, koliada-net-73, kes-term-a1,
+koliada-net-forms-cb said go; all told "benchmark done".
+**Benchmark** (`F:/Tools/PortableGit/bin/bash.exe tests/bench/compare3.sh`, dist = build 520, 2026-10-30 12:05):
+loop 0.154 (9.7x Git, 2.6x WSL), arith 0.246 (8.4x, 2.5x), func 0.210 (11.0x, 2.7x), loop_big 1.437 (13.4x, 2.4x),
+coreutils 0.054 (268x, 15.2x), pipeline 0.081 (3.0x, 1.5x), find 0.015 (8.6x, 13.4x), startup 8.4 ms (Git 22.8, WSL
+101.6: 2.7x, 12.1x); every output identical. Within noise of the 511 run (arith +4.7 %, the largest move).
+**Doc review:** README table, startup line, case count 230 (registered; three AOT-only); docs/DEVELOPING 230;
+docs/PERFORMANCE (rev 520, 8.4-13.4x, 8.4 against 22.8 ms); docs/FEATURES (`TZ` on the `date` line); IMPLEMENTATION
+(the `ShellClock.cs` row). ARCHITECTURE: nothing stale found for this run's changes.
