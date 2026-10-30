@@ -1,0 +1,22 @@
+--- hash -p a program for diff
+stand-in standin: l r
+rc=0
+--- hash -t
+PWD/standin
+--- a function still wins
+function diff
+--- the hash again
+stand-in standin: l r
+--- hash -d: the tool again
+1c1
+< a
+---
+> b
+rc=1
+--- bash's own builtins ignore it
+builtin echo
+builtin printf
+--- hash -r: the tool again
+stand-in standin: 
+a
+b

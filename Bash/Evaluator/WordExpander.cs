@@ -1337,11 +1337,24 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	/// resolves (and can assign) them through <see cref="IArithVars"/>.</summary>
 	private string ExpandVarsInArith(string expr)
 		{
-		if (!expr.Contains('$')) return expr;
+		if (!expr.Contains('$') && !expr.Contains('`')) return expr;
 		var sb = new System.Text.StringBuilder();
 		int i = 0;
 		while (i < expr.Length)
 			{
+			if (expr[i] == '`')
+				{
+				// `cmd` inside arithmetic: run it and splice the output, as $( ) is (bash expands both before the
+				// arithmetic). `${d:0:`expr index "$d" "#"`-1}` was "Unexpected '`' in arithmetic expression"
+				// (2026-10-30, esdk-a2: four ESDK SDK helper scripts)
+				int end = Lexer.Lexer.ConstructEnd(expr, i);
+				var body = BacktickBody(end < 0 ? expr[(i + 1)..] : expr[(i + 1)..(end - 1)]);
+				i = end < 0 ? expr.Length : end;
+				var ast = new Parser.Parser(new Lexer.Lexer(body).Tokenize(), body).Parse();
+				var v = RunSubstitution(ast);
+				sb.Append(v.Length == 0 ? "0" : v);
+				continue;
+				}
 			if (expr[i] == '$' && i + 1 < expr.Length)
 				{
 				// where each construct ends: Lexer.ConstructEnd, the one matcher (unclosed: to the end)
@@ -1384,6 +1397,20 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				}
 			else
 				sb.Append(expr[i++]);
+			}
+		return sb.ToString();
+		}
+
+	/// <summary>A backtick substitution's text as bash reads it: a backslash before `$`, a backtick or a backslash is
+	/// dropped; any other stays.</summary>
+	private static string BacktickBody(string s)
+		{
+		if (s.IndexOf('\\') < 0) return s;
+		var sb = new System.Text.StringBuilder(s.Length);
+		for (int k = 0; k < s.Length; k++)
+			{
+			if (s[k] == '\\' && k + 1 < s.Length && s[k + 1] is '$' or '`' or '\\') { sb.Append(s[++k]); continue; }
+			sb.Append(s[k]);
 			}
 		return sb.ToString();
 		}

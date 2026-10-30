@@ -12,11 +12,22 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 523 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 534 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 533 | 2026-10-30 | Deployed rev 532 (diff -y; suite 225/0 both modes, battery 217); publish preparation: benchmark on 532, README table/startup/case count, PERFORMANCE, DEVELOPING |
+| 532 | 2026-10-30 | diff -y (side-by-side) as GNU's layout: -W/--width, --suppress-common-lines, --left-column, -t; it was refused (esdk-a2; the architect: fix it, then publish) |
+| 531 | 2026-10-30 | anchor: GREENLIT diff -y, then publish (the architect) |
+| 530 | 2026-10-30 | Deployed rev 529 (hash -p obeyed; suite 224/0 both modes, battery 217); not published |
+| 529 | 2026-10-30 | An explicit hash -p PATH NAME runs PATH even where C#Bash has NAME in-process (bash builtins excepted, functions win), in pipeline stages too; a subshell keeps the hash table (esdk-a2; a known LOW defect) |
+| 528 | 2026-10-30 | anchor: RAISED hash -p not obeyed for embedded tools (esdk-a2; a known LOW defect); fix after ~10 min under the bug-fix rule |
+| 527 | 2026-10-30 | anchor: esdk-a2 confirmed rev 525; AWAITING the architect: diff -y (side-by-side), a feature request |
+| 526 | 2026-10-30 | Deployed rev 525 (backticks in arithmetic; suite 223/0 both modes, battery 217); not published |
+| 525 | 2026-10-30 | A backtick substitution inside arithmetic (substring offset/length, $(( )), (( )), array index) runs before the arithmetic, as $( ) and bash (esdk-a2: four ESDK SDK helper scripts) |
+| 524 | 2026-10-30 | anchor: RAISED backticks in arithmetic (esdk-a2, verified against GNU); fix after ~10 min under the bug-fix rule |
+| 523 | 2026-10-30 | PUBLISHED: GitHub main = git 2559b1c = hg rev 522, release hg-522 (Bash.exe build 520) |
 | 522 | 2026-10-30 | Publish preparation: benchmark on deployed 520 (results.md), README table/startup/case count, PERFORMANCE figures, DEVELOPING count, FEATURES (TZ), IMPLEMENTATION (ShellClock) |
 | 521 | 2026-10-30 | Deployed rev 520 (TZ; suite 222/0 both modes on the AOT build, IANA names resolve; battery 217); not published |
 | 520 | 2026-10-30 | TZ is read as glibc reads it (UTC/GMT names, empty = UTC, POSIX offsets, IANA zones, unknown = UTC) by date, date -d/-r, touch, ls, stat, find -printf (+%Tz/%TZ) and diff: one resolver, ShellClock |

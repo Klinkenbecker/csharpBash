@@ -460,11 +460,11 @@ public sealed partial class Builtins
 
 	private static int Diff(List<string> args)
 		{
-		var o = Opts.Parse("diff", args, "uU:qsiwbBrNaC:cyx:tTZ",
+		var o = Opts.Parse("diff", args, "uU:qsiwbBrNaC:cyx:tTZW:",
 			["unified:u", "unified=:U", "brief:q", "report-identical-files:s", "ignore-case:i", "ignore-all-space:w", "ignore-space-change:b",
 			 "ignore-blank-lines:B", "recursive:r", "new-file:N", "text:a", "context:c", "context=:C", "side-by-side:y", "exclude=:x",
-			 "expand-tabs:t", "initial-tab:T", "ignore-trailing-space:Z", "strip-trailing-cr", "color", "color=", "no-dereference", "minimal", "speed-large-files", "label="]);
-		if (o.Has('y')) throw new UnsupportedOptionException("diff", "-y", "side-by-side output is not implemented");
+			 "expand-tabs:t", "initial-tab:T", "ignore-trailing-space:Z", "strip-trailing-cr", "color", "color=", "no-dereference", "minimal", "speed-large-files", "label=",
+			 "width=:W", "suppress-common-lines", "left-column"]);
 		if (o.Has('c') || o.Has('C')) throw new UnsupportedOptionException("diff", "-c", "context format is not implemented (use -u)");
 		if (o.Operands.Count < 2) { Console.Error.WriteLine(o.Operands.Count == 0 ? "diff: missing operand" : $"diff: missing operand after '{o.Operands[0]}'"); return 2; }
 		bool unified = o.Has('u') || o.Has('U');
@@ -475,6 +475,9 @@ public sealed partial class Builtins
 			IgnoreAllSpace = o.Has('w'), IgnoreSpaceChange = o.Has('b'), IgnoreBlankLines = o.Has('B'), Recursive = o.Has('r'),
 			NewFile = o.Has('N'), Text = o.Has('a'), StripCr = o.HasLong("strip-trailing-cr"), Excludes = o.All('x').ToList(),
 			IgnoreTrailingSpace = o.Has('Z'),
+			// -y as GNU's (2026-10-30, esdk-a2: it was refused, so `r=\`diff -y A B | grep ...\`` was always empty)
+			SideBySide = o.Has('y'), Width = o.Int('W', 130, 1, (v, p) => $"diff: invalid width '{v}'\ndiff: Try 'diff --help' for more information."),
+			ExpandTabs = o.Has('t'), SuppressCommon = o.HasLong("suppress-common-lines"), LeftColumn = o.HasLong("left-column"),
 			};
 		// --label names the old file (first) and the new one (second) in the headers, with no timestamp (GNU);
 		// accepted and ignored until 2026-10-12, so a patch made with it named the real files
@@ -503,6 +506,8 @@ public sealed partial class Builtins
 	private sealed class DiffOptions
 		{
 		public bool Unified, Brief, ReportIdentical, IgnoreCase, IgnoreAllSpace, IgnoreSpaceChange, IgnoreBlankLines, Recursive, NewFile, Text, StripCr, IgnoreTrailingSpace;
+		public bool SideBySide, ExpandTabs, SuppressCommon, LeftColumn;
+		public int Width = 130;
 		public string? LabelA, LabelB;
 		public int Context = 3;
 		public List<string> Excludes = [];
@@ -571,6 +576,101 @@ public sealed partial class Builtins
 		return rc;
 		}
 
+	private static bool EndsWithoutNewline(string p)
+		{
+		try
+			{
+			using var fs = ShellFile.OpenRead(p);
+			if (fs.Length == 0) return false;
+			fs.Seek(-1, SeekOrigin.End);
+			return fs.ReadByte() != '\n';
+			}
+		catch { return false; }
+		}
+
+	/// <summary>`diff -y`, GNU's layout (diffutils side.c): each half is `hw` columns, the right one starts at `c2o`, the
+	/// mark (`|` changed, `<` only left, `>` only right; `\`/`/` a changed pair where one line has no newline; `(` a common
+	/// line under --left-column) at the gutter's middle; padding is tabs while a tab stop fits, then spaces (spaces only
+	/// under -t). Width 130: hw 61, c2o 64, the mark at column 62. A change run's lines pair up first, then its remaining
+	/// insertions (`>`), then its remaining deletions (`<`), as GNU.</summary>
+	private static void DiffSideBySide(string[] la, string[] lb, List<(char op, int ai, int bi)> ops, DiffOptions opt, bool aNoEol, bool bNoEol)
+		{
+		const int TabSize = 8;
+		int t = opt.ExpandTabs ? 1 : TabSize;
+		int off = (opt.Width + t + 3) / (2 * t) * t;
+		int hw = Math.Max(0, Math.Min(off - 3, opt.Width - off));
+		int c2o = hw > 0 ? off : opt.Width;
+		var sb = new StringBuilder();
+		int To(int from, int to)
+			{
+			if (!opt.ExpandTabs)
+				for (int tab = from + TabSize - from % TabSize; tab <= to; tab += TabSize) { sb.Append('\t'); from = tab; }
+			while (from < to) { sb.Append(' '); from++; }
+			return to;
+			}
+		int Half(string line)
+			{
+			int inPos = 0, outPos = 0;
+			foreach (char ch in line)
+				{
+				if (ch == '\t')
+					{
+					int spaces = TabSize - inPos % TabSize;
+					if (inPos == outPos)
+						{
+						int stop = outPos + spaces;
+						if (opt.ExpandTabs) { if (hw < stop) stop = hw; while (outPos < stop) { sb.Append(' '); outPos++; } }
+						else if (stop < hw) { outPos = stop; sb.Append('\t'); }
+						}
+					inPos += spaces;
+					continue;
+					}
+				if (inPos < hw) { sb.Append(ch); outPos = inPos + 1; }
+				inPos++;
+				}
+			return outPos;
+			}
+		void Line(string? left, bool leftNl, char sep, string? right, bool rightNl)
+			{
+			int col = 0;
+			bool newline = false;
+			if (left is not null) { newline |= leftNl; col = Half(left); }
+			if (sep != ' ')
+				{
+				col = To(col, (hw + c2o - 1) / 2) + 1;
+				if (sep == '|' && newline != rightNl) sep = newline ? '/' : '\\';
+				sb.Append(sep);
+				}
+			if (right is not null)
+				{
+				newline |= rightNl;
+				if (right.Length > 0) { col = To(col, c2o); Half(right); }
+				}
+			if (newline) sb.Append('\n');
+			}
+		bool LeftNl(int i) => !(aNoEol && i == la.Length - 1);
+		bool RightNl(int j) => !(bNoEol && j == lb.Length - 1);
+		int k = 0;
+		while (k < ops.Count)
+			{
+			if (ops[k].op == ' ')
+				{
+				var (_, ai, bi) = ops[k++];
+				if (opt.SuppressCommon) continue;
+				if (opt.LeftColumn) Line(la[ai], LeftNl(ai), '(', null, false);
+				else Line(la[ai], LeftNl(ai), ' ', lb[bi], RightNl(bi));
+				continue;
+				}
+			var dels = new List<int>(); var ins = new List<int>();
+			while (k < ops.Count && ops[k].op != ' ') { if (ops[k].op == '-') dels.Add(ops[k].ai); else ins.Add(ops[k].bi); k++; }
+			int pairs = Math.Min(dels.Count, ins.Count);
+			for (int p = 0; p < pairs; p++) Line(la[dels[p]], LeftNl(dels[p]), '|', lb[ins[p]], RightNl(ins[p]));
+			for (int p = pairs; p < ins.Count; p++) Line(null, false, '>', lb[ins[p]], RightNl(ins[p]));
+			for (int p = pairs; p < dels.Count; p++) Line(la[dels[p]], LeftNl(dels[p]), '<', null, false);
+			}
+		Console.Write(sb.ToString());
+		}
+
 	private static string[] DiffReadLines(string p, DiffOptions opt, out bool binary)
 		{
 		binary = false;
@@ -628,6 +728,8 @@ public sealed partial class Builtins
 		if (opt.IgnoreBlankLines)
 			ops = ops.Select(o2 => o2.op == '-' && Blank(la[o2.ai]) ? (' ', o2.ai, o2.bi) : o2.op == '+' && Blank(lb[o2.bi]) ? (' ', o2.ai, o2.bi) : o2).ToList();
 		bool differ = ops.Any(o2 => o2.op != ' ');
+		// side by side prints every line, the same ones too (GNU: identical files print in full, status 0)
+		if (opt.SideBySide) { DiffSideBySide(la, lb, ops, opt, EndsWithoutNewline(pa), EndsWithoutNewline(pb)); return differ ? 1 : 0; }
 		if (!differ)
 			{
 			if (opt.ReportIdentical) Console.WriteLine($"Files {a} and {b} are identical");

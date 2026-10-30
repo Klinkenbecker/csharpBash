@@ -10239,3 +10239,105 @@ coreutils 0.054 (268x, 15.2x), pipeline 0.081 (3.0x, 1.5x), find 0.015 (8.6x, 13
 **Doc review:** README table, startup line, case count 230 (registered; three AOT-only); docs/DEVELOPING 230;
 docs/PERFORMANCE (rev 520, 8.4-13.4x, 8.4 against 22.8 ms); docs/FEATURES (`TZ` on the `date` line); IMPLEMENTATION
 (the `ShellClock.cs` row). ARCHITECTURE: nothing stale found for this run's changes.
+
+## 2026-10-30 -- PUBLISHED: GitHub main = git 2559b1c = hg rev 522; release hg-522 (Bash.exe build 520)
+**Status:** Record. The architect: "Nice; publish =:)". `bash tools/publish.sh`: the benchmark of deployed 520 found;
+MERCURIAL_HISTORY.md (523 changesets) and mercurial-history.hg verified; 87a79e3..2559b1c pushed; release hg-522,
+Bash.exe (build 520) and its .sha256 uploaded and downloaded back: SHA-256 7362c904...15aa98 matches. Not published
+(untracked, the architect's): BENCHMARK-PROVENANCE.md, "The Windows Shell Tax.url". Contents since 513: TZ (ShellClock),
+find -printf widths, ls --time-style, the two rulings, the 520 benchmark.
+
+## 2026-10-30 -- FIXED: a backtick substitution inside arithmetic runs before it, as `$( )` (esdk-a2)
+**Status:** Active. esdk-a2's report; raised with a position, the architect: "go".
+**GNU bash 5.1 (WSL):** command substitutions of both forms in an arithmetic text are run before the arithmetic:
+`${d:0:\`expr index "$d" "#"\`-1}` is `E:/x`; `$(( \`echo 3\` + 4 ))` 7; also a substring's offset and length,
+(( )), an array index; the backtick body's escapes (`\$` keeps a `$`).
+**Was (520):** WordExpander.ExpandVarsInArith expanded `${`, `$((`, `$(` and `$name` only (and returned at once when
+the text held no `$`), so a backtick reached ArithParser: "Unexpected '`' in arithmetic expression". Four ESDK SDK
+helper scripts (sdkName, sdkRev, sdkVersion line 18, sdkDir line 41: `dir=${dir:0:\`expr index "$dir" '#'\`-1}`) failed.
+**Fix:** ExpandVarsInArith runs a backtick substitution (its end from Lexer.ConstructEnd; its body through
+`BacktickBody`, bash's rule: a backslash before `$`, a backtick or a backslash is dropped) and splices the output,
+as for `$( )` (empty: 0); the early return also looks for a backtick.
+**Test:** `arith_backtick_gnu` (expected = GNU via WSL): 9 red on 520; green; mutations (built): no backtick branch 9,
+the early return `$`-only 7, no unescaping 1.
+Suite 220 passed, 0 failed, both modes.
+**Implemented by:** rev 525. Files: `Bash/Evaluator/WordExpander.cs`, `tests/cases/arith_backtick_gnu.sh`,
+`tests/expected/arith_backtick_gnu.out`, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- DEPLOYED rev 525 (backticks in arithmetic): suite 223/0 both modes, battery 217
+**Status:** Record. Slot: koliada-net-73, kes-term-a1, koliada-net-forms-cb said go; esdk-a2 (the reporter) had not
+answered after ~10 min: deployed on the three (the architect's bug-fix rule; rev 503's precedent), esdk-a2 told so.
+`bash tools/deploy.sh`: `1.0.0+hg.b93502f56c9f 525` over 520; suite 223 passed, 0 failed, both modes; battery
+217/237; rollback dist/Bash.exe.rev520, dist/sh.exe.rev520. Live check: arith_backtick_gnu on dist/Bash.exe, all 10
+lines GNU's (`[E:/x]`); the command-line probe itself was refused by Claude Code's safety check (it cannot parse
+backticks in a Bash call), so the case file was run instead. All four notified. Not published (GitHub at hg 522).
+
+## 2026-10-30 -- FIXED: an explicit `hash -p PATH NAME` runs PATH, also where C#Bash has NAME in-process (esdk-a2)
+**Status:** Active. esdk-a2's report; already in the record as a LOW red-team defect ("`hash -p /abs name` not
+obeyed"); raised with a position at 14:20, built under the bug-fix rule (no reply).
+**GNU bash 5.1 (WSL):** `hash -p PROG diff; diff l r` runs PROG (diff is a program in GNU); `hash -t` shows it; a
+function named diff still wins; `hash -d diff` / `hash -r` give diff back; bash's own builtins (echo, printf) ignore a
+`hash -p`; the pin holds in a pipeline stage and a subshell.
+**Was (525):** `hash -p` was recorded (`hash -t` showed it) but the in-process tool ran: `diff -y` stayed "not
+implemented" under `hash -p .../diff.exe diff`.
+**Fix:** `Evaluator._pinned`: the names `hash -p` set (never remembered PATH lookups, or a diff.exe on PATH would
+replace the built-in diff). `HashPinned(name)`: pinned and not in `Builtins.BashBuiltinNames` (bash 5.1's own). The
+simple-command dispatch, RunCommand (xargs, find -exec, env) and RunsInProcess skip the in-process tool for a pinned
+name, so ExecExternal runs the hashed path. Lifetime as the table's: `hash -d` unpins, `hash -r` and a PATH change clear
+(HashClear), a child shell inherits. Two holes found on the way: HashSetPath now adopts the current PATH as the table's
+(else the first lookup cleared a pin made before it), and a child shell now inherits `_pathHashFor` too (its first
+lookup cleared the copied table, so a pinned `sort` in a pipeline ran Windows' sort.exe: "??").
+**Test:** `hash_p_gnu` (expected = GNU via WSL; a #! stand-in that names itself): 4 red on 525; green; mutations
+(built): dispatch ignoring the pin 4, bash builtins not excepted 3, the child losing the table's PATH 1, hash -p not
+adopting the PATH 4. Suite 221 passed, 0 failed, both modes.
+**Implemented by:** rev 529. Files: `Bash/Evaluator/Evaluator.cs`, `tests/cases/hash_p_gnu.sh`,
+`tests/expected/hash_p_gnu.out`, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- DEPLOYED rev 529 (hash -p obeyed; a subshell keeps the hash table): suite 224/0 both modes, battery 217
+**Status:** Record. Slot: koliada-net-73, esdk-a2, kes-term-a1, koliada-net-forms-cb all said go (esdk-a2 holding its
+image build until "done": told first). `bash tools/deploy.sh`: `1.0.0+hg.3711f4140e77 529` over 525; suite 224 passed,
+0 failed, both modes; battery 217/237; rollback dist/Bash.exe.rev525, dist/sh.exe.rev525. Live: hash_p_gnu on
+dist/Bash.exe matches GNU. All four notified. Not published (GitHub at hg 522).
+
+## 2026-10-30 -- BUILT: diff -y (side-by-side), GNU's layout; -W/--width, --suppress-common-lines, --left-column, -t
+**Status:** Active. The architect: "fix the diff -y first, then publish =:)" (esdk-a2's need).
+**Why:** -y was refused ("side-by-side output is not implemented"), falling through to a diff on PATH, none on a
+minimal PATH; inside `r=\`diff -y A B | grep "|	-D"\`` the refusal left r empty, so the ESDK release check built on it
+could never fail.
+**GNU (diffutils 3.8, WSL; side.c):** t = 8 (1 under -t); off = (W + t + 3) / (2t) * t; hw = min(off - 3, W - off);
+c2o = off (W if hw is 0). W 130: hw 61, c2o 64, the mark at (hw + c2o - 1) / 2 = 62. Padding (tab_from_to): tabs while
+the next tab stop fits, then spaces; -t: spaces. A half's text cut at hw columns, a tab kept only when its stop is
+inside. Marks: `|` a changed pair, `<` left only, `>` right only, `\` or `/` a changed pair where the left or the right
+line has no newline, `(` a common line under --left-column (no right side); a common line pads straight to c2o; an
+empty right line gets no padding. A change run: its pairs, then its remaining insertions, then deletions. Identical
+files print in full, status 0.
+**Built:** `Builtins.Find.cs`: DiffOptions SideBySide/Width/ExpandTabs/SuppressCommon/LeftColumn; `DiffSideBySide`
+(the arithmetic, `To` = tab_from_to, `Half` = print_half_line for tabs and plain characters) on the existing edit
+script; `EndsWithoutNewline` (DiffReadLines drops that fact). -W takes Opts.Int (least 1).
+**Not done:** a character's display width (wide or combining characters count 1; GNU uses their width); \r and \b
+in a half; --tabsize; -y with -u or -c (GNU: "conflicting output style options").
+**Test:** `diff_side_by_side_gnu` (expected = GNU diffutils 3.8 via WSL; `cat -A` shows tabs and line ends; esdk-a2's
+own check included): 58 of 77 lines red on 529; green; mutations (built): padding without tabs 55, the mark's column 5,
+the width formula 57, no `\`/`/` 2, no cut 1, tabs under -t 2.
+Suite 222 passed, 0 failed, both modes.
+**Implemented by:** rev 532. Files: `Bash/Evaluator/Builtins.Find.cs`, `tests/cases/diff_side_by_side_gnu.sh`,
+`tests/expected/diff_side_by_side_gnu.out`, `tests/run-tests.ps1`.
+
+## 2026-10-30 -- DEPLOYED rev 532 (diff -y): suite 225/0 both modes, battery 217
+**Status:** Record. Slot: koliada-net-73, kes-term-a1, esdk-a2 (holding its first release build until "done": told
+first), koliada-net-forms-cb all said go. `bash tools/deploy.sh`: `1.0.0+hg.2bb8c1a933b2 532` over 529; suite 225
+passed, 0 failed, both modes; battery 217/237; rollback dist/Bash.exe.rev529, dist/sh.exe.rev529. Live:
+diff_side_by_side_gnu on dist/Bash.exe matches GNU (77 lines). All four notified. Next: the benchmark window, then
+publish (the architect: "fix the diff -y first, then publish").
+
+## 2026-10-30 -- Publish preparation (third): benchmark on deployed 532; doc review
+**Status:** Record. The architect: "fix the diff -y first, then publish =:)". Quiet window: koliada-net-73, esdk-a2,
+koliada-net-forms-cb, kes-term-a1 said go; all told "benchmark done".
+**Benchmark** (dist = build 532, 2026-10-30 16:29): loop 0.156 (10.3x Git, 2.8x WSL), arith 0.250 (8.4x, 2.5x), func
+0.217 (10.8x, 2.6x), loop_big 1.468 (13.2x, 2.4x), coreutils 0.054 (265x, 14.7x), pipeline 0.081 (3.0x, 1.4x), find
+0.015 (8.6x, 13.2x), startup 8.8 ms (Git 23.2, WSL 101.3); every output identical. C#Bash's rows 1-5 % above the 520
+run (startup 8.8 against 8.4 ms): within the documented run-to-run noise; only diff changed between the builds, which
+no row runs [not investigated further].
+**Doc review:** README table, startup line, case count 233; docs/DEVELOPING 233; docs/PERFORMANCE (rev 532, 8.4-13.2x,
+2.4-2.8x, 8.8 against 23.2 ms); docs/FEATURES (diff -y, in rev 532). IMPLEMENTATION/ARCHITECTURE: nothing stale for
+525 (arithmetic text), 529 (hash), 532 (diff).

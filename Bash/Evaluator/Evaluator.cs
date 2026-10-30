@@ -537,6 +537,11 @@ public sealed class Evaluator
 		foreach (var kv in parent._fds)       _fds[kv.Key]       = kv.Value;
 		foreach (var kv in parent._pathHash)  _pathHash[kv.Key]  = kv.Value;
 		foreach (var kv in parent._pathHits)  _pathHits[kv.Key]  = kv.Value;
+		_pinned.UnionWith(parent._pinned);
+		// and the PATH it belongs to: without it the copy's first lookup cleared the table, so a `hash -p` name in a
+		// pipeline stage ran the PATH's program (Windows' sort.exe for a pinned `sort`, 2026-10-30); bash's subshell
+		// keeps the parent's table
+		_pathHashFor = parent._pathHashFor;
 		_frames.AddRange(parent._frames);
 		_functionDepth = parent._functionDepth;
 		_lineBase = parent._lineBase;
@@ -1717,7 +1722,7 @@ public sealed class Evaluator
 		// 2026-10-04 the builtin was tried first and the function never ran.
 		namStr = UnixBinName(namStr);
 		_functions.TryGetValue(namStr, out var fn);
-		if (fn is not null || Builtins.Has(namStr))
+		if (fn is not null || (Builtins.Has(namStr) && !HashPinned(namStr)))   // a `hash -p` name runs its program
 			{
 			using var redirectScope = cmd.Redirects.Count > 0 ? ApplyRedirects(cmd.Redirects) : null;   // no redirects: no scope (measured: ~72 B + 3 objects per command)
 			using var tempScope = ApplyTempAssignments(tempAssign);
@@ -1771,15 +1776,27 @@ public sealed class Evaluator
 	private readonly Dictionary<string, string> _pathHash = [];
 	private readonly Dictionary<string, int> _pathHits = [];
 
-	public void HashClear() { _pathHash.Clear(); _pathHits.Clear(); }
+	public void HashClear() { _pathHash.Clear(); _pathHits.Clear(); _pinned.Clear(); }
 	private string? _pathHashFor;   // the PATH value the hash table was built for
-	public void HashSetPath(string name, string path) { _pathHash[name] = path; _pathHits[name] = 0; }
+	/// <summary>`hash -p PATH NAME`: pinned for this PATH (taken as the table's first, so the next lookup keeps it).</summary>
+	public void HashSetPath(string name, string path)
+		{
+		var pathValue = _env.Get("PATH");
+		if (!ReferenceEquals(pathValue, _pathHashFor) && pathValue != _pathHashFor) { HashClear(); _pathHashFor = pathValue; }
+		_pathHash[name] = path; _pathHits[name] = 0; _pinned.Add(name);
+		}
+	// names `hash -p` set explicitly (not remembered lookups): such a name runs its program even where C#Bash has it
+	// in-process, as bash runs a hashed program; bash's own builtins excepted (2026-10-30, esdk-a2: `hash -p .../diff.exe
+	// diff` was recorded but the in-process diff ran; DECISIONS' LOW "hash -p /abs name not obeyed")
+	private readonly HashSet<string> _pinned = [];
+	internal bool HashPinned(string name) => _pinned.Contains(name) && Array.IndexOf(Builtins.BashBuiltinNames, name) < 0;
 	/// <summary>`hash -d name`: this shell's entry and the remembered one (CommandMap).</summary>
 	public bool HashDelete(string name)
 		{
 		_pathHits.Remove(name);
 		_rememberedMisses.Remove(name);
 		bool remembered = CommandMap.Forget(_env.Get("PATH"), PathExt, name);
+		_pinned.Remove(name);
 		return _pathHash.Remove(name) | remembered;
 		}
 	/// <summary>`hash -r`: this shell's table and everything remembered for this PATH (CommandMap).</summary>
@@ -2048,7 +2065,7 @@ public sealed class Evaluator
 	public int RunCommand(string name, List<string> args) => RunCommand(name, args, false, [], false);
 
 	/// <summary>Whether RunCommand runs this name in the shell (a function or builtin), with no command line to start.</summary>
-	internal bool RunsInProcess(string name) => _functions.ContainsKey(UnixBinName(name)) || Builtins.Has(UnixBinName(name));
+	internal bool RunsInProcess(string name) => _functions.ContainsKey(UnixBinName(name)) || (Builtins.Has(UnixBinName(name)) && !HashPinned(UnixBinName(name)));
 
 	/// <summary>Run a command on the calling thread with <paramref name="job"/> as the current
 	/// job, so an external child it spawns is recorded in <see cref="BackgroundJob.ChildPid"/>
@@ -2068,7 +2085,7 @@ public sealed class Evaluator
 		{
 		name = UnixBinName(name);
 		bool function = !skipFunctions && _functions.ContainsKey(name);
-		if (!function && !Builtins.Has(name)) return ExecExternal(name, args, extraEnv, [], clearEnv, unsetEnv);
+		if (!function && (!Builtins.Has(name) || HashPinned(name))) return ExecExternal(name, args, extraEnv, [], clearEnv, unsetEnv);
 		// In process, `env -i` / `env -u NAME` act on what the command sees as its environment, the
 		// exported names (printenv, env, the children it starts): unexported for the duration. They
 		// reached only external programs until 2026-10-08, so `env -i printenv` printed everything.

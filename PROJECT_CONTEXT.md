@@ -102,7 +102,19 @@
 >   UTC0, Etc/UTC = UTC; POSIX `NAME[+-]h[:mm]` = fixed offset, sign WEST; IANA names via TimeZoneInfo; anything else
 >   UTC) used by every time-printing tool, + find's %Tz. **DONE: rev 520 (Evaluator/ShellClock.cs), DEPLOYED rev 520
 >   (suite 222/0 both modes on the AOT build: IANA names resolve there; battery 217; rollback dist/Bash.exe.rev515).**
->   Not matched (documented): an IANA zone's %Z is numeric (+09). Publishing 515+ still on his word (GitHub at 513).
+>   Not matched (documented): an IANA zone's %Z is numeric (+09). **PUBLISHED 2026-10-30: GitHub main = git 2559b1c
+>   = hg rev 522, release hg-522 (Bash.exe build 520, SHA-256 checked; benchmark re-run at 520).** Peer bug reports
+>   follow the bug-fix rule. **Backticks in arithmetic** (esdk-a2): FIXED rev 525 (the architect: "go"), DEPLOYED rev
+>   525 (suite 223/0 both modes, battery 217; rollback dist/Bash.exe.rev520). NOT published (GitHub at hg 522).
+>   esdk-a2 confirmed 525: its four SDK helpers run (rc=0).
+>   **GREENLIT (the architect 2026-10-30: "fix the diff -y first, then publish"): `diff -y` (side-by-side) (esdk-a2).** Refused today ("not
+>   implemented", falls through to a PATH diff, none on a minimal PATH); inside `` r=`diff -y A B | grep ...` `` the
+>   refusal leaves r empty, so the ESDK's init0 check could never fail (it now pins GNU diff by full path). Claude:
+>   implement GNU's -y (-W 130 default, `|` `<` `>` markers, --suppress-common-lines, --left-column, GNU's tab
+>   expansion), GNU-checked; a feature, so his call, not the 10-minute bug-fix rule.
+>   **`hash -p PATH NAME` obeyed** (esdk-a2; the record's LOW "hash -p /abs name not obeyed"): FIXED rev 529 (bash
+>   builtins excepted, functions win, only explicit -p; a subshell keeps the hash table), DEPLOYED rev 529 (suite
+>   224/0 both modes, battery 217; rollback dist/Bash.exe.rev525). NOT published (GitHub at hg 522; 525 and 529 to go).
 >   **RAISED, bug fixes (kes-term-a1, 2026-10-30, verified against GNU; under the "wait 10 mins and keep going" rule,
 >   fixed after the publish):** find -printf ignores widths/flags/precision (`%10s`, `%-6f`, `%.1f`; GNU pads `%05s`
 >   with spaces) and prints the directive literally; ls --time-style honours only full-iso (long-iso, iso, +FORMAT,

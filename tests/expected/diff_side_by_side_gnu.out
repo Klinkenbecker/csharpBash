@@ -1,0 +1,77 @@
+--- a b
+one^I^I^I^I^I^I^I^Ione$
+two^I^I^I^I^I^I^I      |^ITWO$
+three^I^I^I^I^I^I^I^Ithree$
+four^I^I^I^I^I^I^I      <$
+five^I^I^I^I^I^I^I^Ifive$
+^I^I^I^I^I^I^I      >^Isix$
+^I^I^I^I^I^I^I      >^Iseven$
+rc=1
+--- tabs in the lines
+x^I-Done^I^I^I^I^I^I      |^Ix^I-Dtwo$
+y^I^I^I^I^I^I^I^Iy$
+--- esdk's check
+[]$
+--- -W 40
+one^I^I^Ione$
+two^I^I   |^ITWO$
+three^I^I^Ithree$
+four^I^I   <$
+five^I^I^Ifive$
+^I^I   >^Isix$
+^I^I   >^Iseven$
+--- --width=50
+one^I^I^Ione$
+two^I^I      |^ITWO$
+three^I^I^Ithree$
+four^I^I      <$
+five^I^I^Ifive$
+^I^I      >^Isix$
+^I^I      >^Iseven$
+--- --suppress-common-lines
+two^I^I^I^I^I^I^I      |^ITWO$
+four^I^I^I^I^I^I^I      <$
+^I^I^I^I^I^I^I      >^Isix$
+^I^I^I^I^I^I^I      >^Iseven$
+--- --left-column
+one^I^I^I^I^I^I^I      ($
+two^I^I^I^I^I^I^I      |^ITWO$
+three^I^I^I^I^I^I^I      ($
+four^I^I^I^I^I^I^I      <$
+five^I^I^I^I^I^I^I      ($
+^I^I^I^I^I^I^I      >^Isix$
+^I^I^I^I^I^I^I      >^Iseven$
+--- -t
+x       -Done                                                   |  x       -Dtwo$
+y                                                                  y$
+--- the same
+one^I^I^I^I^I^I^I^Ione$
+two^I^I^I^I^I^I^I^Itwo$
+three^I^I^I^I^I^I^I^Ithree$
+four^I^I^I^I^I^I^I^Ifour$
+five^I^I^I^I^I^I^I^Ifive$
+rc=0
+--- 2 deleted, 1 inserted
+p^I^I^I^I^I^I^I^Ip$
+q^I^I^I^I^I^I^I      |^IX$
+r^I^I^I^I^I^I^I      <$
+s^I^I^I^I^I^I^I^Is$
+--- 1 deleted, 2 inserted
+p^I^I^I^I^I^I^I^Ip$
+X^I^I^I^I^I^I^I      |^Iq$
+^I^I^I^I^I^I^I      >^Ir$
+s^I^I^I^I^I^I^I^Is$
+--- a long line
+LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL |^Ishort$
+--- no newline at the end
+a^I^I^I^I^I^I^I^Ia$
+b^I^I^I^I^I^I^I      \^Ic$
+a^I^I^I^I^I^I^I^Ia$
+c^I^I^I^I^I^I^I      /^Ib$
+--- an empty line
+a^I^I^I^I^I^I^I^Ia$
+$
+b^I^I^I^I^I^I^I      |^Ic$
+--- -i
+Hello^I^I^I^I^I^I^I^Ihello$
+rc=0
