@@ -9636,3 +9636,24 @@ Claude's review, measured with C#Bash counting its arguments for a profile `C:\U
 arguments (setx would fail), quoted 1; PowerShell unquoted 1, quoted 1. He put the cmd line's quotes back; the
 PowerShell line stays unquoted (it works).
 **Implemented by:** rev 480 (`README.md`, `DECISIONS.md`).
+
+## 2026-10-30 -- PUBLISHED: GitHub main = git eb6ed20 = hg rev 480 (gnu.org's promises kept; README step 2); no release
+**Status:** Active. The architect: "we should go ahead and publish to pick up the GNU fixes". No new benchmark (the
+deployed build is still 472, its compare3 run the newest). `bash tools/publish.sh` (scratchpad/msg480.txt): 481
+changesets, bundle verified; pushed 3312e22..eb6ed20. Step 6, the skip's first real run: "the newest release already
+carries this Bash.exe (... 472, SHA-256 6bd640cf...): no release for hg-480"; latest stays hg-476.
+**Implemented by:** this entry rev 481.
+
+## 2026-10-30 -- ARCHITECTURE §15: help and the record of what C#Bash cannot do; README thanks GNU
+**Status:** Active. The architect asked whether the help design was in ARCHITECTURE and IMPLEMENTATION, and proposed
+thanking GNU; "Readme note is good. go".
+**Found:** IMPLEMENTATION had help at code-map level (Builtins.Help.cs, EarlierHelpTables, help.json, Unserviced.cs,
+NotAvailable.cs, the check-help-urls row); ARCHITECTURE had nothing on it (searched: help, help.json, unserviced).
+**Done:** ARCHITECTURE (locked by default; the architect's go) gains §15 "Help, and the record of what C#Bash cannot
+do": help points at the manuals and holds none; the built-in table with the user's file over it name by name; an
+unedited old table refreshed (EarlierHelpTables); the link check as the table's guard and its promises to gnu.org;
+NotAvailable and the unserviced log (local, never sent). The map moved from §15 to §16 (nothing cited §15; §5-§14
+and §10, which are cited, unchanged). README: a "Thanks" section before the licence, as Claude drafted it: the GNU
+Project and the FSF for the manuals, man7.org, jqlang.org and sourceware.org too, and the FSF's administrators "for
+their patience when an early version of our link checker went too fast".
+**Implemented by:** rev 482. Files: `ARCHITECTURE.md`, `README.md`, `DECISIONS.md`.

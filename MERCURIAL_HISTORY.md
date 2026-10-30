@@ -12,11 +12,13 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 481 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 483 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 482 | 2026-10-30 | ARCHITECTURE §15: help and the record of what C#Bash cannot do (the map is now §16); README thanks the GNU Project, the FSF and the other manual sites |
+| 481 | 2026-10-30 | Published: GitHub main = git eb6ed20 = hg rev 480; release step skipped (Bash.exe unchanged) |
 | 480 | 2026-10-30 | README step 2: setx for Command Prompt (quoted) and PowerShell (the architect's edit) |
 | 479 | 2026-10-29 | check-help-urls keeps the promises made to gnu.org (which lifted the ban): an honest User-Agent, robots.txt followed, checked only when the table changes |
 | 478 | 2026-10-29 | release.sh makes no release when the newest one already carries the same Bash.exe (the Releases page lists builds, not publishes) |

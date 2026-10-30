@@ -535,7 +535,37 @@ There is no Unix signal delivery on Windows, so:
 
 ---
 
-## 15. Map of the design to the code
+## 15. Help, and the record of what C#Bash cannot do
+
+**Help points at the manuals; it does not contain them.** `help NAME` and every builtin's `NAME --help` answer
+with the URL of the manual page for what was asked: GNU's, or the manual of the program a builtin imitates (a few
+on man7.org, jqlang.org, sourceware.org). C#Bash ships no help text of its own to drift from the real tools.
+*(DECISIONS: 2026-10-27 — help and --help point at the manual pages.)*
+
+- **Two tables, one answer.** The table is built into `Bash.exe` (`Bash/help.json`, a resource). A user's own
+  `%USERPROFILE%/.bash/help.json` lies over it **name by name**: the file answers for every name it has, the
+  built-in table for the rest (so a later build's new names still answer). The file is written from the built-in
+  table when it is missing.
+- **An unedited old table is refreshed.** A file that is still, byte for byte, a table an earlier build wrote is
+  replaced by this build's when `help` next reads it; an edited file is never touched. The test is a SHA-256 list
+  of every earlier built-in table (`EarlierHelpTables`), which must grow whenever `help.json` changes.
+  *(DECISIONS: 2026-10-29 — installer plan phase 2.)*
+- **The table has a guard.** `tools/check-help-urls.sh` (development only, never shipped) checks that every link
+  answers and every `#anchor` is on its page: a GNU manual's pages against one download of its per-node archive,
+  other pages fetched themselves; paced, under an honest User-Agent, following robots.txt, and only when the table
+  has changed. Those are promises made to gnu.org's webmasters. *(DECISIONS: 2026-10-29 — gnu.org lifted the ban.)*
+
+**What C#Bash cannot do, it says, and remembers.** A bash builtin or keyword it lacks answers `help` with its page
+marked "not implemented in C#Bash"; a feature that is not available (restricted mode refused, POSIX mode goes on)
+says so with a link to a prefilled GitHub issue (`NotAvailable`). Each such request, an option a tool does not
+support (whether a PATH program then ran it or not), a construct refused when parsed, and a help topic not found is
+appended as one JSON line to `%USERPROFILE%/.bash/unserviced.jsonl` (`Unserviced.Log`), in one write that never
+fails the command. It stays in the user's profile; nothing is sent anywhere. It is the list of what to build next.
+*(DECISIONS: 2026-10-27 — the log of unserviced requests.)*
+
+---
+
+## 16. Map of the design to the code
 
 For the concrete class/method surface implementing each subsystem above — and an end-to-end
 walk-through of a single command — see [`IMPLEMENTATION.md`](IMPLEMENTATION.md).

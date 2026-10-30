@@ -70,6 +70,7 @@
 >   BLOCKED on Installer INST-Q-046.
 >   README RESTRUCTURE (2026-10-29): Claude's draft, edited by the architect, Architecture kept in the README at his
 >   word; committed rev 476 and PUBLISHED: GitHub main = git 3312e22, release hg-476 (same Bash.exe as hg-473).
+>   PUBLISHED 2026-10-30: GitHub main = git eb6ed20 = hg rev 480 (gnu.org promises, README step 2); no release (Bash.exe unchanged).
 >   LOGGED, not fixed (found 2026-10-29): `mv file nodir/` renames to `nodir`, rc 0 (GNU: Not a directory, rc 1);
 >   `exec 4< <(PROGRAM)` may run PROGRAM to completion first [inferred, not investigated].
 >   Claude's position: first a GitHub Release asset per publish (Bash.exe + SHA-256), then the installer (rename the

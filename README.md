@@ -87,6 +87,12 @@ Everything, in detail: [Features](docs/FEATURES.md).
 bug fails a test instead of becoming its expected answer. A battery of 237 probes runs the same commands through both
 shells and compares them. Building and testing it yourself, and how the source is laid out: [Developing C#Bash](docs/DEVELOPING.md).
 
+## Thanks
+
+`help` sends you to the GNU Project's manuals, and to man7.org, jqlang.org and sourceware.org for a few more. Thank
+you to the GNU Project and the Free Software Foundation for writing those manuals and keeping them open to everyone,
+and to the FSF's administrators for their patience when an early version of our link checker went too fast.
+
 ## License
 
 [MIT](LICENSE).
