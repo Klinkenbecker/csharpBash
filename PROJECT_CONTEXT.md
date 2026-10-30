@@ -69,7 +69,7 @@
 >   hg-473** (Bash.exe build 472 + SHA-256; checked through the README's latest link). Plan phases 1-2 DONE; 3-5
 >   BLOCKED on Installer INST-Q-046.
 >   README RESTRUCTURE (2026-10-29): Claude's draft, edited by the architect, Architecture kept in the README at his
->   word; committed and published (DECISIONS "the README is the highlights"; "Documentation set" below).
+>   word; committed rev 476 and PUBLISHED: GitHub main = git 3312e22, release hg-476 (same Bash.exe as hg-473).
 >   LOGGED, not fixed (found 2026-10-29): `mv file nodir/` renames to `nodir`, rc 0 (GNU: Not a directory, rc 1);
 >   `exec 4< <(PROGRAM)` may run PROGRAM to completion first [inferred, not investigated].
 >   Claude's position: first a GitHub Release asset per publish (Bash.exe + SHA-256), then the installer (rename the
@@ -108,8 +108,9 @@
 >   buffer non-terminal output and flush at command end; needs a design talk (interleaving with children).
 >   (d) DONE 2026-10-28, measured, no change (DECISIONS "cat, wc and the checksums keep 64 KiB reads"): 8 KiB is slower for them. Was: the byte tools read whole 64 KiB blocks from pipes; tee measured 8 KiB reads 22%
 >   faster on `cat f | tee g > h`. Position: measure cat/wc at 8 KiB before changing anything.
->   (e) xargs streaming (reads all input first; its own change). (f) `bash tools/check-help-urls.sh`: gnu.org SILENTLY BLOCKS it (most likely bot detection; the architect, 2026-10-28: his to find a way round; not ours). Was: once gnu.org
->   answers.
+>   (e) xargs streaming (reads all input first; its own change). (f) `bash tools/check-help-urls.sh`: RESOLVED 2026-10-29: gnu.org lifted the
+>   ban on the architect's mail; its promises are in the tool (rev 479: honest User-Agent, robots.txt, one download per
+>   manual, only when the table changes); 140/140 pass; KEEP THEM (DECISIONS "gnu.org LIFTED THE BAN"). VPN off.
 >   (g) item 6: (g1) BUILT + DEPLOYED rev 435 (DECISIONS "`<<` inside an unquoted `$(( ))`"); (g2) sed BUILT + DEPLOYED rev 437 (DECISIONS "sed's empty regex"). Item 6 DONE. Findings (GNU vs 424, measured 2026-10-28): (g1) an UNQUOTED
 >   `$(( a << b ))` (assignment, argument, declare; with or without parentheses) computes right but makes the NEXT line
 >   a syntax error; quoted "$(( ))" and `>>` are fine (the lexer queues a HeredocPending for `<<` inside an unquoted

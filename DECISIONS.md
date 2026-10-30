@@ -9577,3 +9577,62 @@ README's table AND docs/PERFORMANCE.md's prose, and the case count in the README
 GitHub's rendering.
 **Implemented by:** rev 476. Files: `README.md`, `docs/USING.md`, `docs/FEATURES.md`, `docs/PERFORMANCE.md`,
 `docs/DEVELOPING.md`, `tools/publish.sh`, `PROJECT_CONTEXT.md`, `DECISIONS.md`.
+
+## 2026-10-29 -- PUBLISHED: GitHub main = git 3312e22 = hg rev 476 (the README restructure), release hg-476
+**Status:** Active. The architect: "all good, lets commit & publish". No new benchmark: the deployed build is still 472,
+whose compare3 run is the newest in results.md (publish's check passed). `bash tools/publish.sh` (scratchpad/msg476.txt):
+477 changesets, bundle verified; pushed ec718e1..3312e22; release hg-476 created with the same Bash.exe as hg-473 (build
+472, SHA-256 6bd640cf...0753d), downloaded back and matching. Checked on GitHub after: README.md, the four docs/ guides,
+docs/pipeline.svg, ARCHITECTURE.md and LICENSE all HTTP 200 at raw.githubusercontent.com/.../main; releases/latest
+resolves to hg-476. Not checked: GitHub's rendering of the pages.
+**Seen:** a docs-only publish makes a release whose Bash.exe is the previous release's. Claude's position (not built):
+release.sh could skip the release when the newest one already carries the same SHA-256, so the Releases page lists
+builds, not publishes; AWAITING the architect.
+**Implemented by:** this entry rev 477.
+
+## 2026-10-29 -- release.sh makes no release when the newest one already carries the same Bash.exe
+**Status:** Active. The architect: "Yes, I agree; go" (to Claude's position in the entry above: a docs-only publish
+made hg-476 with hg-473's Bash.exe).
+**Decision:** when no release exists for the tag, release.sh first reads the newest release's `Bash.exe.sha256`
+(`releases/latest/download/`, public, no token); if it names this Bash.exe's SHA-256, it says so and exits 0 with no
+release. A retry (the tag's own release exists) is unchanged. So the Releases page lists builds, not publishes, and
+`latest` stays the newest build. hg-476 (already made, same as hg-473) is left as it is.
+**Tests (no release created):** a copy aimed at a tag that does not exist, its create call replaced by a refusal:
+with the real Bash.exe it skipped (rc 0); with another checksum it went on to create (refused by the test, rc 2). The
+real tool against hg-476: reused, both assets left, downloaded back and matching (its retry path's first real run).
+**Implemented by:** rev 478. Files: `tools/release.sh`, `IMPLEMENTATION.md`, `docs/installer-plan.md`, `DECISIONS.md`.
+
+## 2026-10-29 -- gnu.org LIFTED THE BAN; the promises made to it are built into check-help-urls.sh
+**Status:** Active. The FSF's GNU/Linux systems administrator replied to the architect's mail: the ban is lifted, and
+"If you implement all of the changes you mentioned, it should not happen again." The architect: "Yes =:)" to building
+the three not yet done. The VPN is off from here on (the architect).
+**The promises (the mail) and where they stand:** (1) one download per manual: built (revs 460-461). (2) a User-Agent
+naming the tool and its repository: `csharpBash-help-check/1.0 (+https://github.com/Klinkenbecker/csharpBash)` (not
+"C#": RFC 9309 allows only letters, `_`, `-` in the product token robots.txt groups match); it claimed Chrome 129
+until now. (3) robots.txt followed: read from a host once a run, just before the first request the run makes to it (a
+run needing nothing from a host never asks it); RFC 9309: the group for our token, else `*`; longest match, Allow on
+a tie, `*` and `$`; 4xx: all allowed; 5xx: none; a disallowed download not made, its URLs "NOT CHECKED (robots.txt)",
+exit 1; a Crawl-delay longer than the pause waited instead. (4) checked only when the table changes: a run in which
+every URL passed writes `passed-<table SHA-256>` (the date) into the cache; the same table again says when it passed
+and does nothing; `--again` checks anyway.
+**Tests (local, busybox httpd in WSL, three hosts):** A (`*: Disallow /` plus our own group: a folder disallowed, one
+file in it allowed back, Crawl-delay 2), B (no robots.txt), C (`*` only, an Allow ending `$`), a 10-URL table: 12
+requests (3 robots.txt, one per host), our group followed on A, its allowed-back file fetched, A's requests 2 s apart
+after its robots.txt, B all allowed, C's `$` rule allowing `/private/open` and disallowing `/private/a.html`; 1 FAIL,
+2 NOT CHECKED, rc 1. The rule: a passing table run again "passed on ...; nothing to do" (0 requests), `--again`
+checks, a changed table checks, `--bogus` rc 2. Mutations: robots ignored = 14 requests and 0 refused; our group never
+chosen = 7 refused (A's `*`); the early exit removed = the passed table checked again.
+**On gnu.org (17:41, one request, the honest name, the architect's own address):** robots.txt HTTP 200 (2,862 bytes;
+the ban lifted, honest access works): one `*` group (38 rules, Crawl-delay 4) and 26 named SEO crawlers, none ours.
+Offline, with the script's own parse_robots/allowed: all 90 gnu.org URLs it would need (79 pages, 7 index pages, 4
+archives) allowed; controls (/cgi-bin/, */po/, /server/header*) disallowed. The real table then: 140/140 passed, 0
+requests (all kept), `passed-91eedeb6...` written; run again: nothing to do.
+**Implemented by:** rev 479. Files: `tools/check-help-urls.sh`, `IMPLEMENTATION.md`, `PROJECT_CONTEXT.md`.
+
+## 2026-10-30 -- README step 2: one `setx` line per shell (the architect's edit), the Command Prompt one quoted
+**Status:** Active. The architect edited the README: a Command Prompt line and a PowerShell line, because `%USERPROFILE%`
+expands only in cmd (measured 2026-10-29: PowerShell passed `%USERPROFILE%\.bash\bin\Bash.exe` through literally).
+Claude's review, measured with C#Bash counting its arguments for a profile `C:\Users\John Smith`: cmd unquoted 2
+arguments (setx would fail), quoted 1; PowerShell unquoted 1, quoted 1. He put the cmd line's quotes back; the
+PowerShell line stays unquoted (it works).
+**Implemented by:** rev 480 (`README.md`, `DECISIONS.md`).

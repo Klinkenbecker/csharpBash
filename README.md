@@ -46,7 +46,9 @@ A classic four-stage pipeline: **lexer → parser → AST → tree-walking evalu
 ## Use it with Claude Code
 
 1. Download `Bash.exe` (above) and put it in a folder of its own, say `~/.bash/bin` (`%USERPROFILE%\.bash\bin`).
-2. Point Claude Code at it, in a Command Prompt: `setx CLAUDE_CODE_GIT_BASH_PATH "%USERPROFILE%\.bash\bin\Bash.exe"`.
+2. Point Claude Code at it;
+   -  Command Prompt: `setx CLAUDE_CODE_GIT_BASH_PATH "%USERPROFILE%\.bash\bin\Bash.exe"`.
+   -  PowerShell: `setx CLAUDE_CODE_GIT_BASH_PATH $env:USERPROFILE\.bash\bin\Bash.exe`.
 3. Restart Claude Code.
 
 To go back to Git Bash, remove the variable and restart Claude Code. If Git for Windows is on your PATH, Claude Code may pick Git

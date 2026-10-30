@@ -12,11 +12,15 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 477 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 481 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 480 | 2026-10-30 | README step 2: setx for Command Prompt (quoted) and PowerShell (the architect's edit) |
+| 479 | 2026-10-29 | check-help-urls keeps the promises made to gnu.org (which lifted the ban): an honest User-Agent, robots.txt followed, checked only when the table changes |
+| 478 | 2026-10-29 | release.sh makes no release when the newest one already carries the same Bash.exe (the Releases page lists builds, not publishes) |
+| 477 | 2026-10-29 | Published: GitHub main = git 3312e22 = hg rev 476 (README restructure), release hg-476 (Bash.exe build 472, unchanged) |
 | 476 | 2026-10-29 | README is the highlights (the architect's edit; Architecture kept); the detail moved to docs/USING, FEATURES, PERFORMANCE, DEVELOPING |
 | 475 | 2026-10-29 | Anchor: the README restructure is drafted, uncommitted, and the architect is editing it (do not commit or overwrite) |
 | 474 | 2026-10-29 | Published: GitHub main = git ec718e1 = hg rev 473, with the first release hg-473 (Bash.exe build 472 + SHA-256, downloaded back and checked); deployed 472 recorded |

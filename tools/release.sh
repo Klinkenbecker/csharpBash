@@ -10,7 +10,9 @@
 #      commit published, read from its message's first line ("C#Bash at hg rev <rev>: ...");
 #   2. the asset is dist/Bash.exe, the DEPLOYED build (the one publish's benchmark is of); its stamp names its own rev,
 #      which can be older than the published one (records-only revs follow a deploy), and the release text says both;
-#   3. a release that already exists for the tag is reused (a retry), and an asset already on it is left;
+#   3. a release that already exists for the tag is reused (a retry), and an asset already on it is left; with none,
+#      and the newest release already carrying this Bash.exe (its Bash.exe.sha256 names the same SHA-256), NO release
+#      is made: the Releases page lists builds, not publishes (the architect, 2026-10-29: "Yes, I agree; go");
 #   4. after the uploads, Bash.exe is downloaded back from its public URL and must match its SHA-256, or exit 1.
 # The token reaches curl on its standard input (`--config -`), never on a command line, and nothing prints it.
 # --dry-run: everything up to the first request, then what would be sent; needs no token and no network.
@@ -64,9 +66,14 @@ api() {
 split() { code=${1##*$'\n'}; json=${1%$'\n'*}; }
 why() { jq -r '.message // empty' <<< "$json" 2> /dev/null; }
 
-# 3. the release: the tag's own (a retry) or a new one
+# 3. the release: the tag's own (a retry), none (the newest already carries this build), or a new one
 split "$(api GET "https://api.github.com/repos/$REPO/releases/tags/$tag")"
 if [ "$code" = 404 ]; then
+	newest=$(curl -s -L "https://github.com/$REPO/releases/latest/download/Bash.exe.sha256" | head -1 | cut -c1-64)
+	if [ "$newest" = "$sum" ]; then
+		echo "release: the newest release already carries this Bash.exe ($stamp, SHA-256 $sum): no release for $tag"
+		exit 0
+	fi
 	split "$(api POST "https://api.github.com/repos/$REPO/releases" -H 'Content-Type: application/json' --data-binary "$create")"
 	[ "$code" = 201 ] || die "creating release $tag failed: HTTP $code $(why)"
 	echo "release: $tag created"

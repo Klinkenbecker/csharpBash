@@ -26,6 +26,7 @@ upgrade replaces the running `Bash.exe` in place, through InstallGen (2026-10-29
    first), its check observed: downloaded back matching; through the README's `releases/latest/download/Bash.exe`,
    `sha256sum -c` OK and the download runs, reporting its build (472, the deployed one).
    (The binary is the deployed one, so it names its own rev, which may be older than the published rev, never newer.)
+   A publish whose Bash.exe the newest release already carries makes no release (rev 478): the page lists builds.
 2. **help.json kept fresh by Bash.exe itself.** Bash.exe carries the SHA-256 of every built-in table it has shipped;
    a `~/.bash/help.json` equal to one of them is replaced by the current table, an edited one is left alone and never
    touched. *Done when:* three cases pass: an old table replaced, an edited one byte-identical after, a missing one
