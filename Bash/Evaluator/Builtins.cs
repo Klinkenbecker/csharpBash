@@ -30,7 +30,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"touch", "rmdir", "cmp", "tee", "comm", "paste", "rm", "mv", "cp",
 		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "df", "od", "sort", "split", "find", "ls", "xargs", "diff", "hash",
 		"grep", "egrep", "fgrep", "which", "sed",
-		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings",
+		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings", "dd", "cksum",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
 		"timeout", "id", "whoami", "nproc", "printenv", "tty", "arch", "awk",
 		"pgrep", "pkill", "ps", "jq", "help", "enable",
@@ -44,7 +44,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"tr", "cut", "uniq", "nl", "fold", "touch", "rmdir", "cmp", "tee", "comm", "paste", "rm", "mv", "cp",
 		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "df", "od", "sort", "split", "find", "ls", "xargs", "diff",
 		"grep", "egrep", "fgrep", "which", "sed", "yes", "sleep", "env",
-		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings",
+		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings", "dd", "cksum",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
 		"timeout", "id", "whoami", "nproc", "printenv", "tty", "arch", "awk",
 		"pgrep", "pkill", "ps", "jq",
@@ -361,6 +361,8 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"md5sum" or "sha1sum" or "sha256sum" or "sha512sum" => Checksum(name, args),
 			"hexdump" => Hexdump(args),
 			"strings" => Strings(args),
+			"dd"      => Dd(args),      // GNU 8.32's (2026-10-31; Builtins.Dd.cs)
+			"cksum"   => Cksum(args),
 			"stat"    => Stat(args),
 			"mktemp"  => Mktemp(args),
 			"realpath"=> Realpath(args),
@@ -423,7 +425,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		foreach (var a in args) { if (a == "-a") all = true; else if (!a.StartsWith('-') || a == "-") names.Add(a); }
 		var pathExt = (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(';', StringSplitOptions.RemoveEmptyEntries)
 			.Where(FileTests.IsProgramExtension).ToArray();   // a `.js` is no program (2026-10-18)
-		var dirs = ShellEnvironment.CurrentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+		var dirs = ShellEnvironment.PathDirs(ShellEnvironment.CurrentPath);   // either form (2026-10-31)
 		int rc = 0;
 		foreach (var name in names)
 			{

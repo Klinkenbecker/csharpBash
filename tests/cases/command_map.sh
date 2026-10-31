@@ -7,6 +7,7 @@
 # Authored expectations (C#Bash-specific: bash has neither).
 d=$(mktemp -d) && cd "$d" || exit 1
 export HOME="$d/home" d
+case $d in ?:*) m="/$(printf %s "${d:0:1}" | tr A-Z a-z)${d:2}";; *) m=$d;; esac; export m   # $d as $PATH spells it (2026-10-31)
 mkdir A B
 export PATH="$d/A;$PATH"
 run() { "$BASH" -c "$1" 2>&1 | sed 's/^.*: line [0-9]*: //'; }
@@ -49,7 +50,7 @@ mkdir C; run "PATH=\"$d/C;\$PATH\"; hash zzp"
 [ -e "$HOME/.bash/commands/0000000000000000.map" ] && echo "unused: kept" || echo "unused: pruned"
 printf '@echo zzb-ran\r\n' > B/zzb.cmd
 echo "== BASH_PATH becomes the PATH, once"
-( export BASH_PATH="$d/B;${SystemRoot:-${SYSTEMROOT:-C:/Windows}}/System32"; run 'zzb; [ "${PATH%%;*}" = "$d/B" ] && echo "PATH starts with it"; echo "BASH_PATH=${BASH_PATH-unset}"; printenv BASH_PATH || echo "not in the environment"' )
+( export BASH_PATH="$d/B;${SystemRoot:-${SYSTEMROOT:-C:/Windows}}/System32"; run 'zzb; [ "${PATH%%:*}" = "$m/B" ] && echo "PATH starts with it"; echo "BASH_PATH=${BASH_PATH-unset}"; printenv BASH_PATH || echo "not in the environment"' )
 echo "== a nested shell keeps its parent's PATH"
 printf '@echo zzn-ran\r\n' > A/zzn.cmd
 printf '#!/bin/sh\nzzn\n' > s.sh

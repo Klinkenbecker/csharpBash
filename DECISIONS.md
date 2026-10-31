@@ -10409,3 +10409,250 @@ sessions said go (installer-a4's after the run had started: it had reported itse
 2.7x), loop_big 1.475 (13.3x, 2.4x), coreutils 0.055 (264x, 14.3x), pipeline 0.082 (3.0x, 1.6x), find 0.015 (8.9x,
 14.2x), startup 8.7 ms (Git 23.0, WSL 106.6); within noise of 532's. **Doc review:** README table + startup line, the
 case count (234, rev 541), docs/PERFORMANCE (rev 536, 8.3-13.3x, 8.7 against 23.0 ms), USING's $PATH line (rev 541).
+
+## 2026-10-31 -- PUBLISHED: GitHub main = git fe8bb29 = hg rev 542; release hg-542 (Bash.exe build 536)
+**Status:** Record. The architect: "if you can publish in remaining 62k context, do so". tools/publish.sh: the
+benchmark of deployed 536 found; pushed; release hg-542, Bash.exe (build 536) downloaded back, SHA-256 ab298e36...
+matches. Contents since 533: PATH="$PATH:DIR" (536), the 2026-10-31 resume anchor, docs.
+
+## 2026-10-31 -- FIXED: grep -P `\Q...\E`, PCRE's literal quoting (c-parser-ac)
+**Status:** Active. c-parser-ac's report; raised with a position, built after the 10-minute wait under the bug-fix
+rule (no reply).
+**Was (536):** grep -P handed the pattern to .NET's Regex, which has no `\Q`: "Invalid pattern '^\Qa.b\E$' at offset 3.
+Unrecognized escape sequence \Q.", rc 2. (`\K`, the other PCRE escape .NET lacks, is rewritten since 2026-10-05.)
+**GNU (grep 3.7 -P, WSL):** the text between `\Q` and `\E` is literal, inside a class too; an unterminated `\Q` quotes to
+the end of the pattern; a lone `\E` is ignored; `\\Q` is an escaped backslash, then Q; it works with -i, -o, -c, `\K`
+and `(?x)` (a quoted space still counts).
+**Fix:** `UnquotePcre`, the first step of `PcreToNet`: each quoted character becomes a .NET literal that reads the same
+inside a class and out (a blank or control character `\xHH`, other ASCII punctuation backslash-escaped; letters,
+digits, `_` and non-ASCII as they are, since .NET refuses an escaped word character); then the `\K` rewrite as before.
+**Not matched, on purpose:** GNU 3.7's "missing )" for -x / -w with an unterminated `\Q` (it wraps the pattern as text,
+so the `\Q` swallows the `)`; C#Bash converts the pattern before wrapping it, so the match works) [newer GNU grep not
+checked]; GNU 3.7 refuses -P with several -e, C#Bash joins them (unchanged).
+**Test:** `grep_pcre_quote_gnu` (expected = GNU grep 3.7 via WSL, 34 lines, incl. the report's TSV key lookup
+`grep -P "^\Q$key\E\t"` with a key of regex metacharacters): 57 lines differ on 536; green; mutations (each built, one
+line changed): the first step skipped 57, a lone `\E` kept 4, an unterminated `\Q` quoting nothing 3, a blank written
+raw 4, punctuation written raw 16, an escaped pair not consumed 3 (the `a\\Qb` line alone could not catch that one:
+`x\\Q.y` added). Suite 224 passed, 0 failed, both modes (managed build; 11 skipped as usual).
+**Implemented by:** rev 544. Files: `Bash/Evaluator/Builtins.Search.cs`, `tests/cases/grep_pcre_quote_gnu.sh`,
+`tests/expected/grep_pcre_quote_gnu.out`, `tests/run-tests.ps1`, `docs/FEATURES.md`.
+
+## 2026-10-31 -- $PATH: the architect rules out backslashes at the exit and questions `:` inside (discussion; awaiting his ruling)
+**Status:** Discussion, nothing built. Follows "SPIKE: $PATH in GNU/MSYS form" (above).
+**The architect:** "One of the prime reasons for bash existance is to _eliminate_ backslash as a path separator. I can't
+cope with all this 'freakin windows malarky. Most, if not all, tools that are not MS accept a forward slash as a
+separator. Given the constraints you laid out for me, I'm not sure c#bash should use the ':' char as a PATH separator.
+PATH is really internal to bash, but some tools will read it. It is a connundrum?"
+**Measured (deployed 536, scratch scripts):** (1) $PATH reads today with backslashes, the inherited text as it is
+(`F:\Koliada\Tools\bash\dist\;C:\Program Files\...`), and a child receives the same. (2) Children given a forward-slash
+PATH (`C:/Windows/System32;C:/Windows;F:/Tools/PortableGit/bin`): cmd's own search ran git, where.exe found it, an MSYS
+child (Git's bash) converted it to `/c/Windows/System32:...`; negative control (git's folder left out): not found.
+(3) A whole-word MSYS argument reaches a Windows child converted: `cmd /C echo /c/Windows/System32` gives
+`C:/Windows/System32`. (4) A colon LIST argument is half-converted: `cmd /C echo /c/Windows:/f/Tools` gives
+`C:/Windows:/f/Tools` (Git Bash: `C:\Windows;F:\Tools`). (5) Git Bash hands `/c/Windows/System32:/c/Windows:/f/Tools`
+to a cmd child as `C:\Windows\System32;C:\Windows;F:\Tools`.
+**Exit slashes: FORWARD,** by his mandate; the spike entry's "Claude: backslashes" is WITHDRAWN (it copied MSYS; the
+mandate is a requirement it had not weighed; no measured child fails with forward slashes).
+**Claude's position on the separator:** two copies, two readers: the variable is read by bash scripts; a tool reads its
+own environment block, which the shell writes at each exit. Inside: `:` with `/c/x` entries, so GNU idioms work
+(`IFS=:` loops, `case ":$PATH:" in *":$dir:"*)`, `${PATH%:*}`); `:` forces the MSYS root because `C:/x` holds a colon.
+Exits: `;` (Windows' rule) with `C:/x`. The one leak, $PATH text in an argument or a file, closed for arguments by
+converting a colon list whole (`C:/Windows;F:/Tools`). The alternative, `;` with `C:/x` inside (no exit conversion,
+no MSYS root), is coherent but breaks those idioms.
+**Falsifiers:** for `:` inside, scripts handing $PATH text to Windows tools where C#Bash cannot convert it (inside
+`--opt=`, in a file) prove common; for forward slashes at the exit, a tool string-comparing PATH entries with backslash
+text (an installer's "already on PATH?" check; `setx` writing our form into the registry). Not measured: .NET's
+Process.Start, Python's and Go's lookups, PowerShell as a child, setx.
+**Awaiting:** his answer: go on that shape, or not.
+
+## 2026-10-31 -- DEPLOYED rev 544 (grep -P \Q...\E): suite 227/0 both modes, battery 217
+**Status:** Record. Slot: all seven live sessions said go (koliada-net-73, c-parser-ac, qa-de, installer-a4, esdk-a2,
+koliada-net-forms-cb, kes-term-a1). `bash tools/deploy.sh`: `1.0.0+hg.0248f868f3a7 544` over 536; suite 227 passed, 0
+failed, both modes; battery 217/237 (baseline 216); rollback dist/Bash.exe.rev536, dist/sh.exe.rev536. Live: `$BASH
+--version` and dist/sh.exe say 544; the report's TSV lookup matches. esdk-a2 told "swap done"; all seven notified.
+Not published (GitHub at hg 542).
+
+## 2026-10-31 -- GO: $PATH has two forms, GNU/MSYS inside and Windows with forward slashes at every exit (plan)
+**Status:** GREENLIT, building. The architect: "Good. Yes, two paths is the right thing; go". Supersedes the 2026-10-31
+"FIXED: PATH="$PATH:DIR"" entry's "Not changed, by design: $PATH reads in native form" and the 2026-09 "PATH
+normalisation" rule (an all-colon /-rooted PATH became native `;` form). Keeps the 2026-10-17 RULED "the shell's
+`$PATH` keeps empty entries as given" (now `::`; Git Bash drops them on import: a known difference, by that ruling).
+**Shape:** inside, `$PATH` is `/c/x:/f/y` whatever form it arrives in (the inherited environment, BASH_PATH, an
+assignment in Windows, MSYS or mixed form); at every exit (C#Bash's process environment, a child's environment,
+`PATH=... cmd` included) it is `C:/x;F:/y`: no backslash, no empty entry. Every PATH reader splits with one helper
+(`PathDirs`, either form). A Windows program's argument that is a colon list of /-rooted paths is converted whole,
+`/c/x:/f/y` -> `C:/x;F:/y`; one with any other colon is left as typed, as Git Bash does (measured: `/c/Windows:rel`,
+`/c/Windows:`, `/c/Windows::/f/Tools`, `/c/x/a:b` unchanged; slashes forward by the architect's mandate).
+**Acceptance (each observed before it counts):** (1) a fresh shell's `$PATH` has no `;` and no backslash and
+`IFS=:` gives its entries; (2) a Windows child's PATH is forward-slash `;` form with no empty entry; (3) a Windows-form
+PATH assigned for a child reaches it entry for entry (esdk-a2's harnesses), and an isolation PATH never falls back
+to the inherited one (koliada-net-73's kes-log: a positive and a negative `where` control); (4) the append/prepend
+idioms still match GNU (path_append_gnu); (5) an assigned `::` stays in `$PATH`, never reaches a child, and find
+-execdir still refuses it, in GNU's words ("colons"); (6) colon-list arguments as Git Bash, forward slashes; (7) a
+nested shell, the `export -p` round trip, BASH_PATH, the Git tools and the own folder still work with no entry added
+twice; (8) suite 0 failed both modes, each changed expectation listed with its reason; battery no regression; (9)
+deploy with the slot; the notice leads with the visible change.
+**Not decided here (do not derive):** `$PWD` and `$HOME` stay `C:/x` (ratified 2026-09-11), so a membership test such
+as `case ":$PATH:" in *":$HOME/bin:"*)` still misses (as it did with `;`); `--opt=/c/x:/f/y` stays unconverted
+(deferred, SETTLED).
+
+## 2026-10-31 -- BUILT: $PATH's two forms (GNU/MSYS inside, forward-slash Windows at every exit); colon-list arguments as Git Bash
+**Status:** Active. Implements "GO: $PATH has two forms" (above). Not deployed yet. (This entry was committed one
+revision after the code: the edit adding it failed to match, unnoticed, before rev 547's commit.)
+**Built:** `ShellEnvironment`: `NormalizePath` (any form in, `/c/x:/f/y` out; empty entries kept; an entry holding a
+newline dropped; a one-letter relative entry written `./A`), `PathDirs` (either form: split at `;` and at a colon
+that is not a drive's), `ToMsysEntry`, `ToWindowsPathList` (`C:/x;F:/y`, no empty entry); the inherited PATH imported
+in the shell's form; the process PATH set to the exit form at startup and on every assignment; the Git tools and
+own-folder steps compare translated entries. `Evaluator`: a child's PATH and `PATH=... cmd` get `ToWindowsPathList`;
+`ResolveOnPath`, `AllOnPath`, `which`, `source`'s PATH search, `FindInPath`, find -execdir's check, `CommandMap`'s
+kept-test and completion read with `PathDirs`. `NativeArgument`: a colon list of /-rooted pieces converted whole, any
+other argument with a colon left as typed (Git Bash, measured).
+**Found while building:** `A:/c/x` is ambiguous: a one-letter relative entry then `/c/x`, or drive A. The drive must
+win (the shell's own paths are `C:/x`: PATH="$HOME/bin:$PATH"), so the shell writes such an entry `./A`. command_map's
+`PATH="A;$PATH"` caught it: the relative entry vanished and the PATH was kept in the command map as all-absolute. A
+hand-written `PATH="A:/c/x"` still reads as drive A (USING says so).
+**Acceptance, observed:** (1) `$PATH` = `/f/Koliada/Tools/bash/dist:/c/Program Files/...`: no `;`, no backslash;
+`IFS=:` gives 48 entries, 47 exist; (2) a child's PATH = `F:/Koliada/Tools/bash/dist;C:/Program Files/...`, 0
+backslashes; (3) `PATH="$d/stub;C:/Windows/System32" cmd` gets exactly that; whoami runs with System32 on it (rc 0)
+and is "not recognized" without it; (4) path_append_gnu matches GNU; (5) `::` kept, never in a child; find -execdir
+refuses it, now saying "colons" (GNU's word; it said "semicolons"); (6) Git Bash's argument rule, forward slashes;
+(7) `export -p` round trip, a nested shell, BASH_PATH (command_map), the Git tools (startup_env: no entry doubled),
+the own folder; (8) the suite, below.
+**Tests:** new `path_two_forms` (authored; red on 544: 42 lines). Expectations changed for the visible form only:
+path_append_gnu (the visible last entry compared in MSYS form; two labels; expected regenerated from GNU),
+path_empty_entries (the kept empty entry is `::`: `[/c/Windows/System32::/c/Windows:]`), startup_env (the probe
+reads entries with `IFS=:` in MSYS form; expected unchanged), command_map (BASH_PATH's first entry read with `%%:*`
+in MSYS form; expected unchanged). Mutations (each built, one line changed): 12 of 12 red (import raw; a child's PATH
+raw; `PATH=... cmd` raw; empty entries dropped; `./A` off; the list rule off; every colon argument a list; the exit
+untranslated; the own folder keeping a trailing empty entry; the old split in the command map, in the lookup, in
+-execdir's check). Not observable by a case: the process environment's own form (nothing searches it since
+2026-10-17: defensive) and completion (interactive). Suite 225 passed, 0 failed, both modes (managed build; 11
+skipped as usual); with Git's `cmd` on PATH, 233 passed, 0 failed (the MSYS and Git cases run too).
+**Side effects:** the command map's files are keyed by the PATH text, so each machine's remembered lookups start
+cold once (one search per name). `$PWD` and `$HOME` stay `C:/x`; `--opt=/c/x:/f/y` stays unconverted (SETTLED).
+**Implemented by:** rev 547. Files: `Bash/Evaluator/ShellEnvironment.cs`, `Evaluator.cs`, `Builtins.cs`,
+`Builtins.Shell.cs`, `Builtins.Find.cs`, `CommandMap.cs`, `Bash/IO/CompletionEngine.cs`; tests `path_two_forms` (new),
+`path_append_gnu`, `path_empty_entries`, `startup_env`, `command_map`, `run-tests.ps1`; docs `docs/USING.md`,
+`ARCHITECTURE.md`, `IMPLEMENTATION.md`.
+
+## 2026-10-31 -- FIXED: grep -f with an empty pattern file is zero patterns, as GNU (kes-install-43)
+**Status:** Active. kes-install-43's report; raised with a position, built after the 10-minute wait under the bug-fix
+rule (no reply).
+**Was (544):** zero patterns from -e/-f were taken for "no pattern given": with no other operand, the usage text, rc 2;
+otherwise the first operand became the pattern (and with none left, stdin was read). It stalled the set-difference
+idiom `sort -u cand | grep -vxFf seen.txt` while seen.txt was still empty.
+**GNU (grep 3.7, WSL):** "The empty file contains zero patterns, and therefore matches nothing". Without -v or -L it
+reads nothing: no output (no -c count, no -l), not even a missing file's error, rc 1; -L lists every file (rc 1); with
+-v every line is selected in every output mode (-vo prints nothing, rc 0); other -e/-f patterns still apply.
+**Fix:** `zeroPatterns` (-e or -f given, no pattern from them): return 1 at once unless -v or -L; otherwise the regex
+`(?!)`, which never matches (the empty alternation `(?:)` would match everything).
+**Test:** `grep_f_empty_gnu` (expected = GNU 3.7 via WSL; 19 option sets over two files, stdin, the idiom, mixed
+-f/-e, a missing file, an operand that stays a file): 40 lines differ on 544; green; mutations (built, one line): the
+early return off 7, the early return hiding -L 2, the empty alternation 26, the detection off 40. A first version of
+the case hung on 544 (an operand taken as the pattern, then stdin read): every grep with file operands now reads
+/dev/null, and the case removes its temp folder. Suite 226 passed, 0 failed, both modes; 234/0 with Git on PATH.
+**Implemented by:** rev 549. Files: `Bash/Evaluator/Builtins.Search.cs`, `tests/cases/grep_f_empty_gnu.sh`,
+`tests/expected/grep_f_empty_gnu.out`, `tests/run-tests.ps1`.
+
+## 2026-10-31 -- DEPLOYED rev 549 ($PATH's two forms; grep -f empty file): suite 229/0 both modes, battery 217
+**Status:** Record. Slot: all eight live sessions said go (installer-a4, kes-install-43, c-parser-ac, esdk-a2, qa-de,
+kes-term-a1, koliada-net-forms-cb, koliada-net-73); each checked its own scripts: none reads $PATH's text
+(koliada-net-73: Koliada.Exec's whereis splits on `;`; ESDK.cs rewrites the USER registry PATH, never the inherited
+one). Before the deploy, kes-term-a1's risk checked on the same build: an MSBuild project started from the shell,
+`Exec` `where hg` / `hg version -q`: cmd saw `F:/Koliada/Tools/bash/dist;C:/Program Files/...`, found hg, ran it, rc
+0. `bash tools/deploy.sh`: `1.0.0+hg.51195c94f3df 549` over 544; suite 229 passed, 0 failed, both modes; battery
+217/237 (baseline 216); rollback dist/Bash.exe.rev544, dist/sh.exe.rev544. Live (this session's Claude Code call,
+its snapshot replaying the old Windows-form PATH): `$PATH` `/f/Koliada/Tools/bash/dist:/c/Program Files/...`, no `;`
+or backslash; a child's `F:/Koliada/Tools/bash/dist;C:/Program Files/...`, 0 backslashes; hg and dotnet resolve;
+`grep -vxFf /dev/null` prints every line. esdk-a2 told "swap done"; all eight notified, the $PATH change first.
+Not published (GitHub at 542). Reported after, all fine: esdk-a2 (cmd buildTools.bat -> UnixUtils make -> SHELL C#Bash
+sh: a recipe reads `PATH=/f/KoliadaES/ESDK/bin:/c/Windows/System32:...`, where.exe started from it finds
+F:\KoliadaES\ESDK\bin\kes-log.exe; release.bat --check passes); koliada-net-forms-cb (dotnet, hg, nupkg resolve and
+run; `dotnet msbuild -getProperty` returns its JSON). kes-term-a1's Release build (MSBuild Exec -> hg) to come.
+
+## 2026-10-31 -- RECORD: kes-term-a1's Release build passes on 549 (MSBuild Exec finds hg on the forward-slash PATH)
+**Status:** Record; closes the last check after the 549 deploy. kes-term-a1: Release build PASS; MSBuild's Exec found
+hg through cmd with the `C:/x;F:/y` PATH, all three manifests recorded their revisions (Koliada.NET-834-m.KoliadaAPI-634-m,
+Koliada.NET.Forms-148, kes-term-315); powershell.exe started from the shell read the dll's ProductVersion. Its FIRST
+attempt failed with CS0006 (Koliada.NET's obj/Release/ref/Koliada.NET.dll missing); the second, same PATH, passed.
+Not 549's [inferred: a PATH form is deterministic, the failure was not]; kes-term-a1's suspicion, unverified: another
+session cleaning or rebuilding the shared Koliada.NET at the same time.
+
+## 2026-10-31 -- GO: `dd` and `cksum` in-process, as GNU coreutils 8.32 (installer-a4's unmet need); then publish (plan)
+**Status:** GREENLIT, building. The architect: "1/ yes, go, then publish". installer-a4: on guy-windows8 PATH finds only
+1997 UnixUtils ports (F:/Tools/UnixUtils/usr/local/wbin): that dd refuses `status=none`, that cksum writes CRLF.
+**Scope (the default, stated):** the coreutils set (CoreutilNames: an unsupported request hands over to a PATH
+program and is logged, DECISIONS 2026-09-04 #2). `dd`: operands if= of= bs= ibs= obs= count= skip= seek=; numbers
+with GNU's suffixes (c w b, K/k M G T P E = 1024s, kB MB ... = 1000s, KiB ..., `AxB`); conv= notrunc sync ucase lcase
+swab excl nocreat noerror fsync fdatasync; iflag= fullblock skip_bytes count_bytes; oflag= seek_bytes append;
+status= none noxfer progress (progress = the final report; GNU's once-a-second lines not drawn). Records counted as
+GNU's (bs= writes each block as read, ibs/obs reblocks); the report on stderr in GNU's words and sizes (`(2.0 kB, 2.0
+KiB)`), its time and rate not compared; GNU's errors and exit 1 (invalid number / operand / conversion / flag /
+status, failed to open, error reading, cannot seek). Any other conv/flag (block, ascii, sparse, direct, ...) is
+unsupported (handed over). `cksum`: POSIX CRC and size, LF, `-` and file operands, GNU's errors.
+**Acceptance:** (1) the report's command, `printf 'X' | dd of=f bs=1 seek=3 conv=notrunc status=none` -> `abcXefgh`,
+rc 0; (2) GNU-expected cases (WSL coreutils 8.32, LC_ALL=C) for dd (records, report sizes, count/skip/seek on files
+and pipes, truncation, conversions, flags, suffixes, every error) and cksum (stdin, files, 70000 bytes, missing,
+directory), red on 549 where the 1997 ports answer (or no dd/cksum at all); (3) mutations red; (4) suite 0 failed
+both modes; (5) help.json gains dd and cksum (and the outgoing table's SHA-256 goes into EarlierHelpTables,
+rev 469's invariant); docs; (6) deploy with every session's slot; (7) publish: compare3 on the deployed build in a
+quiet window, the doc review, tools/publish.sh.
+**Not decided here (do not derive):** dd's `conv=block/unblock/ascii/ebcdic/ibm/sparse`, `iflag=direct/...`,
+`--help`, a cksum `-a` (coreutils 9's): unsupported until a script needs them (the unserviced log will say).
+
+## 2026-10-31 -- BUILT: `dd` and `cksum` in-process, as GNU coreutils 8.32
+**Status:** Active. Implements "GO: `dd` and `cksum`" (above). Not deployed yet.
+**Built:** `Bash/Evaluator/Builtins.Dd.cs` (new): `Dd` (operands, `DdNumber` with GNU's suffixes and `AxB`, the copy loop
+counting records as GNU, swab's carried byte, sync padding, ucase/lcase, skip by seek or by reading, truncation at the
+seek offset unless notrunc, append, excl/nocreat, fsync; the report with `DdHuman`'s sizes; GNU's errors), `Cksum`
+(the POSIX CRC, table built on first use, LF). Both in `Names` and `CoreutilNames` (an unsupported conv/flag hands
+over to a PATH program, logged); help.json gains `cksum` and `dd` (the outgoing table's SHA-256, rev 462's
+`91eedeb6...`, added to EarlierHelpTables; `tools/check-help-urls.sh`: 142 URLs, 0 requests, 0 failed).
+**Found while building:** GNU reblocks under `conv=swab` even with `bs=` (5 bytes, `bs=3`: `1+1 records out`, not
+`0+3`): the first build wrote block for block. And the first case could not tell `bs=` from reblocking (a file's
+reads are always whole blocks; mutation "bs reblocks" survived): a pipe handing over 2 bytes, then 2 more a second
+later, does (GNU: `bs=4` 0+2 records out; `ibs=4 obs=4` 1+0).
+**Acceptance, observed:** installer-a4's command (`printf 'X' | dd of=f bs=1 seek=3 conv=notrunc status=none`) gives
+`abcXefgh`, rc 0; `printf 'abc' | cksum | od -c` ends in `\n`. Cases `dd_gnu` (162 lines) and `cksum_gnu` (15),
+expected = GNU coreutils 8.32 via WSL, LC_ALL=C: red on 549 (162 and 12 lines: PATH's 1997 ports answered); green;
+mutations (each built, one line): 14 of 14 red (bs reblocks, no truncation, sync off, swab without carry, swab not
+reblocking, sizes not rolled up, IEC from 1000, count_bytes off, skip in blocks, ucase off, excl and nocreat
+unchecked, no report after a directory, cksum without the length). help_builtin's `enable -a` count 131 -> 133 (two
+builtins more). Suite 228 passed, 0 failed, both modes; 236/0 with Git on PATH.
+**Implemented by:** rev 553. Files: `Bash/Evaluator/Builtins.Dd.cs`, `Builtins.cs`, `Builtins.Help.cs`,
+`Bash/help.json`, `tests/cases/dd_gnu.sh`, `cksum_gnu.sh`, their expected files, `tests/expected/help_builtin.out`,
+`tests/run-tests.ps1`, `docs/FEATURES.md`, `IMPLEMENTATION.md`.
+
+## 2026-10-31 -- FIXED: help named its table `C:/x\.bash\help.json` (backslashes) in its two messages
+**Status:** Active. Found while building dd (help replaced this machine's rev 462 table and said so); raised with a
+position, fixed after the 10-minute wait under the bug-fix rule (no reply).
+**Was:** `Path.Combine` of the profile folder and `.bash\help.json` went into "an earlier build's table, unedited:
+replaced" and "...; the built-in table answers" as it was: `C:/Users/guy\.bash\help.json`. help_refresh's own sed turned
+every `\` into `/` before comparing, so it could not see it.
+**Fix:** both messages print `ToShellPath(file)`. help_refresh no longer rewrites backslashes (red on 549:
+`b\.bash\help.json`), and it now checks rev 462's table too (fixture `tests/cases/help_rev462.json` = `hg cat -r 462
+Bash/help.json`, SHA-256 `91eedeb6...`): unedited, it is replaced, and `help dd` answers (549: "no help topics match").
+**Implemented by:** rev 553 (with dd/cksum). Files: `Bash/Evaluator/Builtins.Help.cs`, `tests/cases/help_refresh.sh`,
+`tests/cases/help_rev462.json`, `tests/expected/help_refresh.out`.
+
+## 2026-10-31 -- DEPLOYED rev 553 (dd, cksum; help's path): suite 231/0 both modes, battery 217
+**Status:** Record. Slot: all eight live sessions said go (koliada-net-73, qa-de, esdk-a2, koliada-net-forms-cb,
+kes-term-a1, installer-a4, kes-install-43, c-parser-ac; esdk-a2: no ESDK or F: build script uses dd or cksum).
+`bash tools/deploy.sh`: `1.0.0+hg.d033c294eedb 553` over 549; suite 231 passed, 0 failed, both modes; battery 217/237
+(baseline 216); rollback dist/Bash.exe.rev549, dist/sh.exe.rev549. Live: `$BASH --version` and dist/sh.exe say 553;
+`type dd cksum`: shell builtins; installer-a4's repro gives `abcXefgh`, rc 0; cksum's line ends `\n`. esdk-a2 told
+"swap done"; all eight notified, and asked for the quiet window for the publish benchmark: all eight "quiet go".
+**Raised meanwhile (installer-a4, bug-fix rule):** `kill -0 $!` on a FINISHED background job says running (rc 0, even
+after `jobs` showed it Done); GNU: "kill: (PID) - No such process", rc 1. Confirmed on 549. Fix after the publish (no
+build during the quiet window). Its second point, `$!` not being the Windows PID: by design (the synthetic job pid,
+2026-09 "`$!` is a synthetic pid"), and measured: Git Bash's `$!` is MSYS's pid (4099) while Windows' is 20752, so
+msys does not give it either; no change proposed, installer-a4 told.
+
+## 2026-10-31 -- Publish preparation (fifth): benchmark on deployed 553; doc review
+**Status:** Record. The architect: "1/ yes, go, then publish". Quiet window: all eight sessions said "quiet go"; each
+told when it ended. **Benchmark** (compare3, unmodified, dist = build 553): loop 0.161 (9.6x Git, 2.7x WSL), arith
+0.251 (8.5x, 2.5x), func 0.222 (10.7x, 2.6x), loop_big 1.499 (13.2x, 2.4x), coreutils 0.057 (253x, 14.8x), pipeline
+0.085 (3.1x, 1.4x), find 0.015 (8.9x, 15.1x), startup 8.7 ms (Git 23.0, WSL 102.3); every output agreed; within
+noise of 536's (startup unchanged by the $PATH conversion at start). **Doc review:** README table, its startup line
+(WSL 102.3 ms), the case count 239 (README, docs/DEVELOPING), docs/PERFORMANCE (rev 553, 8.5-13.2x); USING,
+ARCHITECTURE, IMPLEMENTATION, FEATURES already carry $PATH's two forms and dd/cksum (revs 547, 553).

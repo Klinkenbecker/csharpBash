@@ -44,7 +44,7 @@ enable .
 enable :
 enable [
 enable alias
-131
+133
 enable . enable : enable break enable continue enable eval enable exec enable exit enable export enable readonly enable return enable set enable shift enable source enable times enable trap enable unset 
 rc=0
 rc=0

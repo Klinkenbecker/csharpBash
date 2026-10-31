@@ -128,7 +128,7 @@ public static class CommandMap
 	private static bool Kept(string path, string pathExt)
 		{
 		if (path.Contains('\n') || pathExt.Contains('\n')) return false;
-		var dirs = path.Split(';', StringSplitOptions.RemoveEmptyEntries);
+		var dirs = ShellEnvironment.PathDirs(path).Select(ShellEnvironment.TranslateForm).ToArray();   // `/c/x` is `C:/x`
 		return dirs.Length > 0 && dirs.All(Path.IsPathFullyQualified);
 		}
 

@@ -1,0 +1,44 @@
+== a shell started by cmd with a Windows-form PATH (backslashes, an empty entry, a trailing ;)
+[/c/Windows/System32::/c/Windows]
+no ; and no backslash in $PATH
+C:/Windows/System32/whoami.exe
+its child: C:/Windows/System32;C:/Windows
+== an assignment in any form reads in MSYS form; a child gets forward-slash Windows form
+/c/Windows/System32:/c/Windows
+C:/Windows/System32;C:/Windows
+/c/Windows/System32:/c/Windows
+C:/Windows/System32;C:/Windows
+/c/Windows/System32:/c/Windows
+C:/Windows/System32;C:/Windows
+/c/Windows/System32:/c/Windows
+C:/Windows/System32;C:/Windows
+== an empty entry stays in $PATH and never reaches a child
+[/c/Windows/System32::/c/Windows:]
+C:/Windows/System32;C:/Windows
+[/c/Windows/System32::/c/Windows]
+C:/Windows/System32;C:/Windows
+== IFS=: gives the entries; a one-letter relative entry is ./A
+/c/Windows/System32:./A:/c/Windows
+3 entries
+a folder: /c/Windows/System32
+a folder: /c/Windows
+== PATH=... cmd: the child gets exactly those entries, forward slashes, in whatever form they were written
+D/stub;C:/Windows/System32
+C:/Windows/System32;C:/Windows
+C:/Windows/System32;C:/Windows
+== an isolation PATH never falls back to the inherited one (kes-log's): a positive and a negative control
+System32 on it: rc=0
+'whoami' is not recognized as an internal or external command,
+operable program or batch file.
+== export -p round trip; a nested shell
+declare -x PATH="/c/Windows/System32:/c/Windows"
+/c/Windows/System32:/c/Windows
+nested: /c/Windows/System32 /c/Windows
+== a Windows program's colon-list argument: converted whole, or left as typed
+/c/Windows:/c/Users -> C:/Windows;C:/Users
+/c/Windows/System32 -> C:/Windows/System32
+/c/Windows:rel -> /c/Windows:rel
+/c/Windows: -> /c/Windows:
+/c/Windows::/c/Users -> /c/Windows::/c/Users
+/c/x/a:b -> /c/x/a:b
+http://x/c:/d -> http://x/c:/d

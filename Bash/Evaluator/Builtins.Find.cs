@@ -336,22 +336,22 @@ public sealed partial class Builtins
 
 	/// <summary>GNU find's refusal of -execdir when PATH holds the current directory (`.`, an empty entry) or a relative
 	/// entry: the command is looked up from each file's directory, so a program planted beside a file would run (it
-	/// did: red team F7, 2026-10-19). The first such entry, as GNU reports it (`;` is this PATH's separator), or null.
+	/// did: red team F7, 2026-10-19). The first such entry, as GNU reports it (`:` is $PATH's separator since
+	/// 2026-10-31; the message said "semicolons" before), or null.
 	/// Absolute here: a `/` or `\` start (`/c/x` is a drive), or a drive with its slash (`C:/x`).</summary>
 	private static string? UnsafePathForExecDir(string path)
 		{
-		foreach (var d in path.Split(Path.PathSeparator))
+		foreach (var d in ShellEnvironment.PathDirs(path, keepEmpty: true))
 			{
 			if (d is "" or ".")
 				return "find: The current directory is included in the PATH environment variable, which is insecure in combination with the -execdir action of find.  "
-				     + $"Please remove the current directory from your $PATH (that is, remove \".\", doubled {Sep}s, or leading or trailing {Sep}s)";
+				     + "Please remove the current directory from your $PATH (that is, remove \".\", doubled colons, or leading or trailing colons)";
 			bool absolute = d[0] is '/' or '\\' || (d.Length >= 3 && char.IsAsciiLetter(d[0]) && d[1] == ':' && d[2] is '/' or '\\');
 			if (!absolute)
 				return $"find: The relative path '{d}' is included in the PATH environment variable, which is insecure in combination with the -execdir action of find.  Please remove that entry from $PATH";
 			}
 		return null;
 		}
-	private static string Sep => Path.PathSeparator == ';' ? "semicolon" : "colon";
 
 	/// <summary>Run a -exec/-execdir command, from <paramref name="dir"/> when given (the shell's cwd comes back).</summary>
 	private int FindRunIn(string? dir, List<string> line)

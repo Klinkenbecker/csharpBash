@@ -51,7 +51,7 @@ endlocal
 
 ### Getting the best out of it
 
-- **Write paths with forward slashes** (`C:/x/y` or `/c/x/y`). A backslash is the shell's escape character, and a Windows program handed `/c/x` gets `C:/x`, as under Git Bash; pass a switch to `cmd` as `cmd //c …`.
+- **Write paths with forward slashes** (`C:/x/y` or `/c/x/y`). A backslash is the shell's escape character, and a Windows program handed `/c/x` gets `C:/x`, as under Git Bash (a colon list, `/c/x:/f/y`, gets `C:/x;F:/y`; any other argument with a colon is passed as typed); pass a switch to `cmd` as `cmd //c …`.
 - **There is no terminal.** `/dev/tty` reports "No such device or address" and a program that would prompt on one fails instead of hanging; give tools their input on stdin or their non-interactive flags.
 - **After installing a tool**, run `hash -r`.
 - **Reproduce from a script file, not through PowerShell.** Windows PowerShell 5.1 strips the inner double quotes when it hands `-c 'echo "x (y) z"'` to a native executable, so the shell receives `echo x (y) z` — and then correctly reports a syntax error. A report observed only through `& Bash.exe -c "..."` from PowerShell measures PowerShell's quoting, not the shell (2026-09-05, one full false report).
@@ -66,7 +66,7 @@ Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracki
 
 **At startup**, in this order:
 
-1. The environment is imported; Windows' `Path` becomes `PATH`. `$PATH` reads in Windows form, `;`-separated (iterate it with `IFS=';'`). An assignment may also use MSYS form (`/c/x:/f/y`) or the POSIX idioms `PATH="$PATH:DIR"` and `PATH="DIR:$PATH"`, DIR native or `/f/x`: it is converted on the way in (rev 536).
+1. The environment is imported; Windows' `Path` becomes `PATH`. **`$PATH` has two forms.** Inside the shell it reads in GNU/MSYS form, `:`-separated, `/c/x:/f/y`, whatever form it arrived in, so `IFS=:` and the POSIX idioms work as in any bash. An assignment may use that form, Windows form (`C:/x;F:/y`, either slash) or both mixed (`PATH="$PWD/bin:$PATH"`): it is converted on the way in. Empty entries stay as given; a one-letter relative entry is written `./A`, because `A:/x` reads as drive A's `/x`. Every program the shell starts gets PATH in Windows form with forward slashes, `C:/x;F:/y`: never a backslash, never an empty entry. `$PWD` and `$HOME` stay `C:/x`, so a test such as `case ":$PATH:" in *":$HOME/bin:"*)` does not match; compare in one form.
 2. **`BASH_PATH`**, if set and not empty, becomes `PATH` and is then removed, from the process environment too, so a nested shell keeps its parent's PATH. It lets a launcher keep its own PATH narrow and still hand the shell a full one (see [the start file](#start-claude-code-with-no-path-of-its-own) above).
 3. When `git.exe` is on PATH, Git for Windows' `usr/bin` and `mingw64/bin` are put in front of it, exactly as Git Bash does, so `tar`, `perl`, `ssh` and any tool outside the embedded set resolve the same way.
 4. The shell's own directory is added at the end of PATH, so a nested `bash` always resolves, Git or no Git.

@@ -95,7 +95,7 @@ public sealed class CompletionEngine(ShellEnvironment env, Bash.Evaluator.Evalua
 			if (Prefix(n, token)) set.Add(n);
 
 		var path = _env.Get("PATH");
-		foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+		foreach (var dir in ShellEnvironment.PathDirs(path).Select(ShellEnvironment.TranslatePath))   // `/c/x` is `C:/x`
 			{
 			if (!Directory.Exists(dir)) continue;
 			try

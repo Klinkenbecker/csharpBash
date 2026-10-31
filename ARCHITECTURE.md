@@ -416,6 +416,12 @@ Two model points:
   shell's own `$PATH` (since 2026-10-11: assigning it resets the hash, a temporary `PATH=… cmd` is
   searched for that command only, a subshell's stays in it), and assignments are mirrored into the
   process environment so child programs see them.
+- **`$PATH` has two forms.** Inside the shell it is GNU/MSYS form, `/c/x:/f/y`, whatever form it
+  arrives in (`NormalizePath`; the colon forces the MSYS root, since `C:/x` holds one); at every exit,
+  this process's environment and each child's, it is Windows form with forward slashes, `C:/x;F:/y`
+  (`ToWindowsPathList`), never a backslash. Every reader splits it with `PathDirs`, which takes either
+  form. A Windows program's argument that is a colon list of `/`-rooted paths is converted whole, as
+  Git Bash does. *(DECISIONS: 2026-10-31 — "GO: $PATH has two forms".)*
 
 ---
 

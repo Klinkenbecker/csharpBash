@@ -12,11 +12,24 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 543 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 556 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 555 | 2026-10-31 | Publish preparation: benchmark on deployed 553 (all rows within noise of 536), README table/startup, case count 239, PERFORMANCE figures |
+| 554 | 2026-10-31 | Deployed rev 553 (dd, cksum, help path; suite 231/0 both modes, battery 217); quiet window for the publish benchmark: all eight; kill -0 bug raised (fix after the publish) |
+| 553 | 2026-10-31 | dd and cksum in-process as GNU coreutils 8.32 (installer-a4; the architect: go); help names its table with forward slashes; cases dd_gnu, cksum_gnu, help_refresh + rev 462 table |
+| 552 | 2026-10-31 | GO recorded: dd and cksum in-process (GNU 8.32), then deploy and publish; plan, scope and acceptance in DECISIONS |
+| 551 | 2026-10-31 | Record: kes-term-a1's Release build passes on 549 (MSBuild Exec finds hg on the forward-slash PATH); the 549 checks are closed |
+| 550 | 2026-10-31 | Deployed rev 549 ($PATH two forms + grep -f empty; suite 229/0 both modes, battery 217); peers' checks recorded; anchor rewritten: dd/cksum awaiting, publish pending |
+| 549 | 2026-10-31 | grep -f with an empty pattern file: zero patterns, as GNU 3.7 (kes-install-43); case grep_f_empty_gnu |
+| 548 | 2026-10-31 | DECISIONS: BUILT entry for $PATH two forms (rev 547; the edit adding it had failed before that commit) |
+| 547 | 2026-10-31 | $PATH has two forms: GNU/MSYS inside (/c/x:/f/y), forward-slash Windows at every exit (C:/x;F:/y); colon-list arguments as Git Bash; case path_two_forms; docs |
+| 546 | 2026-10-31 | GO recorded: $PATH two forms (GNU/MSYS inside, forward-slash Windows at the exits); plan and acceptance criteria in DECISIONS; anchor: building |
+| 545 | 2026-10-31 | Deployed rev 544 (grep -P \Q...\E; suite 227/0 both modes, battery 217); $PATH discussion recorded: exit slashes forward, separator awaiting the architect; anchor updated |
+| 544 | 2026-10-31 | grep -P \Q...\E literal quoting (c-parser-ac): resolved before .NET sees it, as PCRE/GNU; case grep_pcre_quote_gnu |
+| 543 | 2026-10-31 | PUBLISHED: GitHub main = git fe8bb29 = hg rev 542, release hg-542 (Bash.exe build 536); resume block updated |
 | 542 | 2026-10-31 | Publish preparation: benchmark on deployed 536, README table/startup, PERFORMANCE figures |
 | 541 | 2026-10-31 | Resume anchor, second pass: tip wording, the bug-fix rule supersedes the old deploy-only-on-his-word line, the open items named plainly, USING in the PATH build list |
 | 540 | 2026-10-31 | Resume anchor rewritten for 2026-10-31 (supersedes the stacked blocks, now history); docs: case count 234, USING states $PATH's form and the accepted assignment forms |

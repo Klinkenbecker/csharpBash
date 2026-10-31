@@ -786,7 +786,7 @@ public sealed partial class Builtins
 			{
 			// bash searches PATH for a bare filename FIRST, and the current directory only when PATH has none (not
 			// in POSIX mode); the cwd's came first until 2026-10-17, so a planted file there was sourced instead
-			foreach (var d in ShellEnvironment.CurrentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+			foreach (var d in ShellEnvironment.PathDirs(ShellEnvironment.CurrentPath))
 				{
 				var cand = Path.Combine(ShellEnvironment.TranslatePath(d), file);
 				if (File.Exists(cand)) { path = cand; file = cand; break; }
@@ -1748,9 +1748,8 @@ public sealed partial class Builtins
 		{
 		var path = ShellEnvironment.CurrentPath;   // the shell's own PATH (2026-10-11)
 		var exts = System.Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
-		foreach (var dir in path.Split(Path.PathSeparator))
+		foreach (var dir in ShellEnvironment.PathDirs(path))   // either form; no empty entries (2026-10-31)
 			{
-			if (dir.Length == 0) continue;
 			string full;
 			try { full = Path.Combine(ShellEnvironment.TranslatePath(dir), name); } catch { continue; }
 			if (File.Exists(full)) return full;

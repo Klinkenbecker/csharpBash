@@ -137,7 +137,8 @@ public sealed class ShellEnvironment
 			if (key.Equals("PATH", StringComparison.OrdinalIgnoreCase)) key = "PATH";
 			if (key.Length > 0)
 				{
-				_frames[0][key] = new Var { Value = val, Exported = true };
+				// PATH in the shell's own form, `/c/x:/f/y` (NormalizePath; 2026-10-31)
+				_frames[0][key] = new Var { Value = key == "PATH" ? NormalizePath(val) : val, Exported = true };
 				}
 			}
 		Timing.Mark("env.import");   // the timing switch splits the "evaluator" segment (review R4, 2026-10-18)
@@ -156,15 +157,16 @@ public sealed class ShellEnvironment
 		AppendOwnDirectoryToPath();
 		Timing.Mark("env.own");
 
-		// an empty PATH entry inside the list (`;;`) is the current directory to Windows' launcher, which searches
-		// this PROCESS's PATH for a name C#Bash did not find, NoDefaultCurrentDirectoryInExePath notwithstanding: a
-		// `.exe` planted in the cwd ran (2026-10-17). Cleaned here for the PATH as inherited (`Set` cleans what it
-		// writes); the shell's $PATH keeps what it was given.
+		// The process's own PATH is an exit too (a program .NET or Windows starts for C#Bash reads it): the Windows form,
+		// `C:/x;F:/y`, never a backslash and never an empty entry. An empty entry (`;;`) is the current directory to
+		// Windows' launcher, which searches this PROCESS's PATH for a name C#Bash did not find,
+		// NoDefaultCurrentDirectoryInExePath notwithstanding: a `.exe` planted in the cwd ran (2026-10-17). `Set` writes
+		// it on every assignment; here for the PATH as inherited. The shell's $PATH keeps what it was given.
 		try
 			{
-			if (Environment.GetEnvironmentVariable("PATH") is { } processPath && WithoutEmptyPathEntries(processPath) is var clean
-			    && !ReferenceEquals(clean, processPath))
-				Environment.SetEnvironmentVariable("PATH", clean);
+			var exitForm = ToWindowsPathList(Get("PATH"));
+			if (Environment.GetEnvironmentVariable("PATH") is { } processPath && processPath != exitForm)
+				Environment.SetEnvironmentVariable("PATH", exitForm.Length > 0 ? exitForm : null);
 			}
 		catch { }
 
@@ -299,6 +301,17 @@ public sealed class ShellEnvironment
 		if (arg.Length < 2 || arg[0] != '/') return arg;
 		if (excluded is not null) foreach (var p in excluded) if (p.Length > 0 && arg.StartsWith(p, StringComparison.Ordinal)) return arg;
 		if (arg[1] == '/') return DoubleSlash(arg);
+		// a colon: a PATH-style list when every piece is a /-rooted path, converted whole, `/c/x:/f/y` -> `C:/x;F:/y`
+		// (each piece as a lone argument would be); with any other piece the argument is left as typed (`/c/x:rel`,
+		// `/c/x:`, `/c/x::/f/y`, `/c/x/a:b`). Both as Git Bash, measured 2026-10-31, slashes forward. Until then only the
+		// start was converted: `C:/Windows:/f/Tools`.
+		if (arg.Contains(':'))
+			{
+			var pieces = arg.Split(':');
+			return Array.TrueForAll(pieces, p => p.Length > 0 && p[0] == '/')
+				? string.Join(";", pieces.Select(p => NativeArgument(p)))
+				: arg;
+			}
 		if (arg.Length < 3) return arg;
 		if (char.IsAsciiLetter(arg[1]) && arg[2] == '/')
 			{
@@ -568,34 +581,63 @@ public sealed class ShellEnvironment
 		if (Find(name) is { } v) { v.Value = null; v.Indexed = null; v.Assoc = null; }
 		}
 
-	/// <summary>A PATH written in MSYS form (`/c/x:/usr/bin:…`, colon-separated, entries
-	/// rooted at `/`) — as a Git Bash snapshot or `export PATH=/c/foo:$PATH` produces — is
-	/// converted to the native `C:\x;…` form so lookups and child processes keep working.</summary>
+	// PATH has two forms (the architect, 2026-10-31: "two paths is the right thing"; DECISIONS "GO: $PATH has two
+	// forms"). INSIDE the shell, $PATH is GNU/MSYS form, `/c/x:/f/y`, so `IFS=:` and the other POSIX idioms work; the
+	// colon forces the MSYS root, since `C:/x` holds one. At every EXIT (this process's environment, a child's) it is
+	// Windows form with forward slashes, `C:/x;F:/y`: never a backslash (eliminating it is why C#Bash exists), never an
+	// empty entry (Windows takes one as the current directory). Until then $PATH read in Windows form, `;`-separated.
+
+	/// <summary>Any PATH value in the shell's form, `/c/x:/f/y`: Windows (`C:\x;F:\y`, either slash), MSYS, or both
+	/// mixed (the POSIX idioms PATH="$PATH:DIR" and PATH="DIR:$PATH" with a Windows DIR or list). Empty entries are
+	/// kept, as given (RULED 2026-10-17); an entry holding a newline (a profile's echo leaking into a captured PATH)
+	/// is dropped.</summary>
 	internal static string NormalizePath(string value)
 		{
-		if (!value.Contains(':')) return value;
-		if (!value.Contains(';'))
+		var entries = PathDirs(value, keepEmpty: true);
+		var sb = new System.Text.StringBuilder(value.Length);
+		bool first = true;
+		foreach (var e in entries)
 			{
-			var parts = value.Split(':');
-			if (parts.All(p => p.Length == 0 || p.StartsWith('/') || p.Contains('\n')))
-				return string.Join(";", parts.Where(p => p.Length > 0 && !p.Contains('\n')).Select(TranslatePath));
+			if (e.Contains('\n')) continue;
+			if (!first) sb.Append(':');
+			sb.Append(ToMsysEntry(e));
+			first = false;
 			}
-		// A native list with entries joined by `:` as well: the POSIX idioms PATH="$PATH:DIR" and PATH="DIR:$PATH". Each
-		// `;` entry is split again at a colon that is not a drive's (a letter starting the piece, then `/`, `\` or the end),
-		// a /-rooted piece converted. It was kept whole, so DIR was glued onto the last entry and never searched
-		// (2026-10-31, qa-de). A value with no such colon comes back byte for byte.
-		bool split = false;
-		var outParts = new List<string>();
-		foreach (var entry in value.Split(';'))
-			{
-			var pieces = SplitPathColons(entry);
-			if (pieces.Count == 1) { outParts.Add(entry); continue; }
-			split = true;
-			foreach (var p in pieces)
-				if (p.Length > 0 && !p.Contains('\n')) outParts.Add(p.StartsWith('/') ? TranslatePath(p) : p);
-			}
-		return split ? string.Join(";", outParts) : value;
+		return sb.ToString();
 		}
+
+	/// <summary>The entries of a PATH in either form, or both mixed, each as written: split at every `;` and at every
+	/// colon that is not a drive's (a letter starting the piece, then `/`, `\` or the end). Empty entries only on
+	/// request: no lookup searches one (Windows would take it as the current directory).</summary>
+	internal static List<string> PathDirs(string value, bool keepEmpty = false)
+		{
+		var dirs = new List<string>();
+		foreach (var entry in value.Split(';'))
+			foreach (var p in SplitPathColons(entry))
+				if (keepEmpty || p.Length > 0) dirs.Add(p);
+		return dirs;
+		}
+
+	/// <summary>One PATH entry in the shell's form: `C:\x\` or `C:/x` as `/c/x`, `C:` as `/c`; `\\host\share` as
+	/// `//host/share`; MSYS and relative entries as written, slashes forward; a trailing slash dropped. A one-letter
+	/// relative entry is written `./A`: `A:/c/x` reads as drive A's `/c/x` (a drive must win there: the shell's own
+	/// paths are `C:/x`, as in PATH="$HOME/bin:$PATH"), so `A;C:/x` would have come back as one entry.</summary>
+	internal static string ToMsysEntry(string e)
+		{
+		if (e.Length >= 2 && char.IsAsciiLetter(e[0]) && e[1] == ':' && (e.Length == 2 || e[2] is '/' or '\\'))
+			{
+			var rest = e[2..].Replace('\\', '/').TrimEnd('/');
+			return "/" + char.ToLowerInvariant(e[0]) + rest;
+			}
+		var fwd = e.Replace('\\', '/');
+		fwd = fwd.Length > 1 ? fwd.TrimEnd('/') : fwd;
+		return fwd.Length == 1 && char.IsAsciiLetter(fwd[0]) ? "./" + fwd : fwd;
+		}
+
+	/// <summary>The PATH a Windows program is given, from a PATH in either form: `C:/x;F:/y`, each entry's form
+	/// translated (<see cref="TranslateForm"/>: forward slashes, `/c/x` as `C:/x`), empty entries left out.</summary>
+	internal static string ToWindowsPathList(string value) =>
+		string.Join(";", PathDirs(value).Select(TranslateForm));
 
 	private static List<string> SplitPathColons(string entry)
 		{
@@ -632,10 +674,9 @@ public sealed class ShellEnvironment
 		if (AutoExport) v.Exported = true;
 		if (name == "PATH")
 			{
-			// the shell's own command lookup (ResolveOnPath/FindInPath) reads the process
-			// environment, so `export PATH=…` must reach it or new directories are invisible
-			// without empty entries: Windows' launcher searches this PATH and takes one as the cwd (2026-10-17)
-			try { Environment.SetEnvironmentVariable("PATH", WithoutEmptyPathEntries(value)); } catch { }
+			// the process environment carries PATH too (CurrentPath reads it where no shell is active), in the exit
+			// form: forward-slash Windows, without empty entries (Windows' launcher takes one as the cwd, 2026-10-17)
+			try { Environment.SetEnvironmentVariable("PATH", ToWindowsPathList(value) is { Length: > 0 } w ? w : null); } catch { }
 			PathChanged?.Invoke();   // the hash table is reset, as bash's
 			}
 		}
@@ -993,7 +1034,7 @@ public sealed class ShellEnvironment
 		{
 		var path = Get("PATH");
 		if (path.Length == 0) return;
-		var entries = path.Split(';', StringSplitOptions.RemoveEmptyEntries);
+		var entries = PathDirs(path).Select(TranslateForm).ToArray();   // `/c/x` as `C:/x`: the file system's form
 		string? root = null;
 		foreach (var dir in entries)
 			{
@@ -1024,7 +1065,7 @@ public sealed class ShellEnvironment
 			extra.Add(sub);
 			}
 		if (extra.Count == 0) return;
-		Set("PATH", string.Join(";", extra) + ";" + path.TrimStart(';'));   // a leading `;` made a `;;`
+		Set("PATH", string.Join(";", extra) + ";" + path.TrimStart(':'));   // NormalizePath reads the mix; a leading `:` made a `::`
 		}
 
 	/// <summary>
@@ -1039,11 +1080,11 @@ public sealed class ShellEnvironment
 		try { dir = AppContext.BaseDirectory.TrimEnd('\\', '/'); } catch { return; }
 		if (dir.Length == 0) return;
 		var path = Get("PATH");
-		var entries = path.Split(';', StringSplitOptions.RemoveEmptyEntries);
+		var entries = PathDirs(path).Select(TranslateForm);   // `/c/x` as `C:/x`
 		if (entries.Any(e => string.Equals(e.Replace('/', '\\').TrimEnd('\\'), dir.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase))) return;
-		// a trailing `;` made `…;;dir`, an empty entry Windows' launcher takes as the cwd (2026-10-17); and the
-		// folder spelled with `/` was not recognised, so it was added again
-		Set("PATH", path.Length == 0 ? dir : path.TrimEnd(';') + ";" + dir);
+		// a trailing `:` made `…::dir`, an empty entry (2026-10-17: Windows' launcher took one as the cwd); and the
+		// folder spelled with `/` was not recognised, so it was added again. NormalizePath reads the `;` mix.
+		Set("PATH", path.Length == 0 ? dir : path.TrimEnd(':') + ";" + dir);
 		}
 
 	private static long WindowsUid()

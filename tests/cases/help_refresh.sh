@@ -7,7 +7,8 @@ fx=$PWD/cases/help_rev397.json
 cd "${TMPDIR:-${TEMP:-/tmp}}" || exit 1
 t="help-refresh-$$"; mkdir -p "$t" && cd "$t" || exit 1
 p=${PWD//\\//}
-ask() { USERPROFILE=$PWD/$1 HOME=$PWD/$1 "$BASH" -c "help $2" 2>&1 | sed "s#\\\\#/#g; s#$p/##g"; }
+# 2026-10-31: no backslash is rewritten here any more: help's own messages named the file `C:/x\.bash\help.json` (fixed)
+ask() { USERPROFILE=$PWD/$1 HOME=$PWD/$1 "$BASH" -c "help $2" 2>&1 | sed "s#$p/##g"; }
 
 echo "--- a profile with no table: written from this build's, and it answers"
 mkdir a; ask a xargs
@@ -25,4 +26,10 @@ cp c/.bash/help.json c.copy
 ask c xargs
 ask c mytool
 cmp -s c/.bash/help.json c.copy && echo "c: untouched"
+# 2026-10-31: rev 462's table (cases/help_rev462.json = `hg cat -r 462 Bash/help.json`), the one before dd and cksum were
+# added, is an earlier build's too (EarlierHelpTables), so a profile written from it gets the new names
+echo "--- rev 462's table, unedited: replaced by this build's, which has dd"
+mkdir -p d/.bash; cp "${fx%397.json}462.json" d/.bash/help.json
+ask d dd
+cmp -s d/.bash/help.json a/.bash/help.json && echo "d: now this build's table"
 cd .. && rm -rf "$t"

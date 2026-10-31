@@ -105,6 +105,7 @@ public sealed partial class Builtins
 	private static readonly HashSet<string> EarlierHelpTables = new(StringComparer.Ordinal)
 		{
 		"70fcfdea5039e0a80fbe82b865299b81aa402218bbc9b7a6717bafc7b5364ef4",   // rev 397, 2026-10-27
+		"91eedeb6b38901f3633aac03e5612cb0ec72a22a9f5389fcc691126458d1ca4c",   // rev 462, 2026-10-29 (outgoing at dd/cksum, 2026-10-31)
 		};
 
 	/// <summary>The table, in the built-in order then the file's own names: the file's pages for every name it has, the
@@ -124,7 +125,7 @@ public sealed partial class Builtins
 			if (EarlierHelpTables.Contains(sum))
 				{
 				File.WriteAllText(file, builtIn);
-				Console.Error.WriteLine($"help: {file}: an earlier build's table, unedited: replaced by this build's");
+				Console.Error.WriteLine($"help: {ShellEnvironment.ToShellPath(file)}: an earlier build's table, unedited: replaced by this build's");
 				return table;
 				}
 			var mine = Pages(Json.ParseOne(ShellEncoding.ReadAllText(file)) as JObj
@@ -135,7 +136,7 @@ public sealed partial class Builtins
 			}
 		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Json.ParseException)
 			{
-			Console.Error.WriteLine($"help: {file}: {ex.Message}; the built-in table answers");
+			Console.Error.WriteLine($"help: {ShellEnvironment.ToShellPath(file)}: {ex.Message}; the built-in table answers");
 			}
 		return table;
 		}

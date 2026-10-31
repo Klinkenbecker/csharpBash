@@ -3,6 +3,8 @@
 # value (the native list plus `:DIR`) was left as it was, so DIR was glued onto the last entry and never searched:
 # "qaprobe: command not found". DIR as $PWD gives (F:/... on Windows), in MSYS form (/f/...), and in a fresh shell.
 # Expected: GNU bash 5.1 via WSL (there $PWD is /tmp/..., which is its own MSYS form).
+# 2026-10-31: $PATH reads in MSYS form (`/c/x:/f/y`), so the visible last entry is DIR in MSYS form ($m), however
+# DIR was written; until then it was DIR in Windows form, `;`-separated.
 cd "${TMPDIR:-${TEMP:-/tmp}}" || exit 1
 d="path-append-$$"; mkdir -p "$d/pbin" && cd "$d" || exit 1
 p() { printf '%s\n' "--- $1"; }
@@ -12,8 +14,8 @@ p "appended"; ( PATH="$PATH:$PWD/pbin"; qaprobe b )
 p "prepended"; ( PATH="$PWD/pbin:$PATH"; qaprobe c )
 case $PWD in ?:*) m="/$(printf %s "${PWD:0:1}" | tr A-Z a-z)${PWD:2}";; *) m=$PWD;; esac
 p "appended, MSYS form"; ( PATH="$PATH:$m/pbin"; qaprobe d )
-p "appended: the last entry is DIR"; ( PATH="$PATH:$PWD/pbin"; case $PATH in *[\;:]"$PWD/pbin") echo yes;; *) echo no;; esac )
-p "appended in MSYS form: the last entry is DIR, converted"; ( PATH="$PATH:$m/pbin"; case $PATH in *[\;:]"$PWD/pbin") echo yes;; *) echo no;; esac )
+p "appended: the last entry is DIR, in MSYS form"; ( PATH="$PATH:$PWD/pbin"; case $PATH in *:"$m/pbin") echo yes;; *) echo no;; esac )
+p "appended in MSYS form: the last entry is DIR"; ( PATH="$PATH:$m/pbin"; case $PATH in *:"$m/pbin") echo yes;; *) echo no;; esac )
 p "a fresh shell"; "$BASH" -c 'PATH="$PATH:'"$PWD"'/pbin"; qaprobe e'
 p "exported to a child"; ( export PATH="$PATH:$PWD/pbin"; "$BASH" -c 'qaprobe f' )
 cd .. && rm -rf "$d"

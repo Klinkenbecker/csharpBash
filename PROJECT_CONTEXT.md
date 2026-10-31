@@ -1,14 +1,18 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-10-31 (session 988ee3e2, context exhausted). SUPERSEDES every block below; they are history.
-> **TRUE STATE (verified this session; written at hg 540, later commits are records only):** **DEPLOYED rev 536** (`1.0.0+hg.fef4ff758d6c 536`: dist/Bash.exe
-> AND dist/sh.exe; suite 226/0 both modes, battery 217; rollback dist/Bash.exe.rev532 + dist/sh.exe.rev532).
-> **PUBLISHED: GitHub main = git 64476f5 = hg rev 533; latest release hg-533 (Bash.exe build 532).** NOT published:
-> rev 536 (PATH append) and records. Suite: 234 registered cases (3 AOT-only). Untracked root files BENCHMARK-
+> ## RESUME HERE — 2026-10-31 (session 988ee3e2, then 9df18ad7 = bash-b6). SUPERSEDES every block below; they are history.
+> **TRUE STATE (verified 2026-10-31, written at hg 550):** **DEPLOYED rev 549** (`1.0.0+hg.51195c94f3df 549`: dist/Bash.exe
+> AND dist/sh.exe; suite 229/0 both modes, battery 217; rollback dist/Bash.exe.rev544 + dist/sh.exe.rev544).
+> **PUBLISHED 2026-10-31: GitHub main = git fe8bb29 = hg rev 542; latest release hg-542 (Bash.exe build 536).**
+> Deployed, NOT published: 544 (grep -P `\Q...\E`), 547 (**$PATH's two forms**: `/c/x:/f/y` inside, `C:/x;F:/y` at
+> every exit), 549 (grep -f empty file). Suite: 237 registered cases (3 AOT-only; README and docs/DEVELOPING still say
+> 234: the publish doc review updates them). Untracked root files BENCHMARK-
 > PROVENANCE.md and "The Windows Shell Tax.url" are the architect's: leave them.
+> **549 checked by the peers, all fine:** esdk-a2 (make recipes, release --check), koliada-net-forms-cb
+> (dotnet/hg/nupkg), kes-term-a1 (Release build: MSBuild Exec finds hg; a one-off CS0006 first, not 549's).
 > **LIVE SESSIONS (ask ALL for each deploy slot, and a quiet ~25-min window for compare3 before a publish):**
-> koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, qa-de, c-parser-ac, esdk-a2 (it runs the ESDK
-> CC8051 build ON dist/sh.exe + dist/Bash.exe: tell it "swap done" first; it holds builds while asked).
+> koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, qa-de, c-parser-ac, kes-install-43, esdk-a2 (it runs
+> the ESDK CC8051 build ON dist/sh.exe + dist/Bash.exe: tell it "swap done" first; it holds builds while asked).
 > **HOW WE WORK NOW (memory bug-fix-rule):** a peer's BUG report: verify against GNU, raise with a position, wait ~10
 > min, then fix (GNU-checked case red on the deployed build, mutation checks, suite both modes, commit), slot, deploy,
 > notify, record. A FEATURE or DESIGN change waits for the architect's word. This SUPERSEDES the older "RULES: deploy
@@ -17,15 +21,10 @@
 > deployed build in a quiet window + doc review (README table/startup line/case count, docs/DEVELOPING count,
 > docs/PERFORMANCE figures) + tools/publish.sh (token C:/Users/guy/klinkenbecker.gh-token, never printed).
 > **AWAITING THE ARCHITECT (do NOT build before his word):**
-> 1. **$PATH in GNU/MSYS form inside, Windows form at the exits:** SPIKE DONE (DECISIONS "SPIKE: $PATH in GNU/MSYS
->    form"; patch F:/TEMP/claude/F--Koliada-Tools-bash/988ee3e2-f1b4-4772-913a-37e408930e46/scratchpad/spike-path-gnu-form.patch,
->    may be gone: the DECISIONS entry has the design). Works as designed; 10 suite failures all explained; all 7
->    sessions: none reads $PATH as Windows text (esdk-a2 and koliada-net-73 ASSIGN Windows form for children: proven
->    to reach them exactly; koliada-net-73's kes-log isolation must NEVER fall back to the inherited PATH). Asked: go
->    or not; exit slashes (Claude: backslashes). To build: keep empty entries (`::`), convert Builtins.Shell.cs 789 +
->    1751 and Builtins.cs 426, Git augmentation via PathDirs, update path_append_gnu + lookup_env_windows expectations,
->    and docs/USING.md line 69 (it now says $PATH reads in Windows form).
-> 2. Publish rev 536+.
+> 1. **GREENLIT 2026-10-31 ("1/ yes, go, then publish"): `dd` and `cksum` in-process (GNU 8.32), BUILT rev 553**
+>    (DECISIONS "BUILT: `dd` and `cksum`"; + the help path fix). NEXT: deploy (every session's slot), THEN PUBLISH
+>    (compare3 on the deployed build in a quiet window + doc review + tools/publish.sh): the go covers it, no new ask.
+> 2. Publish: 544, 547, 549 (and the dd/cksum deploy) are deployed and unpublished: part of item 1's run.
 > 3. Older, still open (see the blocks below; check DECISIONS before acting): the awk suite HANG (rev 360); the rest of
 >    arithmetic-error parity (wording, abandoning the line; rev 496 did (( ))); the performance review's R4 items 4-9
 >    + OutputEncoding (DECISIONS 2026-10-18 "R4"; no optimisation before a pick); output buffering's design talk
@@ -37,8 +36,11 @@
 > the installer asks about PATH, default NO; a no-#! file found on PATH is NOT run (fix the file); MSYS paths inside
 > --opt=/x arguments deferred until a script needs it; `$( )` keeps NULs (rev 72); TZ via ShellClock (IANA %Z numeric:
 > documented); diff -y (wide characters count 1: documented); hash -p obeyed (bash builtins excepted); xargs streams
-> (GNU's async message order not matched: documented); PATH="$PATH:DIR" works (rev 536).
-> **NEXT only on his word:** item 1 (build or drop), item 2 (publish). Nothing else is queued.
+> (GNU's async message order not matched: documented); PATH="$PATH:DIR" works (rev 536). **$PATH's two forms** (rev
+> 547, DEPLOYED 549; DECISIONS "GO"/"BUILT: $PATH's two forms"): `/c/x:/f/y` inside, `C:/x;F:/y` (FORWARD slashes, the
+> architect's mandate: no backslash ever) at every exit; empty entries kept as given; one-letter relative entry `./A`;
+> a colon-list argument converted whole (Git Bash's rule); `$PWD`/`$HOME` stay `C:/x`.
+> **NEXT only on his word:** item 1 (dd/cksum builtins) or a publish. Nothing else is queued; bug reports follow the rule above.
 >
 > ## RESUME ANCHOR (rewritten 2026-10-18) — HISTORY: superseded by the 2026-10-31 block above
 > Replaces the 2026-10-16 head, which had filled with resolved items; that text is in hg rev 316's

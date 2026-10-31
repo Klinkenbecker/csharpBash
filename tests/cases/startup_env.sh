@@ -8,7 +8,9 @@
 d=$(mktemp -d) && cd "$d" || exit 1
 mkdir -p Git/cmd Git/bin Git/usr/bin Git/mingw64/bin tools
 for f in Git/cmd Git/bin Git/mingw64/bin tools; do : > "$f/git.exe"; done
-show() { PATH="$1" "$BASH" -c 'printf "%s\n" "$PATH"' | tr ';\\' '\n/' | grep -F "$d" | sed "s|$d|D|"; }
+# $PATH's entries are MSYS form, `:`-separated (2026-10-31): D is $d in that form
+case $d in ?:*) m="/$(printf %s "${d:0:1}" | tr A-Z a-z)${d:2}";; *) m=$d;; esac
+show() { PATH="$1" "$BASH" -c 'IFS=:; for e in $PATH; do printf "%s\n" "$e"; done' | grep -F "$m" | sed "s|$m|D|"; }
 for p in "Git/cmd" "Git/bin" "Git/mingw64/bin" "tools;Git/mingw64/bin" "Git/usr/bin;Git/mingw64/bin" "tools"; do
 	echo "== PATH=$p"
 	show "$(printf '%s' "$p" | sed "s|^|$d/|; s|;|;$d/|g")"

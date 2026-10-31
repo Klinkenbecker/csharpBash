@@ -11,3 +11,7 @@ find: https://www.gnu.org/software/findutils/manual/html_node/Invoking-find.html
 xargs: https://www.gnu.org/software/findutils/manual/html_node/find_html/Invoking-xargs.html
 mytool: https://example.org/mytool
 c: untouched
+--- rev 462's table, unedited: replaced by this build's, which has dd
+help: d/.bash/help.json: an earlier build's table, unedited: replaced by this build's
+dd: https://www.gnu.org/software/coreutils/manual/html_node/dd-invocation.html
+d: now this build's table

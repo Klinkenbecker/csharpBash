@@ -6,9 +6,9 @@ probe ran: b
 probe ran: c
 --- appended, MSYS form
 probe ran: d
---- appended: the last entry is DIR
+--- appended: the last entry is DIR, in MSYS form
 yes
---- appended in MSYS form: the last entry is DIR, converted
+--- appended in MSYS form: the last entry is DIR
 yes
 --- a fresh shell
 probe ran: e

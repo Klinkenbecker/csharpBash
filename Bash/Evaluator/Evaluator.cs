@@ -1986,7 +1986,7 @@ public sealed class Evaluator
 			}
 		// PATHEXT says which extensions a bare name is tried with; only a program extension can be a match (2026-10-18)
 		var pathExt = pathExtValue.Split(';', StringSplitOptions.RemoveEmptyEntries).Where(FileTests.IsProgramExtension).ToArray();
-		var dirs = pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+		var dirs = ShellEnvironment.PathDirs(pathValue);   // either form (2026-10-31: $PATH is `/c/x:/f/y`)
 		bool hasExt = Path.HasExtension(name);
 		string? cannotRun = null;   // bash: the first match it cannot run is the answer when no later one can
 		bool cannotRunRelative = false;
@@ -2040,7 +2040,7 @@ public sealed class Evaluator
 		if (name.Length == 0 || IsPathName(name) || name.Contains(':')) return found;
 		var pathExt = PathExt.Split(';', StringSplitOptions.RemoveEmptyEntries).Where(FileTests.IsProgramExtension).ToArray();
 		bool hasExt = Path.HasExtension(name);
-		foreach (var d in _env.Get("PATH").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+		foreach (var d in ShellEnvironment.PathDirs(_env.Get("PATH")))
 			{
 			try
 				{
@@ -2379,13 +2379,14 @@ public sealed class Evaluator
 				{
 				foreach (var k in psi.Environment.Keys.Where(k => k != "PATH" && k.Equals("PATH", StringComparison.OrdinalIgnoreCase)).ToList())
 					psi.Environment.Remove(k);
-				psi.Environment["PATH"] = _env.Get("PATH");
+				psi.Environment["PATH"] = ShellEnvironment.ToWindowsPathList(_env.Get("PATH"));   // the exit form, `C:/x;F:/y`
 				}
 			}
 		if (!clearEnv)
 			foreach (var (k, v) in ExportedFunctionVars()) psi.Environment[k] = v;
+		// `PATH=... cmd` too: a Windows-form PATH given for a child reaches it entry for entry, slashes forward
 		foreach (var (k, v) in tempAssign)
-			psi.Environment[k] = v;
+			psi.Environment[k] = k == "PATH" ? ShellEnvironment.ToWindowsPathList(v) : v;
 		if (unsetEnv is not null)
 			foreach (var u in unsetEnv) psi.Environment.Remove(u);   // env -u NAME (2026-10-08)
 		// nor in a child's: a program C#Bash starts would take an empty PATH entry as its cwd too (2026-10-17)

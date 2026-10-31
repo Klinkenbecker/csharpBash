@@ -5,5 +5,5 @@ rc=127
 its $PATH: none
 == a child gets PATH without empty entries; the shell's $PATH is as written
 Path=C:/Windows/System32;C:/Windows
-[C:/Windows/System32;;C:/Windows;]
+[/c/Windows/System32::/c/Windows:]
 Path=C:/Windows/System32;C:/Windows

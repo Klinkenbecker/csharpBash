@@ -1,0 +1,33 @@
+[]:  rc=1
+[-v]: in.txt:a|in.txt:b|in2.txt:c rc=0
+[-c]:  rc=1
+[-vc]: in.txt:2|in2.txt:1 rc=0
+[-l]:  rc=1
+[-L]: in.txt|in2.txt rc=1
+[-q]:  rc=1
+[-vn]: in.txt:1:a|in.txt:2:b|in2.txt:1:c rc=0
+[-vo]:  rc=0
+[-vx]: in.txt:a|in.txt:b|in2.txt:c rc=0
+[-vw]: in.txt:a|in.txt:b|in2.txt:c rc=0
+[-vF]: in.txt:a|in.txt:b|in2.txt:c rc=0
+[-vE]: in.txt:a|in.txt:b|in2.txt:c rc=0
+[-vP]: in.txt:a|in.txt:b|in2.txt:c rc=0
+[-o]:  rc=1
+[-vH]: in.txt:a|in.txt:b|in2.txt:c rc=0
+[-vl]: in.txt|in2.txt rc=0
+[-vL]:  rc=0
+[-vxF]: in.txt:a|in.txt:b|in2.txt:c rc=0
+stdin: rc=1
+a
+b
+stdin -v: rc=0
+a
+b
+c
+the set-difference idiom: rc=0
+a
+an empty -f and another: rc=0
+b
+an empty -f and -e: rc=0
+a missing file, not read: rc=1
+an operand is a file, not the pattern: rc=1

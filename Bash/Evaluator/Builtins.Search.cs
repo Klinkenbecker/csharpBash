@@ -63,9 +63,10 @@ public sealed partial class Builtins
 	/// and `-o` reports the group (<see cref="KeptSpan"/>). A lookbehind `(?&lt;=X)Y` was tried first and
 	/// rejected: it does not consume X, so `\w+ \K\w+` over "public void Alpha()" also matched
 	/// "Alpha", which PCRE does not. The last `\K` of a branch wins, as in PCRE. A `\K` inside a group
-	/// is refused loudly.</summary>
+	/// is refused loudly. `\Q...\E` is resolved first (<see cref="UnquotePcre"/>).</summary>
 	private static string PcreToNet(string pat)
 		{
+		pat = UnquotePcre(pat);
 		if (!pat.Contains("\\K")) return pat;
 		var branches = new List<(int Start, int End, List<int> Keeps)>();
 		int depth = 0, branchStart = 0;
@@ -112,6 +113,39 @@ public sealed partial class Builtins
 			sb.Append("(?<").Append(KeepGroup).Append('>').Append(pat, last + 2, be - (last + 2)).Append(')');
 			}
 		return sb.ToString();
+		}
+
+	/// <summary>PCRE's literal quoting, which .NET lacks ("Unrecognized escape sequence \Q", c-parser-ac
+	/// 2026-10-31): the text between `\Q` and `\E` becomes escaped literals, to the end of the pattern when
+	/// no `\E` follows; a `\E` with no `\Q` is dropped; `\\Q` stays an escaped backslash then Q. All as
+	/// PCRE (GNU grep -P), inside a class too.</summary>
+	private static string UnquotePcre(string pat)
+		{
+		if (!pat.Contains("\\Q") && !pat.Contains("\\E")) return pat;
+		var sb = new StringBuilder(pat.Length + 16);
+		for (int i = 0; i < pat.Length; i++)
+			{
+			char c = pat[i];
+			if (c != '\\' || i + 1 >= pat.Length) { sb.Append(c); continue; }
+			char n = pat[++i];
+			if (n == 'E') continue;
+			if (n != 'Q') { sb.Append(c).Append(n); continue; }
+			int end = pat.IndexOf("\\E", i + 1, StringComparison.Ordinal);
+			int stop = end < 0 ? pat.Length : end;
+			for (int k = i + 1; k < stop; k++) AppendPcreLiteral(sb, pat[k]);
+			i = end < 0 ? pat.Length : end + 1;
+			}
+		return sb.ToString();
+		}
+
+	/// <summary>One character as a .NET literal, the same inside a class and out: a blank or control
+	/// character as `\xHH` (so `(?x)` keeps a quoted space), other ASCII punctuation backslash-escaped,
+	/// letters, digits, `_` and non-ASCII as they are (.NET refuses an escaped word character).</summary>
+	private static void AppendPcreLiteral(StringBuilder sb, char c)
+		{
+		if (c <= ' ' || c == '\x7f') sb.Append("\\x").Append(((int)c).ToString("x2"));
+		else if (c < 0x80 && !char.IsLetterOrDigit(c) && c != '_') sb.Append('\\').Append(c);
+		else sb.Append(c);
 		}
 
 	/// <summary>The part of a match grep reports: the `\K` group when the matching branch had one.</summary>
@@ -253,7 +287,13 @@ public sealed partial class Builtins
 			catch (Exception ex) { Console.Error.WriteLine($"grep: {f}: {IoError(ex)}"); return 2; }
 			}
 		var operands = new List<string>(o.Operands);
-		if (patterns.Count == 0)
+		// -e / -f given but no pattern from them (an empty -f file): ZERO patterns, which match nothing (GNU: "The empty
+		// file contains zero patterns, and therefore matches nothing"); GNU 3.7 then reads nothing unless -v or -L, not even
+		// to report a missing file. It was taken for "no pattern given": the first operand became the pattern, or the usage
+		// text, rc 2 (kes-install-43, 2026-10-31: `grep -vxFf seen.txt` while seen.txt was still empty).
+		bool zeroPatterns = patterns.Count == 0 && (o.All('e').Any() || o.All('f').Any());
+		if (zeroPatterns && !invert && !filesWithout) return 1;
+		if (patterns.Count == 0 && !zeroPatterns)
 			{
 			if (operands.Count == 0) { Console.Error.WriteLine("Usage: grep [OPTION]... PATTERNS [FILE]..."); return 2; }
 			patterns.AddRange(operands[0].Split('\n'));
@@ -263,7 +303,7 @@ public sealed partial class Builtins
 		try
 			{
 			var alternatives = patterns.Select(p => fixedStr ? Regex.Escape(p) : pcre ? PcreToNet(p) : ere ? EreToNet(p) : BreToNet(p));
-			string pat = patterns.Count == 1 ? alternatives.First() : "(?:" + string.Join(")|(?:", alternatives) + ")";
+			string pat = zeroPatterns ? "(?!)" : patterns.Count == 1 ? alternatives.First() : "(?:" + string.Join(")|(?:", alternatives) + ")";
 			if (wordMatch) pat = $@"(?<![\w])(?:{pat})(?![\w])";
 			if (lineMatch) pat = $"^(?:{pat})$";
 			re = new Regex(pat, RegexOptions.CultureInvariant | (icase ? RegexOptions.IgnoreCase : RegexOptions.None));
