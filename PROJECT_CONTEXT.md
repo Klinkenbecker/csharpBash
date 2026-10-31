@@ -1,11 +1,51 @@
 # Project Context: Bash
 
-> ## RESUME ANCHOR (rewritten 2026-10-18) — read this before anything else
+> ## RESUME HERE — 2026-10-31 (session 988ee3e2, context exhausted). SUPERSEDES every block below; they are history.
+> **TRUE STATE (verified this session; written at hg 540, later commits are records only):** **DEPLOYED rev 536** (`1.0.0+hg.fef4ff758d6c 536`: dist/Bash.exe
+> AND dist/sh.exe; suite 226/0 both modes, battery 217; rollback dist/Bash.exe.rev532 + dist/sh.exe.rev532).
+> **PUBLISHED: GitHub main = git 64476f5 = hg rev 533; latest release hg-533 (Bash.exe build 532).** NOT published:
+> rev 536 (PATH append) and records. Suite: 234 registered cases (3 AOT-only). Untracked root files BENCHMARK-
+> PROVENANCE.md and "The Windows Shell Tax.url" are the architect's: leave them.
+> **LIVE SESSIONS (ask ALL for each deploy slot, and a quiet ~25-min window for compare3 before a publish):**
+> koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, qa-de, c-parser-ac, esdk-a2 (it runs the ESDK
+> CC8051 build ON dist/sh.exe + dist/Bash.exe: tell it "swap done" first; it holds builds while asked).
+> **HOW WE WORK NOW (memory bug-fix-rule):** a peer's BUG report: verify against GNU, raise with a position, wait ~10
+> min, then fix (GNU-checked case red on the deployed build, mutation checks, suite both modes, commit), slot, deploy,
+> notify, record. A FEATURE or DESIGN change waits for the architect's word. This SUPERSEDES the older "RULES: deploy
+> only on 'deploy and notify'" line below for bug fixes and greenlit work (each still asks every session for the slot).
+> Publish only on his word: compare3 on the
+> deployed build in a quiet window + doc review (README table/startup line/case count, docs/DEVELOPING count,
+> docs/PERFORMANCE figures) + tools/publish.sh (token C:/Users/guy/klinkenbecker.gh-token, never printed).
+> **AWAITING THE ARCHITECT (do NOT build before his word):**
+> 1. **$PATH in GNU/MSYS form inside, Windows form at the exits:** SPIKE DONE (DECISIONS "SPIKE: $PATH in GNU/MSYS
+>    form"; patch F:/TEMP/claude/F--Koliada-Tools-bash/988ee3e2-f1b4-4772-913a-37e408930e46/scratchpad/spike-path-gnu-form.patch,
+>    may be gone: the DECISIONS entry has the design). Works as designed; 10 suite failures all explained; all 7
+>    sessions: none reads $PATH as Windows text (esdk-a2 and koliada-net-73 ASSIGN Windows form for children: proven
+>    to reach them exactly; koliada-net-73's kes-log isolation must NEVER fall back to the inherited PATH). Asked: go
+>    or not; exit slashes (Claude: backslashes). To build: keep empty entries (`::`), convert Builtins.Shell.cs 789 +
+>    1751 and Builtins.cs 426, Git augmentation via PathDirs, update path_append_gnu + lookup_env_windows expectations,
+>    and docs/USING.md line 69 (it now says $PATH reads in Windows form).
+> 2. Publish rev 536+.
+> 3. Older, still open (see the blocks below; check DECISIONS before acting): the awk suite HANG (rev 360); the rest of
+>    arithmetic-error parity (wording, abandoning the line; rev 496 did (( ))); the performance review's R4 items 4-9
+>    + OutputEncoding (DECISIONS 2026-10-18 "R4"; no optimisation before a pick); output buffering's design talk
+>    (interleaving with children); a generic polite web fetcher for local sessions (the architect's "should become a
+>    real tool for generic use locally?", DECISIONS "no answer retried once"); deploy.sh's EarlierHelpTables guard
+>    (Claude's proposal, rev 469's invariant); PortableBash / the 2.0 host (not started); parked: serial I/O,
+>    `compgen -c`; installer phases 3-5 BLOCKED on Installer INST-Q-046 (+ INST-Q-047 filed: ask PATH, default NO).
+> **SETTLED 2026-10-29..31, do NOT re-open (DECISIONS has each):** dist/sh.exe ships (make's recipes run through it);
+> the installer asks about PATH, default NO; a no-#! file found on PATH is NOT run (fix the file); MSYS paths inside
+> --opt=/x arguments deferred until a script needs it; `$( )` keeps NULs (rev 72); TZ via ShellClock (IANA %Z numeric:
+> documented); diff -y (wide characters count 1: documented); hash -p obeyed (bash builtins excepted); xargs streams
+> (GNU's async message order not matched: documented); PATH="$PATH:DIR" works (rev 536).
+> **NEXT only on his word:** item 1 (build or drop), item 2 (publish). Nothing else is queued.
+>
+> ## RESUME ANCHOR (rewritten 2026-10-18) — HISTORY: superseded by the 2026-10-31 block above
 > Replaces the 2026-10-16 head, which had filled with resolved items; that text is in hg rev 316's
 > `PROJECT_CONTEXT.md`, and every item in it is resolved with a DECISIONS entry or carried below. The tail (KNOWN
 > LIMITATIONS, SETTLED, DO NOT undo, machine facts) is kept.
 >
-> **2026-10-27 (session 988ee3e2) — RESUME HERE** (rewritten when the greenlit list finished; the list's working notes
+> **2026-10-27 (session 988ee3e2) — HISTORY (was "RESUME HERE"; superseded by the 2026-10-31 block at the top)** (the list's working notes
 > are in hg rev 424's PROJECT_CONTEXT.md). It SUPERSEDES the TRUE STATE block below wherever they differ.
 > - **TRUE STATE:** hg tip = rev 450 (this anchor + DECISIONS "DEPLOYED rev 448 ... PUBLISHED ... hg rev 449").
 >   **PUBLISHED: GitHub main = git 2876ef9 = hg rev 449** (2026-10-28; compare3 on deployed 448: pipeline 0.080 s, 1.3x
@@ -107,14 +147,21 @@
 >   follow the bug-fix rule. **Backticks in arithmetic** (esdk-a2): FIXED rev 525 (the architect: "go"), DEPLOYED rev
 >   525 (suite 223/0 both modes, battery 217; rollback dist/Bash.exe.rev520). NOT published (GitHub at hg 522).
 >   esdk-a2 confirmed 525: its four SDK helpers run (rc=0).
->   **GREENLIT (the architect 2026-10-30: "fix the diff -y first, then publish"): `diff -y` (side-by-side) (esdk-a2).** Refused today ("not
->   implemented", falls through to a PATH diff, none on a minimal PATH); inside `` r=`diff -y A B | grep ...` `` the
->   refusal leaves r empty, so the ESDK's init0 check could never fail (it now pins GNU diff by full path). Claude:
->   implement GNU's -y (-W 130 default, `|` `<` `>` markers, --suppress-common-lines, --left-column, GNU's tab
->   expansion), GNU-checked; a feature, so his call, not the 10-minute bug-fix rule.
->   **`hash -p PATH NAME` obeyed** (esdk-a2; the record's LOW "hash -p /abs name not obeyed"): FIXED rev 529 (bash
->   builtins excepted, functions win, only explicit -p; a subshell keeps the hash table), DEPLOYED rev 529 (suite
->   224/0 both modes, battery 217; rollback dist/Bash.exe.rev525). NOT published (GitHub at hg 522; 525 and 529 to go).
+>   **`diff -y`** (esdk-a2; the architect: "fix the diff -y first, then publish"): BUILT rev 532, DEPLOYED rev 532
+>   (suite 225/0 both modes, battery 217; rollback dist/Bash.exe.rev529). **`hash -p PATH NAME` obeyed**: rev 529.
+>   **PUBLISHED 2026-10-30: GitHub main = git 64476f5 = hg rev 533, release hg-533 (Bash.exe build 532, SHA-256
+>   checked; benchmark re-run at 532).** Peer bug reports follow the bug-fix rule.
+>   **`PATH="$PATH:DIR"` adds DIR** (qa-de): FIXED rev 536 (NormalizePath splits a `;` list's entries again at
+>   non-drive colons), DEPLOYED rev 536 (suite 226/0 both modes, battery 217; rollback dist/Bash.exe.rev532). NOT
+>   published (GitHub at hg 533). Seven live sessions now (+installer-a4, qa-de, c-parser-ac): ask all of them for
+>   each deploy slot.
+>   **SPIKE DONE 2026-10-31, AWAITING THE ARCHITECT: $PATH in GNU/MSYS form inside** (DECISIONS "SPIKE: $PATH in
+>   GNU/MSYS form"; patch in the scratchpad, tree reverted to 538). The design works: every measurement as designed
+>   (IFS=: 48 entries, lookups, Windows children get `C:\...;...`, both Windows-form assignments reach their child
+>   exactly, snapshot/BASH_PATH/nested); battery 217. Suite 10 failures, all explained: 2 old-form expectations, 2 a
+>   spike bug (empty entries dropped: keep them, `::`), 6 splitting sites not converted (which, Git augmentation,
+>   lookup helpers). Caucus, all 7: none reads $PATH as Windows text; esdk-a2 and koliada-net-73 ASSIGN Windows form
+>   for children (proven to reach them). Claude: build it (keep empties, the 3 sites, tests, backslashes on exit).
 >   **RAISED, bug fixes (kes-term-a1, 2026-10-30, verified against GNU; under the "wait 10 mins and keep going" rule,
 >   fixed after the publish):** find -printf ignores widths/flags/precision (`%10s`, `%-6f`, `%.1f`; GNU pads `%05s`
 >   with spaces) and prints the directive literally; ls --time-style honours only full-iso (long-iso, iso, +FORMAT,

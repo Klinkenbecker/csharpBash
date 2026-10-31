@@ -1,0 +1,16 @@
+--- not on PATH
+qaprobe: command not found
+--- appended
+probe ran: b
+--- prepended
+probe ran: c
+--- appended, MSYS form
+probe ran: d
+--- appended: the last entry is DIR
+yes
+--- appended in MSYS form: the last entry is DIR, converted
+yes
+--- a fresh shell
+probe ran: e
+--- exported to a child
+probe ran: f

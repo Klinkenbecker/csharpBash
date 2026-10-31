@@ -10341,3 +10341,71 @@ no row runs [not investigated further].
 **Doc review:** README table, startup line, case count 233; docs/DEVELOPING 233; docs/PERFORMANCE (rev 532, 8.4-13.2x,
 2.4-2.8x, 8.8 against 23.2 ms); docs/FEATURES (diff -y, in rev 532). IMPLEMENTATION/ARCHITECTURE: nothing stale for
 525 (arithmetic text), 529 (hash), 532 (diff).
+
+## 2026-10-30 -- PUBLISHED: GitHub main = git 64476f5 = hg rev 533; release hg-533 (Bash.exe build 532)
+**Status:** Record. The architect: "fix the diff -y first, then publish =:)". `bash tools/publish.sh`: the benchmark of
+deployed 532 found; MERCURIAL_HISTORY.md (534 changesets) and mercurial-history.hg verified; 2559b1c..64476f5 pushed;
+release hg-533, Bash.exe (build 532) and its .sha256 uploaded and downloaded back: SHA-256 05367ae9...45feab matches.
+Contents since 522: backticks in arithmetic (525), hash -p obeyed (529), diff -y (532), the 532 benchmark.
+
+## 2026-10-31 -- FIXED: PATH="$PATH:DIR" and PATH="DIR:$PATH" add DIR (qa-de); $PATH's visible form unchanged
+**Status:** Active. qa-de's report (a KoliadaES QA session); raised with a position at 05:25, built under the bug-fix
+rule (no reply).
+**Was (532):** `ShellEnvironment.NormalizePath` (the "PATH normalisation" rule: an all-colon, /-rooted PATH becomes
+`;`-separated native) returned any value holding a `;` unchanged, so the POSIX idioms' MIXED values (the native list
+plus `:DIR`, or `DIR:` before it) glued DIR onto the neighbouring entry: never searched ("command not found").
+**GNU (bash 5.1, WSL):** DIR is searched, appended or prepended, in a fresh shell and in an exported child.
+**Fix:** NormalizePath splits each `;` entry again at a colon that is not a drive's (`SplitPathColons`: a letter
+starting the piece, then `/`, `\` or the end), converting /-rooted pieces (TranslatePath), dropping empty pieces the
+split makes; a value with no such colon comes back byte for byte (the machine's PATH checked: identical).
+**Not changed, by design (DECISIONS: PATH holds Windows entries split by `;`):** $PATH reads in native form, so
+`IFS=:` iteration splits at drive colons (`IFS=';'` iterates it). Changing that is the architect's call; qa-de told.
+**Test:** `path_append_gnu` (expected = GNU via WSL; DIR as $PWD gives, in MSYS form, a fresh shell, a child; the
+visible last entry checked): 6 red on 532; green; mutations (built): never split 6, drive colons split too 1, MSYS
+pieces not converted 1 (the last two needed the visible-entry lines: lookups translate on their own and every path
+here is on F:).
+Suite 223 passed, 0 failed, both modes.
+**Implemented by:** rev 536. Files: `Bash/Evaluator/ShellEnvironment.cs`, `tests/cases/path_append_gnu.sh`,
+`tests/expected/path_append_gnu.out`, `tests/run-tests.ps1`.
+
+## 2026-10-31 -- DEPLOYED rev 536 (PATH="$PATH:DIR"): suite 226/0 both modes, battery 217
+**Status:** Record. Slot: all seven live sessions said go (koliada-net-73, qa-de, c-parser-ac, esdk-a2, installer-a4,
+koliada-net-forms-cb, kes-term-a1; three new to the slot practice, told how it works). `bash tools/deploy.sh`:
+`1.0.0+hg.fef4ff758d6c 536` over 532; suite 226 passed, 0 failed, both modes; battery 217/237; rollback
+dist/Bash.exe.rev532, dist/sh.exe.rev532. Live: path_append_gnu on dist/Bash.exe matches GNU. All seven notified.
+Not published (GitHub at hg 533).
+
+## 2026-10-31 -- SPIKE: $PATH in GNU/MSYS form inside the shell, Windows form at the exits (not built; awaiting the ruling)
+**Status:** Spike done, reverted; patch kept (scratchpad `spike-path-gnu-form.patch`, 161 lines). The architect: "if it
+is for c#bash it should conform GNU, if it is for windows it should conform windows ... I agree your position, and map
+it only on entry/exit (and perhaps extension internally). run the spike and also caucus all current sessions".
+**Design spiked:** inside, `/c/x:/f/y` (colon; MSYS entries, forced by C#Bash's own `C:/x` having a colon); mapped on
+import (the inherited PATH, BASH_PATH) and on assignment (Windows `;`, MSYS, or mixed: NormalizePath), and on the way
+out (the process environment; a child's environment, `PATH=... cmd` included: ToWindowsPathList, `C:\x;F:\y`).
+**Measured on the spike build (all as designed):** $PATH reads `/f/Koliada/Tools/bash/dist:/c/Program Files/...`;
+`IFS=:` gives 48 entries (47 exist); lookups (cmd, hg, dotnet, type -a bash) resolve; a Windows child's PATH is
+`F:\...;C:\Program Files\...` and `where hg` works; `PATH='C:/Windows/System32;C:/Windows'` reads
+`/c/Windows/System32:/c/Windows` and the child gets `C:\Windows\System32;C:\Windows` (backslashes, not the
+assignment's forward slashes); koliada-net-73's kes-log isolation `PATH="F:/stub;C:/Windows/System32" cmd /C` gives
+the child exactly `F:\stub;C:\Windows\System32` and `where hg` finds nothing; the snapshot round trip (export -p,
+re-sourced), BASH_PATH and a nested shell all work. Battery 217 (no regression).
+**Suite: 10 of 223 failed (both modes), three kinds:** (A) tests asserting the old visible form (path_append_gnu's
+visible-entry check against $PWD; lookup_env_windows: the child's slashes); (B) a spike bug: NormalizePath dropped
+EMPTY entries, which the record keeps in $PATH (cleaned only for children), so find -execdir's refusal no longer saw
+them (path_empty_entries, find_execdir: a lost safety check); (C) splitting sites the spike did not convert (which,
+the Git usr/bin augmentation, other lookup helpers: Builtins.Shell.cs 789 and 1751, Builtins.cs 426; command_lookup,
+gnu_differences, command_map, sed's `which` line, startup_env).
+**Caucus (all 7 sessions):** none reads $PATH's text as Windows form. Two ASSIGN a Windows-form PATH for a child and
+need exactly those entries to reach it: esdk-a2's test harnesses (`PATH='C:/Windows/System32;C:/Windows' make.exe`)
+and koliada-net-73's kes-log isolation (it must never fall back to the inherited PATH). Both proven above.
+**To build it:** keep empty entries inside (`::`), convert the three remaining splitting sites, the Git augmentation
+on PathDirs, update the visible-form expectations, and decide the exit's slashes (Claude: backslashes, Windows'
+canonical form). Estimated a bounded change [unmeasured estimate: one working session].
+
+## 2026-10-31 -- Publish preparation (fourth): benchmark on deployed 536; doc review
+**Status:** Record. The architect: "if you can publish in remaining 62k context, do so". Quiet window: all seven
+sessions said go (installer-a4's after the run had started: it had reported itself stopped, nothing running).
+**Benchmark** (dist = build 536): loop 0.159 (9.5x Git, 2.6x WSL), arith 0.252 (8.3x, 2.5x), func 0.217 (10.8x,
+2.7x), loop_big 1.475 (13.3x, 2.4x), coreutils 0.055 (264x, 14.3x), pipeline 0.082 (3.0x, 1.6x), find 0.015 (8.9x,
+14.2x), startup 8.7 ms (Git 23.0, WSL 106.6); within noise of 532's. **Doc review:** README table + startup line, the
+case count (234, rev 541), docs/PERFORMANCE (rev 536, 8.3-13.3x, 8.7 against 23.0 ms), USING's $PATH line (rev 541).

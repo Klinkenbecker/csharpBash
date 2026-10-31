@@ -66,7 +66,7 @@ Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracki
 
 **At startup**, in this order:
 
-1. The environment is imported; Windows' `Path` becomes `PATH`.
+1. The environment is imported; Windows' `Path` becomes `PATH`. `$PATH` reads in Windows form, `;`-separated (iterate it with `IFS=';'`). An assignment may also use MSYS form (`/c/x:/f/y`) or the POSIX idioms `PATH="$PATH:DIR"` and `PATH="DIR:$PATH"`, DIR native or `/f/x`: it is converted on the way in (rev 536).
 2. **`BASH_PATH`**, if set and not empty, becomes `PATH` and is then removed, from the process environment too, so a nested shell keeps its parent's PATH. It lets a launcher keep its own PATH narrow and still hand the shell a full one (see [the start file](#start-claude-code-with-no-path-of-its-own) above).
 3. When `git.exe` is on PATH, Git for Windows' `usr/bin` and `mingw64/bin` are put in front of it, exactly as Git Bash does, so `tar`, `perl`, `ssh` and any tool outside the embedded set resolve the same way.
 4. The shell's own directory is added at the end of PATH, so a nested `bash` always resolves, Git or no Git.

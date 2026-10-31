@@ -573,10 +573,43 @@ public sealed class ShellEnvironment
 	/// converted to the native `C:\x;…` form so lookups and child processes keep working.</summary>
 	internal static string NormalizePath(string value)
 		{
-		if (value.Contains(';') || !value.Contains(':')) return value;
-		var parts = value.Split(':');
-		if (!parts.All(p => p.Length == 0 || p.StartsWith('/') || p.Contains('\n'))) return value;
-		return string.Join(";", parts.Where(p => p.Length > 0 && !p.Contains('\n')).Select(TranslatePath));
+		if (!value.Contains(':')) return value;
+		if (!value.Contains(';'))
+			{
+			var parts = value.Split(':');
+			if (parts.All(p => p.Length == 0 || p.StartsWith('/') || p.Contains('\n')))
+				return string.Join(";", parts.Where(p => p.Length > 0 && !p.Contains('\n')).Select(TranslatePath));
+			}
+		// A native list with entries joined by `:` as well: the POSIX idioms PATH="$PATH:DIR" and PATH="DIR:$PATH". Each
+		// `;` entry is split again at a colon that is not a drive's (a letter starting the piece, then `/`, `\` or the end),
+		// a /-rooted piece converted. It was kept whole, so DIR was glued onto the last entry and never searched
+		// (2026-10-31, qa-de). A value with no such colon comes back byte for byte.
+		bool split = false;
+		var outParts = new List<string>();
+		foreach (var entry in value.Split(';'))
+			{
+			var pieces = SplitPathColons(entry);
+			if (pieces.Count == 1) { outParts.Add(entry); continue; }
+			split = true;
+			foreach (var p in pieces)
+				if (p.Length > 0 && !p.Contains('\n')) outParts.Add(p.StartsWith('/') ? TranslatePath(p) : p);
+			}
+		return split ? string.Join(";", outParts) : value;
+		}
+
+	private static List<string> SplitPathColons(string entry)
+		{
+		var pieces = new List<string>();
+		int start = 0;
+		for (int i = 0; i < entry.Length; i++)
+			{
+			if (entry[i] != ':') continue;
+			if (i - start == 1 && char.IsAsciiLetter(entry[start]) && (i + 1 == entry.Length || entry[i + 1] is '/' or '\\')) continue;   // a drive's
+			pieces.Add(entry[start..i]);
+			start = i + 1;
+			}
+		pieces.Add(entry[start..]);
+		return pieces;
 		}
 
 	/// <summary>An assignment: to the innermost variable of that name, or to a new GLOBAL one (bash: a

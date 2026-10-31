@@ -12,11 +12,20 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 534 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 543 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 542 | 2026-10-31 | Publish preparation: benchmark on deployed 536, README table/startup, PERFORMANCE figures |
+| 541 | 2026-10-31 | Resume anchor, second pass: tip wording, the bug-fix rule supersedes the old deploy-only-on-his-word line, the open items named plainly, USING in the PATH build list |
+| 540 | 2026-10-31 | Resume anchor rewritten for 2026-10-31 (supersedes the stacked blocks, now history); docs: case count 234, USING states $PATH's form and the accepted assignment forms |
+| 539 | 2026-10-31 | SPIKE recorded: $PATH in GNU/MSYS form inside, Windows form at the exits: works as designed; 10 suite failures explained; caucus: no session reads $PATH as Windows text; reverted, awaiting the ruling |
+| 538 | 2026-10-31 | anchor: PATH-in-GNU-form spike in progress; caucus answers so far (6 of 7: none read $PATH as Windows text; esdk-a2 assigns a Windows-form PATH for children) |
+| 537 | 2026-10-31 | Deployed rev 536 (PATH append idiom; suite 226/0 both modes, battery 217); seven sessions now; not published |
+| 536 | 2026-10-31 | PATH="$PATH:DIR" and PATH="DIR:$PATH" add DIR: a native ;-list's entries are split again at non-drive colons (qa-de); $PATH's visible form unchanged |
+| 535 | 2026-10-31 | anchor: RAISED PATH="$PATH:/dir" not added (qa-de); fix after ~10 min under the bug-fix rule; $PATH's visible form stays (design) |
+| 534 | 2026-10-30 | PUBLISHED: GitHub main = git 64476f5 = hg rev 533, release hg-533 (Bash.exe build 532) |
 | 533 | 2026-10-30 | Deployed rev 532 (diff -y; suite 225/0 both modes, battery 217); publish preparation: benchmark on 532, README table/startup/case count, PERFORMANCE, DEVELOPING |
 | 532 | 2026-10-30 | diff -y (side-by-side) as GNU's layout: -W/--width, --suppress-common-lines, --left-column, -t; it was refused (esdk-a2; the architect: fix it, then publish) |
 | 531 | 2026-10-30 | anchor: GREENLIT diff -y, then publish (the architect) |
