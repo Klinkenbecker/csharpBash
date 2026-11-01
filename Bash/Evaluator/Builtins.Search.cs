@@ -778,7 +778,7 @@ public sealed partial class Builtins
 				char delim = '/';
 				if (c == '\\') { p++; if (p >= s.Length) throw Bad("unexpected end of script"); delim = s[p]; }
 				p++;
-				var re = SedReadDelim(s, ref p, delim);
+				var re = SedConvertEscapes(SedReadDelim(s, ref p, delim), SedText.Regex, Bad);
 				bool ic = false, modifier = false;
 				while (p < s.Length && (s[p] == 'I' || s[p] == 'M')) { if (s[p] == 'I') ic = true; modifier = true; p++; }
 				// `//` is the last regex used (null here; SedShared.Use), as GNU; with none before it in the script, or
@@ -812,8 +812,11 @@ public sealed partial class Builtins
 				{
 				var line = ReadToEol();
 				if (first) { line = line.TrimStart(' ', '\t'); first = false; }
-				if (line.EndsWith('\\')) { sb.Append(line[..^1]).Append('\n'); continue; }
-				sb.Append(SedUnescapeText(line));
+				// Every line is unescaped, as GNU (only the last one was), and only an UNESCAPED final backslash continues the
+				// text: `a one\\` is "one\" (it was read as continued, an empty line after it; both 2026-11-01)
+				int tail = line.Length - line.TrimEnd('\\').Length;
+				if (tail % 2 == 1) { sb.Append(SedUnescapeText(SedConvertEscapes(line[..^1], SedText.Text, Bad))).Append('\n'); continue; }
+				sb.Append(SedUnescapeText(SedConvertEscapes(line, SedText.Text, Bad)));
 				break;
 				}
 			return sb.ToString();
@@ -856,7 +859,7 @@ public sealed partial class Builtins
 					if (p >= s.Length) throw Bad("unterminated `s' command");
 					char delim = s[p++];
 					string pat = SedReadDelim(s, ref p, delim);
-					cmd.SRepl = SedReadDelim(s, ref p, delim, regex: false);
+					cmd.SRepl = SedConvertEscapes(SedReadDelim(s, ref p, delim, regex: false), SedText.Replacement, Bad);
 					bool ic = false, multiline = false, exec = false;
 					// GNU skips blanks among the flags (`s/a/b/ p` is p) and refuses an unknown one where it stands. A blank
 					// ended them, so the rest was read as more commands: `s#..#..#31 exclusion` ran `e` (2026-10-30)
@@ -883,14 +886,18 @@ public sealed partial class Builtins
 						if (!anyRe) throw Bad("no previous regular expression");
 						cmd.SRe = null;
 						}
-					else { cmd.SRe = new Regex(ere ? EreToNet(pat) : BreToNet(pat), opts); anyRe = true; }
+					else
+						{
+						pat = SedConvertEscapes(pat, SedText.Regex, Bad);   // after the flags: GNU's error position
+						cmd.SRe = new Regex(ere ? EreToNet(pat) : BreToNet(pat), opts); anyRe = true;
+						}
 					break;
 					}
 				case 'y':
 					{
 					char delim = s[p++];
-					cmd.YFrom = SedUnescapeText(SedReadDelim(s, ref p, delim, regex: false));
-					cmd.YTo = SedUnescapeText(SedReadDelim(s, ref p, delim, regex: false));
+					cmd.YFrom = SedUnescapeText(SedConvertEscapes(SedReadDelim(s, ref p, delim, regex: false), SedText.Text, Bad));
+					cmd.YTo = SedUnescapeText(SedConvertEscapes(SedReadDelim(s, ref p, delim, regex: false), SedText.Text, Bad));
 					if (cmd.YFrom.Length != cmd.YTo.Length) throw Bad("strings for `y' command are different lengths");
 					break;
 					}
@@ -938,6 +945,70 @@ public sealed partial class Builtins
 				c.JumpTo = prog.Labels.TryGetValue(c.Text, out var idx) ? idx : throw new Exception($"can't find label for jump to `{c.Text}'");
 		return prog;
 		}
+
+	/// <summary>Which of sed's texts <see cref="SedConvertEscapes"/> reads: they differ only in what a produced `&amp;` or
+	/// `\` means.</summary>
+	private enum SedText { Regex, Replacement, Text }
+
+	/// <summary>GNU sed's escapes, converted before the text is parsed, as GNU does: `\a` `\f` `\v`; `\cX` (toupper(X)
+	/// xor 0x40; `\c\\` is 0x1C, `\c` then another escape is an error, `\c` at the end is `\`); `\dNNN` `\oNNN` (up to 3
+	/// digits) and `\xHH` (up to 2), the value mod 256, a byte above 0x7F as the shell carries one; no digits is the letter
+	/// itself (a bare `\d` in a regex is "d", not a digit). In a REGEX the produced character is raw (`\x2e` is any
+	/// character: GNU's manual, "Escaping Precedence"); in the REPLACEMENT a produced `&amp;` or `\` is literal; in y's
+	/// strings and a/i/c TEXT a produced `\` is literal. An escaped backslash stays a pair, and every other escape is left
+	/// for the next reader. Until 2026-11-01 none of `\c` `\d` `\o` `\x` was converted: `s/-/\x27/` wrote "x27"
+	/// (c-parser-ac), y with `\x` failed, and a regex handed them to .NET (`\d` its digit class).</summary>
+	private static string SedConvertEscapes(string t, SedText kind, Func<string, Exception> bad)
+		{
+		if (!t.Contains('\\')) return t;
+		var sb = new StringBuilder(t.Length);
+		bool carried = false;
+		for (int i = 0; i < t.Length; i++)
+			{
+			char c = t[i];
+			if (c != '\\' || i + 1 == t.Length) { sb.Append(c); continue; }
+			char n = t[i + 1];
+			int v;
+			switch (n)
+				{
+				case 'a': v = 7; i++; break;
+				case 'f': v = 12; i++; break;
+				case 'v': v = 11; i++; break;
+				case 'c':
+					{
+					if (i + 2 == t.Length) { v = '\\'; i++; break; }
+					char x = t[i + 2];
+					if (x == '\\')
+						{
+						if (i + 3 == t.Length || t[i + 3] != '\\') throw bad("recursive escaping after \\c not allowed");
+						v = 0x1C; i += 3; break;
+						}
+					v = (x is >= 'a' and <= 'z' ? x - 32 : x) ^ 0x40; i += 2; break;
+					}
+				case 'd': case 'o': case 'x':
+					{
+					int radix = n == 'd' ? 10 : n == 'o' ? 8 : 16, max = n == 'x' ? 2 : 3, k = 0;
+					v = 0;
+					while (k < max && i + 2 + k < t.Length && SedDigit(t[i + 2 + k]) < radix) { v = v * radix + SedDigit(t[i + 2 + k]); k++; }
+					v = k == 0 ? n : v & 0xFF;
+					i += 1 + k;
+					break;
+					}
+				default: sb.Append(c).Append(n); i++; continue;
+				}
+			char ch = ShellEncoding.ByteChar(v);
+			carried |= ShellEncoding.IsByteChar(ch);
+			if (ch == '\\' && kind != SedText.Regex || ch == '&' && kind == SedText.Replacement) sb.Append('\\');
+			sb.Append(ch);
+			}
+		var r = sb.ToString();
+		// a produced backslash at the end of a regex escapes nothing: GNU's message, not .NET's
+		if (kind == SedText.Regex && (r.Length - r.TrimEnd('\\').Length) % 2 == 1) throw bad("Trailing backslash");
+		return carried ? ShellEncoding.Canonical(r) : r;
+		}
+
+	private static int SedDigit(char c) =>
+		c is >= '0' and <= '9' ? c - '0' : c is >= 'a' and <= 'f' ? c - 'a' + 10 : c is >= 'A' and <= 'F' ? c - 'A' + 10 : 99;
 
 	private static string SedUnescapeText(string t)
 		{

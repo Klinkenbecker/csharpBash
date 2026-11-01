@@ -28,6 +28,36 @@ public static class ShellFile
 
 	[System.Runtime.InteropServices.DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
 
+	/// <summary>
+	/// A file's identity as Windows keeps it (GetFileInformationByHandle): its volume's serial number (stat's device),
+	/// its file index on that volume (the inode msys and Git Bash report) and its hard-link count; null when it cannot be
+	/// opened. <paramref name="follow"/> false is lstat: a symbolic link is itself. Opened for attributes only, sharing
+	/// everything, so a running program or an open file is no obstacle. Until 2026-11-01 every link count was 1 and every
+	/// inode 0: `[ a -ef b ]` was false for two names of one file (installer-a4, confirming an installer-made hard link).
+	/// </summary>
+	public static (uint Volume, ulong Index, uint Links)? Identity(string path, bool follow = true)
+		{
+		using var h = CreateFileW(path, FileReadAttributes, 7 /* read, write, delete */, IntPtr.Zero, 3 /* OPEN_EXISTING */,
+		                          BackupSemantics | (follow ? 0u : OpenReparsePoint), IntPtr.Zero);
+		if (h.IsInvalid || !GetFileInformationByHandle(h, out var i)) return null;
+		return (i.VolumeSerialNumber, ((ulong)i.FileIndexHigh << 32) | i.FileIndexLow, i.NumberOfLinks);
+		}
+
+	private const uint FileReadAttributes = 0x80, BackupSemantics = 0x02000000, OpenReparsePoint = 0x00200000;
+
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+	private struct ByHandleFileInformation
+		{
+		public uint FileAttributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh;
+		public uint VolumeSerialNumber, FileSizeHigh, FileSizeLow, NumberOfLinks, FileIndexHigh, FileIndexLow;
+		}
+
+	[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+	private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+	[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool GetFileInformationByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle file, out ByHandleFileInformation info);
+
 	public static FileStream OpenRead(string path) => NotADirectory(path, () => new(path, FileMode.Open, FileAccess.Read, Share));
 
 	/// <summary>`&gt; file`: created, or truncated.</summary>

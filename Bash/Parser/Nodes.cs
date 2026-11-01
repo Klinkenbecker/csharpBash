@@ -85,7 +85,7 @@ public sealed record Word(List<WordPart> Parts)
 	/// chars of prefix (`name[` or `[`): the index ends at the first ']' that is followed by '='
 	/// in a LITERAL part (an expansion cannot close the bracket). The index may span parts --
 	/// `a[0]=`, `a[$k]=`, `a["$k"]=`, `a[$i+1]=`. Until 2026-10-03 only an index inside the
-	/// first literal was recognised: `map[$key]=v` ran as a command ("command not found") and
+	/// first literal was recognized: `map[$key]=v` ran as a command ("command not found") and
 	/// `m+=(["$k"]=v)` silently set nothing.
 	/// </summary>
 	public bool TrySplitIndexedAssignment(int skip, out Word index, out Word value) =>

@@ -1,0 +1,73 @@
+--- the report: \xHH in the replacement
+a'b
+--- up to two hex digits
+aABA4
+--- no digits: the letter
+oxZd
+--- \o and \d take up to three digits
+a'''1b
+--- the value mod 256
+ 61 00 00 e7 62 0a
+--- a produced & or \ is literal
+a[&]<\1>\b
+--- -E too
+a[\1]b
+--- \U applies to a produced letter
+aAb
+--- \cX
+ 61 01 1a 7f 0d 1b 1c 62 0a
+--- \c\ then another escape
+sed: -e expression #1, char 9: recursive escaping after \c not allowed
+rc=1
+--- ...its position in s, an address, y, a
+sed: -e expression #1, char 10: recursive escaping after \c not allowed
+sed: -e expression #1, char 6: recursive escaping after \c not allowed
+sed: -e expression #1, char 7: recursive escaping after \c not allowed
+sed: -e expression #1, char 7: recursive escaping after \c not allowed
+--- \c at the end of the replacement
+ax\b
+--- \a \f \v
+ 61 07 0c 0b 62 0a
+--- bytes, and two that spell e-acute
+ 61 7e ff c3 a9 0a
+--- regex: the character is raw
+XXX
+Xa^b
+X*b
+--- regex: \o, \d, a bare \d
+aXb
+aXb
+a5X
+--- regex: in a bracket; \\ stays a pair
+aXb
+aAXX
+--- regex: \cA, a byte, e-acute
+aXb
+aXb
+aEb
+--- regex: a trailing \x5c, \c
+sed: -e expression #1, char 9: Trailing backslash
+rc=1
+sed: -e expression #1, char 4: Trailing backslash
+rc=1
+--- an address, and -E
+B
+XXX
+--- y
+   a  \t   B  \n
+a\b
+ 61 c3 0a
+--- a one-liner
+   x  \n   h   i   A  \t   B  \n
+--- a/i text: every line
+   x  \n   o   n   e  \t   t   w   o   A  \n   t   h   r   e   e
+   B  \n
+p\
+q
+x
+--- a/i text: a line before the last is unescaped too; an escaped \ at the end ends the text
+x
+mqn\o
+end
+x
+one\

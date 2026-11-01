@@ -13,7 +13,13 @@
 #   3. a release that already exists for the tag is reused (a retry), and an asset already on it is left; with none,
 #      and the newest release already carrying this Bash.exe (its Bash.exe.sha256 names the same SHA-256), NO release
 #      is made: the Releases page lists builds, not publishes (the architect, 2026-10-29: "Yes, I agree; go");
-#   4. after the uploads, Bash.exe is downloaded back from its public URL and must match its SHA-256, or exit 1.
+#   2b. the INSTALLER, shipped from 2026-11-01 (the architect: "Yes, go"): tools/installer.sh builds
+#      dist.installer/csharpBash-setup.exe and its .sha256 from this same dist/Bash.exe and checks it by a sandboxed
+#      install; both are attached beside Bash.exe (the installer's content follows Bash.exe: a publish whose Bash.exe the
+#      newest release already carries makes no release, so a change to the manifest or the start file alone ships with
+#      the next new build);
+#   4. after the uploads, Bash.exe and the installer are downloaded back from their public URLs and must match their
+#      SHA-256s, or exit 1.
 # The token reaches curl on its standard input (`--config -`), never on a command line, and nothing prints it.
 # --dry-run: everything up to the first request, then what would be sent; needs no token and no network.
 set -u
@@ -45,12 +51,18 @@ sum=$(sha256sum < "$exe" | cut -c1-64)
 work=$(mktemp -d) || die "mktemp failed"
 trap 'rm -rf "$work"' EXIT
 printf '%s  Bash.exe\n' "$sum" > "$work/Bash.exe.sha256"
-body=$(printf '%s\n\nBash.exe: %s (Native AOT, win-x64: one file, no .NET runtime needed)\nSHA-256: %s\n\nHow to use it with Claude Code: README.md.' \
-	"$("$GIT" log -1 --format=%b HEAD)" "$stamp" "$sum")
+# 2b. the installer, from this same Bash.exe
+setup=$root/dist.installer/csharpBash-setup.exe
+bash "$root/tools/installer.sh" > "$work/installer.log" 2>&1 || { cat "$work/installer.log" >&2; die "the installer did not build or failed its sandboxed check"; }
+setup_sum=$(sha256sum < "$setup" | cut -c1-64)
+[ "$(cut -c1-64 "$setup.sha256")" = "$setup_sum" ] || die "$setup does not match its .sha256"
+grep -q "installer: payload from $stamp;" "$work/installer.log" || die "the installer was not built from $stamp"
+body=$(printf '%s\n\nBash.exe: %s (Native AOT, win-x64: one file, no .NET runtime needed)\nSHA-256: %s\n\ncsharpBash-setup.exe: the installer for that Bash.exe: Bash.exe, sh.exe (a hard link to it) and the start file claude.cmd into %%USERPROFILE%%/.bash/bin; it asks before adding that folder to PATH (default no). No .NET runtime needed.\nSHA-256: %s\n\nHow to use it with Claude Code: README.md.' \
+	"$("$GIT" log -1 --format=%b HEAD)" "$stamp" "$sum" "$setup_sum")
 create=$(jq -n --arg t "$tag" --arg c "$head" --arg n "C#Bash hg rev $rev" --arg b "$body" \
 	'{tag_name: $t, target_commitish: $c, name: $n, body: $b, draft: false, prerelease: false}') || die "jq failed"
 if [ -n "$dry" ]; then
-	echo "release: DRY RUN: $tag at git ${head:0:7}; Bash.exe = $stamp, SHA-256 $sum; it would create (if absent):"
+	echo "release: DRY RUN: $tag at git ${head:0:7}; Bash.exe = $stamp, SHA-256 $sum; csharpBash-setup.exe SHA-256 $setup_sum; it would create (if absent):"
 	printf '%s\n' "$create"
 	exit 0
 fi
@@ -90,9 +102,15 @@ upload() {
 }
 upload "$exe" Bash.exe application/octet-stream
 upload "$work/Bash.exe.sha256" Bash.exe.sha256 text/plain
+upload "$setup" csharpBash-setup.exe application/octet-stream
+upload "$setup.sha256" csharpBash-setup.exe.sha256 text/plain
 
 # 4. downloaded back, as a user would
 url="https://github.com/$REPO/releases/download/$tag/Bash.exe"
 got=$(curl -s -L "$url" | sha256sum | cut -c1-64)
 [ "$got" = "$sum" ] || { echo "release: $url gives SHA-256 $got, not $sum" >&2; exit 1; }
 echo "release: $tag = git ${head:0:7}: Bash.exe ($stamp) downloaded back, SHA-256 $sum matches: $url"
+surl="https://github.com/$REPO/releases/download/$tag/csharpBash-setup.exe"
+got=$(curl -s -L "$surl" | sha256sum | cut -c1-64)
+[ "$got" = "$setup_sum" ] || { echo "release: $surl gives SHA-256 $got, not $setup_sum" >&2; exit 1; }
+echo "release: csharpBash-setup.exe downloaded back, SHA-256 $setup_sum matches: $surl"

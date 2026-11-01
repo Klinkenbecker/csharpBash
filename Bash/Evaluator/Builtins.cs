@@ -691,7 +691,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 
 	// `fg %n` — we cannot truly give a background thread terminal control, so this
 	// waits for the job to finish (and echoes its command), which is the closest
-	// faithful behaviour available without fork/job-control process groups.
+	// faithful behavior available without fork/job-control process groups.
 	private int Fg(List<string> args)
 		{
 		if (!_eval.HasJobs) { Console.Error.WriteLine(Err + "fg: no current job"); return 1; }
@@ -808,7 +808,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		return rc;
 		}
 
-	/// <summary>Normalise a sigspec to its canonical name (INT, RTMIN+3, EXIT …), or null when bash would
+	/// <summary>Normalize a sigspec to its canonical name (INT, RTMIN+3, EXIT …), or null when bash would
 	/// say "invalid signal specification": a name of <see cref="LinuxSignals"/> in any case with or
 	/// without SIG, RTMIN+n / RTMAX-n, a number 0-64, EXIT, DEBUG, ERR, RETURN. Until 2026-10-10 any
 	/// alphanumeric word was accepted (`trap x BADSIG`, `trap x 65`). `SIG` goes only before a signal's

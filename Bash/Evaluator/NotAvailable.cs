@@ -34,7 +34,7 @@ public static class NotAvailable
 		}
 
 	/// <summary>Turning on POSIX mode (`--posix`, `-o posix`, `set -o posix`, `shopt -so posix`): it was
-	/// accepted and silently ignored. It only narrows bash's behaviour, so scripts that ask for it mostly
+	/// accepted and silently ignored. It only narrows bash's behavior, so scripts that ask for it mostly
 	/// run as they are: say so and go on (DECISIONS 2026-10-11).</summary>
 	public static void PosixMode(string prefix, string how)
 		{

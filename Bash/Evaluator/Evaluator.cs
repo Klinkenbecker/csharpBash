@@ -224,7 +224,7 @@ public sealed class Evaluator
 	private int _functionDepth;   // the function frames on _frames
 
 	/// <summary>Where a function defined outside any file was defined (its BASH_SOURCE entry):
-	/// "environment" under -c, whose string bash parses before it is initialised; else "main".</summary>
+	/// "environment" under -c, whose string bash parses before it is initialized; else "main".</summary>
 	public string TopLevelSource { get; set; } = "main";
 
 	/// <summary>bash's prefix for an error message (error.c, error_prolog): `name: line N: ` in a
@@ -631,7 +631,7 @@ public sealed class Evaluator
 		}
 
 	/// <summary>Lex, parse, and execute a source string. Re-throws ExitException so
-	/// callers can honour `exit`; a syntax error is reported as
+	/// callers can honor `exit`; a syntax error is reported as
 	/// `bash: origin: line N: message` and yields exit code 2 (bash's convention); a
 	/// runtime error yields 1.</summary>
 	/// <param name="mainLoop">The shell's own input (a script, `-c`, stdin), where `set -t` (onecmd)
@@ -1070,11 +1070,15 @@ public sealed class Evaluator
 		}
 
 	/// <summary>`kill` on a job: kills the external child it is running, if any.</summary>
-	public int KillJob(string spec, out string? error)
+	/// <summary>The job `kill` means: a `%spec` in this shell's own table (a subshell knows none, as bash's); a
+	/// synthetic pid (`$!`) in the parent's too, as a real pid is reachable from any subshell. The watchdog idiom
+	/// `( sleep 10; kill $pid ) &` said "no such job" and the job ran on (installer-a4's report, 2026-10-31).</summary>
+	public BackgroundJob? FindJobForKill(string spec) =>
+		FindJob(spec, "kill") ?? (!spec.StartsWith('%') && _parentJobs is not null ? FindJobIn(_parentJobs, spec, "kill") : null);
+
+	public int KillJob(BackgroundJob job, string spec, out string? error)
 		{
 		error = null;
-		var job = FindJob(spec, "kill");
-		if (job is null) { error = $"{spec}: no such job"; return 1; }
 		// the job's own shell first, so its loop does not go on to the next command; then the program
 		// it is running, if any
 		if (!job.Done) job.Shell?.RequestInterrupt();
@@ -1123,8 +1127,30 @@ public sealed class Evaluator
 			string state = !j.Done ? "Running" : j.ExitCode == 0 ? "Done" : $"Exit {j.ExitCode}";
 			Console.WriteLine($"[{j.Id}]{mark} {(lng ? $"{j.Pid,5} " : " ")}{state,-24}{j.Command}{(j.Done ? "" : " &")}");
 			}
-		if (ReferenceEquals(table, _jobs) && !pids) _jobs.RemoveAll(j => j.Done);   // a reported Done is gone
+		if (ReferenceEquals(table, _jobs) && !pids) DropFinishedJobs();   // a reported Done is gone (its status kept for wait)
 		return rc;
+		}
+
+	// The statuses of this shell's background jobs that have ended and left the table, by `$!` (bash's bgpids): `wait $!`
+	// answers with one after `jobs` or another `wait` dropped the job, and again on a second ask. Until 2026-10-31 it said
+	// "no such job", 127 (GNU, measured: 3 for a job that ended earlier, 5 and 5 again after `jobs` reported it). Bounded,
+	// oldest first out; a `disown`ed job is not kept (GNU forgets it).
+	private readonly Dictionary<int, int> _endedStatus = [];
+	private readonly Queue<int> _endedOrder = new();
+	private const int EndedKept = 4096;
+
+	private void Remember(BackgroundJob j)
+		{
+		j.Thread?.Join();   // its status is written
+		if (!_endedStatus.ContainsKey(j.Pid)) { _endedOrder.Enqueue(j.Pid); if (_endedOrder.Count > EndedKept) _endedStatus.Remove(_endedOrder.Dequeue()); }
+		_endedStatus[j.Pid] = j.ExitCode;
+		}
+
+	/// <summary>Drop the finished jobs from the table, keeping their statuses for `wait`.</summary>
+	private void DropFinishedJobs()
+		{
+		foreach (var j in _jobs) if (j.Done) Remember(j);
+		_jobs.RemoveAll(j => j.Done);
 		}
 
 	// the jobs of the shell this one is a subshell of, for `jobs` (bash lists them in a subshell)
@@ -1173,7 +1199,7 @@ public sealed class Evaluator
 			_jobFinished.Reset();   // before looking: a job finishing after the look sets it again
 			if (candidates.FirstOrDefault(j => j.Done) is { } done)
 				{
-				done.Thread.Join();   // its status is written
+				Remember(done);   // joins it: its status is written
 				_jobs.Remove(done);
 				if (pVar is not null) _env.Set(pVar, done.Pid.ToString());
 				return done.ExitCode;
@@ -1199,11 +1225,19 @@ public sealed class Evaluator
 				var j = FindJob(spec, "wait");
 				if (j is null)
 					{
-					if (int.TryParse(spec.TrimStart('%'), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var pid) && !BackgroundJob.IsSyntheticPid(pid))
+					bool percent = spec.StartsWith('%');
+					if (!percent && int.TryParse(spec, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var pid))
 						{
+						// a job of ours that has ended and left the table: its status, as bash's bgpids keeps it
+						if (_endedStatus.TryGetValue(pid, out var ended)) { code = ended; continue; }
 						// a real pid: wait for that process if it is still around
-						try { System.Diagnostics.Process.GetProcessById(pid).WaitForExit(); code = 0; continue; }
-						catch { }
+						if (!BackgroundJob.IsSyntheticPid(pid))
+							{
+							try { System.Diagnostics.Process.GetProcessById(pid).WaitForExit(); code = 0; continue; }
+							catch { }
+							}
+						Console.Error.WriteLine($"{ErrorPrefix}wait: pid {pid} is not a child of this shell");   // GNU's words for a pid
+						code = 127; continue;
 						}
 					Console.Error.WriteLine($"{ErrorPrefix}wait: {spec}: no such job");
 					code = 127; continue;
@@ -1214,7 +1248,7 @@ public sealed class Evaluator
 				last = j;
 				}
 			}
-		_jobs.RemoveAll(j => j.Done);
+		DropFinishedJobs();
 		return code;
 		}
 
@@ -2184,7 +2218,7 @@ public sealed class Evaluator
 		catch { return false; }
 		}
 
-	/// <summary>Resolve a shebang body to (interpreter, extra-args), honouring
+	/// <summary>Resolve a shebang body to (interpreter, extra-args), honoring
 	/// <c>/usr/bin/env CMD</c> (where the real interpreter is CMD).</summary>
 	private static (string interp, List<string> args) ResolveInterpreter(string shebang)
 		{

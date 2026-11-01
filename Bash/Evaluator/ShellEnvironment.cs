@@ -81,7 +81,7 @@ public sealed class ShellEnvironment
 	/// <summary>argv[0] as the launcher passed it: the command line's first token (Windows' rules), in
 	/// the shell's forward-slash form above. A launcher passes the resolved native path, so `$0` (and so
 	/// every `-c` error prefix) read `F:\…\bash.exe:` under Claude Code and `bash.EXE` under C#Bash until
-	/// 2026-10-11; and GetCommandLineArgs()[0] is `Bash.dll` on the JIT build (an apphost artefact).</summary>
+	/// 2026-10-11; and GetCommandLineArgs()[0] is `Bash.dll` on the JIT build (an apphost artifact).</summary>
 	private static string LaunchedAs()
 		{
 		try
@@ -251,7 +251,7 @@ public sealed class ShellEnvironment
 	/// <see cref="ToShellPath"/> (ratified 2026-09-12): the shell's path form is FORWARD SLASH
 	/// in both directions, so a path that goes out through `pwd` and comes back in as an
 	/// argument is the same string. A `~` is a name (the shell expands an unquoted one); `/c/x` (MSYS drive form) →
-	/// `C:/x`; `/tmp[/x]` → the temp dir; and any backslashes in the input are normalised to
+	/// `C:/x`; `/tmp[/x]` → the temp dir; and any backslashes in the input are normalized to
 	/// forward slashes. .NET's file APIs accept forward slashes everywhere, so nothing needs the
 	/// backslash form. `/dev/...` is left alone (the redirect layer interprets it). The general
 	/// Unix root mapping (`/usr`, `/etc`) is deferred — see DECISIONS.md.
@@ -396,7 +396,7 @@ public sealed class ShellEnvironment
 		ToShellPath(home.Length > 0 ? home : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
 
 	/// <summary>`Path.GetFullPath` in shell form — .NET hands back backslashes whatever it was
-	/// given, so every absolute path the shell computes is normalised here (2026-09-12).</summary>
+	/// given, so every absolute path the shell computes is normalized here (2026-09-12).</summary>
 	public static string FullPath(string path) => ToShellPath(Path.GetFullPath(path));
 
 	/// <summary>The working directory in shell form — what `pwd` prints and `$PWD` holds: the
@@ -1028,7 +1028,7 @@ public sealed class ShellEnvironment
 	/// PATH (awk, tar, xxd, nohup, perl, curl, ssh… live there). Mirror that when a Git
 	/// installation is discoverable through `git.exe` on PATH, so a script that works under
 	/// Git Bash finds the same externals here; in-process coreutils shadow PATH regardless.
-	/// Portable installs are honoured (the root is derived from git.exe, not Program Files).
+	/// Portable installs are honored (the root is derived from git.exe, not Program Files).
 	/// </summary>
 	private void AugmentPathWithGitTools()
 		{
@@ -1083,7 +1083,7 @@ public sealed class ShellEnvironment
 		var entries = PathDirs(path).Select(TranslateForm);   // `/c/x` as `C:/x`
 		if (entries.Any(e => string.Equals(e.Replace('/', '\\').TrimEnd('\\'), dir.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase))) return;
 		// a trailing `:` made `…::dir`, an empty entry (2026-10-17: Windows' launcher took one as the cwd); and the
-		// folder spelled with `/` was not recognised, so it was added again. NormalizePath reads the `;` mix.
+		// folder spelled with `/` was not recognized, so it was added again. NormalizePath reads the `;` mix.
 		Set("PATH", path.Length == 0 ? dir : path.TrimEnd(':') + ";" + dir);
 		}
 

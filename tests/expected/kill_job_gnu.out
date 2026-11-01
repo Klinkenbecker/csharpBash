@@ -1,0 +1,21 @@
+kill: (PID) - No such process
+kill -0 $! on a finished job: rc=1
+kill: (PID) - No such process
+kill $! on a finished job: rc=1
+kill -0 %1 on a finished job: rc=0
+kill %1 on a finished job: rc=0
+kill: (PID) - No such process
+kill -0 $! after jobs reported it: rc=1
+kill: %1: no such job
+kill -0 %1 after jobs reported it: rc=1
+kill -0 $! on a running job: rc=0
+kill $! on a running job: rc=0
+wait: rc=143
+kill: (PID) - No such process
+kill -0 $! after kill and wait: rc=1
+== from a subshell
+kill -0 $! in a subshell: rc=0
+kill: %%: no such job
+kill -0 %% in a pipeline stage (it knows no jobs): rc=1
+the watchdog's kill: rc=0
+the job was killed: wait rc=143

@@ -231,6 +231,22 @@ public sealed partial class Builtins
 				}
 			case "-empty":
 				return new FindPred((e, s, b) => e.IsDir ? !((DirectoryInfo)e.Info).EnumerateFileSystemInfos().Any() : e.Size == 0);
+			// a file's link count and index, and one file under another name (ShellFile.Identity; they were refused, handed
+			// to a PATH find, 2026-11-01): -links N, -inum N (+N, -N as -mtime), -samefile NAME
+			case "-links": case "-inum":
+				{
+				var (cmp, n) = FindNumArg(FindArg(a, ref i, t));
+				bool links = t == "-links";
+				return new FindPred((e, s, b) => ShellFile.Identity(e.Fs, s.FollowLinks) is { } id
+				                                 && FindCompare(links ? id.Links : (long)id.Index, cmp, n));
+				}
+			case "-samefile":
+				{
+				var name = FindArg(a, ref i, t);
+				if (ShellFile.Identity(ShellEnvironment.TranslatePath(name), st.FollowLinks) is not { } want)
+					throw new Exception($"'{name}': No such file or directory");
+				return new FindPred((e, s, b) => ShellFile.Identity(e.Fs, s.FollowLinks) is { } id && id.Volume == want.Volume && id.Index == want.Index);
+				}
 			case "-readable": return new FindPred((e, s, b) => true);
 			case "-writable": return new FindPred((e, s, b) => e.IsDir || (e.Info.Attributes & FileAttributes.ReadOnly) == 0);
 			case "-executable": return new FindPred((e, s, b) => e.IsDir || FileTests.IsExecutable(e.Fs));
@@ -240,7 +256,7 @@ public sealed partial class Builtins
 			case "-quit": st.AnyAction = true; return new FindPred((e, s, b) => { s.Quit = true; return true; });
 			case "-print": st.AnyAction = true; return new FindPred((e, s, b) => { Console.WriteLine(e.Display); return true; });
 			case "-print0": st.AnyAction = true; return new FindPred((e, s, b) => { Console.Out.Write(e.Display + "\0"); return true; });
-			case "-ls": st.AnyAction = true; return new FindPred((e, s, b) => { Console.WriteLine($"0 {(e.Size + 1023) / 1024,4} {LongLine(e.Info, false, false, null)} {e.Display}"); return true; });
+			case "-ls": st.AnyAction = true; return new FindPred((e, s, b) => { var id = ShellFile.Identity(e.Fs, s.FollowLinks); Console.WriteLine($"{id?.Index ?? 0} {(e.Size + 1023) / 1024,4} {LongLine(e.Info, false, false, null, id?.Links ?? 1)} {e.Display}"); return true; });
 			case "-printf":
 				{
 				var fmt = FindArg(a, ref i, t); st.AnyAction = true;
@@ -298,7 +314,7 @@ public sealed partial class Builtins
 					});
 				}
 			case "-ok": case "-okdir": throw new UnsupportedOptionException("find", t, "interactive confirmation is not available");
-			case "-perm": case "-user": case "-group": case "-uid": case "-gid": case "-nouser": case "-nogroup": case "-inum": case "-links": case "-samefile": case "-fstype": case "-context":
+			case "-perm": case "-user": case "-group": case "-uid": case "-gid": case "-nouser": case "-nogroup": case "-fstype": case "-context":
 				throw new UnsupportedOptionException("find", t, "no POSIX ownership/permission/inode model on Windows");
 			case "-fprint": case "-fprint0": case "-fprintf": case "-fls":
 				throw new UnsupportedOptionException("find", t, "file-output actions are not implemented");
@@ -418,8 +434,8 @@ public sealed partial class Builtins
 				case 'M': vb.Append(ModeString(e.Info)); break;
 				case 'u': case 'U': vb.Append(Environment.UserName); break;
 				case 'g': case 'G': vb.Append("None"); break;
-				case 'n': vb.Append('1'); break;
-				case 'i': vb.Append('0'); break;
+				case 'n': vb.Append(ShellFile.Identity(e.Fs, false)?.Links ?? 1); break;
+				case 'i': vb.Append(ShellFile.Identity(e.Fs, false)?.Index ?? 0); break;
 				case 'k': vb.Append((e.Size + 1023) / 1024); break;
 				case 'b': vb.Append((e.Size + 511) / 512); break;
 				case 't': vb.Append(mt.ToString("ddd MMM d HH:mm:ss.fffffff00 yyyy", System.Globalization.CultureInfo.InvariantCulture)); break;
@@ -485,7 +501,7 @@ public sealed partial class Builtins
 		if (labels.Count > 0) opt.LabelA = labels[0];
 		if (labels.Count > 1) opt.LabelB = labels[1];
 		// `-` is standard input (GNU). It was taken as a path ("diff: -: No such file or directory");
-		// now it is read once into a temp file that is diffed in its place, still labelled `-`.
+		// now it is read once into a temp file that is diffed in its place, still labeled `-`.
 		string a = o.Operands[0], b = o.Operands[1];
 		if (a == "-" && b == "-") return 0;
 		string? stdinCopy = null;

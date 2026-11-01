@@ -16,7 +16,7 @@ public sealed partial class Builtins
 		var o = Opts.Parse("date", args, "d:r:uRI::s:f:", ["date=:d", "reference=:r", "utc:u", "universal:u", "rfc-email:R", "rfc-2822:R", "iso-8601=?:I", "rfc-3339=", "set=:s", "file=:f", "debug"]);
 		if (o.Get('s') is not null) throw new UnsupportedOptionException("date", "-s", "setting the system clock is not supported");
 		bool utc = o.Has('u');
-		DateTime when = utc ? DateTime.UtcNow : ShellClock.Now;   // TZ honoured (ShellClock, 2026-10-30)
+		DateTime when = utc ? DateTime.UtcNow : ShellClock.Now;   // TZ honored (ShellClock, 2026-10-30)
 		if (o.Get('d') is string ds)
 			{
 			if (!GnuDate.TryParse(ds, utc, out when)) { Console.Error.WriteLine($"date: invalid date '{ds}'"); return 1; }

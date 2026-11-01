@@ -35,13 +35,13 @@ modules and overridable by the user. Asking the next provider is what "declined"
 (~0.6 ms, measured with a no-op; it cannot share Bash.exe's, which exports nothing; sharing is PARKED for the
 architect's alternate-runtime project). A Zig module is ~50 KB, carries no runtime, and needs no packaging: **the tool
 is its EXE**. It fits "moosh all the way down": the code is judged by its tests and measurements, not by reading it.
-The built-ins stay C#, compiled in: nothing is rewritten. *Would change it:* the loader behaviour below changing
+The built-ins stay C#, compiled in: nothing is rewritten. *Would change it:* the loader behavior below changing
 (then the measured packaged form returns, still Zig).
 
 **How one EXE serves both (measured, Windows 10 19045 and Windows 11 26300):** Windows maps and relocates an EXE
 loaded with LoadLibrary but does **not** bind its imports and runs no entry point; the shell binds them (walk the
 import table, GetProcAddress, write each slot), then calls the exports. Run standalone, the EXE's `main` calls the
-same code. Undocumented behaviour, measured on both; a test in the 2.0 suite fails loudly if it changes.
+same code. Undocumented behavior, measured on both; a test in the 2.0 suite fails loudly if it changes.
 
 ## 2. The shape of the contract
 
@@ -57,7 +57,7 @@ implements; the shell refuses one that states none and may refuse one newer than
 - one Zig source, built `-O ReleaseSmall -fstrip -rdynamic`, toolchain pinned (as the Installer pins 0.16.0);
 - a **minimal entry**: `pub fn main() void`, raw Win32 externs, no `std.Io` runtime (the Installer's INST-030: the fat
   runtime tripped Defender; the minimal shape did not, and nothing in it needs `main` to have run);
-- **loaded by the shell, nothing runs before the first call:** no initialisation in `main` that the exports rely on;
+- **loaded by the shell, nothing runs before the first call:** no initialization in `main` that the exports rely on;
   **no thread-local storage** (its set-up does not run either);
 - **imports from kernel32 only** (or what the shell has already loaded): binding shell32 cost 1.4 ms and 2.7 ms of a
   standalone start, measured; the contract's callbacks supply nearly everything else.
@@ -72,7 +72,7 @@ implements; the shell refuses one that states none and may refuse one newer than
 ### 3.2 Arguments: the expanded words, untouched
 
 An array of byte strings (UTF-8, any other byte kept), exactly as the shell expanded them: never a command line to
-re-tokenise. Conversion is the module's business: an implementation module translates through `resolve` (3.4); the
+re-tokenize. Conversion is the module's business: an implementation module translates through `resolve` (3.4); the
 MSYS bridge converts nothing. Temporary assignments arrive in the environment (3.5). Standalone, `main` splits Windows'
 command line itself (kernel32 only).
 

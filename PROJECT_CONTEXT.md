@@ -1,15 +1,62 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-10-31 (session 988ee3e2, then 9df18ad7 = bash-b6). SUPERSEDES every block below; they are history.
-> **TRUE STATE (verified 2026-10-31, written at hg 550):** **DEPLOYED rev 549** (`1.0.0+hg.51195c94f3df 549`: dist/Bash.exe
-> AND dist/sh.exe; suite 229/0 both modes, battery 217; rollback dist/Bash.exe.rev544 + dist/sh.exe.rev544).
-> **PUBLISHED 2026-10-31: GitHub main = git fe8bb29 = hg rev 542; latest release hg-542 (Bash.exe build 536).**
-> Deployed, NOT published: 544 (grep -P `\Q...\E`), 547 (**$PATH's two forms**: `/c/x:/f/y` inside, `C:/x;F:/y` at
-> every exit), 549 (grep -f empty file). Suite: 237 registered cases (3 AOT-only; README and docs/DEVELOPING still say
-> 234: the publish doc review updates them). Untracked root files BENCHMARK-
-> PROVENANCE.md and "The Windows Shell Tax.url" are the architect's: leave them.
-> **549 checked by the peers, all fine:** esdk-a2 (make recipes, release --check), koliada-net-forms-cb
-> (dotnet/hg/nupkg), kes-term-a1 (Release build: MSBuild Exec finds hg; a one-off CS0006 first, not 549's).
+> ## RESUME HERE — 2026-11-01 (session 9df18ad7 = bash-b6, context low). SUPERSEDES every block below; they are history.
+> **TRUE STATE (written at hg 587):** **DEPLOYED rev 583** (`1.0.0+hg.fae0fce5898a 583`: dist/Bash.exe AND dist/sh.exe,
+> 08:26; suite 237/0 both modes, battery 217; rollback dist/Bash.exe.rev568 + dist/sh.exe.rev568; all eight notified
+> "swap done"). **PUBLISHED: GitHub main = git 5abfc5f = hg 555, release hg-555 (Bash.exe build 553).** Deployed, NOT
+> published: 557 (kill/kill -0), 558 (wait $!), 563 (awk RS), 567 (`<( )` forward-slash path), 579 (hard-link identity:
+> stat %h %i %d %D, test -ef, ls -i, find -links/-inum/-samefile/-printf), 583 (sed's GNU escapes \cX \dNNN \oNNN \xHH;
+> c-parser-ac). Suite: 245 registered cases (3 AOT-only; README/DEVELOPING say 239: the next publish's doc review).
+> Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell Tax.url" are the architect's: leave them.
+> **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro. (installer-a4 CONFIRMED 579 on 583 with
+> its fsutil probe: -ef, %h, %i, find -samefile/-links all as expected; closed.)
+> **LIVE SESSIONS (8):** koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, kes-install-43 (runs real
+> hardware installs: a go given before one starts is stale: re-confirm), qa-de, c-parser-ac, esdk-a2 (its CC8051 build
+> runs ON dist/sh.exe + dist/Bash.exe).
+> **HOW WE WORK:** a peer's BUG: verify against GNU, raise with a position, wait ~10 min, fix (a GNU-checked case red on
+> the deployed build, mutations, the suite in both modes AND once with Git's cmd on PATH, commit), the slot from ALL,
+> deploy, notify, record. A FEATURE or DESIGN change waits for the architect's word. Publish only on his word (compare3
+> in a quiet window + the doc review + tools/publish.sh). RULED 2026-11-01: deploy.sh runs the suite -Detached only;
+> publish.sh runs it with a console on dist/Bash.exe first; deploy makes dist/sh.exe a HARD LINK to dist/Bash.exe
+> (confirmed with -ef, else a copy). The bug-fix rule's pre-commit runs are unchanged (he did not address them). NEVER sweep the shared TEMP (other sessions' live files).
+> American spelling everywhere (global rule; history verbatim). Every byte matters (global memory).
+> **AWAITING THE ARCHITECT (do NOT build before his word):**
+> 1. **The installer: BUILT 2026-11-01, NOT RELEASED** (his "Yes, go, do"; rev 587; docs/installer-plan.md status).
+>    `bash tools/installer.sh` -> dist.installer/csharpBash-setup.exe from the deployed dist/Bash.exe, InstallGen 0.0.6
+>    --release, self-checked by a sandboxed install. Names ruled with the go: claude.cmd, csharpBash-setup.exe, the PATH
+>    question (default no; HIS FORM 2026-11-01: "Add [<folder>] to your PATH? [y/N]: " = Installer INST-Q-053, RULED A and NO freeze by his 09:08 install; BUILT: InstallGen 0.0.8, our manifest "path": { "add": "bin:", "default": "no" }, the line identical to his, checked), no license key. His REAL installs 09:08 and 09:26 (0.0.8 question): "perfect!". Observed: fresh, re-run, upgrade with old builds running under both names,
+>    a Claude Code session through the start file reporting C#Bash. OPEN for him: SHIP (release.sh attaching it; a
+>    spec version FREEZES when its first installer ships, INST-038: "We're not shipping until I say so"); phase 5, the
+>    README; INST-Q-052 SETTLED by his spec (the PATH question shows the folder with backslashes, as he wrote it). Tell installer-a4 the SHIP DATE (spec 2 freezes then).
+> 2. **Build the stdin give-back** (DECISIONS "SPIKE: give a native child's unread stdin back"; the patch is
+>    docs/spikes/2026-11-01-stdin-giveback.patch): equals Git Bash on 8 probes, fixes koliada-net-73's
+>    `grep -f <(hg)` and the 2026-10-10 loop limitation. Claude: build. Separate findings: a nested C#Bash `read` takes
+>    a whole pipe (GNU reads a pipe a byte at a time); feeding a native child is slow (1M lines ~250-375 ms vs Git
+>    Bash's 73).
+> 3. **ls -l's link column** (still 1; rev 579 left it): reading it costs ~17% on a 2000-file ls -l (~12 us a file,
+>    diagnostic). Claude: show it.
+> 4. **Publish** 557-583+ (Claude: after 2, in one quiet window).
+> 4b. **The test runners are PowerShell** (run-tests.ps1, run-compat.ps1; he asked "Why are you using powershell",
+>    2026-11-01). External to the shell by design (DECISIONS 2026-06-13). Claude: if PowerShell should go, a small
+>    single-file .NET runner replacing both (starts detached natively, none of 5.1's quirks). Not started.
+> 5. Older, unchanged (the history blocks below, DECISIONS): the awk suite HANG (rev 360); arithmetic-error parity; R4
+>    items 4-9 + OutputEncoding; output buffering's design; a polite web fetcher; deploy.sh's EarlierHelpTables guard;
+>    PortableBash / 2.0 (its own session); parked: serial I/O, `compgen -c`.
+> **SETTLED 2026-10-31..11-01, do NOT re-open (DECISIONS has each):** $PATH's two forms (`/c/x:/f/y` inside,
+> `C:/x;F:/y` forward slashes at every exit; empty entries kept; `./A`; colon-list arguments as Git Bash); dd and cksum
+> in-process (GNU 8.32); awk any RS (gawk 5.1) and RT; kill/kill -0 and `wait $!` as GNU; `<( )` forward-slash path
+> (findstr and cmd's type cannot open forward-slash folder paths: accepted, as for $PWD); `$!` stays synthetic;
+> grep -P `\Q...\E`; grep -f with an empty file; help's path forward slashes; the installer's PATH default "no".
+> **NEXT:** only on his word (peer bugs under the bug-fix rule meanwhile).
+>
+> ## RESUME HERE — 2026-10-31 — HISTORY: superseded by the 2026-11-01 block above
+> **TRUE STATE (verified 2026-10-31, written at hg 569):** **DEPLOYED rev 568** (`1.0.0+hg.67b82a75e52b 568`: dist/Bash.exe
+> AND dist/sh.exe; suite 235/0 both modes, battery 217; rollback dist/Bash.exe.rev564 + dist/sh.exe.rev564).
+> **PUBLISHED 2026-10-31: GitHub main = git 5abfc5f = hg rev 555; latest release hg-555 (Bash.exe build 553).**
+> Deployed, NOT published: 557 (kill/kill -0 on a finished job's $!; kill $! from a subshell), 558 (`wait $!` for an
+> ended job), 563 (awk RS other than newline, RT), 567 (`<( )` forward-slash path; procsub case in its own TEMP).
+> Suite: 243 registered cases (3 AOT-only; README and docs/DEVELOPING say 239: the next publish updates them).
+> Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell Tax.url" are the architect's: leave them.
 > **LIVE SESSIONS (ask ALL for each deploy slot, and a quiet ~25-min window for compare3 before a publish):**
 > koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, qa-de, c-parser-ac, kes-install-43, esdk-a2 (it runs
 > the ESDK CC8051 build ON dist/sh.exe + dist/Bash.exe: tell it "swap done" first; it holds builds while asked).
@@ -21,17 +68,34 @@
 > deployed build in a quiet window + doc review (README table/startup line/case count, docs/DEVELOPING count,
 > docs/PERFORMANCE figures) + tools/publish.sh (token C:/Users/guy/klinkenbecker.gh-token, never printed).
 > **AWAITING THE ARCHITECT (do NOT build before his word):**
-> 1. **GREENLIT 2026-10-31 ("1/ yes, go, then publish"): `dd` and `cksum` in-process (GNU 8.32), BUILT rev 553**
->    (DECISIONS "BUILT: `dd` and `cksum`"; + the help path fix). NEXT: deploy (every session's slot), THEN PUBLISH
->    (compare3 on the deployed build in a quiet window + doc review + tools/publish.sh): the go covers it, no new ask.
-> 2. Publish: 544, 547, 549 (and the dd/cksum deploy) are deployed and unpublished: part of item 1's run.
+> 1. (DONE 2026-10-31: dd/cksum built 553, deployed, PUBLISHED hg 555 with $PATH's two forms and the grep fixes.)
+> 2. (DONE: kill/kill -0 (557, installer-a4) + `wait $!` (558) as GNU, DEPLOYED 559; not published: his word.)
+> 2b. **AWAITING THE ARCHITECT: the installer, phases 3-5 UNBLOCKED** — Installer INST-Q-046 BUILT (Installer rev 33,
+>    INST-037, ratified: InstallGen 0.0.3 + specification 2 replace a file in use: set aside, report "the running copy
+>    was set aside"; a file held without share-delete: exit 8, nothing installed; declare `"schema": 2` to rely on
+>    exit 8). INST-Q-047 BUILT too (Installer rev 34, INST-039: schema 2's `"path": {add, prompt, default}`; details in
+>    docs/installer-plan.md's status). NOTHING BLOCKS IT NOW. Heads-up: schema 2's keys move to American spelling soon
+>    (`artefacts` -> `artifacts`, `licence` -> `license`); build after that lands. docs/installer-plan.md is NOT
+>    ratified. Claude's position: ratify the plan (PATH default "no", already ratified) and build phase 3 on schema 2.
+>    **The architect, 2026-11-01: "pending InstallGen updates"** — PARKED until InstallGen's pending updates land.
+>    LANDED 2026-11-01 (Installer rev 35, InstallGen 0.0.5: version 2 American-spelled, `artifacts`/`license`/
+>    `--accept-license`): BACK WITH HIM for the ratification. Do NOT build before his word.
+>    installer-a4 relayed (2026-11-01): C#Bash is spec 2's FIRST client; InstallGen at E:/Claude/Installer/release (by
+>    path, not on PATH); a spec version FREEZES when its first installer ships (INST-038). Plan checked against v2: ALL
+>    covered. CORRECTION (same day): sh.exe needs no 2nd payload copy: a single-file `from` with `to` naming a path
+>    lands under that name (installer-a4, measured; confirmed here: `{from Bash.exe, to bin/sh.exe}` beside
+>    `{from Bash.exe, to bin}` = 3,697,848 bytes, +44 against Bash.exe alone; a 2nd COPY would be 7,199,769). Claude's
+>    "locations are folders, so it cannot rename" was inferred from the contract's wording, never tested.
+>    ON DISK, the architect's design (2026-11-01): sh.exe a HARD LINK to Bash.exe, re-created and confirmed by the
+>    installer on every install, copy as fallback; ASKED of installer-a4 for spec 2. The architect: "We're not shipping
+>    until I say so": the installer waits for that feature; never ship (release an installer) without his word.
 > 3. Older, still open (see the blocks below; check DECISIONS before acting): the awk suite HANG (rev 360); the rest of
 >    arithmetic-error parity (wording, abandoning the line; rev 496 did (( ))); the performance review's R4 items 4-9
->    + OutputEncoding (DECISIONS 2026-10-18 "R4"; no optimisation before a pick); output buffering's design talk
+>    + OutputEncoding (DECISIONS 2026-10-18 "R4"; no optimization before a pick); output buffering's design talk
 >    (interleaving with children); a generic polite web fetcher for local sessions (the architect's "should become a
 >    real tool for generic use locally?", DECISIONS "no answer retried once"); deploy.sh's EarlierHelpTables guard
 >    (Claude's proposal, rev 469's invariant); PortableBash / the 2.0 host (not started); parked: serial I/O,
->    `compgen -c`; installer phases 3-5 BLOCKED on Installer INST-Q-046 (+ INST-Q-047 filed: ask PATH, default NO).
+>    `compgen -c`; installer phases 3-5: see 2b (INST-Q-046 built 2026-10-31; INST-Q-047 open).
 > **SETTLED 2026-10-29..31, do NOT re-open (DECISIONS has each):** dist/sh.exe ships (make's recipes run through it);
 > the installer asks about PATH, default NO; a no-#! file found on PATH is NOT run (fix the file); MSYS paths inside
 > --opt=/x arguments deferred until a script needs it; `$( )` keeps NULs (rev 72); TZ via ShellClock (IANA %Z numeric:
@@ -40,7 +104,26 @@
 > 547, DEPLOYED 549; DECISIONS "GO"/"BUILT: $PATH's two forms"): `/c/x:/f/y` inside, `C:/x;F:/y` (FORWARD slashes, the
 > architect's mandate: no backslash ever) at every exit; empty entries kept as given; one-letter relative entry `./A`;
 > a colon-list argument converted whole (Git Bash's rule); `$PWD`/`$HOME` stay `C:/x`.
-> **NEXT only on his word:** item 1 (dd/cksum builtins) or a publish. Nothing else is queued; bug reports follow the rule above.
+> 2c. (DONE: awk RS other than newline + RT as gawk 5.1, built 563, DEPLOYED 564; not published. The architect's "go"
+>    was read as THIS item only: NOT a ratification of the installer plan, 2b stays awaiting.)
+> 2d. **AWAITING THE ARCHITECT: a native program drains the in-process stdin it never reads** (koliada-net-73, 2026-10-31:
+>    `printf zz | grep -v -F -f <(hg ...)` prints nothing; the substitution's hg ate grep's stdin). The 2026-10-10
+>    KNOWN LIMITATION (DECISIONS "`while read -r f; do prog; done < list`...": stages are in-process pipes, a native
+>    child is fed by a pump; "fixing that means OS pipes between stages"). GNU and Git Bash leave unread data (measured).
+>    Workaround told: `< /dev/null` on the native command. **SPIKE DONE 2026-11-01 ("2/ go")**, reverted, patch in the
+>    scratchpad (DECISIONS "SPIKE: give a native child's unread stdin back"): equals Git Bash on all 8 probes (off: 6
+>    differ), throughput within noise, suite clean. AWAITING his word to BUILD it (Claude's position: build). Found:
+>    a nested C#Bash child's `read` takes a whole pipe (GNU reads a pipe byte-wise); feeding a native child is slow
+>    (1M lines into findstr ~250-375 ms vs Git Bash 73): separate items, raised.
+>    (The `<( )` backslash path: FIXED rev 567, forward slashes, DEPLOYED 568. The procsub case now
+>    counts leftovers in a TEMP of its own: NEVER sweep the shared TEMP, other sessions' live files are there.)
+> 2e. **Hard-link identity FIXED rev 579** (installer-a4; stat %h %i %d %D, test -ef, ls -i, find -links/-inum/-samefile;
+>    DECISIONS "FIXED: a file's link count, index and device"); deploy next (slot). AWAITING HIS WORD: ls -l's link column
+>    (still 1): reading it costs ~17% on a 2000-file ls -l (diagnostic, ~12 us a file). Claude's position: show it (GNU's
+>    column, a correctness item), the cost per file is small in absolute terms; his call (performance is his to weigh).
+> **NEXT only on his word:** 2d (BUILD the give-back), 2e's ls -l column, the installer (2b: ratify; InstallGen's
+> managed hard link INST-Q-051 being built), or a publish of 557-579.
+> Nothing else is queued; peers' bug reports follow the rule above.
 >
 > ## RESUME ANCHOR (rewritten 2026-10-18) — HISTORY: superseded by the 2026-10-31 block above
 > Replaces the 2026-10-16 head, which had filled with resolved items; that text is in hg rev 316's
@@ -534,7 +617,7 @@ are sourced through `Evaluator.SourceFile`; `-c`/scripts run via `Evaluator.RunS
 
 ## Pending Actions
 > Note: the phase numbering below is the original plan. BASH_PROJECT_HANDOFF.md
-> (project root) uses a later, reorganised numbering. Status here is reconciled
+> (project root) uses a later, reorganized numbering. Status here is reconciled
 > against the actual source.
 - [x] Phase 1 — Lexer + token stream
 - [x] Phase 2 — Parser → AST (commands, pipes, redirects, lists)
@@ -669,7 +752,7 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   `tail -f`, `sort -k/-n/-V/-h/-u/-s/-o`, `wc` widths, `cut -d/-f/-c/-b/--complement`, …).
 - **Files (`Builtins.Files.cs`):** `basename dirname mkdir rmdir touch rm mv cp ls du cmp stat
   mktemp realpath readlink chmod ln truncate` — `ls -l` family is in (decision 5 superseded the
-  no-`-l` scoping; mode string is synthesised: `-rw-r--r--`, read-only attribute honoured),
+  no-`-l` scoping; mode string is synthesized: `-rw-r--r--`, read-only attribute honored),
   `chmod` maps `-w`/`+w` to the read-only attribute and is loud for everything else, `ln` makes
   hard links and symlinks (symlinks need Developer Mode or elevation).
 - **Find / diff / xargs (`Builtins.Find.cs`):** a real `find` expression engine (`-name -iname

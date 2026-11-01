@@ -1,0 +1,77 @@
+== the report: paragraph mode
+1: a|b
+2: c|d
+== paragraph: leading blank lines skipped, blank lines in a row are one separator, a line of spaces is not blank, RT
+1 NF=4 [p1 l1\np1 l2] RT=[\n\n\n\n]
+2 NF=4 [p2 l1\n  \np2 l3] RT=[\n\n]
+== paragraph: input without a final newline; with one
+1: [x\ny] RT=[\n\n]
+2: [z] RT=[]
+1: [c\nd] RT=[\n]
+== paragraph: newline separates fields whatever FS is
+1: NF=4 a,b,c,d
+2: NF=2 e,f,,
+regex FS: NF=3
+1=[a]
+2=[b]
+3=[c
+d]
+default FS: NF=3
+== split() in paragraph mode
+split: 2
+1=[a]
+2=[b\nc]
+== one character
+1: [a] RT=[;]
+2: [b] RT=[;]
+3: [] RT=[;]
+4: [c\n] RT=[]
+1: a
+2: b
+3: c
+1: [a]
+2: [b]
+3: []
+4: [c]
+== a regular expression
+1: [a] RT=[12]
+2: [b] RT=[345]
+3: [c\n] RT=[]
+1: [one] length=3
+2: [two] length=3
+3: [three] length=5
+3 c
+== RS by -v, and as an operand between files
+f1: 1: p
+f1: 2: r
+f1: 1: p
+q
+f1: 2: r
+f2: 1: u
+f2: 2: v
+f2: 3: w
+== RS changed between records
+1: [a]
+2: [b]
+3: [c]
+4: [d\ne\n]
+1: [p1\np2]
+2: [q1]
+3: [q2]
+1: [r1]
+2: [r2]
+3: [r3]
+== getline and getline < file follow RS
+after getline: m2
+f2: [u]
+f2: [v]
+f2: [w]
+== a separator split between two reads (a pipe that hands over the rest a second later) is one separator
+1: [a] RT=[\n\n\n\n]
+2: [b] RT=[\n]
+1: [a] RT=[1234]
+2: [b\n] RT=[]
+== a long input: records across reads
+4286 line 30000
+4286 29996
+30001

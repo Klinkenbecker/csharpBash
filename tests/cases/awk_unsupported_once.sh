@@ -1,5 +1,5 @@
 # 2026-10-18: the in-process awk never runs a program twice. A construct outside its subset that is visible in the
-# program text (a literal printf/sprintf format with %e %g, a literal RS, system()) is refused before anything runs,
+# program text (a literal printf/sprintf format with %e %g, system(); a literal RS until 2026-10-31, in-process since: awk_rs_gnu) is refused before anything runs,
 # so the PATH awk runs it once (DECISIONS 2026-09-04: "parse-time ... loud"); one met only while the program runs (a
 # format held in a variable) fails loud, 2, instead of the PATH awk running it all again: `print "first"` came out
 # twice. And out-of-range numbers print as gawk 5.1's +inf, -inf, -nan, +nan (they were inf, nan, 0 for %d, Infinity

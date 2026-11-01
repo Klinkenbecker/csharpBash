@@ -8,7 +8,7 @@ public sealed partial class Builtins
 	/// `jq [OPTIONS] FILTER [FILE...]`: the in-process subset (DECISIONS 2026-10-05, option (c)).
 	/// Outside the subset, an option or a construct is refused while parsing, before any input is
 	/// read, so the dispatcher hands the whole command to a PATH jq when there is one, or fails loudly
-	/// (DECISIONS 2026-09-04 #2). Behaviour follows jq 1.6, the version the test oracle runs.
+	/// (DECISIONS 2026-09-04 #2). Behavior follows jq 1.6, the version the test oracle runs.
 	/// </summary>
 	private int Jq(List<string> args)
 		{
@@ -32,7 +32,7 @@ public sealed partial class Builtins
 					case "--join-output": raw = join = true; continue;
 					case "--compact-output": compact = true; continue;
 					case "--exit-status": exitStatus = true; continue;
-					case "--monochrome-output": continue;   // never coloured here
+					case "--monochrome-output": continue;   // never colored here
 					case "--version":
 						// Claude's usual first jq call is this probe (8 of 8 in the evidence); an error here
 						// reads as "no jq" and it falls back to python

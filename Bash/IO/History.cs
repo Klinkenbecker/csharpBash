@@ -3,7 +3,7 @@ namespace Bash.IO;
 /// <summary>
 /// Command history with optional file persistence (default ~/.bash_history).
 /// Consecutive duplicate and empty lines are not stored, matching bash's default
-/// HISTCONTROL=ignoredups-ish behaviour. The in-memory list and the file are both
+/// HISTCONTROL=ignoredups-ish behavior. The in-memory list and the file are both
 /// capped to <see cref="MaxEntries"/> (from HISTSIZE). Navigation state is owned by
 /// the caller (the line editor) via <see cref="Count"/> and the indexer.
 /// </summary>

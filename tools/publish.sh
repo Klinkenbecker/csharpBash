@@ -17,6 +17,11 @@
 # It runs one way:
 #   1. the hg tree must be clean; tip = rev N;
 #   2. the benchmark check above;
+#      then the suite WITH A CONSOLE on the deployed dist/Bash.exe (the binary the release ships): any failure stops
+#      here, before anything is written or pushed. tools/deploy.sh ran it detached on that binary before the swap
+#      (the architect, 2026-11-01: "On deploy, keep 'detatched mode' run, drop 'console mode'. On publish, add
+#      'console mode' (detached should have already been run)."). The cases are the tip's: a case for a fix that is
+#      committed but not deployed fails here, as it should (the published tests would not pass on the published binary);
 #   3. MERCURIAL_HISTORY.md: the table regenerated from `hg log N:0` (`|` in a summary escaped as `\|`)
 #      and the changeset count; mercurial-history.hg: `hg bundle --all`, verified by unbundling it into
 #      a fresh repository and comparing the tip. Both are ignored by hg and exist only in git;
@@ -54,6 +59,9 @@ stamp=$("$root/dist/Bash.exe" --version 2>/dev/null | tail -1 | sed 's/^ *//')
 bench=$(awk '/^C#Bash +: .*\[dist \(deployed\)\]/{want=1} want && /C#Bash build/{print; want=0}' tests/bench/results.md | tail -1 | sed 's/^ *//')
 [ "$bench" = "$stamp" ] || die "the newest compare3 run on the deployed build is for '$bench', but dist/Bash.exe is '$stamp': run tests/bench/compare3.sh first"
 echo "publish: hg rev $tip ($node); benchmark of the deployed build ($stamp) found"
+res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" -Interpreter "$root/dist/Bash.exe" 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
+echo "publish: suite (console) on the deployed build: $res"
+[[ "$res" == *" 0 failed" ]] || die "the suite failed on dist/Bash.exe with a console; nothing published"
 
 # 3. the history files
 count=$((tip + 1))

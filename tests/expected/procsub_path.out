@@ -1,0 +1,10 @@
+no backslash
+the shell's form
+read by cat
+read: one
+read: two
+2c2
+< b
+---
+> c
+read by a separate process

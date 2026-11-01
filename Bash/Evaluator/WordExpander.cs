@@ -308,7 +308,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		}
 
 	/// <summary>
-	/// Recognise the array-spanning forms ${arr[@]}, ${arr[*]}, ${!arr[@]},
+	/// Recognize the array-spanning forms ${arr[@]}, ${arr[*]}, ${!arr[@]},
 	/// ${!arr[*]} for both indexed and associative arrays. Returns the element
 	/// (or key) list so the caller can produce one field per element.
 	/// </summary>
@@ -892,7 +892,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			char c = raw[i];
 			if (c == '\\' && i + 1 < raw.Length)
 				{
-				if (pattern) sb.Append(c).Append(raw[i + 1]);   // the glob engine honours the escape
+				if (pattern) sb.Append(c).Append(raw[i + 1]);   // the glob engine honors the escape
 				else sb.Append(raw[i + 1]);                       // quote removal
 				i += 2;
 				continue;
@@ -1223,7 +1223,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		}
 
 	/// <summary>`&lt;(cmd)`: run cmd to completion with stdout in a temp file; expand to its
-	/// (native) path. The file lives until the enclosing command has finished.</summary>
+	/// path, in the shell's form (`F:/TEMP/bash-procsub-&lt;id&gt;`). The file lives until the enclosing command has finished.</summary>
 	private string RunProcessSubstitution(Node command)
 		{
 		var path = Path.Combine(Path.GetTempPath(), "bash-procsub-" + Guid.NewGuid().ToString("N")[..12]);
@@ -1263,7 +1263,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			}
 		(_procSubFiles ??= []).Add(path);
 		_ = status;   // like bash, the substitution's status does not become $?
-		return path;
+		// the shell's form, forward slashes: it expanded to `F:\TEMP\bash-procsub-<id>` until 2026-10-31 (a backslash is
+		// the shell's escape; every path the shell hands back is forward slash, DECISIONS 2026-09-11)
+		return ShellEnvironment.ToShellPath(path);
 		}
 
 	// ── arithmetic expansion ──────────────────────────────────────────────────

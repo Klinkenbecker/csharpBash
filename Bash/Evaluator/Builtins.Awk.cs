@@ -793,9 +793,7 @@ public sealed partial class Builtins
 				{
 				var op = Advance().Text; SkipNl();
 				var v = ParseTernary();
-				// a literal RS is checked now, before anything runs (it was refused only when the assignment ran)
-				if (c is AVar { Name: "RS" } && op == "=" && v is AStr { V: not "\n" }) throw new AwkUnsupportedException("RS other than newline");
-				return new AAssign(c, op, v);
+				return new AAssign(c, op, v);   // any RS since 2026-10-31 (AwkRecords); it was refused unless "\n"
 				}
 			return c;
 			}
@@ -1055,6 +1053,7 @@ public sealed partial class Builtins
 		private string _record = "";
 		private bool _fieldsValid = true;
 		private int _nr, _fnr;
+		private string _rt = "";   // RT (gawk): the text that ended the last record read
 		private int _exitCode;
 		private bool _exiting;
 		private Dictionary<string, AFunc> _funcs = new(StringComparer.Ordinal);
@@ -1062,7 +1061,15 @@ public sealed partial class Builtins
 		private bool _returning;                        // a `return` ran: every enclosing statement stops (no exception per call)
 		private AwkVal _returnValue = AwkVal.Uninit;
 		private readonly Dictionary<string, TextWriter> _outputs = new(StringComparer.Ordinal);   // `print > name`, open until close()
-		private readonly Dictionary<string, (TextReader Reader, IEnumerator<string> Lines)> _inputs = new(StringComparer.Ordinal);   // `getline < name`
+		private readonly Dictionary<string, (TextReader Reader, AwkRecords Records)> _inputs = new(StringComparer.Ordinal);   // `getline < name`
+
+		/// <summary>The next record of <paramref name="input"/> as RS stands now (it may change between records); RT set.</summary>
+		private bool NextRecord(AwkRecords input, out string record)
+			{
+			if (!input.Next(S(_vars["RS"]), GetRegex, out record, out var rt)) return false;
+			_rt = rt;
+			return true;
+			}
 		public string Source { get; init; } = "cmd. line";
 
 		/// <summary>A function's parameter or local. A scalar argument arrives by value; an array by
@@ -1154,7 +1161,12 @@ public sealed partial class Builtins
 			{
 			if (_fieldsValid) return;
 			_fields.Clear();
-			_fields.AddRange(SplitFields(_record, S(_vars["FS"])));
+			var fs = S(_vars["FS"]);
+			// paragraph mode (RS ""): newline separates fields too when FS is one character (gawk; not a regex FS, not
+			// split(), measured 2026-10-31); FS " " splits at newlines anyway
+			if (fs.Length == 1 && fs != " " && S(_vars["RS"]).Length == 0)
+				{ if (_record.Length > 0) _fields.AddRange(_record.Split([fs[0], '\n'])); }
+			else _fields.AddRange(SplitFields(_record, fs));
 			_fieldsValid = true;
 			}
 
@@ -1214,6 +1226,7 @@ public sealed partial class Builtins
 				case "NF": return AwkVal.Num(NF);
 				case "NR": return AwkVal.Num(_nr);
 				case "FNR": return AwkVal.Num(_fnr);
+				case "RT": return AwkVal.Str(_rt);
 				}
 			if (Local(name) is { } cell)
 				{
@@ -1240,9 +1253,7 @@ public sealed partial class Builtins
 				case "NF": SetNF((int)v.Number); return;
 				case "NR": _nr = (int)v.Number; return;
 				case "FNR": _fnr = (int)v.Number; return;
-				case "RS":
-					if (S(v) != "\n") throw new AwkUnsupportedException("RS other than newline");
-					break;
+				case "RT": _rt = S(v); return;
 				}
 			if (Local(name) is { } cell)
 				{
@@ -1479,7 +1490,7 @@ public sealed partial class Builtins
 		private int _mainNext;
 		private bool _mainAnyFile, _mainStdinDone;
 		private TextReader? _mainReader;
-		private IEnumerator<string>? _mainLines;
+		private AwkRecords? _mainLines;
 
 		private bool NextMainLine(out string line)
 			{
@@ -1487,8 +1498,8 @@ public sealed partial class Builtins
 				{
 				if (_mainLines is not null)
 					{
-					if (_mainLines.MoveNext()) { line = _mainLines.Current; return true; }
-					_mainLines.Dispose(); _mainReader?.Dispose(); _mainLines = null; _mainReader = null;
+					if (NextRecord(_mainLines, out line)) return true;
+					_mainReader?.Dispose(); _mainLines = null; _mainReader = null;
 					}
 				string op;
 				if (_mainNext < _mainOps.Count) op = _mainOps[_mainNext++];
@@ -1501,11 +1512,11 @@ public sealed partial class Builtins
 				_fnr = 0;
 				try { _mainReader = OpenText(op); }
 				catch (Exception ex) { throw new AwkOpenException($"awk: fatal: cannot open file `{op}' for reading: {IoError(ex)}"); }
-				_mainLines = ReadLines(_mainReader).GetEnumerator();
+				_mainLines = new AwkRecords(_mainReader);
 				}
 			}
 
-		private void CloseMainInput() { _mainLines?.Dispose(); _mainReader?.Dispose(); _mainLines = null; _mainReader = null; }
+		private void CloseMainInput() { _mainReader?.Dispose(); _mainLines = null; _mainReader = null; }
 
 		private AwkVal Getline(AGetline g)
 			{
@@ -1524,14 +1535,13 @@ public sealed partial class Builtins
 				TextReader reader;
 				try { reader = OpenText(name); }
 				catch (Exception) { return AwkVal.Num(-1); }   // gawk: -1, no message
-				input = (reader, ReadLines(reader).GetEnumerator());
+				input = (reader, new AwkRecords(reader));
 				_inputs[name] = input;
 				}
 			string line;
 			try
 				{
-				if (!input.Lines.MoveNext()) return AwkVal.Zero;
-				line = input.Lines.Current;
+				if (!NextRecord(input.Records, out line)) return AwkVal.Zero;
 				}
 			catch (IOException) { return AwkVal.Num(-1); }
 			catch (UnauthorizedAccessException) { return AwkVal.Num(-1); }
@@ -1583,7 +1593,6 @@ public sealed partial class Builtins
 			if (_outputs.Remove(name, out var w)) { try { w.Dispose(); } catch { } rc = 0; }
 			if (_inputs.Remove(name, out var input))
 				{
-				input.Lines.Dispose();
 				if (!ReferenceEquals(input.Reader, Console.In)) input.Reader.Dispose();
 				rc = 0;
 				}
@@ -1939,6 +1948,125 @@ public sealed partial class Builtins
 			catch (AwkNextException) { }
 			catch (AwkExitException) { return true; }
 			return false;
+			}
+		}
+
+	/// <summary>
+	/// The records of one awk input as RS separates them (2026-10-31, kes-install-43; gawk 5.1, measured), read as they
+	/// are asked for: RS may change between two records and gawk honors it from the next, so ONE reader keeps the input's
+	/// position. RS "\n" (the default) and any one character read to that character through the input's LfReader, as
+	/// before (LF only, a CR is data); RS "" (paragraph mode) and a longer RS (an ERE) are matched in a look-ahead buffer
+	/// filled from the same reader, and a match that touches the buffer's end waits for more input (a run of newlines, or
+	/// `[0-9]+`, may go on). The look-ahead is used up first by whatever mode reads next.
+	/// </summary>
+	private sealed class AwkRecords(TextReader reader)
+		{
+		private readonly bool _console = ReferenceEquals(reader, Console.In) || ReferenceEquals(reader, ConsoleMux.In);
+		private readonly StringBuilder _ahead = new();   // read ahead by the paragraph and regex modes, not yet a record
+		private bool _eof;
+		private static readonly Regex Paragraph = new("\n\n+", RegexOptions.CultureInvariant);
+
+		// stdin is resolved at each read (the per-thread slot), as ShellEncoding.ReadLine does
+		private TextReader Src => _console ? ConsoleMux.In : reader;
+
+		/// <summary>The next record and the text that ended it (RT); false at the end of the input.</summary>
+		public bool Next(string rs, Func<string, Regex> regexOf, out string record, out string rt)
+			{
+			record = rt = "";
+			if (rs.Length == 1)
+				{
+				if (ReadTo(rs[0], out bool ended) is not { } s) return false;
+				record = s; rt = ended ? rs : "";
+				return true;
+				}
+			if (rs.Length == 0)
+				{
+				// leading newlines are skipped (gawk): at the start of the input, and after a change of RS
+				while (true)
+					{
+					int nl = 0;
+					while (nl < _ahead.Length && _ahead[nl] == '\n') nl++;
+					_ahead.Remove(0, nl);
+					if (_ahead.Length > 0 || !Fill(0)) break;
+					}
+				return Matched(Paragraph, paragraph: true, out record, out rt);
+				}
+			return Matched(regexOf(rs), paragraph: false, out record, out rt);
+			}
+
+		/// <summary>To <paramref name="sep"/> (not included): the look-ahead first, then the reader; null at the end.</summary>
+		private string? ReadTo(char sep, out bool ended)
+			{
+			ended = false;
+			if (_ahead.Length > 0)
+				{
+				for (int i = 0; i < _ahead.Length; i++)
+					if (_ahead[i] == sep) { var s = _ahead.ToString(0, i); _ahead.Remove(0, i + 1); ended = true; return s; }
+				var head = _ahead.ToString();
+				_ahead.Clear();
+				return head + (ReadFromReader(sep, out ended) ?? "");
+				}
+			return ReadFromReader(sep, out ended);
+			}
+
+		private string? ReadFromReader(char sep, out bool ended)
+			{
+			ended = false;
+			if (_eof) return null;
+			var src = Src;
+			string? r;
+			if (src is LfReader lf) r = lf.ReadRecord(sep, out ended);
+			else if (sep == '\n') { r = ShellEncoding.ReadLine(src); ended = r is not null; }
+			else
+				{
+				var sb = new StringBuilder();
+				int c;
+				while ((c = src.Read()) >= 0 && c != sep) sb.Append((char)c);
+				ended = c == sep;
+				r = ended || sb.Length > 0 ? sb.ToString() : null;
+				}
+			if (r is null) _eof = true;
+			return r;
+			}
+
+		/// <summary>Read more into the look-ahead: at least a block, or as much as it holds already (so a long record is
+		/// scanned a logarithmic number of times, not once per block); false at the end of the input.</summary>
+		private bool Fill(int have)
+			{
+			if (_eof) return false;
+			var buf = new char[Math.Max(4096, have)];
+			int n = Src.Read(buf, 0, buf.Length);
+			if (n <= 0) { _eof = true; return false; }
+			_ahead.Append(buf, 0, n);
+			return true;
+			}
+
+		/// <summary>A record ended by the first non-empty match of <paramref name="sep"/>; at the end of the input the rest is
+		/// the last record (in paragraph mode without its trailing newlines, which are RT).</summary>
+		private bool Matched(Regex sep, bool paragraph, out string record, out string rt)
+			{
+			while (true)
+				{
+				var s = _ahead.ToString();
+				Match? m = null;
+				for (var t = sep.Match(s); t.Success; t = sep.Match(s, t.Index + 1))
+					if (t.Length > 0) { m = t; break; }
+				// a match reaching the end of what has been read may go on (another newline, another digit): read more first
+				if (m is not null && (m.Index + m.Length < s.Length || _eof))
+					{
+					record = s[..m.Index]; rt = m.Value;
+					_ahead.Remove(0, m.Index + m.Length);
+					return true;
+					}
+				if (Fill(s.Length)) continue;
+				if (m is not null) continue;   // the end came: that match is final now (_eof)
+				_ahead.Clear();
+				if (s.Length == 0) { record = rt = ""; return false; }
+				int end = s.Length;
+				if (paragraph) while (end > 0 && s[end - 1] == '\n') end--;
+				record = s[..end]; rt = s[end..];
+				return true;
+				}
 			}
 		}
 	}

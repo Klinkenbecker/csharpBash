@@ -12,7 +12,7 @@
 A **module** is one Windows x64 executable that does two jobs:
 
 - **run by C#Bash**, it is loaded into the shell's own process as a library, and the shell calls its exports. Nothing
-  in it runs before the first call: not `main`, not any initialiser;
+  in it runs before the first call: not `main`, not any initializer;
 - **run by itself** (from cmd, PowerShell, another program), its `main` runs and behaves the same.
 
 A module provides one or more **utilities** (`xxd`, `awk`…), each found by the name it is invoked by. A module is
@@ -126,7 +126,7 @@ the thread that called `csb_run`. Threads a module starts must end before `csb_r
 
 1. **Imports from `kernel32.dll` and `ntdll.dll` only.** The shell binds a module's imports itself (Windows does not,
    for an executable loaded as a library) and refuses a module importing anything else, loudly.
-2. **Nothing may depend on `main` or any start-up code having run**: no initialisation outside the exports.
+2. **Nothing may depend on `main` or any start-up code having run**: no initialization outside the exports.
 3. **No thread-local variables**: their set-up does not run when the shell loads the module.
 4. **Reentrant:** two calls may run at once on two threads (`cat f | xxd | xxd -r`): no mutable global state, no
    process current directory, no process console.

@@ -8,7 +8,7 @@ namespace Bash.Evaluator;
 /// time with a Z. glibc's rules, measured (WSL, a fixed epoch): unset is the machine's own zone (here Windows'); set
 /// but empty is UTC; UTC, GMT, UTC0, Etc/UTC and the like are UTC, named as given; an IANA name (`Asia/Tokyo`,
 /// `:Europe/London`, `EST5EDT`) is that zone; a POSIX `NAME[+-]h[:mm[:ss]]` is that fixed offset, the sign WEST of
-/// Greenwich (`UTC+3` is -0300), its DST part honoured only through an IANA zone of its name (`CET-1CEST` as `CET`);
+/// Greenwich (`UTC+3` is -0300), its DST part honored only through an IANA zone of its name (`CET-1CEST` as `CET`);
 /// anything else is UTC under the name's leading letters (`Foo/Bar`: Foo). Times handed around are wall-clock times
 /// in this zone (DateTimeKind.Unspecified, or Local when the zone is the machine's own).
 /// </summary>

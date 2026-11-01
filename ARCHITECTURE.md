@@ -100,7 +100,7 @@ downstream:
   is "inside" a parameter expansion. So `ConsumeDollar` reads the entire `${…}` body eagerly
   (balancing nested braces and quotes) and stores the raw interior as a single token. This is
   what prevents `#` in `${#arr[@]}` from starting a comment, `}` in `${x:-y}` from leaking,
-  and operator characters inside the expansion from being mis-tokenised. *(DECISIONS:
+  and operator characters inside the expansion from being mis-tokenized. *(DECISIONS:
   2026-06-13 — "All `$`-expansions routed through one path".)*
 
 - **Heredoc bodies are captured after the newline.** `<<` / `<<-` queue a delimiter; on the
@@ -108,7 +108,7 @@ downstream:
 
 - **`{` and `}` are context-sensitive.** `{` is a group-open only when followed by
   whitespace/`;` (so `{a..e}` lexes as a word); `}` is a group-close only with leading space,
-  a preceding newline, or a preceding `;`. *(DECISIONS: 2026-06-13 — "`}` recognised as a
+  a preceding newline, or a preceding `;`. *(DECISIONS: 2026-06-13 — "`}` recognized as a
   group terminator in command position".)*
 
 `$'…'` ANSI-C quoting (with `\n`, `\t`, `\xNN`, `\uNNNN` decoding) is also resolved in the
@@ -252,7 +252,7 @@ and `{ a | b; } >f` writes the file. External stages get the pipe ends directly
 (`ConsoleMux.PipeIn/PipeOut`) with copy threads on either side.
 
 Divergence from bash: stages share the shell's variables and cwd (bash isolates each in a
-subshell); `PIPESTATUS`, `pipefail` and `!` are honoured. *(Supersedes the 2026-03-11
+subshell); `PIPESTATUS`, `pipefail` and `!` are honored. *(Supersedes the 2026-03-11
 "thread + MemoryStream" and 2026-06-14 "sequential builtin pipeline" designs — DECISIONS
 2026-09-04.)*
 
@@ -309,7 +309,7 @@ steps (a) to (c).)*
 bash compares bytes and reads integers the same way in every locale, so the shell's string tests are
 ordinal (`StringComparison.Ordinal`, `IndexOf(char)`) and its integer parses use the invariant culture,
 as do the writers it formats into (`$( )`'s `StringWriter`). Culture data is used only where it is the
-behaviour: non-ASCII case mapping (`${x^^}`) and local time (`date`, `ls -l`). This keeps `icu.dll`
+behavior: non-ASCII case mapping (`${x^^}`) and local time (`date`, `ls -l`). This keeps `icu.dll`
 (Windows' ICU) out of an ordinary call: it loads at the first culture-sensitive operation, and a call
 that has none no longer pays ~1.6 ms for it. Watch for the quiet culture paths: a one-argument
 `StartsWith`/`EndsWith`/`IndexOf(string)`, `int.TryParse(s, out …)`, `ToLowerInvariant` (TextInfo),

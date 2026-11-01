@@ -42,7 +42,7 @@ public sealed class Lexer
 		_col  = 1;
 		}
 
-	/// <summary>The source text being tokenised (the parser slices function definitions from it).</summary>
+	/// <summary>The source text being tokenized (the parser slices function definitions from it).</summary>
 	public string Source => _src;
 
 	// ── public API ───────────────────────────────────────────────────────────
@@ -396,7 +396,7 @@ public sealed class Lexer
 
 		// plain $VAR, $$, $?, $#, $@, $*, $!, $-, $0..$9.
 		// Consume the parameter name here (so $# doesn't start a comment, $@/$* aren't
-		// mis-tokenised) and route it through the DollarLBrace path — the parser turns
+		// mis-tokenized) and route it through the DollarLBrace path — the parser turns
 		// that into a BraceExpansionPart, the same handling as ${name}.
 		if (next is '@' or '*' or '#' or '?' or '$' or '!' or '-')
 			{

@@ -8,7 +8,7 @@ namespace Bash.Evaluator;
 /// culture, so on one whose minus sign is U+2212 (sv-SE and others, verified in-process) `echo $((-5))` printed
 /// "−5", and a culture's date separator reached `find -printf %Tx`. Nothing in the shell uses the user's culture on
 /// purpose (no explicit CurrentCulture, no culture casing or collation calls), so the process takes the invariant
-/// culture at start-up, every thread included; culture data stays where it is the behaviour (non-ASCII case mapping,
+/// culture at start-up, every thread included; culture data stays where it is the behavior (non-ASCII case mapping,
 /// local time), and setting it loads no ICU.
 /// </summary>
 public static class ShellCulture

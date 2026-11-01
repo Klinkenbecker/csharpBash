@@ -1,0 +1,22 @@
+a: 2 links
+b: 2 links
+c: 1 links
+a b: one index
+a c: two indexes
+a's index is not 0
+a c: one device
+%D is %d in hex
+[ a -ef b ]: true
+[ a -ef c ]: false
+[ a -ef ./a ]: true
+[ a -ef nope ]: false
+ls -i: as stat, a = b, c differs
+find -samefile a: ./a ./b 
+find -links 2: ./a ./b 
+find -links -2: ./c 
+find -inum (a's): ./a ./b 
+./a 2
+./b 2
+./c 1
+find -printf %i: as stat
+after rm b: a has 1 link

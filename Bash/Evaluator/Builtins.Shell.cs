@@ -1609,10 +1609,17 @@ public sealed partial class Builtins
 		int rc = 0;
 		foreach (var t in targets)
 			{
-			if (t.StartsWith('%') || (int.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var maybe) && BackgroundJob.IsSyntheticPid(maybe)))
+			bool synthetic = int.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var maybe) && BackgroundJob.IsSyntheticPid(maybe);
+			if (t.StartsWith('%') || synthetic)
 				{
+				// GNU (measured 2026-10-31): `$!` names a process, so once its job has finished there is none, "(PID) - No
+				// such process", whether or not `jobs` has reported it; a %spec names the job, found until `jobs` reports
+				// it Done and drops it. `kill -0` looked up nothing and always said 0 (installer-a4's report).
+				var job = _eval.FindJobForKill(t);
+				if (synthetic && (job is null || job.Done)) { Console.Error.WriteLine($"{Err}kill: ({t}) - No such process"); rc = 1; continue; }
+				if (job is null) { Console.Error.WriteLine($"{Err}kill: {t}: no such job"); rc = 1; continue; }
 				if (sigZero) continue;
-				if (_eval.KillJob(t, out var err) != 0) { Console.Error.WriteLine($"{Err}kill: {err}"); rc = 1; }
+				if (_eval.KillJob(job, t, out var err) != 0) { Console.Error.WriteLine($"{Err}kill: {err}"); rc = 1; }
 				continue;
 				}
 			if (!int.TryParse(t, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var pid)) { Console.Error.WriteLine($"{Err}kill: {t}: arguments must be process or job IDs"); rc = 1; continue; }

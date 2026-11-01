@@ -12,11 +12,56 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 556 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 601 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 600 | 2026-11-01 | doc review for the publish: README's table and PERFORMANCE.md from the 2026-11-01 compare3 run of deployed 583 (outputs identical in all three shells); results.md |
+| 599 | 2026-11-01 | RAISED: awk division by zero filed as unsupported, falls through to a PATH awk after output (duplicate output); fix after the publish |
+| 598 | 2026-11-01 | ship the installer: release.sh builds it from the deployed Bash.exe and attaches it with its .sha256 (downloaded back and compared); README leads with it (plan phase 5); case count 245 |
+| 597 | 2026-11-01 | installer: his second real install with the 0.0.8 PATH question, accepted ("perfect!"); not shipped |
+| 596 | 2026-11-01 | the PATH question as he spec'd it: InstallGen 0.0.8 (INST-045), our manifest drops prompt; rebuilt, the line identical character for character |
+| 595 | 2026-11-01 | INST-Q-052: his spec settles it, the PATH question shows the folder with backslashes as he wrote it (relayed) |
+| 594 | 2026-11-01 | correction: under InstallGen 0.0.7 our planned PATH form is refused, not silently added (measured); the trap was overstated; installer-a4's 0.0.8 plan recorded |
+| 593 | 2026-11-01 | INST-Q-053 ruled: A (fixed PATH wording, prompt removed) and no freeze by his install; relayed; our prompt stays until InstallGen ships A |
+| 592 | 2026-11-01 | INST-Q-053 (installer-a4): the PATH question's form (A fixed wording, B placeholder) and the freeze reading await the architect; ship nothing built to spec 2 meanwhile |
+| 591 | 2026-11-01 | the PATH question: his form "Add [<folder>] to your PATH? [y/N]: " sent to installer-a4 (spec 2 cannot inline the folder); interim prompt shortened; his first real install recorded |
+| 590 | 2026-11-01 | installer/try-install.cmd: a real install from a Command Prompt, then its checks (the architect asked); placed beside the installer by tools/installer.sh; run sandboxed only, polarity shown |
+| 589 | 2026-11-01 | installer: the cheap remaining cases checked (native stub, no Claude Code, a path with a space); what is not verified recorded |
+| 588 | 2026-11-01 | installer-a4: skip-path observation withdrawn (measured safe); backslash display is INST-Q-052; our installer not shipped (spec 2 not frozen) |
+| 587 | 2026-11-01 | the C#Bash installer, BUILT not released (the architect: go): installer/csharpBash.json (InstallGen spec 2, sh.exe as a hard link), installer/claude.cmd (the start file, finds its own folder), tools/installer.sh (build from the deployed Bash.exe with --release, then a sandboxed install checked); upgrade, re-run and a Claude Code session through the start file observed |
+| 586 | 2026-11-01 | deploy runs the suite detached only, publish runs it with a console on dist/Bash.exe first; deploy makes dist/sh.exe a hard link to dist/Bash.exe (confirmed with -ef, else a copy) (the architect, 2026-11-01); spike and polarity recorded |
+| 585 | 2026-11-01 | anchor: installer-a4 confirmed 579's hard-link identity on the live 583 (fsutil probe), closed |
+| 584 | 2026-11-01 | Deployed rev 583 (579 hard-link identity, 583 sed escapes): suite 237/0 both modes, battery 217; deploy time measured (5.5 min) for the architect's question; anchor |
+| 583 | 2026-11-01 | sed converts GNU's escapes \a \f \v \cX \dNNN \oNNN \xHH in the regex (raw), the replacement (a produced & or \ literal), y and every line of a/i/c text (c-parser-ac: s/-/\x27/ wrote x27); an escaped final backslash ends a/i/c text; case sed_escapes_gnu |
+| 582 | 2026-11-01 | RAISED: sed converts none of GNU's \cX \dNNN \oNNN \xHH (c-parser-ac); installer-a4's deploy go withdrawn (anchor) |
+| 581 | 2026-11-01 | DECISIONS: the architect's design, sh.exe as an installer-managed hard link (INST-Q-051, built in InstallGen 0.0.6), recorded |
+| 580 | 2026-11-01 | RESUME anchor 2026-11-01 (context low); the stdin give-back spike patch kept in docs/spikes; installer-a4 built INST-Q-051 (INST-043, InstallGen 0.0.6): sh.exe as an installer-managed hard link |
+| 579 | 2026-11-01 | A file link count, index and device from GetFileInformationByHandle: stat %h %i %d %D, test -ef, ls -i, find -links/-inum/-samefile/-printf (installer-a4); ls -l link column held; case hardlink_identity_gnu |
+| 578 | 2026-11-01 | installer: sh.exe as an installer-managed hard link (the architect design), asked of installer-a4 for spec 2; nothing ships before his word |
+| 577 | 2026-11-01 | installer plan: sh.exe is a second file on disk, not a link (hard link keeps the old build after an upgrade; symlink needs Developer Mode or elevation; measured) |
+| 576 | 2026-11-01 | installer: sh.exe needs no second payload copy (a to naming a path renames; +44 bytes, measured); correction of the same day; plan on schema 2 |
+| 575 | 2026-11-01 | anchor: installer: spec 2 first client (relayed), freeze rule, sh.exe second copy measured (+95%), rename ask filed with installer-a4 |
+| 574 | 2026-11-01 | American spelling in code comments and current docs (global rule, 2026-11-01); installer back with the architect (InstallGen 0.0.5 landed) |
+| 573 | 2026-11-01 | SPIKE recorded: give a native child unread stdin back to the stage (equals Git Bash on 8 probes, throughput within noise); reverted, patch in scratchpad; awaiting the build ruling |
+| 572 | 2026-11-01 | ls_time_style_gnu: mask a recent file month and day too (the case failed on 2026-11-01: Nov  1 against Oct NN); expected regenerated from GNU |
+| 571 | 2026-11-01 | anchor: the installer PARKED pending InstallGen updates (the architect, 2026-11-01) |
+| 570 | 2026-11-01 | installer plan: INST-Q-047 built (Installer rev 34), nothing blocks it; schema 2 spelling change coming; awaiting the architect |
+| 569 | 2026-10-31 | Deployed rev 568 (<( ) forward-slash path; procsub case in its own TEMP; suite 235/0 both modes, battery 217); anchor |
+| 568 | 2026-10-31 | anchor: <( ) path fixed (567), deploy pending; never sweep the shared TEMP |
+| 567 | 2026-10-31 | <( ) expands to the forward-slash form F:/TEMP/bash-procsub-<id>; the procsub case counts leftovers in a TEMP of its own (shared TEMP made it fail); case procsub_path |
+| 566 | 2026-10-31 | RAISED: native program drains in-process stdin it never reads (koliada-net-73, known 2026-10-10 limitation; give-back spike proposed); <( ) path backslashes raised |
+| 565 | 2026-10-31 | Deployed rev 564 (awk RS other than newline, RT; suite 234/0 both modes, battery 217); pnputil CRLF note for kes-install-43; anchor |
+| 564 | 2026-10-31 | anchor: awk RS built (563), deploy next; the go read as awk RS only (installer still awaiting) |
+| 563 | 2026-10-31 | awk RS other than newline as gawk 5.1: paragraph mode, one character, a regex; RT; newline as a field separator in paragraph mode (kes-install-43; the architect: go); case awk_rs_gnu |
+| 562 | 2026-10-31 | GO recorded: awk RS other than newline as gawk 5.1 (kes-install-43); plan in DECISIONS; case awk_rs_gnu with gawk expected (not registered yet) |
+| 561 | 2026-10-31 | anchor: awk RS other than newline (kes-install-43 unmet need) recorded, awaiting the architect |
+| 560 | 2026-10-31 | Deployed rev 559 (kill/kill -0 on a finished job, kill from a subshell, wait for an ended job; suite 233/0 both modes, battery 217); anchor: installer awaiting the architect |
+| 559 | 2026-10-31 | anchor: kill/wait fixes built (557, 558), deploy pending; installer phases 3-5 unblocked by Installer INST-Q-046 (rev 33), awaiting the architect; installer-plan status updated |
+| 558 | 2026-10-31 | wait $! for an ended job that left the table gives its status (bash bgpids); an unknown pid "is not a child of this shell"; case wait_ended_gnu |
+| 557 | 2026-10-31 | kill/kill -0 on the $! of a finished job: "No such process", as GNU; kill $! from a subshell (the watchdog idiom) works (installer-a4); case kill_job_gnu |
+| 556 | 2026-10-31 | PUBLISHED: GitHub main = git 5abfc5f = hg rev 555, release hg-555 (Bash.exe build 553); anchor: kill -0 fix next |
 | 555 | 2026-10-31 | Publish preparation: benchmark on deployed 553 (all rows within noise of 536), README table/startup, case count 239, PERFORMANCE figures |
 | 554 | 2026-10-31 | Deployed rev 553 (dd, cksum, help path; suite 231/0 both modes, battery 217); quiet window for the publish benchmark: all eight; kill -0 bug raised (fix after the publish) |
 | 553 | 2026-10-31 | dd and cksum in-process as GNU coreutils 8.32 (installer-a4; the architect: go); help names its table with forward slashes; cases dd_gnu, cksum_gnu, help_refresh + rev 462 table |

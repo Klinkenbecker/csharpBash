@@ -471,7 +471,7 @@ public sealed partial class Builtins
 		if (o.Has('m') || o.Has('x') || o.Has('C')) throw new UnsupportedOptionException("ls", o.Has('m') ? "-m" : o.Has('x') ? "-x" : "-C", "column output is not implemented (output is one entry per line)");
 		// --time-style as GNU's: full-iso, long-iso, iso, locale, +FORMAT (with a newline: old files' format, then recent
 		// ones'), each with an optional posix- that means the default under the C/POSIX locale; anything else refused, 2.
-		// Only full-iso was honoured, the rest silently ignored (2026-10-30, kes-term-a1)
+		// Only full-iso was honored, the rest silently ignored (2026-10-30, kes-term-a1)
 		string? timeStyle = o.HasLong("full-time") ? "full-iso" : o.GetLong("time-style");
 		if (timeStyle is not null)
 			{
@@ -547,7 +547,10 @@ public sealed partial class Builtins
 			foreach (var (display, info) in entries)
 				{
 				var sb = new StringBuilder();
-				if (inode) sb.Append("0 ");
+				// -i: the file index (lstat's unless -L), one open per entry (2026-11-01: it was 0 for every file). -l's link count
+				// stays 1: reading it costs an open per entry, ~17% on 2000 files (measured 2026-11-01): the architect's call
+				var id = inode ? ShellFile.Identity(info.FullName, follow: o.Has('L')) : null;
+				if (inode) sb.Append(id?.Index ?? 0).Append(' ');
 				if (blocks) sb.Append(((info is FileInfo f0 ? (f0.Length + 1023) / 1024 : 0)).ToString().PadLeft(4)).Append(' ');
 				if (longFmt) sb.Append(LongLine(info, human, noGroup, timeStyle)).Append(' ');
 				sb.Append(Name(display, info));
@@ -621,7 +624,7 @@ public sealed partial class Builtins
 		}
 
 	/// <param name="timeStyle">null: the default; "full-iso", "long-iso", "iso", or "+FORMAT" (see Ls).</param>
-	private static string LongLine(FileSystemInfo info, bool human, bool noGroup, string? timeStyle)
+	private static string LongLine(FileSystemInfo info, bool human, bool noGroup, string? timeStyle, uint links = 1)
 		{
 		long size = info is FileInfo fi ? fi.Length : 0;
 		var mtime = ShellClock.ToShell(info.LastWriteTimeUtc);   // in the shell's zone (TZ, 2026-10-30)
@@ -641,7 +644,7 @@ public sealed partial class Builtins
 		string owner = Environment.UserName;
 		string group = noGroup ? "" : " " + (OperatingSystem.IsWindows() ? "None" : "users");
 		string sizeStr = (human ? Human1024(size) : size.ToString()).PadLeft(human ? 4 : 5);
-		return $"{ModeString(info)} 1 {owner}{group} {sizeStr} {when}";
+		return $"{ModeString(info)} {links} {owner}{group} {sizeStr} {when}";
 		}
 
 	// ── du ──────────────────────────────────────────────────────────────────────
@@ -830,6 +833,10 @@ public sealed partial class Builtins
 				}
 			long size = info is FileInfo fi ? fi.Length : 0;
 			bool dir = info is DirectoryInfo;
+			// the volume, file index and link count (lstat's unless -L): they were 0, 0 and 1 for every file (2026-11-01)
+			var id = device ? null : ShellFile.Identity(p, follow: o.Has('L'));
+			string links = (id?.Links ?? 1).ToString(), inode = (id?.Index ?? 0).ToString();
+			uint volume = id?.Volume ?? 0;
 			string mode = device ? "crw-rw-rw-" : ModeString(info!);
 			string octal = ((dir ? 0 : 0) + (mode[1] == 'r' ? 4 : 0) + (mode[2] == 'w' ? 2 : 0) + (mode[3] == 'x' ? 1 : 0)).ToString();
 			octal = octal + octal + octal;
@@ -842,7 +849,7 @@ public sealed partial class Builtins
 				{
 				Console.WriteLine($"  File: {f}{(info?.LinkTarget is not null ? " -> " + info.LinkTarget : "")}");
 				Console.WriteLine($"  Size: {size,-15} Blocks: {(size + 511) / 512,-10} IO Block: 4096   {type}");
-				Console.WriteLine($"Device: 0h/0d\tInode: 0           Links: 1");
+				Console.WriteLine($"Device: {volume:x}h/{volume}d\tInode: {inode,-10}  Links: {links}");
 				Console.WriteLine($"Access: (0{octal}/{mode})  Uid: (    0/{Environment.UserName})   Gid: (    0/None)");
 				Console.WriteLine($"Access: {Iso(at)}");
 				Console.WriteLine($"Modify: {Iso(mt)}");
@@ -862,7 +869,7 @@ public sealed partial class Builtins
 					'n' => f, 'N' => $"'{f}'" + (info?.LinkTarget is not null ? $" -> '{info.LinkTarget}'" : ""),
 					's' => size.ToString(), 'b' => ((size + 511) / 512).ToString(), 'B' => "512",
 					'f' => (dir ? 0x4000 : (device ? 0x2000 : 0x8000) | Convert.ToInt32(octal, 8)).ToString("x"),
-					'F' => type, 'a' => octal, 'A' => mode, 'h' => "1", 'i' => "0", 'd' => "0", 'D' => "0",
+					'F' => type, 'a' => octal, 'A' => mode, 'h' => links, 'i' => inode, 'd' => volume.ToString(), 'D' => volume.ToString("x"),
 					'u' => "0", 'U' => Environment.UserName, 'g' => "0", 'G' => "None",
 					'x' => Iso(at), 'X' => ((DateTimeOffset)at).ToUnixTimeSeconds().ToString(),
 					'y' => Iso(mt), 'Y' => ((DateTimeOffset)mt).ToUnixTimeSeconds().ToString(),
@@ -1031,7 +1038,7 @@ public sealed partial class Builtins
 
 	// ── chmod / ln / truncate ───────────────────────────────────────────────────
 
-	/// <summary>Windows has no POSIX mode bits: the only thing chmod can honour is the
+	/// <summary>Windows has no POSIX mode bits: the only thing chmod can honor is the
 	/// read-only attribute (`-w`/`+w`, or an octal mode without owner-write). Execute bits are
 	/// accepted and ignored (executability is by extension/shebang), as Git Bash effectively does.</summary>
 	private static int Chmod(List<string> args)

@@ -15,12 +15,17 @@
 #   1. the tree must be clean: the deployed stamp names a revision;
 #   2. tools/publish-aot.cmd publishes it to dist.staging (ignored), NEVER to dist/ (the publish
 #      empties its output directory, where the rollback copies live); the stamp must carry the node;
-#   3. the suite runs on that exact binary, with a console and -Detached: any failure stops here;
+#   3. the suite runs on that exact binary -Detached, as Claude Code starts the shell: any failure stops here. The
+#      console run moved to tools/publish.sh (the architect, 2026-11-01: "On deploy, keep 'detatched mode' run, drop
+#      'console mode'. On publish, add 'console mode' (detached should have already been run).");
 #   4. the battery runs (its Release build is the same tree): a baseline regression stops here;
 #   5. the running dist/Bash.exe is RENAMED to dist/Bash.exe.rev<old> (Windows renames a running image
-#      and cannot overwrite it) and the new one copied in; its stamp is checked again; dist/sh.exe likewise, a
-#      copy of the same build (2026-10-30), as Git for Windows and MSYS2 ship theirs, for scripts and programs
-#      that run `sh`;
+#      and cannot overwrite it) and the new one copied in; its stamp is checked again; dist/sh.exe is renamed
+#      likewise and made a HARD LINK to the new Bash.exe (2026-11-01; a copy from 2026-10-30), confirmed with `-ef`,
+#      a copy only if the link cannot be made: `sh` for scripts and programs that run it, as Git for Windows and MSYS2
+#      ship theirs. A rename fails while a process is STARTING from the file (copy or link alike, measured
+#      2026-11-01): Bash.exe's stops the deploy before anything changed (run it again); sh.exe's stops it with
+#      Bash.exe deployed (rename and link sh.exe by hand, as the message says);
 #   6. it prints the notice material: the revisions now deployed (hg log since the old one).
 # What it does not do, and Claude does next, by the same rule every time: a live check from a Claude
 # Code Bash call (`echo $BASH_VERSION; "$BASH" --version`, plus the deploy's headline fixes), then the
@@ -55,13 +60,10 @@ new="$stage/Bash.exe"
 new_stamp=$("$new" --version 2>/dev/null | tail -1)
 [[ "$new_stamp" == *"hg.$node $rev" ]] || die "the published build's stamp is '$new_stamp', not rev $rev ($node)"
 
-# 3. the suite on that exact binary, both modes
-for mode in console -Detached; do
-  args=(-Interpreter "$new"); [ "$mode" = -Detached ] && args+=(-Detached)
-  res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" "${args[@]}" 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
-  echo "deploy: suite ($mode): $res"
-  [[ "$res" == *" 0 failed" ]] || die "the suite failed on $new ($mode); not deployed"
-done
+# 3. the suite on that exact binary, detached (the console run is publish's, 2026-11-01)
+res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" -Interpreter "$new" -Detached 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
+echo "deploy: suite (-Detached): $res"
+[[ "$res" == *" 0 failed" ]] || die "the suite failed on $new (-Detached); not deployed"
 
 # 4. the battery, against WSL's GNU bash (its reference since 2026-10-19: Git is reached nowhere but the benchmark
 #    and the publish script)
@@ -80,10 +82,19 @@ if [ -e "$dist/sh.exe" ]; then
   mv "$dist/sh.exe" "$dist/sh.exe.rev$old_rev" || die "could not rename the running dist/sh.exe (dist/Bash.exe IS deployed)"
   sh_back=" and dist/sh.exe.rev$old_rev"
 fi
-cp "$new" "$dist/sh.exe" || die "could not copy dist/sh.exe (dist/Bash.exe IS deployed)"
+# sh.exe is a HARD LINK to the new Bash.exe, made anew every deploy so it never keeps an old build (the architect,
+# 2026-11-01: "deploy should make sh.exe a hard link also", as the installer makes it since InstallGen 0.0.6); confirmed
+# as one file, else a copy, said so
+if ln "$dist/Bash.exe" "$dist/sh.exe" 2>/dev/null && [ "$dist/Bash.exe" -ef "$dist/sh.exe" ]; then
+  sh_how="a hard link to Bash.exe (confirmed)"
+else
+  rm -f "$dist/sh.exe"
+  cp "$new" "$dist/sh.exe" || die "could not link or copy dist/sh.exe (dist/Bash.exe IS deployed)"
+  sh_how="a COPY of Bash.exe (the hard link could not be made or confirmed)"
+fi
 got_sh=$("$dist/sh.exe" --version 2>/dev/null | tail -1)
-[ "$got_sh" = "$new_stamp" ] || die "dist/sh.exe reads '$got_sh' after the copy, not '$new_stamp' (dist/Bash.exe IS deployed)"
-echo "deploy: DEPLOYED $got (Bash.exe and sh.exe); rollback: dist/Bash.exe.rev$old_rev$sh_back"
+[ "$got_sh" = "$new_stamp" ] || die "dist/sh.exe reads '$got_sh', not '$new_stamp' (dist/Bash.exe IS deployed)"
+echo "deploy: DEPLOYED $got (Bash.exe; sh.exe is $sh_how); rollback: dist/Bash.exe.rev$old_rev$sh_back"
 
 # 6. notice material
 echo

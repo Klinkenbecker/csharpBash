@@ -7,7 +7,8 @@ export LC_ALL=C
 cd "${TMPDIR:-${TEMP:-/tmp}}" || exit 1
 d="ls-time-style-$$"; mkdir -p "$d" && cd "$d" || exit 1
 printf x > old; touch -d '2020-01-02 03:04:05' old; printf y > new
-shape() { sed 's/^[^ ]* *[0-9]* [^ ]* *[^ ]* *//; s/[0-9]/N/g; s/[+-]NNNN/ZONE/'; }
+# and a recent file's month and day (`Oct 31`, `Nov  1`): the case failed on the first of November (2026-11-01)
+shape() { sed 's/^[^ ]* *[0-9]* [^ ]* *[^ ]* *//; s/[0-9]/N/g; s/[+-]NNNN/ZONE/; s/[A-Z][a-z][a-z] [ N]N NN:NN/MMM DD NN:NN/'; }
 for s in long-iso iso '+%Y/%m/%d' $'+old %Y\nnew %H' locale posix-long-iso full-iso; do
 	printf '%s\n' "--- $s"; ls -l --time-style="$s" new old | shape
 done

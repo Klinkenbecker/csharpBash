@@ -73,10 +73,10 @@ install.
 - Which further utilities become modules (after `xxd`, the architect's call).
 - Authenticode (only on public traction: RULED).
 - Sharing a runtime with Bash.exe (PARKED for the architect's alternate-runtime project).
-- Any change to a built-in's behaviour (that is 1.x work, on `default`).
+- Any change to a built-in's behavior (that is 1.x work, on `default`).
 - How 2.0 is released and when `2.0` merges back to `default`.
 
 ## What the architect supplies to make this binding
 
-Ratification as an act ("ratified", or "still discussing"); a steer labelled preference or requirement; an answer, or
+Ratification as an act ("ratified", or "still discussing"); a steer labeled preference or requirement; an answer, or
 an explicit deferral, for anything that blocks a phase.

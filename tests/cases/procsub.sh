@@ -1,5 +1,13 @@
 # P4: process substitution <( ) by temp-file emulation (DECISIONS 2026-09-04 #6),
 # |& stderr pipes, trap ERR (with and without errtrace), timeout.
+# 2026-10-31: the leftover count below looked in TEMP, which every session on the machine shares, so another session's
+# live `<( )` file failed it (and a sweep of TEMP would delete files that are not ours). The case runs itself again in
+# a child whose TMP and TEMP are a folder of its own, and counts there.
+if [ -z "${PROCSUB_OWN_TEMP-}" ]; then
+	own=$(mktemp -d) || exit 1
+	PROCSUB_OWN_TEMP=1 TMP=$own TEMP=$own "$BASH" "$0"; rc=$?
+	rm -rf "$own"; exit $rc
+fi
 cd "$(dirname "$0")/../fixtures/awk" || exit 1
 
 echo "--- <( )"

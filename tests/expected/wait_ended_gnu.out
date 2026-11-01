@@ -1,0 +1,12 @@
+wait for a killed job: 143
+wait for a job that finished earlier: 3
+wait after jobs reported it Done: 5
+wait for it again: 5
+wait: pid PID is not a child of this shell
+wait for a pid never started: 127
+wait with no operand after it finished: 0
+wait $! after a plain wait: 7
+wait -n: 9
+wait $! after wait -n: 9
+wait: %9: no such job
+wait for a job spec it does not have: 127

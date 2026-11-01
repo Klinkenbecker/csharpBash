@@ -90,7 +90,13 @@ public static class FileTests
 			case "-ef":
 				{
 				var pa = ShellEnvironment.TranslatePath(a); var pb = ShellEnvironment.TranslatePath(b);
-				try { return string.Equals(Path.GetFullPath(pa), Path.GetFullPath(pb), StringComparison.OrdinalIgnoreCase) && (File.Exists(pa) || Directory.Exists(pa)); }
+				// one file: the same volume and file index, as bash compares device and inode, so two names of one hard
+				// link are one file (it compared full paths: false for those, 2026-11-01); the paths when one cannot be opened
+				try
+					{
+					if (ShellFile.Identity(pa) is { } ia && ShellFile.Identity(pb) is { } ib) return ia.Volume == ib.Volume && ia.Index == ib.Index;
+					return string.Equals(Path.GetFullPath(pa), Path.GetFullPath(pb), StringComparison.OrdinalIgnoreCase) && (File.Exists(pa) || Directory.Exists(pa));
+					}
 				catch { return false; }
 				}
 			}

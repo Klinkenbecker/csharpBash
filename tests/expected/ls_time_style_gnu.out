@@ -12,10 +12,10 @@ new %H
 N new NN new
 N old NNNN old
 --- locale
-N Oct NN NN:NN new
+N MMM DD NN:NN new
 N Jan  N  NNNN old
 --- posix-long-iso
-N Oct NN NN:NN new
+N MMM DD NN:NN new
 N Jan  N  NNNN old
 --- full-iso
 N NNNN-NN-NN NN:NN:NN.NNNNNNNNN ZONE new

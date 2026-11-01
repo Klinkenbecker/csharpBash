@@ -26,3 +26,4 @@ tests/corpus/last-run.txt
 glob:dist.staging/**
 dist.staging.log
 glob:tests/corpus/printer/**
+glob:dist.installer/**

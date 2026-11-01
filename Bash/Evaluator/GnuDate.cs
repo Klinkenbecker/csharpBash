@@ -9,7 +9,7 @@ namespace Bash.Evaluator;
 /// zones, UTC/GMT), `@epoch`, "now/today/yesterday/tomorrow", relative items ("3 days ago",
 /// "+1 week", "next month", "last year", "-1 hour"), and weekday items ("monday",
 /// "next friday", "last tuesday"). A date or weekday without a time means 00:00:00; relative
-/// items alone keep the current time of day, as GNU does. Anything unrecognised fails
+/// items alone keep the current time of day, as GNU does. Anything unrecognized fails
 /// (returns false) rather than guessing.
 /// </summary>
 public static class GnuDate
