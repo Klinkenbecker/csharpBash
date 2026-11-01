@@ -11119,3 +11119,47 @@ print 1/n }'` printed "before" from C#Bash, then the external one ran the progra
 gawk, "before" twice), and the exit status was the external's.
 **Position:** a runtime fatal as gawk words it (the FILENAME/FNR context included), exit 2, never a fall-through; the
 same check for any other runtime error the in-process awk reports as "unsupported" after it has started.
+
+## 2026-11-01 -- PUBLISHED + SHIPPED: GitHub main = git c626ba3 = hg rev 600; release hg-600 with Bash.exe (583) AND the installer
+**Status:** Record. The architect: "Yes, go =:)". compare3 on deployed 583 (09:31-09:36, a quiet machine: installer-a4
+confirmed nothing running; outputs identical in all three shells) -> README table and PERFORMANCE.md; the doc review
+(case count 245, the installer in README and USING). tools/publish.sh (09:37-09:40): the console suite on dist/Bash.exe
+237/0 (its first run), MERCURIAL_HISTORY.md (601 changesets) and the bundle verified, pushed 5abfc5f..c626ba3; release
+hg-600 created 2026-11-01T17:39:37Z, published 17:39:50Z: Bash.exe (583, SHA-256 d425be70...6669047),
+csharpBash-setup.exe (3,707,079 bytes, SHA-256 ae487a62...db98ae49, InstallGen 0.0.8) and both .sha256, each downloaded
+back and matching. SPEC 2 FROZE then (INST-038): sent to installer-a4 with the InstallGen version. After: the API says
+latest = hg-600 and latest/download/csharpBash-setup.exe matches its .sha256; latest/download/Bash.exe.sha256 still
+redirected to hg-555's for a while (a cached redirect; the hg-600 asset is right). git listed dist.installer/ as
+untracked (not published): .gitignore now ignores it. Contents since 555: 557, 558, 563, 567, 579, 583, the tooling
+(deploy detached + sh.exe hard link, publish's console suite, the installer).
+
+## 2026-11-01 -- FIXED (release.sh): the "newest release" check goes through the API, not releases/latest/download/
+**Status:** Active. After hg-600, `releases/latest/download/Bash.exe.sha256` kept redirecting to hg-555's (the OLD
+checksum, f4899be3...) for 5+ minutes while `latest/download/Bash.exe` and the API already named hg-600: a user
+comparing the two got a false mismatch. Inferred cause (not proven): release.sh asked that very link, before creating
+hg-600, to see whether the newest release carried this build, and GitHub's edge cached the redirect. The check now reads
+`/releases/latest` from the API and fetches that release's own Bash.exe.sha256 URL (tested live: hg-600's, d425be70...).
+To verify the inference: the stale redirect should clear on its own.
+
+## 2026-11-01 -- FIXED: the installer carried a local path (the architect: "The intealler script exposes the path to the InstallGen contract - it shouldn't!")
+**Status:** Fixed in the source; the SHIPPED hg-600 installer still carries it (replacing that asset awaits his word).
+The manifest's `_comment` named E:/Claude/Installer/CONTRACT.md, and InstallGen embeds the manifest verbatim: the
+hg-600 csharpBash-setup.exe shows it to `strings` (line 1703; `@VERSION@` was even written inside the comment). The
+manifest now has no comment: only what the installer needs (its explanation lives in tools/installer.sh's header,
+which is not shipped). Rebuilt: `strings` finds no E:/Claude, CONTRACT, _comment or repo path (0, against 1 before,
+same scan); the sandboxed install checks out. Bash.exe carries no E:/Claude string (checked). Still naming E:/Claude in
+the published repo, not shipped in any binary: tools/installer.sh (InstallGen.exe's location), docs/installer-plan.md,
+IMPLEMENTATION.md, PROJECT_CONTEXT.md, docs/module-contract.md, a comment in ShellEnvironment.cs, tests/cases/jq_subset.sh,
+and DECISIONS history (append-only, verbatim): scope for him.
+
+## 2026-11-01 -- RULED: "InstallGen specification 2" is the whole reference; no path, contract file or Installer register id in what we publish
+**Status:** Active. The architect: "why do you need to refer to it by name at all - all the details are already
+defined?", then "'InstallerGen specification 2' is all that is needed anywhere?". Done: docs/installer-plan.md rewritten
+as the shipped installer's description (what it does, the start file, how it is built, released and checked, the
+rulings), naming only "InstallGen specification 2"; its register numbers, versions, revisions and contract citations are
+history here. tools/installer.sh names no machine path: InstallGen's location comes from INSTALLGEN or
+tools/installgen.path (one line, ignored by hg and git); checked both ways (without it: "InstallGen's location is not
+set ..."; with it: built and the sandboxed install checked; the installer holds no E:/Claude, CONTRACT or _comment).
+IMPLEMENTATION's tools table, deploy.sh's comment and the anchor's current block name only the specification.
+Unchanged, by the append-only rule: DECISIONS history; the anchor's history blocks keep their notes. Not InstallGen's:
+E:/Claude in docs/module-contract.md, a ShellEnvironment.cs comment and tests/cases/jq_subset.sh (other subjects).

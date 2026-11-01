@@ -83,7 +83,7 @@ if [ -e "$dist/sh.exe" ]; then
   sh_back=" and dist/sh.exe.rev$old_rev"
 fi
 # sh.exe is a HARD LINK to the new Bash.exe, made anew every deploy so it never keeps an old build (the architect,
-# 2026-11-01: "deploy should make sh.exe a hard link also", as the installer makes it since InstallGen 0.0.6); confirmed
+# 2026-11-01: "deploy should make sh.exe a hard link also", as the installer makes it); confirmed
 # as one file, else a copy, said so
 if ln "$dist/Bash.exe" "$dist/sh.exe" 2>/dev/null && [ "$dist/Bash.exe" -ef "$dist/sh.exe" ]; then
   sh_how="a hard link to Bash.exe (confirmed)"

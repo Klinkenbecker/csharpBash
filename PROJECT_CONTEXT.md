@@ -1,15 +1,17 @@
 # Project Context: Bash
 
 > ## RESUME HERE — 2026-11-01 (session 9df18ad7 = bash-b6, context low). SUPERSEDES every block below; they are history.
-> **TRUE STATE (written at hg 587):** **DEPLOYED rev 583** (`1.0.0+hg.fae0fce5898a 583`: dist/Bash.exe AND dist/sh.exe,
+> **TRUE STATE (written at hg 601):** **DEPLOYED rev 583** (`1.0.0+hg.fae0fce5898a 583`: dist/Bash.exe AND dist/sh.exe,
 > 08:26; suite 237/0 both modes, battery 217; rollback dist/Bash.exe.rev568 + dist/sh.exe.rev568; all eight notified
-> "swap done"). **PUBLISHED: GitHub main = git 5abfc5f = hg 555, release hg-555 (Bash.exe build 553).** Deployed, NOT
-> published: 557 (kill/kill -0), 558 (wait $!), 563 (awk RS), 567 (`<( )` forward-slash path), 579 (hard-link identity:
-> stat %h %i %d %D, test -ef, ls -i, find -links/-inum/-samefile/-printf), 583 (sed's GNU escapes \cX \dNNN \oNNN \xHH;
-> c-parser-ac). Suite: 245 registered cases (3 AOT-only; README/DEVELOPING say 239: the next publish's doc review).
-> Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell Tax.url" are the architect's: leave them.
-> **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro. (installer-a4 CONFIRMED 579 on 583 with
-> its fsutil probe: -ef, %h, %i, find -samefile/-links all as expected; closed.)
+> "swap done"). **PUBLISHED + SHIPPED 2026-11-01: GitHub main = git c626ba3 = hg 600; release hg-600 = Bash.exe (583)
+> AND the installer csharpBash-setup.exe (InstallGen specification 2), each with its .sha256; spec 2 FROZE at 17:39:50Z (sent to
+> installer-a4).** Nothing deployed is unpublished. dist/sh.exe is still a COPY: the next deploy makes it a hard link.
+> Suite: 245 registered cases (3 AOT-only). Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell Tax.url"
+> are the architect's: leave them. A real install is on this machine (his, C:/Users/guy/.bash/bin, PATH declined).
+> **RAISED, fix next under the bug-fix rule (raised 09:3x, the wait is over):** awk's division by zero is filed as
+> "unsupported" and falls through to a PATH awk AFTER output (duplicate output); gawk: "fatal: division by zero
+> attempted", exit 2 (DECISIONS). Re-check that releases/latest/download/Bash.exe.sha256 left its cached hg-555 redirect.
+> **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro.
 > **LIVE SESSIONS (8):** koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, kes-install-43 (runs real
 > hardware installs: a go given before one starts is stale: re-confirm), qa-de, c-parser-ac, esdk-a2 (its CC8051 build
 > runs ON dist/sh.exe + dist/Bash.exe).
@@ -21,13 +23,8 @@
 > (confirmed with -ef, else a copy). The bug-fix rule's pre-commit runs are unchanged (he did not address them). NEVER sweep the shared TEMP (other sessions' live files).
 > American spelling everywhere (global rule; history verbatim). Every byte matters (global memory).
 > **AWAITING THE ARCHITECT (do NOT build before his word):**
-> 1. **The installer: BUILT 2026-11-01, NOT RELEASED** (his "Yes, go, do"; rev 587; docs/installer-plan.md status).
->    `bash tools/installer.sh` -> dist.installer/csharpBash-setup.exe from the deployed dist/Bash.exe, InstallGen 0.0.6
->    --release, self-checked by a sandboxed install. Names ruled with the go: claude.cmd, csharpBash-setup.exe, the PATH
->    question (default no; HIS FORM 2026-11-01: "Add [<folder>] to your PATH? [y/N]: " = Installer INST-Q-053, RULED A and NO freeze by his 09:08 install; BUILT: InstallGen 0.0.8, our manifest "path": { "add": "bin:", "default": "no" }, the line identical to his, checked), no license key. His REAL installs 09:08 and 09:26 (0.0.8 question): "perfect!". Observed: fresh, re-run, upgrade with old builds running under both names,
->    a Claude Code session through the start file reporting C#Bash. OPEN for him: SHIP (release.sh attaching it; a
->    spec version FREEZES when its first installer ships, INST-038: "We're not shipping until I say so"); phase 5, the
->    README; INST-Q-052 SETTLED by his spec (the PATH question shows the folder with backslashes, as he wrote it). Tell installer-a4 the SHIP DATE (spec 2 freezes then).
+> 1. (The installer: SHIPPED in hg-600; DONE. docs/installer-plan.md; `bash tools/installer.sh`, run by release.sh;
+>    installer/try-install.cmd for a real install. Spec 2 is frozen: a manifest change needs a spec version 3.)
 > 2. **Build the stdin give-back** (DECISIONS "SPIKE: give a native child's unread stdin back"; the patch is
 >    docs/spikes/2026-11-01-stdin-giveback.patch): equals Git Bash on 8 probes, fixes koliada-net-73's
 >    `grep -f <(hg)` and the 2026-10-10 loop limitation. Claude: build. Separate findings: a nested C#Bash `read` takes
@@ -35,8 +32,7 @@
 >    Bash's 73).
 > 3. **ls -l's link column** (still 1; rev 579 left it): reading it costs ~17% on a 2000-file ls -l (~12 us a file,
 >    diagnostic). Claude: show it.
-> 4. **Publish** 557-583+ (Claude: after 2, in one quiet window).
-> 4b. **The test runners are PowerShell** (run-tests.ps1, run-compat.ps1; he asked "Why are you using powershell",
+> 4. **The test runners are PowerShell** (run-tests.ps1, run-compat.ps1; he asked "Why are you using powershell",
 >    2026-11-01). External to the shell by design (DECISIONS 2026-06-13). Claude: if PowerShell should go, a small
 >    single-file .NET runner replacing both (starts detached natively, none of 5.1's quirks). Not started.
 > 5. Older, unchanged (the history blocks below, DECISIONS): the awk suite HANG (rev 360); arithmetic-error parity; R4
@@ -47,7 +43,7 @@
 > in-process (GNU 8.32); awk any RS (gawk 5.1) and RT; kill/kill -0 and `wait $!` as GNU; `<( )` forward-slash path
 > (findstr and cmd's type cannot open forward-slash folder paths: accepted, as for $PWD); `$!` stays synthetic;
 > grep -P `\Q...\E`; grep -f with an empty file; help's path forward slashes; the installer's PATH default "no".
-> **NEXT:** only on his word (peer bugs under the bug-fix rule meanwhile).
+> **NEXT:** the awk division-by-zero fix (bug rule; raised, wait over); then only on his word.
 >
 > ## RESUME HERE — 2026-10-31 — HISTORY: superseded by the 2026-11-01 block above
 > **TRUE STATE (verified 2026-10-31, written at hg 569):** **DEPLOYED rev 568** (`1.0.0+hg.67b82a75e52b 568`: dist/Bash.exe

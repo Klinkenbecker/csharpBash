@@ -7,7 +7,7 @@
 #   1. the payload, staged in dist.installer/payload (ignored): dist/Bash.exe, and installer/claude.cmd with CRLF line
 #      ends (the start file, cmd's own format); the manifest installer/csharpBash.json with @VERSION@ written from
 #      dist/Bash.exe's stamp ("1.0.0 (hg N)");
-#   2. InstallGen (specification 2, configured below, by path: it is on no PATH) validates and builds with --release,
+#   2. InstallGen (specification 2; its location from INSTALLGEN or tools/installgen.path, never written here) validates and builds with --release,
 #      its release gate (every warning refused), to dist.installer/csharpBash-setup.exe and its .sha256, which must
 #      check;
 #   3. the installer proves itself: a silent install into dist.installer/sandbox through a test-redirection file
@@ -22,8 +22,12 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root" || exit 2
 die() { echo "installer: $*" >&2; exit 2; }
 [[ $root == [A-Za-z]:/* ]] || die "the repository's path is '$root', not a drive path (X:/...): run this in C#Bash"
-IG=E:/Claude/Installer/release/InstallGen.exe
-[ -x "$IG" ] || die "InstallGen not found at $IG (configured at the top of this script)"
+# InstallGen's location belongs to this machine, so no published file names it: INSTALLGEN in the environment, or the
+# one line in tools/installgen.path (ignored by hg and git; the architect, 2026-11-01)
+IG=${INSTALLGEN:-}
+[ -n "$IG" ] || { [ -f "$root/tools/installgen.path" ] && IG=$(head -1 "$root/tools/installgen.path" | tr -d '\r'); }
+[ -n "$IG" ] || die "InstallGen's location is not set: write InstallGen.exe's path into tools/installgen.path, or set INSTALLGEN"
+[ -x "$IG" ] || die "InstallGen not found at $IG (from INSTALLGEN or tools/installgen.path)"
 out="$root/dist.installer"; payload="$out/payload"; setup="$out/csharpBash-setup.exe"; sandbox="$out/sandbox"
 
 # 1. the payload and the manifest

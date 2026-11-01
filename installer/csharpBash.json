@@ -1,5 +1,4 @@
 {
-  "_comment": "The C#Bash installer (docs/installer-plan.md). Built by tools/installer.sh, which writes @VERSION@ from dist/Bash.exe's stamp. InstallGen specification 2: E:/Claude/Installer/CONTRACT.md.",
   "schema": 2,
   "product": { "name": "C#Bash", "version": "@VERSION@" },
   "destinations": {

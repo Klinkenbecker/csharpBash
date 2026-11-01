@@ -27,3 +27,4 @@ glob:dist.staging/**
 dist.staging.log
 glob:tests/corpus/printer/**
 glob:dist.installer/**
+tools/installgen.path

@@ -81,7 +81,10 @@ why() { jq -r '.message // empty' <<< "$json" 2> /dev/null; }
 # 3. the release: the tag's own (a retry), none (the newest already carries this build), or a new one
 split "$(api GET "https://api.github.com/repos/$REPO/releases/tags/$tag")"
 if [ "$code" = 404 ]; then
-	newest=$(curl -s -L "https://github.com/$REPO/releases/latest/download/Bash.exe.sha256" | head -1 | cut -c1-64)
+	# through the API, never the releases/latest/download/ link: asking that link before the release exists left
+	# GitHub's edge redirecting it to the PREVIOUS release's Bash.exe.sha256 for a while after hg-600 (2026-11-01)
+	newest_url=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.assets[]? | select(.name == "Bash.exe.sha256") | .browser_download_url')
+	newest=""; [ -n "$newest_url" ] && newest=$(curl -s -L "$newest_url" | head -1 | cut -c1-64)
 	if [ "$newest" = "$sum" ]; then
 		echo "release: the newest release already carries this Bash.exe ($stamp, SHA-256 $sum): no release for $tag"
 		exit 0

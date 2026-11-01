@@ -12,11 +12,15 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 601 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 605 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 604 | 2026-11-01 | InstallGen specification 2 is the whole reference: the installer doc rewritten as what ships; installer.sh reads InstallGen's location from INSTALLGEN or an ignored local file; no machine path or contract citation in current files |
+| 603 | 2026-11-01 | the installer manifest carries no comment (it named E:/Claude/Installer/CONTRACT.md, embedded verbatim in the shipped installer); rebuilt installer clean |
+| 602 | 2026-11-01 | release.sh: the newest-release check reads the API, not releases/latest/download/ (which then stayed cached at the previous release's checksum) |
+| 601 | 2026-11-01 | Published + shipped: GitHub main = git c626ba3 = hg 600, release hg-600 with Bash.exe (583) and the installer (InstallGen 0.0.8; spec 2 froze 17:39:50Z); .gitignore ignores dist.installer/; anchor |
 | 600 | 2026-11-01 | doc review for the publish: README's table and PERFORMANCE.md from the 2026-11-01 compare3 run of deployed 583 (outputs identical in all three shells); results.md |
 | 599 | 2026-11-01 | RAISED: awk division by zero filed as unsupported, falls through to a PATH awk after output (duplicate output); fix after the publish |
 | 598 | 2026-11-01 | ship the installer: release.sh builds it from the deployed Bash.exe and attaches it with its .sha256 (downloaded back and compared); README leads with it (plan phase 5); case count 245 |
