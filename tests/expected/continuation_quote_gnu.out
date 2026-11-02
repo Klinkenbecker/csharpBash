@@ -1,0 +1,24 @@
+--- t1
+a b c
+--- t2
+x
+%Pz
+--- t3
+q done
+--- t4
+one two
+p q
+r V
+b q
+--- t5
+ab
+one two
+x y
+c x y
+--- t6
+x yz
+m no
+a
+bcd
+--- -c
+a b c

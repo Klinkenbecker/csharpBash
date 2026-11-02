@@ -1,0 +1,3 @@
+before
+awk: cmd. line:1: (FILENAME=- FNR=1) fatal: division by zero attempted
+status 2

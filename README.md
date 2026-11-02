@@ -12,21 +12,21 @@ It was built to be the shell Claude Code uses on Windows. Claude Code starts a f
 
 | benchmark (seconds) | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.158** | 1.515 | 0.478 | 9.6× | 3.0× |
-| `arith` — 200 k `$(( ))` evaluations | **0.260** | 2.090 | 0.639 | 8.0× | 2.5× |
-| `func` — 100 k function calls | **0.213** | 2.315 | 0.594 | 10.9× | 2.8× |
-| `loop_big` — 2 M iterations | **1.430** | 15.148 | 3.478 | 10.6× | 2.4× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.053** | 14.277 | 0.831 | **269×** | 15.7× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.085** | 0.250 | 0.125 | 2.9× | 1.5× |
-| `find` — walk 400 files | **0.015** | 0.132 | 0.221 | 8.8× | 14.7× |
-| startup — `bash -c 'exit 0'` | **0.0088** | 0.0236 | 0.1100 | 2.7× | 12.5× |
+| `loop` — 200 k `while` iterations | **0.164** | 1.512 | 0.458 | 9.2× | 2.8× |
+| `arith` — 200 k `$(( ))` evaluations | **0.247** | 2.098 | 0.648 | 8.5× | 2.6× |
+| `func` — 100 k function calls | **0.220** | 2.307 | 0.585 | 10.5× | 2.7× |
+| `loop_big` — 2 M iterations | **1.440** | 19.674 | 3.503 | 13.7× | 2.4× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.055** | 14.496 | 0.895 | **264×** | 16.3× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.090** | 0.280 | 0.128 | 3.1× | 1.4× |
+| `find` — walk 400 files | **0.015** | 0.135 | 0.236 | 9.0× | 15.7× |
+| startup — `bash -c 'exit 0'` | **0.0092** | 0.0242 | 0.1138 | 2.6× | 12.4× |
 
 Every row gives the same output in all three shells, so a fast wrong answer can't count as a win. Where the speed
 comes from:
 
 - **No new process per command.** The `coreutils` row runs 900 small commands. Under Git Bash that is 900 Windows
   processes; under C#Bash it is none.
-- **It starts fast:** 8.8 ms, against Git Bash's 23.6 ms or WSL's 110.0 ms. Claude Code pays that on every call.
+- **It starts fast:** 9.2 ms, against Git Bash's 24.2 ms or WSL's 113.8 ms. Claude Code pays that on every call.
 - **It remembers where programs are.** On Windows, finding a program on a long PATH is slow, and not finding one is
   slower still. C#Bash remembers both, so a simple Claude Code call takes about 11 ms in all.
 
@@ -102,7 +102,7 @@ Everything, in detail: [Features](docs/FEATURES.md).
 
 ## How it's tested
 
-245 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
+249 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
 bug fails a test instead of becoming its expected answer. A battery of 237 probes runs the same commands through both
 shells and compares them. Building and testing it yourself, and how the source is laid out: [Developing C#Bash](docs/DEVELOPING.md).
 

@@ -1,0 +1,34 @@
+--- after input: the place, fatal, 2
+awk: cmd. line:1: (FILENAME=- FNR=1) fatal: division by zero attempted
+rc=2
+--- output before it
+before
+awk: cmd. line:1: (FILENAME=- FNR=1) fatal: division by zero attempted
+rc=2
+--- in BEGIN: no place
+awk: cmd. line:1: fatal: division by zero attempted
+rc=2
+--- % and the assignments
+awk: cmd. line:1: (FILENAME=- FNR=2) fatal: division by zero attempted in `%'
+awk: cmd. line:1: (FILENAME=- FNR=1) fatal: division by zero attempted in `/='
+awk: cmd. line:1: (FILENAME=- FNR=1) fatal: division by zero attempted in `%='
+--- a file's name
+awk: cmd. line:1: (FILENAME=dz.txt FNR=1) fatal: division by zero attempted
+--- the operator's line
+awk: cmd. line:4: (FILENAME=- FNR=1) fatal: division by zero attempted
+--- empty input, END: no place
+awk: cmd. line:1: fatal: division by zero attempted
+rc=2
+--- a field over a constant 0: run time
+awk: cmd. line:1: (FILENAME=- FNR=1) fatal: division by zero attempted
+rc=2
+--- a constant 1/0: parse time, 1
+awk: cmd. line:1: error: division by zero attempted
+rc=1
+awk: cmd. line:1: error: division by zero attempted in `%'
+rc=1
+awk: cmd. line:2: error: division by zero attempted
+rc=1
+--- no zero, no error
+3.5 1
+3 1

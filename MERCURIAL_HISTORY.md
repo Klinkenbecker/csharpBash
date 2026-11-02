@@ -12,11 +12,23 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 605 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 617 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 616 | 2026-11-02 | doc review for the publish: README's table and PERFORMANCE.md from the 2026-11-02 compare3 run of deployed 612 (outputs identical in all three shells); case count 249; results.md |
+| 615 | 2026-11-01 | deploy swaps as InstallGen does (the new build in full beside the old, then two renames per name; each refused rename puts back); no window or go-round for a deploy, only for the benchmark (the architect) |
+| 614 | 2026-11-01 | anchor: wording |
+| 613 | 2026-11-01 | Deployed rev 612 (the continuation fix): suite 241/0 detached, battery 217; sh.exe re-linked; anchor |
+| 612 | 2026-11-01 | lexer: after word \ and a newline, a continued line starting with a quote or $ is a new word, as GNU (it was glued: echo a \'b' gave ab; printf's format glued to its args); case continuation_quote_gnu (koliada-net-73) |
+| 611 | 2026-11-01 | NEED recorded (installer-a4): iconv for a UTF-16LE INF; lossless workaround sent; awaiting the architect |
+| 610 | 2026-11-01 | anchor: esdk-a2's make-recipe probe on 608 clean through the hard-linked sh.exe |
+| 609 | 2026-11-01 | Deployed rev 608 (awk division by zero, FILENAME); dist/sh.exe a hard link for the first time; anchor |
+| 608 | 2026-11-01 | awk: FILENAME is "-" for standard input, as gawk 5.1 (it was ""); case awk_filename_gnu |
+| 607 | 2026-11-01 | awk: a division by zero is gawk's run-time fatal (the input's place, the operator's line, exit 2) or, for a constant, its parse-time error (exit 1); never handed to a PATH awk (it ran the program again after the output); cases awk_divzero_gnu, awk_divzero_once |
+| 606 | 2026-11-01 | noted: spec 2 freeze stays 17:39:50Z; INST-Q-055 (underscore keys ship inside an installer) awaits the architect |
+| 605 | 2026-11-01 | hg-600's installer replaced by the clean rebuild; republished: GitHub main = git d0f32ce = hg 604 |
 | 604 | 2026-11-01 | InstallGen specification 2 is the whole reference: the installer doc rewritten as what ships; installer.sh reads InstallGen's location from INSTALLGEN or an ignored local file; no machine path or contract citation in current files |
 | 603 | 2026-11-01 | the installer manifest carries no comment (it named E:/Claude/Installer/CONTRACT.md, embedded verbatim in the shipped installer); rebuilt installer clean |
 | 602 | 2026-11-01 | release.sh: the newest-release check reads the API, not releases/latest/download/ (which then stayed cached at the previous release's checksum) |

@@ -59,8 +59,14 @@ public sealed partial class Builtins
 			{
 			// an error gawk also reports (and exits 2 for): not a subset gap, so no fall-through
 			try { Console.Out.Flush(); } catch { }
-			Console.Error.WriteLine($"awk: {source}:{ex.Line}: fatal: {ex.Message}");
+			var place = ex.Context && interp?.InputPlace() is string p ? p + " " : "";
+			Console.Error.WriteLine($"awk: {source}:{ex.Line}: {place}fatal: {ex.Message}");
 			return 2;
+			}
+		catch (AwkParseErrorException ex)
+			{
+			Console.Error.WriteLine($"awk: {source}:{ex.Line}: error: {ex.Message}");
+			return 1;
 			}
 		catch (AwkUnsupportedException ex) when (interp is { Running: true })
 			{
@@ -85,7 +91,15 @@ public sealed partial class Builtins
 	private sealed class AwkSyntaxException(string what) : Exception(what);
 	/// <summary>An error gawk reports as fatal (exit 2) for the same program: an undefined function,
 	/// an output file that cannot be opened. Printed with gawk's location prefix.</summary>
-	private sealed class AwkFatalException(int line, string what) : Exception(what) { public int Line { get; } = line; }
+	private sealed class AwkFatalException(int line, string what, bool context = false) : Exception(what)
+		{
+		public int Line { get; } = line;
+		/// <summary>gawk prints the input's place before "fatal:" (a division by zero).</summary>
+		public bool Context { get; } = context;
+		}
+	/// <summary>An error gawk finds while it parses (exit 1): a constant division by zero, which it folds.</summary>
+	private sealed class AwkParseErrorException(int line, string what) : Exception(what) { public int Line { get; } = line; }
+	private static string DivZero(string op) => op == "/" ? "division by zero attempted" : $"division by zero attempted in `{op}'";
 	private sealed class AwkNextException : Exception;
 	private sealed class AwkBreakException : Exception;
 	private sealed class AwkContinueException : Exception;
@@ -480,9 +494,9 @@ public sealed partial class Builtins
 	private sealed record AVar(string Name) : AExpr;
 	private sealed record AField(AExpr Index) : AExpr;
 	private sealed record AIndex(string Name, List<AExpr> Subs) : AExpr;
-	private sealed record AAssign(AExpr Target, string Op, AExpr Value) : AExpr;
+	private sealed record AAssign(AExpr Target, string Op, AExpr Value, int Line = 0) : AExpr;
 	private sealed record ACond(AExpr C, AExpr A, AExpr B) : AExpr;
-	private sealed record ABinary(string Op, AExpr A, AExpr B) : AExpr;
+	private sealed record ABinary(string Op, AExpr A, AExpr B, int Line = 0) : AExpr;
 	private sealed record AUnary(string Op, AExpr A) : AExpr;
 	private sealed record AIncDec(AExpr Target, bool Prefix, int Delta) : AExpr;
 	private sealed record AConcat(AExpr A, AExpr B) : AExpr;
@@ -791,9 +805,9 @@ public sealed partial class Builtins
 				}
 			if (Peek.Type == AT.Op && Peek.Text is "=" or "+=" or "-=" or "*=" or "/=" or "%=" or "^=" && IsLvalue(c))
 				{
-				var op = Advance().Text; SkipNl();
+				var opTok = Advance(); SkipNl();
 				var v = ParseTernary();
-				return new AAssign(c, op, v);   // any RS since 2026-10-31 (AwkRecords); it was refused unless "\n"
+				return new AAssign(c, opTok.Text, v, opTok.Line);   // any RS since 2026-10-31 (AwkRecords); it was refused unless "\n"
 				}
 			return c;
 			}
@@ -879,7 +893,13 @@ public sealed partial class Builtins
 		private AExpr ParseMultiplicative()
 			{
 			var a = ParseUnary();
-			while (IsOp("*") || IsOp("/") || IsOp("%")) { var op = Advance().Text; a = new ABinary(op, a, ParseUnary()); }
+			while (IsOp("*") || IsOp("/") || IsOp("%"))
+				{
+				var opTok = Advance(); var b = ParseUnary();
+				// gawk folds constants as it parses: `1/0` is an error there (exit 1), not at run time
+				if (opTok.Text is "/" or "%" && a is ANum && b is ANum { V: 0 }) throw new AwkParseErrorException(opTok.Line, DivZero(opTok.Text));
+				a = new ABinary(opTok.Text, a, b, opTok.Line);
+				}
 			return a;
 			}
 
@@ -1345,7 +1365,7 @@ public sealed partial class Builtins
 						double l = Eval(a.Target).Number, r = rhs.Number;
 						result = AwkVal.Num(a.Op switch
 							{
-							"+=" => l + r, "-=" => l - r, "*=" => l * r, "/=" => Div(l, r), "%=" => Mod(l, r), "^=" => Math.Pow(l, r), _ => r,
+							"+=" => l + r, "-=" => l - r, "*=" => l * r, "/=" => Div(l, r, a.Line, "/="), "%=" => Mod(l, r, a.Line, "%="), "^=" => Math.Pow(l, r), _ => r,
 							});
 						}
 					Store(a.Target, result);
@@ -1367,7 +1387,7 @@ public sealed partial class Builtins
 					double x = Eval(b.A).Number, y = Eval(b.B).Number;
 					return AwkVal.Num(b.Op switch
 						{
-						"+" => x + y, "-" => x - y, "*" => x * y, "/" => Div(x, y), "%" => Mod(x, y), "^" => Math.Pow(x, y),
+						"+" => x + y, "-" => x - y, "*" => x * y, "/" => Div(x, y, b.Line, "/"), "%" => Mod(x, y, b.Line, "%"), "^" => Math.Pow(x, y),
 						_ => throw new AwkSyntaxException($"operator {b.Op}"),
 						});
 					}
@@ -1508,7 +1528,7 @@ public sealed partial class Builtins
 				// an identifier then `=` is an assignment whatever the value holds (`v='\303\251'`, `out=C:\x`)
 				if (op != "-" && !op.StartsWith('/') && Regex.IsMatch(op, @"^[A-Za-z_][A-Za-z0-9_]*=") && AssignOperand(op)) continue;
 				_mainAnyFile = true;
-				_vars["FILENAME"] = AwkVal.Str(op == "-" ? "" : op);
+				_vars["FILENAME"] = AwkVal.Str(op);   // standard input is "-", as gawk (it was "", 2026-11-01)
 				_fnr = 0;
 				try { _mainReader = OpenText(op); }
 				catch (Exception ex) { throw new AwkOpenException($"awk: fatal: cannot open file `{op}' for reading: {IoError(ex)}"); }
@@ -1605,16 +1625,27 @@ public sealed partial class Builtins
 			foreach (var name in _inputs.Keys.ToList()) Close(name);
 			}
 
-		private static double Div(double a, double b)
+		// A division by zero is gawk's fatal error at run time (exit 2), with the input's place: it was thrown as a SYNTAX
+		// gap, so it was called "unsupported" and handed to a PATH awk, which ran the whole program again after this run's
+		// output (2026-11-01)
+		private static double Div(double a, double b, int line, string op)
 			{
-			if (b == 0) throw new AwkSyntaxException("division by zero");
+			if (b == 0) throw new AwkFatalException(line, DivZero(op), context: true);
 			return a / b;
 			}
 
-		private static double Mod(double a, double b)
+		private static double Mod(double a, double b, int line, string op)
 			{
-			if (b == 0) throw new AwkSyntaxException("division by zero in %");
+			if (b == 0) throw new AwkFatalException(line, DivZero(op), context: true);
 			return a % b;   // fmod: truncated toward zero, like awk
+			}
+
+		/// <summary>gawk's "(FILENAME=f FNR=n)" for an error met while reading input (none before the first record).</summary>
+		public string? InputPlace()
+			{
+			if (_fnr <= 0) return null;
+			var f = GetVar("FILENAME").Text("%.6g");
+			return $"(FILENAME={f} FNR={_fnr})";
 			}
 
 		private int Compare(AwkVal a, AwkVal b)

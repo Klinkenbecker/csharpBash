@@ -28,6 +28,10 @@ public sealed class Lexer
 	private int _line;
 	private int _col;
 	private bool _hadSpace; // set by Tokenize before each NextToken call
+	// Whitespace before a step that made no token (a lone `\`-newline, a comment) still separates the next token
+	// from the word before it: `echo x \<newline>'y'` is two words, as in GNU bash. It was forgotten, so a continued
+	// line starting with a quote or `$` was glued to the previous word ("xy"; koliada-net-73, 2026-11-01).
+	private bool _carrySpace;
 
 	// Each entry: (stripTabs, noExpand).  noExpand = delimiter was quoted.
 	// Delimiter word resolved post-hoc from emitted token stream.
@@ -94,8 +98,9 @@ public sealed class Lexer
 	/// <summary>One step; false once it has added the Eof.</summary>
 	private bool StepCore(List<Token> tokens)
 		{
-		_hadSpace = _pos < _src.Length && _src[_pos] is ' ' or '\t' or '\r';
+		_hadSpace = (_pos < _src.Length && _src[_pos] is ' ' or '\t' or '\r') || _carrySpace;
 		bool hadSpace = _hadSpace;
+		_carrySpace = false;
 		SkipWhitespace();
 
 		if (_pos >= _src.Length)
@@ -107,7 +112,7 @@ public sealed class Lexer
 
 		_tokStart = _pos;
 		var tok = NextToken(tokens.Count);
-		if (tok is null) return true;
+		if (tok is null) { _carrySpace = hadSpace; return true; }
 
 		// Stamp leading-space flag: re-create the record with HasLeadingSpace set.
 		// Newlines and the first token never carry the flag (newline is its own token).

@@ -11163,3 +11163,124 @@ set ..."; with it: built and the sandboxed install checked; the installer holds 
 IMPLEMENTATION's tools table, deploy.sh's comment and the anchor's current block name only the specification.
 Unchanged, by the append-only rule: DECISIONS history; the anchor's history blocks keep their notes. Not InstallGen's:
 E:/Claude in docs/module-contract.md, a ShellEnvironment.cs comment and tests/cases/jq_subset.sh (other subjects).
+
+## 2026-11-01 -- REPLACED hg-600's installer with the clean rebuild; REPUBLISHED: GitHub main = git d0f32ce = hg rev 604
+**Status:** Record. The architect: "Yes" (to replacing the shipped installer), then "and republish".
+**Replaced (18:00Z):** csharpBash-setup.exe, 3,706,869 bytes, SHA-256 eec0d188...eebe1e456 (no comment in the embedded
+manifest; built from the released Bash.exe; same InstallGen), and its .sha256; the release text now names it. A defect
+in Claude's one-off script deleted the old installer and then lost the asset list (the DELETE's empty reply overwrote
+the saved release JSON), so for about 2 minutes hg-600 had no installer and its old .sha256; the fixed script read the
+asset ids first and completed. Downloaded back: hg-600/ and latest/ links give eec0d188.... The .sha256 LINK still
+served the old checksum (the asset, read through the API, is the new one): the script had fetched that URL just before
+deleting, and GitHub's edge kept the old redirect, the same pattern as latest/Bash.exe.sha256 after hg-600 (now
+reproduced: supports that inference). Told installer-a4 (freeze time unchanged, its call).
+**Republished (10:00-10:02):** publish.sh: the console suite on dist/Bash.exe 237/0, MERCURIAL_HISTORY.md (605
+changesets), pushed c626ba3..d0f32ce; release.sh made no release (hg-600 carries this Bash.exe), its check now through
+the API. GitHub's installer/csharpBash.json, tools/installer.sh and docs/installer-plan.md: no E:/Claude, CONTRACT.md or
+_comment; tools/installgen.path not published (404).
+
+## 2026-11-01 -- NOTED: the spec 2 freeze stays 17:39:50Z; Installer INST-Q-055 (underscore keys ship inside an installer)
+**Status:** installer-a4: the freeze moment stays 2026-11-01T17:39:50Z (Installer INST-047: the first asset was public
+about 20 minutes); it verified the replacement through the public API (3,706,869 bytes, eec0d188...e456). Our
+`_comment` finding is a contract gap it filed as INST-Q-055 for the architect: the contract calls underscore keys "yours,
+for your own annotations" and never says they ship; installer-a4 recommends InstallGen strip `_` keys when embedding
+and the contract say so. Claude agrees (annotations are for the author; stripping them leaks nothing and saves bytes).
+Until he rules, our manifest carries no comment.
+
+## 2026-11-01 -- FIXED: awk's division by zero is gawk's fatal (or its parse-time error), never a hand-off to a PATH awk
+**Status:** Active. Raised 2026-11-01 (entry above, found by Claude); built after the wait under the bug-fix rule.
+**Was (583):** `Div`/`Mod` threw AwkSyntaxException, which is caught as an unsupported construct: "awk: unsupported:
+syntax: division by zero", and with an awk on PATH the whole program ran again there after this run's output (a
+stand-in on PATH: "before", then the stand-in, status 0).
+**Fix (Builtins.Awk.cs):** `ABinary` and `AAssign` keep their operator's line; `Div`/`Mod` throw AwkFatalException with
+gawk's text (`division by zero attempted`, "in `%'", "in `/='", "in `%='") and a context flag: the catch prints gawk's
+"(FILENAME=f FNR=n)" before "fatal:" once input was read (`InputPlace`: none before the first record; stdin "-"),
+exit 2, no fall-through. A constant `x/0` or `x%0` is gawk's parse-time error (it folds constants): the new
+AwkParseErrorException, "awk: cmd. line:N: error: ...", exit 1.
+**Test:** `awk_divzero_gnu` (expected = gawk 5.1 via WSL: run time after input, before input, empty input, a file's name,
+the operator's line, %, /=, %=, a field over a constant 0, the constant forms, no zero): red on 583 (29 lines);
+`awk_divzero_once` (authored: a stand-in awk on PATH must not run; on 583 it ran, status 0): red on 583 (2 lines).
+Mutations (built, one line each): 9 of 9 red (thrown as syntax again, no place, place in BEGIN, stdin not "-", no
+folding, parse exit 2, no "in" suffix, binary line 0, assignment line 0). Suite 236 passed, 0 failed, both modes; 244/0 with Git on PATH.
+**Implemented by:** rev 607. Files: `Bash/Evaluator/Builtins.Awk.cs`, `tests/cases/awk_divzero_gnu.sh`,
+`tests/cases/awk_divzero_once.sh`, their expected files, `tests/run-tests.ps1`.
+
+## 2026-11-01 -- FIXED: awk's FILENAME is "-" for standard input, as gawk 5.1 (found by Claude; the architect: "ok, go")
+**Status:** Active. Raised with the division fix, built on his go (no wait).
+**Measured (gawk 5.1, WSL):** FILENAME is "-" whenever standard input is read: no operand, an explicit "-", getline in
+BEGIN, END after it, even empty input; "" only before any input; "/dev/stdin" for that operand; a file's own name.
+C#Bash set "" for "-" (main input: `op == "-" ? "" : op`), with no decision behind it.
+**Fix:** FILENAME = the operand as opened ("-" for standard input); the division fix's "(FILENAME=... FNR=...)" then
+needs no mapping of "" to "-" (removed).
+**Test:** `awk_filename_gnu` (expected = gawk 5.1 via WSL): red on 583 (6 lines); green; the one-line mutation (back to
+"") red in it (12) and in awk_divzero_gnu (14). Suite 237 passed, 0 failed, both modes; 245/0 with Git on PATH.
+**Implemented by:** rev 608. Files: `Bash/Evaluator/Builtins.Awk.cs`, `tests/cases/awk_filename_gnu.sh`, its expected
+file, `tests/run-tests.ps1`.
+
+## 2026-11-01 -- DEPLOYED rev 608 (awk division by zero 607, FILENAME 608); dist/sh.exe is a hard link for the first time
+**Status:** Done 10:29:52-10:32:56 (3 min: the suite now runs detached only). All eight live sessions said go
+(installer-a4 after its sweep). `tools/deploy.sh` exited 0, so its detached suite and the battery passed (it stops
+otherwise); their counts were cut from Claude's capture (`tail -22` kept only the revision list), so they are not
+quoted here. Live check: `C#Bash build 1.0.0+hg.58c967e912a0 608` from dist/Bash.exe and dist/sh.exe; stat: both 2
+links, one file index, `[ dist/sh.exe -ef dist/Bash.exe ]` true (the first deploy of the hard-link step); the rollback
+copies dist/Bash.exe.rev583 and dist/sh.exe.rev583 are the two old separate files; awk's division by zero prints gawk's
+fatal, exit 2; FILENAME is "-"; sh names itself by its path. "Swap done" sent to all eight; to esdk-a2 (its make SHELL
+is dist/sh.exe) confirmed that every deploy re-links sh.exe to the new Bash.exe.
+
+## 2026-11-01 -- NEED (installer-a4): `iconv` (it read a UTF-16LE Windows INF); awaiting the architect
+**Status:** Recorded; a feature, so it waits for his word. installer-a4 needed `iconv -f UTF-16 -t UTF-8
+C:/Windows/INF/oem245.inf` (BOM ff fe): "iconv: command not found" on 608 (Git for Windows and MSYS2 ship one). Its
+workaround `tr -d '\000\377\376'` is ASCII-only. Sent a lossless one, checked in C#Bash on that file and on a UTF-16
+file with é and €: py.exe decoding 'utf-16' (BOM-aware) and writing UTF-8.
+**Claude's position:** an in-process `iconv` for what Windows actually hands out: UTF-8, UTF-16 and UTF-32 (LE/BE, a BOM
+read and, for the plain names, written as GNU does), ISO-8859-1 and Windows-1252; `-f`, `-t`, `-c`, `-l`, streaming.
+UTF-16 files are common here (INF, .reg exports, PowerShell redirects) [unmeasured: one request so far]. Everything
+else still goes to a PATH iconv, as the strict-option policy has it. What would change it: the request count staying at
+one.
+
+## 2026-11-01 -- FIXED: a continued line starting with a quote or `$` is a new word, as GNU bash (koliada-net-73)
+**Status:** Active. koliada-net-73's report (it suspected 608); raised 10:42 with a position, built after the wait under
+the bug-fix rule. The architect had relayed the symptom ("printf '%s' choked on arguments containing %"): printf itself
+reads no argument as a format (12 probes identical to GNU); the format and its arguments had been GLUED by this bug.
+**Was (every kept build, rev 80 to 608):** after `word \` and a newline, a continued line starting with ' " $'..' $VAR
+or another continuation was glued to the word before: `echo a \⏎'b' \⏎c` -> "ab c" (GNU "a b c"), `printf '%s\n'
+\⏎'x' \⏎'%Pz'` -> "`P': invalid format character", `echo r \⏎$v` -> "rV". A plain word or an indented line was right.
+**Cause (Lexer.StepCore):** each step notes whether whitespace preceded it; the step at `\` consumed only the
+continuation, made no token (ConsumeWord returns null) and returned, forgetting the space; the next step began at the
+quote, saw none, and the parser joined the token to the previous word.
+**Fix:** `_carrySpace`: a step that makes no token passes its leading space to the next step (also after a comment);
+reset at every step. Nothing else changes.
+**Test:** `continuation_quote_gnu` (scripts written by printf, exact bytes, run by "$BASH"; expected = GNU bash 5.1 via
+WSL; a glued word after a continuation and after a comment stays glued): red on 608 (12 lines); green; mutations
+(built, one line each): 3 of 3 red (the carry never set, never used, never reset; the last needed the glued shapes
+added). Suite 238 passed, 0 failed, both modes; 246/0 with Git on PATH. Workaround sent: indent the continued line.
+**Implemented by:** rev 612. Files: `Bash/Lexer/Lexer.cs`, `tests/cases/continuation_quote_gnu.sh`, its expected file,
+`tests/run-tests.ps1`.
+
+## 2026-11-01 -- DEPLOYED rev 612 (the continuation fix): suite 241/0 detached, battery 217; sh.exe re-linked
+**Status:** Done 11:03:13-11:06:38. All eight live sessions said go. tools/deploy.sh: suite (-Detached) 241 passed, 0
+failed (the AOT build: 238 + the 3 AOT-only cases); battery 217 pass, 20 diff of 237 (baseline 216); "sh.exe is a hard
+link to Bash.exe (confirmed)"; rollback dist/Bash.exe.rev608 and dist/sh.exe.rev608, one file with two names (as
+designed). Live: both report 612, one file index; koliada-net-73's exact bytes print "a b c", "x"/"%Pz", "q done",
+"one two", as GNU. "Swap done" sent to all eight.
+
+## 2026-11-01 -- RULED + BUILT: deploy swaps as InstallGen does and needs no window; only the benchmark needs one
+**Status:** Active. The architect: "Why aren't you using the swap trick to deploy? (ask the installer session)", then
+"every time you send a message it pushes context infor from all the other sessions screen - whe you deploy 5 fixes, its
+f pushes and I can find what my sessions have done, so I have to asl - that means I get cranky", then "the only time
+you should need a window is duing perf tests." Supersedes the deploy-slot practice (all live sessions' "go" before
+every swap, "swap done" to all after).
+**From installer-a4 (InstallGen's code and its measured spike):** write the new file in full beside the old under a
+temporary name; set the running file aside (MoveFileEx, a rename: the process keeps running; replacing or deleting a
+running image is refused, err 5); rename the new one in; a failure puts back what changed; no retry; a hard link is
+re-made and confirmed; never MOVEFILE_COPY_ALLOWED; the aside copy stays until the image stops.
+**Built (tools/deploy.sh step 5):** the staged build copied to dist/Bash.deploy-new.exe (an .exe name, so its stamp is
+checked by running it) and sh.deploy-new.exe hard-linked to it, while the old names work; then Bash.exe aside (the
+.rev<old> rollback) and the new one in, then sh.exe likewise; each refused rename puts back what changed and stops.
+A name is missing only between two renames (its length unmeasured; before, for a 7.8 MB copy). Tested on a scratch
+dist: the swap with the old build running under both names (both finished rc 0; the new pair one file, 612); and one
+refused rename at each of the four steps (each left the old pair whole, 608, one file, no temporary file).
+**No window, no broadcast:** no go-round before a deploy, no "swap done" to all after; one message to the session whose
+report a fix answers. Running shells keep their build; a session's later launches get the new one (mixed builds within
+one long run are accepted). The quiet window remains only for compare3 before a publish (ListAgents; ask only sessions
+that are busy).

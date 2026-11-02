@@ -19,18 +19,17 @@
 #      console run moved to tools/publish.sh (the architect, 2026-11-01: "On deploy, keep 'detatched mode' run, drop
 #      'console mode'. On publish, add 'console mode' (detached should have already been run).");
 #   4. the battery runs (its Release build is the same tree): a baseline regression stops here;
-#   5. the running dist/Bash.exe is RENAMED to dist/Bash.exe.rev<old> (Windows renames a running image
-#      and cannot overwrite it) and the new one copied in; its stamp is checked again; dist/sh.exe is renamed
-#      likewise and made a HARD LINK to the new Bash.exe (2026-11-01; a copy from 2026-10-30), confirmed with `-ef`,
-#      a copy only if the link cannot be made: `sh` for scripts and programs that run it, as Git for Windows and MSYS2
-#      ship theirs. A rename fails while a process is STARTING from the file (copy or link alike, measured
-#      2026-11-01): Bash.exe's stops the deploy before anything changed (run it again); sh.exe's stops it with
-#      Bash.exe deployed (rename and link sh.exe by hand, as the message says);
+#   5. the swap, as InstallGen replaces a file in use (2026-11-01): the new build copied IN FULL beside the old
+#      (dist/Bash.deploy-new.exe, its stamp checked) and sh.exe's new HARD LINK made to it (a copy only if a link
+#      cannot be made; `sh` for scripts and programs that run it, as Git for Windows and MSYS2 ship theirs); then
+#      each name takes two renames: the running image aside to dist/<name>.rev<old> (Windows renames a running image
+#      and cannot overwrite it; it keeps running), the new one in. A name is missing only between two renames. A
+#      refused rename (a process STARTING from the file, measured) puts back what changed and stops: run it again;
 #   6. it prints the notice material: the revisions now deployed (hg log since the old one).
-# What it does not do, and Claude does next, by the same rule every time: a live check from a Claude
-# Code Bash call (`echo $BASH_VERSION; "$BASH" --version`, plus the deploy's headline fixes), then the
-# notice to every live local session (ListAgents) leading with the behaviour changes, then the
-# DECISIONS entry and the anchor. Rolling back is the rename in reverse.
+# What it does not do, and Claude does next, by the same rule every time: a live check from a Claude Code Bash call
+# (`"$BASH" --version`, the deploy's headline fixes), one message to the session whose report a fix answers (no
+# broadcast: the architect, 2026-11-01, each message buries that session's work on his screen), then the DECISIONS
+# entry and the anchor. Rolling back is the rename in reverse.
 set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root" || exit 2
@@ -72,28 +71,42 @@ bat_rc=$?
 echo "deploy: battery: $(grep -E 'pass, [0-9]+ diff' <<< "$bat" | tail -1)"
 [ $bat_rc -eq 0 ] || { grep -E 'REGRESS|FAIL' <<< "$bat" >&2; die "the battery regressed; not deployed"; }
 
-# 5. swap: rename the running image, copy the new one in
-mv "$dist/Bash.exe" "$dist/Bash.exe.rev$old_rev" || die "could not rename the running dist/Bash.exe"
-cp "$new" "$dist/Bash.exe" || { mv "$dist/Bash.exe.rev$old_rev" "$dist/Bash.exe"; die "copy failed; the old build is back"; }
-got=$("$dist/Bash.exe" --version 2>/dev/null | tail -1)
-[ "$got" = "$new_stamp" ] || die "dist/Bash.exe reads '$got' after the copy, not '$new_stamp'"
-sh_back=
-if [ -e "$dist/sh.exe" ]; then
-  mv "$dist/sh.exe" "$dist/sh.exe.rev$old_rev" || die "could not rename the running dist/sh.exe (dist/Bash.exe IS deployed)"
-  sh_back=" and dist/sh.exe.rev$old_rev"
-fi
+# 5. swap, as InstallGen replaces a file in use (installer-a4, 2026-11-01; the architect: "Why aren't you using the swap
+#    trick to deploy?"): the new build is copied IN FULL beside the old under a temporary .exe name (and checked), and
+#    sh.exe's new hard link made to it, while the old names still work; then each name takes two renames: the running
+#    image aside (it keeps running; the aside copy is the rollback), the new one in. A name is missing only between those
+#    two renames, no longer for a 7.8 MB copy. A refused rename (a process STARTING from the file, measured 2026-11-01)
+#    puts back what changed and stops: run it again. No retry, as the installer.
+nb="$dist/Bash.deploy-new.exe"; ns="$dist/sh.deploy-new.exe"
+rm -f "$nb" "$ns"
+cp "$new" "$nb" || { rm -f "$nb"; die "could not copy the new build in beside the old; nothing changed"; }
+got=$("$nb" --version 2>/dev/null | tail -1)
+[ "$got" = "$new_stamp" ] || { rm -f "$nb"; die "the copy reads '$got', not '$new_stamp'; nothing changed"; }
 # sh.exe is a HARD LINK to the new Bash.exe, made anew every deploy so it never keeps an old build (the architect,
-# 2026-11-01: "deploy should make sh.exe a hard link also", as the installer makes it); confirmed
-# as one file, else a copy, said so
-if ln "$dist/Bash.exe" "$dist/sh.exe" 2>/dev/null && [ "$dist/Bash.exe" -ef "$dist/sh.exe" ]; then
+# 2026-11-01: "deploy should make sh.exe a hard link also", as the installer makes it); confirmed, else a copy, said so
+if ln "$nb" "$ns" 2>/dev/null && [ "$nb" -ef "$ns" ]; then
   sh_how="a hard link to Bash.exe (confirmed)"
 else
-  rm -f "$dist/sh.exe"
-  cp "$new" "$dist/sh.exe" || die "could not link or copy dist/sh.exe (dist/Bash.exe IS deployed)"
+  rm -f "$ns"
+  cp "$new" "$ns" || { rm -f "$nb" "$ns"; die "could not link or copy sh.exe's new file; nothing changed"; }
   sh_how="a COPY of Bash.exe (the hard link could not be made or confirmed)"
 fi
+undo_bash() { mv "$dist/Bash.exe" "$nb" && mv "$dist/Bash.exe.rev$old_rev" "$dist/Bash.exe"; }
+mv "$dist/Bash.exe" "$dist/Bash.exe.rev$old_rev" ||
+  { rm -f "$nb" "$ns"; die "could not set the running dist/Bash.exe aside (a process starting from it?); nothing changed: run again"; }
+mv "$nb" "$dist/Bash.exe" ||
+  { mv "$dist/Bash.exe.rev$old_rev" "$dist/Bash.exe"; rm -f "$nb" "$ns"; die "could not move the new Bash.exe in; the old one is back: run again"; }
+sh_back=
+if [ -e "$dist/sh.exe" ]; then
+  mv "$dist/sh.exe" "$dist/sh.exe.rev$old_rev" ||
+    { undo_bash; rm -f "$nb" "$ns"; die "could not set the running dist/sh.exe aside; Bash.exe put back, nothing changed: run again"; }
+  sh_back=" and dist/sh.exe.rev$old_rev"
+fi
+mv "$ns" "$dist/sh.exe" ||
+  { [ -n "$sh_back" ] && mv "$dist/sh.exe.rev$old_rev" "$dist/sh.exe"; undo_bash; rm -f "$nb" "$ns"; die "could not move the new sh.exe in; both put back, nothing changed: run again"; }
+[[ $sh_how == *COPY* ]] || [ "$dist/sh.exe" -ef "$dist/Bash.exe" ] || die "dist/sh.exe is not the same file as dist/Bash.exe after the swap"
 got_sh=$("$dist/sh.exe" --version 2>/dev/null | tail -1)
-[ "$got_sh" = "$new_stamp" ] || die "dist/sh.exe reads '$got_sh', not '$new_stamp' (dist/Bash.exe IS deployed)"
+[ "$got_sh" = "$new_stamp" ] || die "dist/sh.exe reads '$got_sh', not '$new_stamp'"
 echo "deploy: DEPLOYED $got (Bash.exe; sh.exe is $sh_how); rollback: dist/Bash.exe.rev$old_rev$sh_back"
 
 # 6. notice material

@@ -1,0 +1,8 @@
+no operand [-]
+an explicit - [-]
+in BEGIN []
+END after it [-]
+END, empty input [-]
+/dev/stdin [/dev/stdin]
+getline in BEGIN [-]
+a file, then stdin [f1.txt - ]
