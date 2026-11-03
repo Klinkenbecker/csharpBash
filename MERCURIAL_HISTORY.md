@@ -12,11 +12,31 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 617 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 637 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 636 | 2026-11-03 | doc review for the publish: README's table and PERFORMANCE.md from the 2026-11-03 compare3 run of deployed 635 (outputs identical in all three shells); case count 254; results.md |
+| 635 | 2026-11-03 | the shell's own folder FIRST on its own PATH: a nested bash and sh are this shell, ahead of WSL's launcher or Git (the architect); cases own_dir_first, own_dir_first_sh; two cases adjusted to the new order |
+| 634 | 2026-11-03 | docs: Claude Code issue #94077 appears fixed in 2.1.316 (measured): USING's setx step, PERFORMANCE's note |
+| 633 | 2026-11-03 | measured: Claude Code 2.1.316 honors CLAUDE_CODE_GIT_BASH_PATH over PATH (first-on-PATH wins only without it); README corrected: no PATH reordering, make the variable reach Claude Code |
+| 632 | 2026-11-03 | GitHub #1: the start file sets CLAUDE_CODE_USE_POWERSHELL_TOOL=0 (installer and USING); #2: README checks with ! bash --version and explains PATH discovery (#94077) and the start file as the remedy; WSL case not yet tested |
+| 631 | 2026-11-03 | diff fix confirmed by c-parser-ac on its 424,439-line files (631 ms) |
+| 630 | 2026-11-03 | Deployed rev 629 (diff on large files); anchor |
+| 629 | 2026-11-03 | diff: Myers' O(ND) in linear space for large files, the table kept for small ones (it allocated n x m: OutOfMemoryException at 50,000 lines); case diff_large_gnu (c-parser-ac); the OOM guard raised |
+| 628 | 2026-11-03 | anchor: wording; koliada-net-73 ended |
+| 627 | 2026-11-03 | Deployed rev 626 (pwd -W, whoami refuses an operand): the first real two-rename swap; unblocked by freeing commit (Brave quit) |
+| 626 | 2026-11-03 | verified: the page file is fixed at 8 GB (not dynamic); recommendation recorded |
+| 625 | 2026-11-03 | FOUND: the AOT crash is the commit limit nearly exhausted (72.5 of 73.5 GB; ilc: insufficient memory), not Defender or the code; remedies for the architect |
+| 624 | 2026-11-03 | whoami refuses an operand as GNU coreutils (extra operand, exit 1); it was ignored (whoami /groups printed the user); case whoami_operand_gnu (koliada-net-7d); not deployed: the AOT build is blocked |
+| 623 | 2026-11-03 | AOT crash findings (2): only ilc started by dotnet.exe crashes (0xC0000005 / 0xC0000409); same command and env from a console succeed; no mitigation settings or events; options for the architect |
+| 622 | 2026-11-03 | AOT crash findings: Defender intelligence and two new feature controls arrived after the last good build (correlation); reboot recommended |
+| 621 | 2026-11-03 | BLOCKED: the AOT publish crashes under dotnet publish (ilc access violation), rev 612's source too: environmental; 620 not deployed; dist intact |
+| 620 | 2026-11-03 | pwd -W accepted as Git Bash (usage [-LPW]); case pwd_w (koliada-net-73's need); an external_redirects flicker recorded to watch |
+| 619 | 2026-11-02 | NEED recorded (koliada-net-73): pwd -W as Git Bash; awaiting the architect |
+| 618 | 2026-11-02 | release.sh: each publish upgrades this machine's install with the installer it released (--silent, then checked); a retry checks a left installer against the release's own .sha256; ~/.bash/bin upgraded 583 -> 612 |
+| 617 | 2026-11-02 | Published: GitHub main = git f7e9816 = hg 616, release hg-616 = Bash.exe (612) + installer; anchor rewritten clean |
 | 616 | 2026-11-02 | doc review for the publish: README's table and PERFORMANCE.md from the 2026-11-02 compare3 run of deployed 612 (outputs identical in all three shells); case count 249; results.md |
 | 615 | 2026-11-01 | deploy swaps as InstallGen does (the new build in full beside the old, then two renames per name; each refused rename puts back); no window or go-round for a deploy, only for the benchmark (the architect) |
 | 614 | 2026-11-01 | anchor: wording |

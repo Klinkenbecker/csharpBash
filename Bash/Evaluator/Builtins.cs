@@ -186,7 +186,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		["disown"] = "disown [-h] [-ar] [jobspec ... | pid ...]",
 		["printf"] = "printf [-v var] format [arguments]",
 		["cd"] = "cd [-L|[-P [-e]] [-@]] [dir]",
-		["pwd"] = "pwd [-LP]",
+		["pwd"] = "pwd [-LPW]",   // Git Bash's, -W accepted (2026-11-03); GNU bash's is [-LP]
 		["wait"] = "wait [-fn] [-p var] [id ...]",
 		["jobs"] = "jobs [-lnprs] [jobspec ...] or jobs -x command [args]",
 		["trap"] = "trap [-lp] [[arg] signal_spec ...]",

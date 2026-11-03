@@ -1,0 +1,3 @@
+a nested bash is this shell
+type -P bash names this shell
+its folder on PATH: 1 time(s), first: yes

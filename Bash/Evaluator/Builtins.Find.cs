@@ -609,6 +609,88 @@ public sealed partial class Builtins
 	/// line under --left-column) at the gutter's middle; padding is tabs while a tab stop fits, then spaces (spaces only
 	/// under -t). Width 130: hw 61, c2o 64, the mark at column 62. A change run's lines pair up first, then its remaining
 	/// insertions (`>`), then its remaining deletions (`<`), as GNU.</summary>
+	/// <summary>The edit script of a[aLo..aHi) against b[bLo..bHi), appended to <paramref name="ops"/> with the positions
+	/// the table's traceback gives (a '+' carries the current a index, a '-' the current b index): the common prefix and
+	/// suffix are equal lines, and what lies between is split at Myers' middle snake (<see cref="DiffBisect"/>) and
+	/// done again on each half. Linear space; the recursion halves the differences each time.</summary>
+	private static void DiffMyers(int[] a, int aLo, int aHi, int[] b, int bLo, int bHi, List<(char op, int ai, int bi)> ops)
+		{
+		while (aLo < aHi && bLo < bHi && a[aLo] == b[bLo]) { ops.Add((' ', aLo, bLo)); aLo++; bLo++; }
+		int suf = 0;
+		while (aLo < aHi - suf && bLo < bHi - suf && a[aHi - 1 - suf] == b[bHi - 1 - suf]) suf++;
+		int aEnd = aHi - suf, bEnd = bHi - suf;
+		if (aLo == aEnd) { for (int y = bLo; y < bEnd; y++) ops.Add(('+', aLo, y)); }
+		else if (bLo == bEnd) { for (int x = aLo; x < aEnd; x++) ops.Add(('-', x, bLo)); }
+		else
+			{
+			var (sx, sy) = DiffBisect(a, aLo, aEnd, b, bLo, bEnd);
+			if (sx < 0)
+				{
+				for (int x = aLo; x < aEnd; x++) ops.Add(('-', x, bLo));
+				for (int y = bLo; y < bEnd; y++) ops.Add(('+', aEnd, y));
+				}
+			else
+				{
+				DiffMyers(a, aLo, sx, b, bLo, sy, ops);
+				DiffMyers(a, sx, aEnd, b, sy, bEnd, ops);
+				}
+			}
+		for (int i = 0; i < suf; i++) ops.Add((' ', aEnd + i, bEnd + i));
+		}
+
+	/// <summary>Myers' middle snake (E. Myers, "An O(ND) Difference Algorithm", 1986): forward and reverse D-paths
+	/// grown together until they overlap; the overlap's point splits the problem in two. (-1, -1) when the two ranges
+	/// share nothing. The ranges' first and last elements differ (DiffMyers trimmed them).</summary>
+	private static (int X, int Y) DiffBisect(int[] a, int aLo, int aHi, int[] b, int bLo, int bHi)
+		{
+		int n = aHi - aLo, m = bHi - bLo;
+		int maxD = (n + m + 1) / 2, off = maxD, len = 2 * maxD + 2;
+		var v1 = new int[len]; var v2 = new int[len];
+		Array.Fill(v1, -1); Array.Fill(v2, -1);
+		v1[off + 1] = 0; v2[off + 1] = 0;
+		int delta = n - m;
+		bool front = (delta & 1) != 0;
+		int k1start = 0, k1end = 0, k2start = 0, k2end = 0;
+		for (int d = 0; d < maxD; d++)
+			{
+			for (int k1 = -d + k1start; k1 <= d - k1end; k1 += 2)
+				{
+				int k1o = off + k1;
+				int x1 = k1 == -d || (k1 != d && v1[k1o - 1] < v1[k1o + 1]) ? v1[k1o + 1] : v1[k1o - 1] + 1;
+				int y1 = x1 - k1;
+				while (x1 < n && y1 < m && a[aLo + x1] == b[bLo + y1]) { x1++; y1++; }
+				v1[k1o] = x1;
+				if (x1 > n) k1end += 2;
+				else if (y1 > m) k1start += 2;
+				else if (front)
+					{
+					int k2o = off + delta - k1;
+					if (k2o >= 0 && k2o < len && v2[k2o] != -1 && x1 >= n - v2[k2o]) return (aLo + x1, bLo + y1);
+					}
+				}
+			for (int k2 = -d + k2start; k2 <= d - k2end; k2 += 2)
+				{
+				int k2o = off + k2;
+				int x2 = k2 == -d || (k2 != d && v2[k2o - 1] < v2[k2o + 1]) ? v2[k2o + 1] : v2[k2o - 1] + 1;
+				int y2 = x2 - k2;
+				while (x2 < n && y2 < m && a[aHi - 1 - x2] == b[bHi - 1 - y2]) { x2++; y2++; }
+				v2[k2o] = x2;
+				if (x2 > n) k2end += 2;
+				else if (y2 > m) k2start += 2;
+				else if (!front)
+					{
+					int k1o = off + delta - k2;
+					if (k1o >= 0 && k1o < len && v1[k1o] != -1)
+						{
+						int x1 = v1[k1o], y1 = off + x1 - k1o;
+						if (x1 >= n - x2) return (aLo + x1, bLo + y1);
+						}
+					}
+				}
+			}
+		return (-1, -1);
+		}
+
 	private static void DiffSideBySide(string[] la, string[] lb, List<(char op, int ai, int bi)> ops, DiffOptions opt, bool aNoEol, bool bNoEol)
 		{
 		const int TabSize = 8;
@@ -721,26 +803,35 @@ public sealed partial class Builtins
 			if (opt.IgnoreCase) s = s.ToLowerInvariant();
 			return s;
 			}
-		bool Eq(string x, string y) => Norm(x) == Norm(y);
 		bool Blank(string s) => opt.IgnoreBlankLines && s.Trim().Length == 0;
 
 		int n = la.Length, m = lb.Length;
-		var c = new int[n + 1, m + 1];
-		for (int ii = n - 1; ii >= 0; ii--)
-			for (int jj = m - 1; jj >= 0; jj--)
-				c[ii, jj] = Eq(la[ii], lb[jj]) ? c[ii + 1, jj + 1] + 1 : Math.Max(c[ii + 1, jj], c[ii, jj + 1]);
+		// Each line is normalized ONCE and given an id, so the comparisons are of ints (it was normalized again for every
+		// cell of the table). Small files keep the n x m table and its traceback: the edit scripts the GNU-checked cases
+		// have always seen. Larger ones use Myers' O(ND) algorithm in linear space, as GNU does, after the common prefix
+		// and suffix: the table was 10 GB at 50,000 lines, an OutOfMemoryException, exit 9 (c-parser-ac, 2026-11-03).
+		var ids = new Dictionary<string, int>();
+		int Id(string s) { var key = Norm(s); if (!ids.TryGetValue(key, out int v)) ids[key] = v = ids.Count; return v; }
+		var ia = new int[n]; for (int i = 0; i < n; i++) ia[i] = Id(la[i]);
+		var ib = new int[m]; for (int j = 0; j < m; j++) ib[j] = Id(lb[j]);
 
 		// edit script as a list of (opChar, aIndex, bIndex): ' ' equal, '-' delete, '+' insert
 		var ops = new List<(char op, int ai, int bi)>();
-		{
-		int x = 0, y = 0;
-		while (x < n || y < m)
+		if ((long)(n + 1) * (m + 1) <= 4_000_000)
 			{
-			if (x < n && y < m && Eq(la[x], lb[y])) { ops.Add((' ', x, y)); x++; y++; }
-			else if (y < m && (x >= n || c[x, y + 1] >= c[x + 1, y])) { ops.Add(('+', x, y)); y++; }
-			else { ops.Add(('-', x, y)); x++; }
+			var c = new int[n + 1, m + 1];
+			for (int ii = n - 1; ii >= 0; ii--)
+				for (int jj = m - 1; jj >= 0; jj--)
+					c[ii, jj] = ia[ii] == ib[jj] ? c[ii + 1, jj + 1] + 1 : Math.Max(c[ii + 1, jj], c[ii, jj + 1]);
+			int x = 0, y = 0;
+			while (x < n || y < m)
+				{
+				if (x < n && y < m && ia[x] == ib[y]) { ops.Add((' ', x, y)); x++; y++; }
+				else if (y < m && (x >= n || c[x, y + 1] >= c[x + 1, y])) { ops.Add(('+', x, y)); y++; }
+				else { ops.Add(('-', x, y)); x++; }
+				}
 			}
-		}
+		else DiffMyers(ia, 0, n, ib, 0, m, ops);
 		if (opt.IgnoreBlankLines)
 			ops = ops.Select(o2 => o2.op == '-' && Blank(la[o2.ai]) ? (' ', o2.ai, o2.bi) : o2.op == '+' && Blank(lb[o2.bi]) ? (' ', o2.ai, o2.bi) : o2).ToList();
 		bool differ = ops.Any(o2 => o2.op != ' ');

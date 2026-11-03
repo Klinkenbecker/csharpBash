@@ -11,11 +11,11 @@ child() { cmd /C "echo %PATH%" | tr -d '\r'; }
 
 echo "== a shell started by cmd with a Windows-form PATH (backslashes, an empty entry, a trailing ;)"
 cat > probe.sh <<'EOF'
-p=${PATH%:*}   # without the shell's own folder, appended last
+p=${PATH#*:}   # without the shell's own folder, FIRST since 2026-11-03 (it was appended last)
 echo "[$p]"
 case $PATH in *\;* | *\\*) echo "Windows text in \$PATH";; *) echo "no ; and no backslash in \$PATH";; esac
 type -P whoami
-c=$(cmd /C "echo %PATH%" | tr -d '\r'); echo "its child: ${c%;*}"
+c=$(cmd /C "echo %PATH%" | tr -d '\r'); echo "its child: ${c#*;}"
 EOF
 printf '@set "PATH=%s"\r\n@"%s" probe.sh\r\n' 'C:\Windows\System32;;C:\Windows;' "$BASH" > launch.cmd
 cmd //c '.\launch.cmd' | tr -d '\r'
@@ -43,7 +43,7 @@ PATH="$d/stub;C:/Windows" cmd /C whoami 2>&1 | tr -d '\r'
 
 echo "== export -p round trip; a nested shell"
 ( PATH='/c/Windows/System32:/c/Windows'; s=$(export -p | grep ' PATH='); echo "$s"; PATH=/nowhere; eval "$s"; echo "$PATH"
-  "$BASH" -c 'IFS=: read -r a b rest <<< "$PATH"; echo "nested: $a $b"' )
+  "$BASH" -c 'IFS=: read -r own a b rest <<< "$PATH"; echo "nested: $a $b"' )
 
 echo "== a Windows program's colon-list argument: converted whole, or left as typed"
 for a in /c/Windows:/c/Users /c/Windows/System32 /c/Windows:rel /c/Windows: /c/Windows::/c/Users /c/x/a:b http://x/c:/d; do

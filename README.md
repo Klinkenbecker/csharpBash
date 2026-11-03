@@ -12,21 +12,21 @@ It was built to be the shell Claude Code uses on Windows. Claude Code starts a f
 
 | benchmark (seconds) | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.164** | 1.512 | 0.458 | 9.2× | 2.8× |
-| `arith` — 200 k `$(( ))` evaluations | **0.247** | 2.098 | 0.648 | 8.5× | 2.6× |
-| `func` — 100 k function calls | **0.220** | 2.307 | 0.585 | 10.5× | 2.7× |
-| `loop_big` — 2 M iterations | **1.440** | 19.674 | 3.503 | 13.7× | 2.4× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.055** | 14.496 | 0.895 | **264×** | 16.3× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.090** | 0.280 | 0.128 | 3.1× | 1.4× |
-| `find` — walk 400 files | **0.015** | 0.135 | 0.236 | 9.0× | 15.7× |
-| startup — `bash -c 'exit 0'` | **0.0092** | 0.0242 | 0.1138 | 2.6× | 12.4× |
+| `loop` — 200 k `while` iterations | **0.153** | 1.491 | 0.421 | 9.7× | 2.8× |
+| `arith` — 200 k `$(( ))` evaluations | **0.244** | 2.075 | 0.626 | 8.5× | 2.6× |
+| `func` — 100 k function calls | **0.212** | 2.308 | 0.585 | 10.9× | 2.8× |
+| `loop_big` — 2 M iterations | **1.430** | 15.061 | 3.467 | 10.5× | 2.4× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.053** | 13.889 | 0.825 | **262×** | 15.6× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.086** | 0.243 | 0.131 | 2.8× | 1.5× |
+| `find` — walk 400 files | **0.015** | 0.129 | 0.214 | 8.6× | 14.3× |
+| startup — `bash -c 'exit 0'` | **0.0089** | 0.0231 | 0.1131 | 2.6× | 12.7× |
 
 Every row gives the same output in all three shells, so a fast wrong answer can't count as a win. Where the speed
 comes from:
 
 - **No new process per command.** The `coreutils` row runs 900 small commands. Under Git Bash that is 900 Windows
   processes; under C#Bash it is none.
-- **It starts fast:** 9.2 ms, against Git Bash's 24.2 ms or WSL's 113.8 ms. Claude Code pays that on every call.
+- **It starts fast:** 8.9 ms, against Git Bash's 23.1 ms or WSL's 113.1 ms. Claude Code pays that on every call.
 - **It remembers where programs are.** On Windows, finding a program on a long PATH is slow, and not finding one is
   slower still. C#Bash remembers both, so a simple Claude Code call takes about 11 ms in all.
 
@@ -56,6 +56,7 @@ A classic four-stage pipeline: **lexer → parser → AST → tree-walking evalu
    PowerShell). Run it again to repair or upgrade, even while C#Bash is running.
 3. Start Claude Code with `%USERPROFILE%/.bash/bin/claude.cmd` (your arguments pass through: `--resume` and the rest).
    It gives that session C#Bash as its shell and nothing else on the machine changes.
+4. Check it: in the session, type `! bash --version`. Its last line must read `C#Bash build …`.
 
 To remove it, delete `%USERPROFILE%/.bash/bin` (and its PATH entry, if you added one).
 
@@ -65,11 +66,18 @@ To remove it, delete `%USERPROFILE%/.bash/bin` (and its PATH entry, if you added
 2. Point Claude Code at it;
    -  Command Prompt: `setx CLAUDE_CODE_GIT_BASH_PATH "%USERPROFILE%/.bash/bin/Bash.exe"`.
    -  PowerShell: `setx CLAUDE_CODE_GIT_BASH_PATH "$env:USERPROFILE/.bash/bin/Bash.exe"`.
-3. Restart Claude Code.
+3. Restart Claude Code, and check with `! bash --version` (the last line must read `C#Bash build …`).
 
-To go back to Git Bash, remove the variable and restart Claude Code. If Git for Windows is on your PATH, Claude Code may pick Git
-Bash anyway (Claude Code issue #94077); the start file (the installer's, or the one in the guide) avoids that, and
-keeps Claude Code's own PATH short. Building it yourself, the start file, and tips: [Using C#Bash](docs/USING.md).
+**If it is not C#Bash:** without `CLAUDE_CODE_GIT_BASH_PATH`, Claude Code runs the first `bash.exe` on PATH. With
+WSL installed that is its launcher, `C:/Windows/System32/bash.exe`, which Windows puts on PATH ahead of any folder of
+yours; with Git for Windows on PATH, it may be Git Bash. You need not reorder PATH: make sure the variable reaches
+Claude Code. `setx` changes only programs started afterwards, so open a NEW terminal before starting Claude Code; or
+use the start file (the installer's `claude.cmd`, or the one in [Using C#Bash](docs/USING.md)), which sets it for
+that session alone. (Measured 2026-11-03 with Claude Code 2.1.316: the variable wins over PATH. Earlier versions
+ignored it: Claude Code issue #94077.)
+
+To go back to Git Bash, remove the variable (or stop using the start file) and restart Claude Code. Building it
+yourself, the start file, and tips: [Using C#Bash](docs/USING.md).
 
 ## What you get
 
@@ -102,7 +110,7 @@ Everything, in detail: [Features](docs/FEATURES.md).
 
 ## How it's tested
 
-249 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
+254 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
 bug fails a test instead of becoming its expected answer. A battery of 237 probes runs the same commands through both
 shells and compares them. Building and testing it yourself, and how the source is laid out: [Developing C#Bash](docs/DEVELOPING.md).
 

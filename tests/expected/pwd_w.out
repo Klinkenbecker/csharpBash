@@ -1,0 +1,7 @@
+pwd -W = pwd
+pwd -LW = pwd
+pwd -WP = pwd
+an operand is ignored: rc=0
+the drive form
+pwd: -Z: invalid option
+pwd: usage: pwd [-LPW]

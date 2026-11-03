@@ -50,7 +50,7 @@ t.sh: line 6: cd: -Z: invalid option
 cd: usage: cd [-L|[-P [-e]] [-@]] [dir]
 cd rc=2
 t.sh: line 6: pwd: -Z: invalid option
-pwd: usage: pwd [-LP]
+pwd: usage: pwd [-LPW]
 pwd rc=2
 t.sh: line 6: kill: Z: invalid signal specification
 kill rc=1
@@ -104,7 +104,7 @@ cd -L -- ok
 cd - ok
 pwd foo rc=0
 t.sh: line 12: pwd: -Z: invalid option
-pwd: usage: pwd [-LP]
+pwd: usage: pwd [-LPW]
 pwd -LZ rc=2
 pwd -P ok
 t.sh: line 13: export: `-n': not a valid identifier

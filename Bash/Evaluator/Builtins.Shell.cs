@@ -157,7 +157,9 @@ public sealed partial class Builtins
 	/// escape characters (ratified 2026-09-11, refining DECISIONS 2026-09-04 decision 3).</summary>
 	private int Pwd(List<string> args)
 		{
-		if (FlagOptions(args, "LP", []) < 0) return 2;   // operands are ignored, as in bash
+		// operands are ignored, as in bash. `-W` is Git Bash's "the Win32 value of the physical directory": the form printed
+		// here anyway, so accepted as it is there (koliada-net-73's need; the architect, 2026-11-03: "accept and go")
+		if (FlagOptions(args, "LPW", []) < 0) return 2;
 		Console.WriteLine(ShellEnvironment.ShellCwd());
 		return 0;
 		}

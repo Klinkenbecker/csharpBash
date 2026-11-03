@@ -1,20 +1,18 @@
 # Project Context: Bash
 
 > ## RESUME HERE — 2026-11-01 (session 9df18ad7 = bash-b6, context low). SUPERSEDES every block below; they are history.
-> **TRUE STATE (written at hg 613):** **DEPLOYED rev 612** (`1.0.0+hg.bb16599152be 612`, 11:06; the continuation fix; 608 at 10:33 made dist/sh.exe a HARD
-> LINK to dist/Bash.exe, re-linked by every deploy; rollback dist/Bash.exe.rev608 + dist/sh.exe.rev608, one
-> file with two names; all eight notified "swap done"). **PUBLISHED + SHIPPED 2026-11-01: release hg-600 = Bash.exe (583) AND the
-> installer csharpBash-setup.exe (InstallGen specification 2; REPLACED 18:00Z by the clean rebuild, SHA-256
-> eec0d188...); GitHub main = git d0f32ce = hg 604; spec 2 FROZE at 17:39:50Z.** Deployed, NOT published: 607 (awk
-> division by zero = gawk's fatal, exit 2, no PATH-awk hand-off; a constant 1/0 its parse-time error, exit 1), 608 (awk
-> FILENAME "-" for stdin), 612 (a continued line starting with a quote or $ is a new word). Suite: 249 cases (3 AOT-only). Untracked root files BENCHMARK-PROVENANCE.md and
-> "The Windows Shell Tax.url" are the architect's: leave them. A real install is on this machine (his,
-> C:/Users/guy/.bash/bin, PATH declined; still build 583). Re-check that the cached links releases/latest/download/
-> Bash.exe.sha256 and releases/download/hg-600/csharpBash-setup.exe.sha256 serve the current checksums.
-> **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro. (esdk-a2: its make-recipe probe on 608 CLEAN through the hard-linked dist/sh.exe.)
-> **LIVE SESSIONS (8):** koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, kes-install-43 (runs real
-> hardware installs: a go given before one starts is stale: re-confirm), qa-de, c-parser-ac, esdk-a2 (its CC8051 build
-> runs ON dist/sh.exe + dist/Bash.exe).
+> **TRUE STATE (written at hg 630, 2026-11-03):** **DEPLOYED rev 629** (`1.0.0+hg.f325c6c66dba 629`: diff on large files, pwd -W, whoami; dist/sh.exe is a
+> HARD LINK to dist/Bash.exe, re-linked by every deploy; rollback dist/Bash.exe.rev626 + dist/sh.exe.rev626, one file).
+> **PUBLISHED 2026-11-02: GitHub main = git f7e9816 = hg 616; release hg-616 = Bash.exe (612) + csharpBash-setup.exe
+> rebuilt from it (InstallGen specification 2, FROZEN since hg-600 shipped 2026-11-01T17:39:50Z).** Deployed,
+> NOT published: 620 (pwd -W), 624 (whoami), 629 (diff large). Suite: 252 cases (3 AOT-only). Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell
+> Tax.url" are the architect's: leave them. A real install is on this machine (his, C:/Users/guy/.bash/bin, PATH
+> declined; build 612, upgraded by release.sh, which now does it at every publish). The NEW two-rename swap in deploy.sh has not yet run
+> for real (tested on a scratch dist): watch the first deploy.
+> **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro. koliada-net-73 ENDED (pwd -W live in 626, not told: no session to tell).
+> **LIVE SESSIONS (8):** koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, kes-install-43 (real
+> hardware installs), qa-de, c-parser-ac, esdk-a2 (its CC8051 build runs ON dist/sh.exe + dist/Bash.exe). Message
+> only the session that must act or know (memory peer-messages-flood-his-screens).
 > **HOW WE WORK:** a peer's BUG: verify against GNU, raise with a position, wait ~10 min, fix (a GNU-checked case red on
 > the deployed build, mutations, the suite in both modes AND once with Git's cmd on PATH, commit), the slot from ALL,
 > deploy (NO window, no go-round: the swap is two renames, RULED 2026-11-01; only compare3 needs quiet), ONE message to the reporter, record. A FEATURE or DESIGN change waits for the architect's word. Publish only on his word (compare3
@@ -35,6 +33,7 @@
 > 3b. **Installer INST-Q-055** (installer-a4 to him): InstallGen strips `_` keys when embedding a manifest (they shipped
 >    our local path); installer-a4 and Claude recommend it. Ours has no comment meanwhile.
 > 3c. **iconv** (installer-a4's need, 2026-11-01: a UTF-16LE INF). Claude: in-process for UTF-8/16/32, Latin-1, 1252.
+> 3d. **OOM guard** (2026-11-03): a builtin's OutOfMemoryException kills the shell; Claude: "<name>: memory exhausted", exit 2. WATCH: external_redirects failed once (35/35 alone; check commit first).
 > 4. **The test runners are PowerShell** (run-tests.ps1, run-compat.ps1; he asked "Why are you using powershell",
 >    2026-11-01). External to the shell by design (DECISIONS 2026-06-13). Claude: if PowerShell should go, a small
 >    single-file .NET runner replacing both (starts detached natively, none of 5.1's quirks). Not started.
@@ -46,6 +45,7 @@
 > in-process (GNU 8.32); awk any RS (gawk 5.1) and RT; kill/kill -0 and `wait $!` as GNU; `<( )` forward-slash path
 > (findstr and cmd's type cannot open forward-slash folder paths: accepted, as for $PWD); `$!` stays synthetic;
 > grep -P `\Q...\E`; grep -f with an empty file; help's path forward slashes; the installer's PATH default "no".
+> (Unblocked 2026-11-03: 626 deployed once Brave was quit. The page file is now 8192-65536 MB, in effect after a restart.)
 > **NEXT:** only on his word (peer bugs under the bug-fix rule meanwhile).
 >
 > ## RESUME HERE — 2026-10-31 — HISTORY: superseded by the 2026-11-01 block above

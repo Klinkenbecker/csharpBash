@@ -213,7 +213,15 @@ public sealed partial class Builtins
 
 	private int Whoami(List<string> args)
 		{
-		Opts.Parse("whoami", args, "");
+		var o = Opts.Parse("whoami", args, "");
+		// an operand is GNU coreutils' "extra operand", exit 1. It was ignored: `whoami /groups` (Windows' whoami.exe
+		// usage) printed the user name and 0 (koliada-net-7d, 2026-11-03). Windows' same-name programs are never run.
+		if (o.Operands.Count > 0)
+			{
+			Console.Error.WriteLine($"whoami: extra operand '{o.Operands[0]}'");
+			Console.Error.WriteLine("Try 'whoami --help' for more information.");
+			return 1;
+			}
 		Console.WriteLine(Environment.UserName);
 		return 0;
 		}

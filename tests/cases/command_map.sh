@@ -50,7 +50,7 @@ mkdir C; run "PATH=\"$d/C;\$PATH\"; hash zzp"
 [ -e "$HOME/.bash/commands/0000000000000000.map" ] && echo "unused: kept" || echo "unused: pruned"
 printf '@echo zzb-ran\r\n' > B/zzb.cmd
 echo "== BASH_PATH becomes the PATH, once"
-( export BASH_PATH="$d/B;${SystemRoot:-${SYSTEMROOT:-C:/Windows}}/System32"; run 'zzb; [ "${PATH%%:*}" = "$m/B" ] && echo "PATH starts with it"; echo "BASH_PATH=${BASH_PATH-unset}"; printenv BASH_PATH || echo "not in the environment"' )
+( export BASH_PATH="$d/B;${SystemRoot:-${SYSTEMROOT:-C:/Windows}}/System32"; run 'zzb; p=${PATH#*:}; [ "${p%%:*}" = "$m/B" ] && echo "PATH starts with it, after the own folder of this shell"; echo "BASH_PATH=${BASH_PATH-unset}"; printenv BASH_PATH || echo "not in the environment"' )
 echo "== a nested shell keeps its parent's PATH"
 printf '@echo zzn-ran\r\n' > A/zzn.cmd
 printf '#!/bin/sh\nzzn\n' > s.sh

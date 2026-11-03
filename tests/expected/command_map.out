@@ -52,7 +52,7 @@ hash: zzp: not found
 unused: pruned
 == BASH_PATH becomes the PATH, once
 zzb-ran
-PATH starts with it
+PATH starts with it, after the own folder of this shell
 BASH_PATH=unset
 not in the environment
 == a nested shell keeps its parent's PATH

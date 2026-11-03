@@ -19,7 +19,9 @@
 #      newest release already carries makes no release, so a change to the manifest or the start file alone ships with
 #      the next new build);
 #   4. after the uploads, Bash.exe and the installer are downloaded back from their public URLs and must match their
-#      SHA-256s, or exit 1.
+#      SHA-256s (an installer left on the release by an earlier run: its own .sha256), or exit 1;
+#   5. this machine's own install (~/.bash/bin) is upgraded by running the downloaded installer --silent (PATH: its
+#      default, not added), then checked: the released build, sh.exe the same file (2026-11-02).
 # The token reaches curl on its standard input (`--config -`), never on a command line, and nothing prints it.
 # --dry-run: everything up to the first request, then what would be sent; needs no token and no network.
 set -u
@@ -114,6 +116,25 @@ got=$(curl -s -L "$url" | sha256sum | cut -c1-64)
 [ "$got" = "$sum" ] || { echo "release: $url gives SHA-256 $got, not $sum" >&2; exit 1; }
 echo "release: $tag = git ${head:0:7}: Bash.exe ($stamp) downloaded back, SHA-256 $sum matches: $url"
 surl="https://github.com/$REPO/releases/download/$tag/csharpBash-setup.exe"
-got=$(curl -s -L "$surl" | sha256sum | cut -c1-64)
-[ "$got" = "$setup_sum" ] || { echo "release: $surl gives SHA-256 $got, not $setup_sum" >&2; exit 1; }
-echo "release: csharpBash-setup.exe downloaded back, SHA-256 $setup_sum matches: $surl"
+# an installer already on the release (a retry) is checked against the release's own .sha256: a rebuild here is not
+# byte-identical (InstallGen's output differs from build to build), so this run's setup_sum names a different file
+exp=$setup_sum
+grep -qxF csharpBash-setup.exe <<< "$have" && exp=$(curl -s -L "$surl.sha256" | cut -c1-64)
+inst="$work/csharpBash-setup.exe"
+curl -s -L -o "$inst" "$surl" || { echo "release: could not download $surl" >&2; exit 1; }
+got=$(sha256sum < "$inst" | cut -c1-64)
+[ "$got" = "$exp" ] || { echo "release: $surl gives SHA-256 $got, not $exp" >&2; exit 1; }
+echo "release: csharpBash-setup.exe downloaded back, SHA-256 $exp matches: $surl"
+
+# 5. this machine's own install, upgraded "for free" by the installer just released, as a user gets it (the architect,
+#    2026-11-02: "publish should prolly upgrade it 'for free'?"): --silent, so PATH takes its default (not added);
+#    then the installed Bash.exe must report the released build and sh.exe be the same file. Every publish is thereby
+#    a real install of the shipped installer. A failure here comes after the release landed: it says so and exits 1.
+bin="$HOME/.bash/bin"
+"$inst" --silent > "$work/install.log" 2>&1; irc=$?
+[ $irc -eq 0 ] || { cat "$work/install.log" >&2; echo "release: the released installer exited $irc on this machine (the release itself landed)" >&2; exit 1; }
+istamp=$("$bin/Bash.exe" --version 2>/dev/null | tail -1 | sed 's/^ *//')
+[ "$istamp" = "$stamp" ] || { echo "release: $bin/Bash.exe reports '$istamp', not '$stamp' after the install" >&2; exit 1; }
+[ "$bin/sh.exe" -ef "$bin/Bash.exe" ] || grep -q "sh.exe: copy of Bash.exe" "$work/install.log" ||
+	{ echo "release: $bin/sh.exe is not Bash.exe after the install" >&2; exit 1; }
+echo "release: this machine's install upgraded by it: $bin/Bash.exe = $stamp; $(grep -o 'sh\.exe: \(hard link\|copy of\)[^\r]*' "$work/install.log" | head -1)"

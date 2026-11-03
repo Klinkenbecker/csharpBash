@@ -4,7 +4,8 @@
 # pushd, popd, dirs, trap, history, jobs and wait took `-Z` as an operand or ignored it; `kill -Z 1`
 # went on to signal; `trap -- 'cmd' SIG` (what `trap -p` prints) failed; readarray / typeset / local
 # were named mapfile / declare. The script runs by relative name from a temp dir, streams merged
-# inside, so every shell names it the same and keeps the order. Expected output: GNU bash via WSL.
+# inside, so every shell names it the same and keeps the order. Expected output: GNU bash via WSL, except pwd's usage
+# line, Git Bash's "pwd [-LPW]" since C#Bash accepts -W (2026-11-03; GNU bash's is [-LP]).
 d=$(mktemp -d) && cd "$d" || exit 1
 mkdir a b sub
 echo 'echo "sourced: ${BASH_SOURCE[0]} $#"' > lib.sh

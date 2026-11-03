@@ -1,0 +1,11 @@
+whoami: extra operand '/groups'
+Try 'whoami --help' for more information.
+rc=1
+whoami: extra operand 'a'
+Try 'whoami --help' for more information.
+rc=1
+whoami: extra operand 'x'
+Try 'whoami --help' for more information.
+rc=1
+no operand: rc=0
+whoami = id -un

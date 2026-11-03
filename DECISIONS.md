@@ -11284,3 +11284,208 @@ refused rename at each of the four steps (each left the old pair whole, 608, one
 report a fix answers. Running shells keep their build; a session's later launches get the new one (mixed builds within
 one long run are accepted). The quiet window remains only for compare3 before a publish (ListAgents; ask only sessions
 that are busy).
+
+## 2026-11-02 -- PUBLISHED: GitHub main = git f7e9816 = hg rev 616; release hg-616 = Bash.exe (612) + installer
+**Status:** Record. The architect: "ok, lets publish since there are no issues pending". Quiet window: only
+installer-a4 had a shell job (a sweep); asked it alone (the new rule), it said "quiet" (it admitted one stray `echo`
+during the run: immaterial to best-of-9/3). compare3 on deployed 612 (06:09-06:14; outputs identical in all three
+shells) -> README table and PERFORMANCE.md; case count 249. tools/publish.sh (06:15-06:18): the console suite on
+dist/Bash.exe 241/0, MERCURIAL_HISTORY.md (617 changesets), pushed d0f32ce..f7e9816; release hg-616: Bash.exe (612,
+SHA-256 d7086a92...bbe08067) and csharpBash-setup.exe (rebuilt from it, SHA-256 732aeddc...391d635a6; no local path
+inside, `strings` 0), each with its .sha256, downloaded back and matching. The API-based newest-release check worked:
+latest/download/ gave the new Bash.exe and installer with matching .sha256 at once (the API's /releases/latest lagged
+about 20 s). Contents since 604: 607, 608, 612, the two-rename deploy, the records.
+
+## 2026-11-02 -- BUILT: each publish upgrades this machine's install with the installer it released ("for free")
+**Status:** Active. The architect: "publish should prolly upgrade it 'for free'?" (his ~/.bash/bin was still 583).
+**release.sh step 5:** the released csharpBash-setup.exe, downloaded back to a file (step 4), is run `--silent` (PATH:
+its default, not added); then ~/.bash/bin/Bash.exe must report the released build and sh.exe be the same file (or the
+report say it is a copy). A failure comes after the release landed: it says so, exit 1. Every publish is now also a
+real install of the shipped installer (closing "a real install not verified" each time).
+**Fixed with it:** on a retry, an installer already on the release was compared with THIS run's rebuild, which is not
+byte-identical (InstallGen's output differs per build): it is now checked against the release's own .sha256.
+**Run (06:25, as a retry on hg-616):** the release and its four assets reused; Bash.exe and the installer downloaded
+back and matching (the installer by the release's .sha256, not the rebuild's); ~/.bash/bin upgraded 583 -> 612, sh.exe
+2 links, one index. The summary's sh.exe grep matched inside "Bash.exe: 2 written": tightened to the link line.
+
+## 2026-11-02 -- NEED (koliada-net-73): `pwd -W`, Git Bash's Windows-form option; awaiting the architect
+**Status:** Recorded; a feature, so it waits for his word. Low priority, worked around
+(`$(pwd -W 2>/dev/null || pwd)` in build/deploy-dev.sh).
+**Measured:** C#Bash 612: `pwd -W` -> "pwd: -W: invalid option / pwd: usage: pwd [-LP]", exit 2; plain `pwd` prints
+F:/Koliada/Tools/bash. Git Bash: `help pwd` "-W print the Win32 value of the physical directory"; `pwd -W` and `pwd -LW`
+print F:/Koliada/Tools/bash (its plain `pwd` is /f/Koliada/Tools/bash).
+**Claude's position:** accept `-W` (alone or combined) as Git Bash does: the physical directory in Windows form, which is
+what C#Bash's `pwd -P` already prints; scripts written for both shells then need no fallback. Nothing else changes.
+
+## 2026-11-03 -- BUILT: `pwd -W` accepted, as Git Bash (koliada-net-73's need; the architect: "accept and go")
+**Status:** Active. `pwd -W` (Git Bash: "print the Win32 value of the physical directory") is accepted alone or combined
+(`-LW`, `-WP`); C#Bash's pwd prints that drive form whatever the option, so -W changes nothing else. The usage line is
+Git Bash's `pwd [-LPW]` (GNU bash's is `[-LP]`): tests/expected/builtin_options.out (expected = GNU) now differs from
+GNU in those two lines, said in its header. It was "pwd: -W: invalid option", exit 2.
+**Test:** `pwd_w` (authored: GNU bash has no -W; Git Bash prints the same drive form and the same usage): red on 612
+(15 lines); mutations: -W refused again (19 red), the old usage text (2 red). Suite: console 239/0 (on the second run,
+see below), detached 239/0, Git on PATH 247/0.
+**Seen, not explained (watch it):** in the first console run `external_redirects` (2026-10-04's redirect case) failed
+once; alone it passed 35 of 35, and the console re-run passed. The runner kept no diff (my capture filtered it). That
+run started right after the build (load: a fresh binary being scanned?) [inferred, not shown]. Next time it fails: keep
+the full suite output.
+**Implemented by:** rev 620. Files: `Bash/Evaluator/Builtins.Shell.cs`, `Bash/Evaluator/Builtins.cs`,
+`tests/cases/pwd_w.sh`, its expected file, `tests/cases/builtin_options.sh` (header), `tests/expected/builtin_options.out`,
+`tests/run-tests.ps1`.
+
+## 2026-11-03 -- BLOCKED: the AOT build crashes under `dotnet publish` (environmental; rev 620 not deployed)
+**Status:** Open, for the architect. `bash tools/deploy.sh` for 620 failed twice at the AOT publish: MSBuild's run of
+ilc.exe (ILCompiler 8.0.25) "exited with code -1073741819" (0xC0000005, an access violation); deploy.sh stopped there,
+dist untouched (612, the two-name pair intact; the new swap never ran). NOT the change: rev 612's own source, which built
+on 2026-11-01, fails identically now (a clone, publish-aot.cmd). The SAME ilc on the SAME .rsp succeeds run directly
+(rc 0, 5 s), with or without vcvars64's environment. Ruled out: memory (15.8 GB free of 64), MSBuild node reuse
+(MSBUILDDISABLENODEREUSE=1 fails alike), the SDK (10.0.201 since 2026-04-10), ilc.exe (2026-02-12), a pending Windows
+restart (none; up since 2026-10-27). No Application Error event found. A hint only: Windows Update's
+ReportingEvents.log changed 2026-11-02 09:05. Not tried: a diagnostic build log (-v diag) of how MSBuild starts ilc, a
+reboot, another AOT project.
+
+## 2026-11-03 -- FINDINGS on the AOT crash: Windows Defender changed after the last good build (correlation only)
+**Status:** Open; the architect suspected Defender ("multiple crashed Search.exe alerts prolly driven from Windows
+Defender"). Defender's Operational log: intelligence 1.463.73.0 -> 1.463.93.0 at 2026-11-02T09:05Z (engine 1.1.26100.4
+unchanged); NEW server-side feature controls switched on at 2026-11-02T11:58Z (Features\Controls\381 = 1 and \203 = 1,
+an ECS config push); 22 dynamic-signature loads (event 2010) since the last good AOT build (2026-11-01T19:06Z). The
+only detection (1116, 2026-11-01T11:04Z) is unrelated: Typora and the hosts file. No Defender event in the crash
+window (2026-11-03T12:30-12:45Z); no Application Error for ilc.exe, nor for Search since 2026-10-02 (SearchApp.exe).
+**Claude's recommendation:** a reboot (his: every session is affected), then the deploy again; if it still crashes, a
+Defender exclusion for Bash/obj (admin, a security setting: his call); then a -v diag build log.
+
+## 2026-11-03 -- FINDINGS (2): the AOT crash needs dotnet.exe as the compiler's parent; no reboot (the architect)
+**Status:** Open. The architect: "a reboot is incredibly disruptive mutliple sessions in flight!" (so not that). A -v
+diag publish shows MSBuild runs ilc with exactly the command Claude ran directly; its extra environment
+(DOTNET_HOST_PATH, DOTNET_CLI_TELEMETRY_SESSIONID, DOTNET_CLI_DISABLE_PUBLISH_AND_PACK_RELEASE), added to a direct run
+inside vcvars64: rc 0. Under dotnet publish it dies: 0xC0000005 (out-of-process node), and 0xC0000409 (fail-fast)
+with the MSBuild server and node reuse off and -m:1. No Image File Execution Options mitigations for ilc.exe,
+dotnet.exe or cmd.exe, none system-wide; nothing in the Security-Mitigations logs, Defender's log, or Application
+Error in the crash window. So: only processes started by dotnet.exe crash; same command, input and environment
+succeed from a console. Fits outside interference with dotnet.exe's process tree (Defender's new feature controls of
+2026-11-02T11:58Z?) [inferred, unproven].
+**Options (his):** a Defender exclusion for the build (Bash/obj and the ilcompiler package folder) as a test, admin and
+reversible; or wait and retry (a server-side feature may change again); a reboot is ruled out.
+
+## 2026-11-03 -- FIXED (not deployed: the AOT build is blocked): whoami refuses an operand as GNU (koliada-net-7d)
+**Status:** Active in the source. koliada-net-7d's report; raised 04:39 with a position, built after the wait.
+**Was (612):** `whoami /groups` (Windows' whoami.exe usage) printed the user name, exit 0: the operand was ignored, so a
+check for the integrity label found nothing and looked like an answer. GNU coreutils 8.32: "whoami: extra operand
+'/groups'" and "Try 'whoami --help' for more information.", exit 1.
+**Fix:** an operand gives GNU's two lines and exit 1. Not a hand-off to System32's whoami.exe: Windows' own same-name
+programs are never run (FEATURES). Options still go to the PATH whoami as before (`-x`, `--version`).
+**Test:** `whoami_operand_gnu` (expected = GNU coreutils via WSL, LC_ALL=C): red on 612 (6 lines); green; the mutation
+(operand ignored again) red (15). Suite 240 passed, 0 failed, both modes; 248/0 with Git on PATH.
+**Implemented by:** rev 624. Files: `Bash/Evaluator/Builtins.Sys.cs`, `tests/cases/whoami_operand_gnu.sh`, its
+expected file, `tests/run-tests.ps1`.
+
+## 2026-11-03 -- FOUND: the AOT crash is the machine's COMMIT LIMIT, nearly exhausted (not Defender, not the code)
+**Status:** Found; the remedy is the architect's (his machine). Run with him watching Defender (05:08:35 local, 13:08:35Z):
+ilc printed "Insufficient memory to continue the execution of the program." (a third symptom, beside 0xC0000005 and
+0xC0000409). systeminfo: physical 65,294 MB, 14,213 MB free, but VIRTUAL memory (commit) max 73,486 MB (RAM + an 8 GB
+fixed C:\pagefile.sys), in use 72,458 MB, available 1,028 MB. ilc needs a few GB of commit; run from a console it fitted,
+under dotnet publish (whose own processes hold commit) it does not: allocation failures, hence the three crash forms.
+His crashing Search.exe fits the same cause [inferred]. Commit by program (wmic PrivatePageCount, summed):
+WindowsTerminal.exe 12.5 GB (one process), brave.exe 10.1 GB (64), claude.exe 6.7 GB (9), vmmem 3.1 GB, Typora 2.3 GB
+(11), mstsc 1.7 GB. Supersedes the Defender lead (correlation only).
+**Remedies (his):** free commit (browser tabs; the terminal's 12.5 GB, probably scrollback); or a larger or
+system-managed page file (admin; whether it takes effect without a restart: unverified here).
+
+## 2026-11-03 -- VERIFIED: the page file is FIXED at 8 GB (not dynamic), so commit cannot grow
+**Status:** For the architect ("the page file is 'dynamic' (unverified)"): wmic AutomaticManagedPagefile FALSE;
+pagefileset c:\pagefile.sys InitialSize 8192, MaximumSize 8192; registry PagingFiles "c:\pagefile.sys 8192 8192".
+C: has 120 GB free. Commit: 72,504 of 73,486 MB in use (982 MB available). Recommended: maximum 32768 (or system
+managed), via SystemPropertiesAdvanced; an increase taking effect without a restart is believed, not verified here.
+Then: the commit limit re-read, the deploy retried (620 pwd -W, 624 whoami).
+
+## 2026-11-03 -- DEPLOYED rev 626 (pwd -W 620, whoami 624): the first real two-rename swap; the commit limit freed
+**Status:** Done 05:52-05:55. The architect quit Brave (96 processes, 11.7 GB of commit): available commit 1.1 GB ->
+19,961 MB. The page file's new maximum (8192/65536, his change) did not take effect without a restart (allocated stayed
+8192 MB; the deploy before Brave's exit still failed). tools/deploy.sh: AOT publish OK; suite (-Detached) 243/0;
+battery 217 (baseline 216); "sh.exe is a hard link to Bash.exe (confirmed)"; rollback dist/*.rev612. The new swap's
+first real run: no temporary file left (no *deploy-new*), both names 626, one file index. Live: `pwd -W` prints the
+drive form; `whoami /groups` -> "extra operand", exit 1. One message each to the reporters (koliada-net-7d, -73); no
+broadcast. Still unexplained: processes hold ~42 GB of the ~72 GB commit; the rest is outside any process.
+
+## 2026-11-03 -- FIXED: diff on large files: Myers' O(ND) in linear space, not an n x m table (c-parser-ac)
+**Status:** Active. c-parser-ac's report; raised 07:30 with a position, built after the wait (no reply).
+**Was (626):** DiffFiles built `new int[n + 1, m + 1]` (10 GB at 50,000 lines: OutOfMemoryException, exit 9, the whole
+shell down, silent in a pipe) and normalized both lines again in every cell: quadratic, 9 / 35 / 134 ms at 1,000 /
+2,000 / 4,000 lines (measured; 50,000 lines ~20 s extrapolated). GNU: 1 ms at 50,000. The repro was NOT run on the
+live build: the allocation could have taken the machine's commit (memory check-memory-first).
+**Fix (Builtins.Find.cs):** each line normalized once and given an int id. Small inputs ((n+1)(m+1) <= 4,000,000)
+keep the table and its traceback, so every edit script the GNU-checked cases saw is unchanged; larger ones use
+DiffMyers: the common prefix and suffix, then Myers' middle snake (DiffBisect, the bisect form) splitting the rest,
+recursively, in linear space. The output code was already order-insensitive within a change run (normal, -u, -y).
+**Test:** `diff_large_gnu` (expected = GNU diffutils via WSL: 50,000 lines with one and with scattered changes, normal
+and -u, in a pipe, identical files, and 3,000 repetitive lines by their changed-line count, 645 as GNU's, which is
+minimal there). Stress, by hand: 6 random pairs of 3,000 lines over 20 values (~600 changes each): every C#Bash diff
+applied by GNU patch rebuilt the second file exactly, and each was as small as GNU's --minimal; ~95 ms each.
+Mutations (built, one line each): 4 of 4 red (no bisect, the reverse snake off by one: red only after the repetitive
+section was added, the split's y off by one, an insertion's position). Suite 241 passed, 0 failed, both modes;
+249/0 with Git on PATH. Existing diff, diff_label, diff_side_by_side_gnu unchanged and green.
+**Raised, separate, the architect's call:** a builtin that throws OutOfMemoryException takes the whole shell down
+(Evaluator's last-resort guard catches only IO/permission errors): every pipe stage and the output before it lost.
+Claude: catch it at the builtin boundary, "<name>: memory exhausted" (GNU's words), exit 2.
+**Found beside it:** C#Bash's awk has no srand() (refused as unsupported).
+**Implemented by:** rev 629. Files: `Bash/Evaluator/Builtins.Find.cs`, `tests/cases/diff_large_gnu.sh`, its expected
+file, `tests/run-tests.ps1`.
+
+## 2026-11-03 -- DEPLOYED rev 629 (diff on large files): suite 244/0 detached, battery 217
+**Status:** Done 07:53-07:56; commit 19 GB free before it. tools/deploy.sh: suite (-Detached) 244/0, battery 217
+(baseline 216), sh.exe re-linked and confirmed, rollback dist/*.rev626, no temporary file left. Live: c-parser-ac's
+repro (50,000 lines, one change) gives GNU's output, rc 1, also in a pipe; twice in 34 ms. One message, to the reporter.
+**Confirmed by the reporter (c-parser-ac, on 629):** its real case, two 424,439-line ~40 MB index files differing in
+one line: "417433c417433" with the changed line, rc 1, 631 ms, through a pipe. Closed.
+
+## 2026-11-03 -- GitHub issues #1 and #2 (the architect's): the start file disables the PowerShell tool; the README's checks
+**Status:** Built (#1) and written (#2's documentation); not published; the "less clumsy fix" of #2 is his to confirm.
+**#1** ("The claude.cmd script needs set "CLAUDE_CODE_USE_POWERSHELL_TOOL=0" ... If it is not set Claude tries to use
+Powershell before trying bash"): installer/claude.cmd sets it (his text, a comment naming the issue); docs/USING.md's
+start file too. tools/installer.sh rebuilt and its sandboxed check passed (the payload's claude.cmd carries it).
+**#2** ("The instructions for using with claude need clarification": check with `! bash --version`; Claude Code does not
+honor CLAUDE_CODE_GIT_BASH_PATH and scans PATH first; with WSL its bash.exe is preferred, he renamed it to _bash.exe,
+"a less clumsy fix is needed"): README: a step 4 "check it" (`! bash --version`, the last line `C#Bash build ...`); after
+"By hand", why it may not be C#Bash (Claude Code issue #94077, filed from here 2026-09-14, still open: the first
+bash.exe on PATH wins; WSL's launcher in System32 precedes any user folder) and the remedy: the start file, which gives
+Claude Code a PATH holding only C#Bash's folder. That this beats WSL's launcher WITHOUT renaming it is inferred from
+#94077's mechanism (discovery is a PATH search), NOT tested: this machine's System32 bash.exe was moved away long ago.
+Test it with WSL's bash.exe in place (his call: it is a system file).
+
+## 2026-11-03 -- MEASURED: Claude Code 2.1.316 honors CLAUDE_CODE_GIT_BASH_PATH ahead of PATH; README corrected
+**Status:** Corrects this morning's README text and DECISIONS entry ("Claude Code today ignores the variable"). The
+architect: "you can test it. Place UnixTools on the path higher than ~/.bash/bin, I think you will find the first PATH
+bash will win." UnixUtils has no bash.exe (only bin/sh.exe), so Git for Windows' F:/Tools/PortableGit/bin/bash.exe
+was the competitor, first on PATH, in headless Claude Code sessions (Haiku, `echo $BASH_VERSION $BASH`):
+A2 no variable: "4.4.23(1)-release /usr/bin/bash" (PATH discovery, as he said); A the variable set to C#Bash (PATH in
+forward slashes): "5.1.0-koliada C:/Users/guy/.bash/bin/Bash.exe"; A3 the same with a backslash PATH: C#Bash; B
+through the installed claude.cmd: C#Bash. So the first bash on PATH wins only without the variable; #94077 (filed
+2026-09-14, the variable never consulted) no longer reproduces on 2.1.316. README: no PATH reordering needed (his
+concern: WSL's launcher is in the SYSTEM PATH, which users will not reorder); make the variable reach Claude Code
+(setx then a NEW terminal, or the start file). Not tested: WSL's own launcher as the competitor (moved away here).
+
+## 2026-11-03 -- Docs: #94077 appears fixed (Claude Code 2.1.316)
+**Status:** The architect: "ok, so now we can fix the docs to reflect that #94077 appears to be fixed?" README (already,
+rev 633), docs/USING.md (the setx step: a NEW terminal; the variable wins over another bash.exe on PATH, measured; the
+old behavior without the variable; the `! bash --version` check), docs/PERFORMANCE.md (its historical sentence gains
+"fixed by 2.1.316"). History blocks in PROJECT_CONTEXT stay as written. The project memory claude-code-windows-bugs
+marks the defect FIXED. Not done (outward, his word): a comment on the upstream issue.
+
+## 2026-11-03 -- RULED + BUILT: the shell's own folder FIRST on its own PATH (a nested bash / sh is this shell)
+**Status:** Active. The architect: "Actually, thinking about, we still need ~/.bash/bin to be first on the path?", then
+"Yes, do it". Supersedes the rule that the folder is appended at the END "so a real Git bash still wins when present".
+**Why:** with Claude Code honoring CLAUDE_CODE_GIT_BASH_PATH (measured), Claude Code needs no PATH order; but INSIDE the
+shell a nested `bash` / `sh` (and make's sh) is found by PATH, and a default PATH puts WSL's launcher (System32) and Git
+ahead of a user folder; users will not reorder the system PATH (his point).
+**Built (ShellEnvironment.PrependOwnDirectoryToPath, was Append...):** after the Git-tools prepend, the executable's
+folder goes FIRST on the shell's own PATH (and so its children's); already there further on, it moves (listed once);
+the rest keeps its form and empty entries, a trailing empty entry dropped as before (it reads as the cwd). The system
+and user PATH are untouched. The installed folder holds only Bash.exe, sh.exe, claude.cmd: nothing else shadowed.
+**Test:** `own_dir_first` (authored: a decoy bash.exe, a copy of hostname.exe, first on the inherited PATH: the nested
+bash is this shell, `type -P bash` names it, the folder once and first): red on 629 (the decoy ran; the folder twice,
+last); the mutation (appended at the end again) red (5). `own_dir_first_sh` (AOT only: Bash.exe + sh.exe in one folder,
+a decoy sh.exe first): red on 629; checked by the deploy's AOT suite. Two cases encoded the old order and were adjusted,
+not weakened: path_two_forms (strips the folder from the front now), command_map (BASH_PATH's first entry follows the
+folder; a message reworded, an apostrophe had broken its single-quoted run string). Suite 242/0 both modes; 250/0 with
+Git on PATH. Docs: FEATURES, USING (step 4 of startup). Also recorded: C#Bash's jq has no --rawfile (jq 1.6 does).
+**Implemented by:** rev 635.

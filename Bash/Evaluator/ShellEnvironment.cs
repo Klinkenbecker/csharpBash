@@ -154,7 +154,7 @@ public sealed class ShellEnvironment
 
 		AugmentPathWithGitTools();
 		Timing.Mark("env.git");
-		AppendOwnDirectoryToPath();
+		PrependOwnDirectoryToPath();
 		Timing.Mark("env.own");
 
 		// The process's own PATH is an exit too (a program .NET or Windows starts for C#Bash reads it): the Windows form,
@@ -1069,22 +1069,27 @@ public sealed class ShellEnvironment
 		}
 
 	/// <summary>
-	/// On a machine without Git, nothing on PATH answers to `bash`; a nested `bash -c …` or
-	/// `bash script.sh` from a script would fail with 127. Appending this executable's own
-	/// directory (at the END, so a real Git bash still wins when present) makes the shell
-	/// reachable under its own name, as bash always is on a Unix PATH.
+	/// This executable's own directory FIRST on the shell's own PATH, so a nested `bash -c …`, `bash script.sh`, `sh`
+	/// (and the `sh` a program it starts, make, looks up) is this shell: never WSL's launcher, which a default Windows
+	/// PATH puts first (System32), nor a Git bash ahead of it. Only this process's PATH and its children's change; the
+	/// system and user PATH are untouched (the architect, 2026-11-03: "we still need ~/.bash/bin to be first on the
+	/// path?", "Yes, do it"). The installed folder holds only Bash.exe, sh.exe and claude.cmd, so nothing else is
+	/// shadowed; the folder found later on PATH (the installer's "yes") moves to the front, not listed twice. It was
+	/// appended at the END "so a real Git bash still wins when present" (a machine without Git needed it at all).
 	/// </summary>
-	private void AppendOwnDirectoryToPath()
+	private void PrependOwnDirectoryToPath()
 		{
 		string dir;
 		try { dir = AppContext.BaseDirectory.TrimEnd('\\', '/'); } catch { return; }
 		if (dir.Length == 0) return;
+		static string Key(string p) => p.Replace('/', '\\').TrimEnd('\\');
 		var path = Get("PATH");
-		var entries = PathDirs(path).Select(TranslateForm);   // `/c/x` as `C:/x`
-		if (entries.Any(e => string.Equals(e.Replace('/', '\\').TrimEnd('\\'), dir.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase))) return;
-		// a trailing `:` made `…::dir`, an empty entry (2026-10-17: Windows' launcher took one as the cwd); and the
-		// folder spelled with `/` was not recognized, so it was added again. NormalizePath reads the `;` mix.
-		Set("PATH", path.Length == 0 ? dir : path.TrimEnd(':') + ";" + dir);
+		var raw = PathDirs(path, keepEmpty: true);
+		bool Mine(string e) => string.Equals(Key(TranslateForm(e)), Key(dir), StringComparison.OrdinalIgnoreCase);   // `/c/x` as `C:/x`
+		if (raw.Count > 0 && Mine(raw[0])) return;
+		// the rest keeps its own form and its empty entries; NormalizePath reads the `;` mix (as the Git prepend's)
+		var rest = string.Join(":", raw.Where(e => !Mine(e))).TrimEnd(':');   // a trailing empty entry dropped, as before
+		Set("PATH", rest.Length == 0 ? dir : dir + ";" + rest);
 		}
 
 	private static long WindowsUid()

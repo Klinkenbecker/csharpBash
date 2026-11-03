@@ -25,10 +25,15 @@ To skip building it: run the installer (README, "Use it with Claude Code"), or d
        -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o dist
    ```
    ReadyToRun keeps the runtime and its JIT, so it is about 11 % faster than AOT in *steady state* — but only past roughly 1.2 million shell operations in a single invocation, which no Claude Code tool call approaches. Pointing Claude Code at `bin\Release` is a bad idea either way: every rebuild replaces the file under a live session, and the test runner kills stale interpreter processes before building.
-2. Set the variable for your user and restart Claude Code:
+2. Set the variable for your user, then start Claude Code from a NEW terminal (`setx` reaches only programs started
+   afterwards):
    ```powershell
-   setx CLAUDE_CODE_GIT_BASH_PATH "C:\path\to\Bash.exe"
+   setx CLAUDE_CODE_GIT_BASH_PATH "C:/path/to/Bash.exe"
    ```
+   Claude Code runs that shell even when another `bash.exe` (WSL's launcher in System32, Git's) comes first on PATH:
+   measured with Claude Code 2.1.316 on 2026-11-03. Earlier versions ignored the variable and took the first
+   `bash.exe` on PATH (Claude Code issue #94077); without the variable, that is still what happens. Check with
+   `! bash --version` in a session: its last line must read `C#Bash build …`.
 3. To go back to Git Bash, remove the variable (`setx` to an empty value, or System Properties → Environment Variables) and restart Claude Code.
 
 ### Start Claude Code with no PATH of its own
@@ -41,13 +46,14 @@ rem claude.cmd: Claude Code with no tool PATH of its own; C#Bash gets the full P
 rem Adjust the two C#Bash paths, and claude.exe's if your installer put it elsewhere.
 setlocal
 set "BASH_PATH=%PATH%"
+set "CLAUDE_CODE_USE_POWERSHELL_TOOL=0"
 set "CLAUDE_CODE_GIT_BASH_PATH=C:/path/to/Bash.exe"
 set "PATH=C:/path/to"
 "%USERPROFILE%/.local/bin/claude.exe" %*
 endlocal
 ```
 
-`setlocal` keeps the narrowed PATH out of the console you start it from, and `%*` passes your arguments (`--resume`, …) through. Anything `claude.exe` starts by itself rather than through the shell (the status line, hooks, MCP servers) then sees only that narrow PATH, so give those commands full paths: `C:/Windows/py.exe statusline.py`, not `py statusline.py`.
+`setlocal` keeps the narrowed PATH out of the console you start it from, and `%*` passes your arguments (`--resume`, …) through. `CLAUDE_CODE_USE_POWERSHELL_TOOL=0` stops Claude Code reaching for PowerShell before bash. The installer's `claude.cmd` is this file, finding its own folder. Anything `claude.exe` starts by itself rather than through the shell (the status line, hooks, MCP servers) then sees only that narrow PATH, so give those commands full paths: `C:/Windows/py.exe statusline.py`, not `py statusline.py`.
 
 ### Getting the best out of it
 
@@ -69,7 +75,7 @@ Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracki
 1. The environment is imported; Windows' `Path` becomes `PATH`. **`$PATH` has two forms.** Inside the shell it reads in GNU/MSYS form, `:`-separated, `/c/x:/f/y`, whatever form it arrived in, so `IFS=:` and the POSIX idioms work as in any bash. An assignment may use that form, Windows form (`C:/x;F:/y`, either slash) or both mixed (`PATH="$PWD/bin:$PATH"`): it is converted on the way in. Empty entries stay as given; a one-letter relative entry is written `./A`, because `A:/x` reads as drive A's `/x`. Every program the shell starts gets PATH in Windows form with forward slashes, `C:/x;F:/y`: never a backslash, never an empty entry. `$PWD` and `$HOME` stay `C:/x`, so a test such as `case ":$PATH:" in *":$HOME/bin:"*)` does not match; compare in one form.
 2. **`BASH_PATH`**, if set and not empty, becomes `PATH` and is then removed, from the process environment too, so a nested shell keeps its parent's PATH. It lets a launcher keep its own PATH narrow and still hand the shell a full one (see [the start file](#start-claude-code-with-no-path-of-its-own) above).
 3. When `git.exe` is on PATH, Git for Windows' `usr/bin` and `mingw64/bin` are put in front of it, exactly as Git Bash does, so `tar`, `perl`, `ssh` and any tool outside the embedded set resolve the same way.
-4. The shell's own directory is added at the end of PATH, so a nested `bash` always resolves, Git or no Git.
+4. The shell's own directory is put FIRST on its PATH (moved there if it is already further on), so a nested `bash`, an `sh`, and the `sh` a program it starts looks up (make) are this shell, even when another `bash.exe` or `sh.exe` (WSL's launcher in System32, Git's) comes first on the PATH it was given. Only the shell's own PATH and its children's change; the system and user PATH are untouched. (Until 2026-11-03 it was added at the end, so another bash won.)
 5. `HOME` (forward-slash form; the Windows profile when unset), `BASH`, `SHELL`, `SHLVL`, `UID`, `OSTYPE=msys` and the other bash variables are set; `PYTHONIOENCODING=utf-8` is exported when unset, so a piped Python prints UTF-8 instead of crashing on `✓`. Output is UTF-8, with or without a console.
 6. Startup files: a login shell (`-l`) reads `/etc/profile`, then the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`; an interactive shell reads `~/.bashrc` (or `--rcfile`); a non-interactive one (`-c`, a script, every Claude Code call) reads only `$BASH_ENV`.
 

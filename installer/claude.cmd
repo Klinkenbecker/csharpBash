@@ -9,6 +9,8 @@ if not exist "%USERPROFILE%/.local/bin/claude.exe" (
   exit /b 1
 )
 set "BASH_PATH=%PATH%"
+rem without this Claude Code tries PowerShell before bash (GitHub issue #1)
+set "CLAUDE_CODE_USE_POWERSHELL_TOOL=0"
 set "CLAUDE_CODE_GIT_BASH_PATH=%BIN%Bash.exe"
 set "PATH=%BIN:~0,-1%"
 "%USERPROFILE%/.local/bin/claude.exe" %*
