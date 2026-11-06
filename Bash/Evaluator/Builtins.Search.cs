@@ -283,7 +283,8 @@ public sealed partial class Builtins
 		foreach (var p in o.All('e')) patterns.AddRange(p.Split('\n'));
 		foreach (var f in o.All('f'))
 			{
-			try { patterns.AddRange(ShellEncoding.ReadAllLines(ShellEnvironment.TranslatePath(f))); }
+			// a pattern file is lines: a Windows program's CRLF ends one (DECISIONS 2026-11-05 "RULED: … CRLF")
+			try { patterns.AddRange(ShellEncoding.ReadAllLines(ShellEnvironment.TranslatePath(f)).Select(ShellEncoding.CrlfBody)); }
 			catch (Exception ex) { Console.Error.WriteLine($"grep: {f}: {IoError(ex)}"); return 2; }
 			}
 		var operands = new List<string>(o.Operands);
@@ -309,6 +310,8 @@ public sealed partial class Builtins
 			re = new Regex(pat, RegexOptions.CultureInvariant | (icase ? RegexOptions.IgnoreCase : RegexOptions.None));
 			}
 		catch (ArgumentException ex) { Console.Error.WriteLine($"grep: {ex.Message}"); return 2; }
+		// a pattern that names the CR itself (`grep -c $'\r'`, a check for CRLF files) is matched against the whole line
+		bool namesCr = patterns.Any(p => p.Contains('\r') || (pcre && p.Contains("\\r", StringComparison.Ordinal)));
 
 		// inputs
 		var inputs = new List<(string name, string? path)>();
@@ -359,7 +362,10 @@ public sealed partial class Builtins
 					lineNo++;
 					long lineOff = offset;
 					offset += ShellEncoding.Utf8.GetByteCount(line) + 1;
-					bool m = re.IsMatch(line);
+					// a Windows program's CRLF: the CR is the line's end, not its text, so `$` and -x see the line without it;
+					// the line is printed as it came, CRLF and all (DECISIONS 2026-11-05 "RULED: … CRLF")
+					string body = nullData || namesCr ? line : ShellEncoding.CrlfBody(line);
+					bool m = re.IsMatch(body);
 					if (invert) m = !m;
 					if (!m)
 						{
@@ -393,7 +399,7 @@ public sealed partial class Builtins
 						}
 					if (onlyMatching)
 						{
-						foreach (Match mm in re.Matches(line))
+						foreach (Match mm in re.Matches(body))
 							{
 							var (ki, kv) = KeptSpan(mm);   // `\K` (-P): only the kept part is printed
 							if (kv.Length > 0) PrintLine(name, lineNo, lineOff + ShellEncoding.Utf8.GetByteCount(line[..ki]), kv, ':', showName, lineNum, byteOffset, nameSep, term);
@@ -510,6 +516,7 @@ public sealed partial class Builtins
 		public Dictionary<string, int> Labels = new(StringComparer.Ordinal);
 		/// <summary>`l`'s wrap width when it names none: -l N, else GNU's 70; 0 never wraps.</summary>
 		public int LineLength = 70;
+		public bool Crlf;   // a CRLF ends a line (DECISIONS 2026-11-05 "RULED: Windows programs' CRLF lines"); see SedNamesCr
 		}
 
 	private int Sed(List<string> args)
@@ -533,9 +540,13 @@ public sealed partial class Builtins
 			scripts.Add(files[0]); files.RemoveAt(0);
 			}
 		SedProgram prog;
-		try { prog = SedCompile(string.Join("\n", scripts), ere); }
+		// a script that names the CR (`s/\r$//`, dos2unix's idiom) sees it as data, as before the CRLF rule
+		var scriptText = string.Join("\n", scripts);
+		bool crlf = !nullData && !SedNamesCr(scriptText);   // set on the program below
+		try { prog = SedCompile(scriptText, ere); }
 		catch (UnsupportedOptionException) { throw; }
 		catch (Exception ex) { Console.Error.WriteLine($"sed: -e expression #1, char {(ex as SedSyntaxException)?.At ?? 0}: {ex.Message}"); return 1; }
+		prog.Crlf = crlf;
 		if (o.Get('l') is string ll)
 			prog.LineLength = int.TryParse(ll, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var width)
 				? width : throw new UnsupportedOptionException("sed", $"-l {ll}", "invalid line length");
@@ -581,7 +592,7 @@ public sealed partial class Builtins
 				int code;
 				try
 					{
-					using (var input = new SedInput(new LfReader(src), f, sep))
+					using (var input = new SedInput(new LfReader(src), f, sep) { Crlf = prog.Crlf })
 					using (var w = new StreamWriter(ShellFile.Create(temp), ShellEncoding.Utf8) { NewLine = "\n" })
 						code = SedRun(prog, input, new SedOut(w, sep), shared, noAuto);
 					string? backup = backupSuffix is null ? null
@@ -606,7 +617,7 @@ public sealed partial class Builtins
 			int rc = 0;
 			foreach (var f in files.Count == 0 ? ["-"] : files)
 				{
-				using var input = new SedInput([f], sep);
+				using var input = new SedInput([f], sep) { Crlf = prog.Crlf };
 				int code = SedRun(prog, input, shared.Stdout, shared, noAuto);
 				rc = Math.Max(rc, input.Rc);
 				if (code != 0 || shared.Quit) return code != 0 ? code : rc;
@@ -614,7 +625,7 @@ public sealed partial class Builtins
 			return rc;
 			}
 		// all files form one stream
-		using (var input = new SedInput(files.Count == 0 ? ["-"] : files, sep))
+		using (var input = new SedInput(files.Count == 0 ? ["-"] : files, sep) { Crlf = prog.Crlf })
 			{
 			int code = SedRun(prog, input, shared.Stdout, shared, noAuto);
 			return code != 0 ? code : input.Rc;
@@ -641,15 +652,26 @@ public sealed partial class Builtins
 		public SedInput(List<string> files, char sep) { _files = files; _sep = sep; }
 		public SedInput(TextReader r, string name, char sep) { _files = []; _sep = sep; _r = r; _opened = Name = name; }
 
-		/// <summary>The next line, and whether its separator ended it; false after the last line of the last file.</summary>
-		public bool Next(out string line, out bool ended)
+		/// <summary>Whether a CRLF ends a line (the CR not in the pattern space): off under -z and for a script that names the CR.</summary>
+		public bool Crlf { get; init; }
+
+		/// <summary>The next line, and how its separator ended it; false after the last line of the last file.</summary>
+		public bool Next(out string line, out SedEnd ended)
 			{
 			while (_r is not null || Open())
 				{
-				if (ShellEncoding.ReadRecord(_r!, _sep, out ended) is string l) { line = l; Name = _opened; return true; }
+				if (ShellEncoding.ReadRecord(_r!, _sep, out bool sepEnded) is string l)
+					{
+					// a Windows program's CRLF: the CR is the line's end, not its text, and goes back out with it
+					// (DECISIONS 2026-11-05 "RULED: Windows programs' CRLF lines")
+					ended = !sepEnded ? SedEnd.None : Crlf && l.Length > 0 && l[^1] == '\r' ? SedEnd.Crlf : SedEnd.Lf;
+					line = ended == SedEnd.Crlf ? l[..^1] : l;
+					Name = _opened;
+					return true;
+					}
 				Close();
 				}
-			line = ""; ended = true;
+			line = ""; ended = SedEnd.Lf;
 			return false;
 			}
 
@@ -706,16 +728,28 @@ public sealed partial class Builtins
 			W.Write(s);
 			}
 
-		public void Line(string s, bool ended)
+		public void Line(string s, SedEnd ended)
 			{
 			if (_owed) { W.Write(_sep); _owed = false; }
-			if (ended) W.Write(s + _sep);
+			if (ended != SedEnd.None) W.Write(ended == SedEnd.Crlf ? s + "\r" + _sep : s + _sep);
 			else { W.Write(s); _owed = true; }
 			}
 
 		/// <summary>Write the owed newline now.</summary>
 		public void Settle() { if (_owed) { W.Write(_sep); _owed = false; } }
 		}
+
+	/// <summary>How a line ended: not at all (the end of the input), with its separator, or with a CRLF (a Windows
+	/// program's line end, the CR written back with the LF).</summary>
+	private enum SedEnd : byte { None, Lf, Crlf }
+
+	/// <summary>The CR a CRLF line puts back when N, G or H joins another line after it with a newline.</summary>
+	private static string CrOf(SedEnd e) => e == SedEnd.Crlf ? "\r" : "";
+
+	/// <summary>A script that names the CR itself (`\r`, `\x0d`, `\o015`, `\d013`, or a CR): it sees CRs as data.</summary>
+	private static bool SedNamesCr(string s) =>
+		s.Contains('\r') || s.Contains("\\r", StringComparison.Ordinal) || s.Contains("\\x0d", StringComparison.OrdinalIgnoreCase)
+		|| s.Contains("\\o015", StringComparison.Ordinal) || s.Contains("\\d013", StringComparison.Ordinal);
 
 	/// <summary>An error sed finds while running (GNU's panic): reported as "sed: MESSAGE".</summary>
 	private sealed class SedRuntimeException(string message) : Exception(message);
@@ -1059,7 +1093,7 @@ public sealed partial class Builtins
 		// without, so `x`, `g` and `G` there, and a last file that was empty, came out unlike GNU.
 		foreach (var c in prog.Cmds) { c.InRange = false; }
 		string hold = "";
-		bool holdEnded = true, psEnded = true;
+		SedEnd holdEnded = SedEnd.Lf, psEnded = SedEnd.Lf;
 		int lineNo = 0;
 		string? restart = null;      // D: what is left of the pattern space, for a cycle that reads nothing
 		var appendQueue = new List<string>();
@@ -1099,7 +1133,7 @@ public sealed partial class Builtins
 						break;
 						}
 					case 'p': output.Line(ps, psEnded); pc++; continue;
-					case 'P': { int nl = ps.IndexOf('\n'); if (nl < 0) output.Line(ps, psEnded); else output.Line(ps[..nl], true); pc++; continue; }
+					case 'P': { int nl = ps.IndexOf('\n'); if (nl < 0) output.Line(ps, psEnded); else output.Line(ps[..nl], SedEnd.Lf); pc++; continue; }
 					case 'n':
 						{
 						if (!noAuto) output.Line(ps, psEnded);
@@ -1110,7 +1144,7 @@ public sealed partial class Builtins
 					case 'N':
 						{
 						if (!input.Next(out var next, out var nextEnded)) { if (!noAuto) output.Line(ps, psEnded); autoprint = false; deleted = true; break; }
-						ps = ps + "\n" + next; psEnded = nextEnded; lineNo++;
+						ps = ps + CrOf(psEnded) + "\n" + next; psEnded = nextEnded; lineNo++;   // a CRLF line keeps its CR inside
 						pc++; continue;
 						}
 					case 's':
@@ -1143,9 +1177,9 @@ public sealed partial class Builtins
 					case '=': output.Text(lineNo + "\n"); pc++; continue;
 					case 'l': output.Text(SedVisible(ps, cmd.QCode >= 0 ? cmd.QCode : prog.LineLength) + "\n"); pc++; continue;
 					case 'h': hold = ps; holdEnded = psEnded; pc++; continue;
-					case 'H': hold = hold + "\n" + ps; holdEnded = psEnded; pc++; continue;
+					case 'H': hold = hold + CrOf(holdEnded) + "\n" + ps; holdEnded = psEnded; pc++; continue;
 					case 'g': ps = hold; psEnded = holdEnded; pc++; continue;
-					case 'G': ps = ps + "\n" + hold; psEnded = holdEnded; pc++; continue;
+					case 'G': ps = ps + CrOf(psEnded) + "\n" + hold; psEnded = holdEnded; pc++; continue;
 					case 'x': (ps, hold) = (hold, ps); (psEnded, holdEnded) = (holdEnded, psEnded); pc++; continue;
 					case 'z': ps = ""; pc++; continue;
 					case 'F': output.Text(input.Name + "\n"); pc++; continue;

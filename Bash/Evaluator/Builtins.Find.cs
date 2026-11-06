@@ -201,7 +201,12 @@ public sealed partial class Builtins
 				return new FindPred((e, s, b) => true);
 			case "-newer":
 				{
-				var refTime = File.GetLastWriteTimeUtc(ShellEnvironment.TranslatePath(FindArg(a, ref i, t)));
+				// a missing reference is GNU's error before any walk, exit 1, as -samefile: File.GetLastWriteTimeUtc
+				// answers 1601-01-01 for one, so every file was "newer" and listed, exit 0 (c-parser-ac, 2026-11-05)
+				var name = FindArg(a, ref i, t);
+				var refPath = ShellEnvironment.TranslatePath(name);
+				if (!File.Exists(refPath) && !Directory.Exists(refPath)) throw new Exception($"'{name}': No such file or directory");
+				var refTime = File.GetLastWriteTimeUtc(refPath);
 				return new FindPred((e, s, b) => e.Info.LastWriteTimeUtc > refTime);
 				}
 			case "-newermt": case "-newerct": case "-newerat":

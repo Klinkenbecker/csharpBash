@@ -11489,3 +11489,220 @@ not weakened: path_two_forms (strips the folder from the front now), command_map
 folder; a message reworded, an apostrophe had broken its single-quoted run string). Suite 242/0 both modes; 250/0 with
 Git on PATH. Docs: FEATURES, USING (step 4 of startup). Also recorded: C#Bash's jq has no --rawfile (jq 1.6 does).
 **Implemented by:** rev 635.
+
+## 2026-11-03 -- DEPLOYED 635 and PUBLISHED: GitHub main = git 93b0a6e = hg rev 636; release hg-636
+**Status:** Record. The architect: "if it passes, we should publish". Deploy 12:09-12:13: AOT suite (-Detached) 246/0
+(own_dir_first_sh among them), battery 217, sh.exe re-linked; live: the dist folder first on the shell's PATH, a
+nested sh is C#Bash. Quiet machine (all seven sessions idle: no message needed); compare3 on 635 (12:13-12:18; outputs
+identical in all three shells) -> README table and PERFORMANCE.md; case count 254. publish.sh (12:18-12:21): console
+suite on dist 246/0, MERCURIAL_HISTORY.md (637 changesets), pushed f7e9816..93b0a6e; release hg-636: Bash.exe (635,
+SHA-256 90a12561...973e2) and csharpBash-setup.exe (02888644...ff581fc), each with .sha256, downloaded back and
+matching, the latest/ links too; ~/.bash/bin upgraded to 635 by the released installer (its claude.cmd now sets
+CLAUDE_CODE_USE_POWERSHELL_TOOL=0). Contents since 616: 620, 624, 629, 635, GitHub issues #1 and #2's changes, the
+#94077 docs, the release's local upgrade. GitHub issues #1 and #2 left open (closing: his word).
+**Closed (the architect: "Yup, close them"):** GitHub issues #1 and #2, each with a comment naming release hg-636 and
+what changed (#1: claude.cmd sets CLAUDE_CODE_USE_POWERSHELL_TOOL=0; #2: the check step, the measured #94077 fix, the
+own-folder-first rule), state closed (completed).
+
+## 2026-11-05 -- FIXED: find -newer with a missing reference is GNU's error, exit 1 (c-parser-ac)
+**Status:** Active. c-parser-ac's report; raised 05:38 with a position, built after the wait (no reply).
+**Was (635):** `find t -newer missing.txt -type f` listed every file, exit 0 (and `-newer missing -o -print` printed
+nothing, exit 0): File.GetLastWriteTimeUtc answers 1601-01-01 for a missing file, so everything was "newer". GNU 4.8:
+"find: 'missing.txt': No such file or directory", exit 1, nothing listed. C#Bash's -samefile and -newermt already
+refused as GNU. The reporter's check ("nothing written since REF") passed on a typo.
+**Fix:** -newer checks the reference exists (a file or a folder), else the same exception as -samefile (GNU's message,
+exit 1, before the walk).
+**Test:** `find_newer_missing_gnu` (expected = GNU via WSL, LC_ALL=C): red on 635 (3 lines); green; the mutation (no
+check) red (7). Suite 243/0 both modes; 251/0 with Git on PATH.
+**Found beside it (a feature gap):** -anewer, -cnewer and -newerXY are not in-process: they go to the PATH find (here
+the 1997 UnixUtils one, which refuses -newerXY).
+**Implemented by:** rev 639.
+**Deployed 639 (05:58):** suite (-Detached) 247/0, battery 217, sh.exe re-linked; live: `find T -newer <missing>` ->
+"No such file or directory", exit 1. One message, to the reporter.
+**Confirmed by the reporter (c-parser-ac, on 639):** the original repro: GNU's message, exit 1, nothing listed; the
+existing-reference control lists only b.txt. Closed.
+
+## 2026-11-05 -- FIXED: a native child's unread stdin is given back to the pipeline stage (the 2026-11-01 spike, built)
+**Status:** Active. Built on the work-the-list ruling (the architect, 2026-11-05: "So that's 9 issues, with nothing
+being done about them…"); the spike had his "2/ go". It also answers nupkg-33's report the same day:
+`printf 'a\nb\nc\n' | while read -r x; do echo "got $x"; hg version -q > /dev/null; done` printed only "got a"
+(GNU: all three). Same cause as koliada-net-73's `grep -f <(hg)` and the 2026-10-10 loop limitation.
+**Was (639):** FeedChild copied the stage's pipe into the child's OS pipe to the end and was never joined: what the
+child did not read was lost, and the feeder went on eating input meant for the next command.
+**Fix (the spike's design, DECISIONS 2026-11-01):** for a pipeline stage's pipe only (`PipeBuffer.Of(ConsoleMux.RawIn)`),
+the shell keeps its own read end of the child's stdin pipe; the feeder reads 4 KB at a time with a read a
+CancellationToken wakes (Monitor, no polling); after the child exits: cancel, read back what is in the OS pipe
+(PeekNamedPipe + ReadFile, never blocking; it also frees a feeder blocked on a full pipe), Join (10 s net: on a
+timeout nothing is given back, as before), read the rest, and `PipeBuffer.Unread` it, then what the feeder held, at
+the front of the stage's pipe. `< file` and here-docs are untouched (files are shared already). The spike's switch
+(BASH_SPIKE_NO_GIVEBACK) is gone.
+**Test:** `stdin_giveback`, 7 probes (expected = Git Bash): red on 639 (5 lines); green. Mutations: no Unread red (10),
+the give-back path off red (10), feeder not stopped red (2); dropping InHand SURVIVES: unreachable by design (the shell
+holds a read end until after the Join, so a write cannot break part-way; InHand is a defensive net). Suite 244/0 console
+and detached, 252/0 with Git's cmd on PATH (commit 18.7 GB free).
+**Still open (the spike's findings, separate):** a nested C#Bash `read` takes a whole pipe (GNU reads a pipe a byte
+at a time), which give-back cannot return; feeding a native child is slow (1M lines into findstr ~250-375 ms vs Git
+Bash's 73).
+**Implemented by:** rev 642.
+
+## 2026-11-05 -- GO: unzip in-process, the most-used options (priority; koliada-net-b9's CRLF report)
+**Status:** Active (building). The architect: "add unzip with 'most used' options (that are not complex) - priority
+addition", after asking "what is involved in unzip as a builtin for bash?". The report (koliada-net-b9; the architect:
+"It is a bug"): `unzip -l x.nupkg | grep 'dll$'` finds nothing, because UnxUtils' unzip.exe (UnZip 5.42, 2001, first
+on PATH) writes CRLF. Measured: Git Bash passes the CR too; WSL's UnZip 6.00 writes LF (0 CR of 10 lines). So the
+reference (GNU/Linux, the 2026-10-03 rule) has no CR, and an in-process unzip writes LF like every builtin.
+**Not done instead:** stripping CR from a native program's output in pipes/files/`$( )`. It reverses the ratified
+2026-10-03 "child streams byte-transparent", and it corrupts binary data: a PNG starts `89 50 4e 47 0d 0a 1a 0a`
+(read from C:/Windows/Web/Screen/img101.png), so `git show HEAD:x.png > x.png` would break. OPEN (the architect's):
+whether "It is a bug" covers other native CRLF writers (UnxUtils tar/gzip/zip/cksum, cmd); the position: replace a
+CRLF tool Claude uses with a builtin, case by case; the transport stays byte-transparent.
+**Scope (reference: UnZip 6.00, Debian, via WSL; measured 2026-11-05):** `unzip [-lptonqj] [-d exdir] file[.zip]
+[member ...] [-x xmember ...] [-d exdir]`: list (-l, -q drops "Archive:", -qq the header/footer), test (-t), pipe (-p),
+extract (default; -o overwrite, -n never, else UnZip's replace? prompt: y/n/A/N/r, EOF = None, exit 1), -j junk paths,
+-d (attached or separate, before or after the archive), members and -x as UnZip's wildcards (* ? [..], across /),
+file, file.zip, file.ZIP; UnZip's messages byte for byte (`%11s: %-22s  `, padded by bytes), streams and exit codes
+(0, 1 warning, 2 bad CRC, 9 not found / not a zip, 10 -d without a folder, 11 no match); "../" components and absolute
+paths stripped with UnZip's warnings, and nothing written outside the target folder (a final full-path check; `\` is
+a separator, as on Windows); mtimes from the entry's time (folders with an entry, at the end). Engine: .NET's
+System.IO.Compression (in the box); CRC-32 checked by our own table.
+**Handed to the PATH unzip (said, logged):** any other option (-v, -Z, -c, -f, -u, -a, -L, -C, -X, -P, …), no archive
+operand (usage), an encrypted entry, a compression method .NET cannot read (bzip2, LZMA, …), a symbolic-link entry.
+**Not covered, stated:** names without the UTF-8 flag that use bytes over 127 (UnZip reads them as CP437); the
+extended-timestamp field (UnZip prefers it; .NET reads the DOS time, so an mtime can differ by a second).
+**Acceptance:** a case (expected = UnZip 6.00 via WSL) covering each form above, red on 643; the reporter's repro
+(`unzip -l <nupkg> | grep -c $'\r'` = 0, `grep 'dll$'` finds the DLLs); mutations red (padding, path stripping, the
+prompt's EOF); the suite three ways; Bash.exe's size growth MEASURED and reported (if large, to the architect before
+deploying); deploy; one message to koliada-net-b9; the global Known-limits line reworded (unzip is in-process).
+
+## 2026-11-05 -- FOUND + FIXED: every AOT publish since 2026-10-18 carried a stale Bash.pdb (never shipped); publish-aot.cmd refuses one
+**Status:** Active. The global standing order (2026-11-05: no debug symbols in any release build).
+**Found:** an AOT publish to a scratch folder held Bash.pdb (35,147,776 bytes, dated 2026-10-18 09:04) beside Bash.exe:
+`Bash/bin/x64/Release/net8.0/win-x64/native/Bash.pdb`, left by a publish before `-p:DebugType=none`, copied into every
+publish since (publish-aot.cmd cleared obj/, not bin/). dist.staging/ held the same file. **Never shipped:** deploy
+moves only Bash.exe into dist/; checked dist/, the installer payload and setup exe, the installed copy and every
+release's assets (no .pdb; no MPDB, no RSDS record in Bash.exe).
+**Fix:** publish-aot.cmd also clears `Bash\bin\x64\Release`, and fails if the output holds a `.pdb` (the order's
+"after every publish, look"); the project sets `DebugType none` for Release (rev 643). Checked: the publish now holds
+only Bash.exe; the guard fails on a folder holding a .pdb and passes on the clean output (control).
+
+## 2026-11-05 -- BUILT: unzip in-process (UnZip 6.00's most-used forms; the GO above)
+**Status:** Active. Bash/Evaluator/Builtins.Unzip.cs; help names Debian's manual page for UnZip 6.00.
+**As the reference (measured in WSL first, then matched):** `%11s: %-22s  ` lines padded by BYTES, the outcome
+written after ("bad CRC" on stderr with stdout's line left open; invalid deflate data "  error:  invalid compressed
+data to inflate"; quiet or piped damage named at the end); cautions on stderr, on stdout under -t, never under -l;
+exit 11 when a member matches nothing (-l: only when nothing at all matched), 0 for an unmatched -x; a trailing `/`
+of -d dropped once; the "may be a plain executable" note only for an executable file (the exec bit there; here what
+`test -x` says); the extended timestamp preferred, in local time; `..` components skipped (stdout warning), `/` and
+a drive stripped (stderr warning), exit 1. Covered after all: the extended timestamp (read from the directory).
+**Tests:** `unzip_gnu` (expected = UnZip 6.00 via WSL, 420 lines, byte-identical): red on 642 (475 lines: the
+UnxUtils unzip's CRLF and older format). `unzip_handoff` (authored, read line by line): encrypted, bzip2, a symlink
+entry, -v, no archive and -lt are handed over and nothing is written first; such archives still list in-process.
+A first fixture set was wrong (Python's writestr dropped the encryption bit and bzip2: both extracted in-process);
+rebuilt by patching the header bits, confirmed by UnZip's `-Z` (B, bzp2, lrwx) before use.
+Mutations: padding 21 red (128), `..` kept red (7), EOF read as yes red (11), -l's exit rule red (2), extended
+timestamp ignored red (4), CRC unchecked red (7), test cautions to stderr red (6); the final full-path check SURVIVES:
+unreachable once `..`, `/`, drives and `:*?"<>|` are handled (a second line of defense; with `..` kept it is what
+stopped the write outside the folder).
+**Size:** AOT Bash.exe 7,936,000 bytes vs 7,821,312 (642): +114,688 (+1.5%), zlib and the builtin together.
+**Suite:** 245/1 console, detached, and 253/1 with Git's cmd on PATH: the one failure help_builtin's count of builtins
+(133 -> 134, updated; passes).
+**Still open:** names without the UTF-8 flag using bytes over 127 (UnZip reads CP437); Windows device names (CON, NUL)
+as entry names; -q's form of invalid deflate data on extraction and -t (unmeasured; the piped form is used).
+**Implemented by:** rev 645.
+
+## 2026-11-05 -- FIXED: a timeout that expired on an in-process command left the shell interrupted (koliada-net-forms-cb)
+**Status:** Active. koliada-net-forms-cb's report; raised with a position, built after the wait (no objection).
+**Was (642):** `for r in …; do timeout 300 find "$r" …; done` ended with "Unhandled Exception:
+Bash.Evaluator.InterruptException", a .NET stack trace and exit 9 (134 here); the rest of the script never ran. The
+report blamed Claude Code moving the call to the background: not so. `timeout` stops an in-process command by
+raising this shell's interrupt; the command runs in its own shell, which stops on its PARENT's flag and clears only its
+own, so this shell's stayed set, and its next check (the `for` loop's next pass) threw with nothing to catch it on the
+-c, script and stdin paths. The reporter's control (one command, no loop after it) checked nothing afterwards.
+`sleep` did not show it. GNU: each expiry is 124 and the script goes on.
+**Fix:** timeout clears the interrupt it raised once the command has ended (an interrupt already pending, a Ctrl+C,
+is left); and a net: an InterruptException reaching the top of a non-interactive shell ends it as SIGINT ends bash,
+the EXIT trap and 130, never a stack trace.
+**Test:** `timeout_loop_gnu` (expected = GNU via WSL): in-process find and yes under timeout in loops, then a while
+loop and a substitution: red on 642 (the trace, 134); green. Mutations: the clear removed red (7 lines; the run then
+ends 130 with no trace: the net at work), the clear never taken red (7); the clear and the net both removed: the
+unhandled exception again (managed: exit 82). Suite 247/0 console and detached, 255/0 with Git's cmd on PATH.
+**Implemented by:** rev 646.
+
+## 2026-11-05 -- DEPLOYED 646 (unzip, the timeout interrupt, no debug symbols): suite (-Detached) 251/0, battery 217
+**Status:** Record. Revs 643-646 over 642; sh.exe re-linked (confirmed); rollback dist/Bash.exe.rev642 + sh.exe.rev642.
+Live on 646: `unzip -l <nupkg> | grep -c $'\r'` 0 and `grep 'dll$'` finds the DLL (`type unzip`: a builtin);
+koliada-net-forms-cb's loop (`timeout 1 find …` twice) rc=124, 124, "(search done)", exit 0; no .pdb in dist/ or
+dist.staging/. One message each to koliada-net-b9 and koliada-net-forms-cb. Global CLAUDE.md's CRLF limit reworded.
+
+## 2026-11-05 -- RULED: Windows programs' CRLF lines -- the line tools parse CRLF as a line end; a passed-through line keeps it; pipes stay bytes
+**Status:** Active; building. Supersedes, IN PART, the 2026-10-03 "RATIFIED + BUILT: CR is data in every
+line-reading tool" (lines still end at LF only for splitting; a lone CR is still data; no BOM sniffing stays).
+**The architect, 2026-11-05:** "unzip used CR as a text line ending - that broke claudes instinctive use of it and it
+had to build a work-around -> it's a bug. text lines ending in CRLF would _typically_ not break parsing. If they ever
+do, it is a bug. Pipelines do not fit the description of 'text line endings' for this purpose simply because they
+are handling bytes, not lines?" Then: "unix uses LF to end lines, in principle every tool bash 'controls' should do
+the same. However, 'windows' tools will (generally) always use CRLF and bash tools need to be able to cope with it?"
+And on a passed-through line, keep its CRLF or end it with LF: "keep it."
+**Why it came up:** koliada-net-b9: UnxUtils' unzip and nupkg.exe (a .NET 8 program: Console.WriteLine) write CRLF;
+`grep 'dll$'` / `grep -c ') DEPLOY_PLAN.md$'` found nothing; twice a false reading, caught by a control.
+**The rule:** (1) what a builtin generates ends lines with LF (already so). (2) A tool that reads lines parses a CRLF
+as the line end: `$` anchors before it, `-x` matches the line without it, `read`/`mapfile -t` values and awk's fields
+do not carry it, `$( )` strips trailing CRLFs as it strips newlines. (3) A line the tool passes through unchanged keeps
+its CRLF (grep's matches, sed's and awk's output of a CRLF record, sort, uniq, cut's line end): `sed -i` on a CRLF file
+leaves it CRLF (msp430-a2's 2026-10-03 damage, an awk edit turning CRLF into LF, must not recur). (4) Pipes, `>`
+files and transports carry bytes unchanged (converting there was rejected: a PNG begins 89 50 4e 47 0d 0a 1a 0a).
+(5) Claude's position, not objected: a pattern that names the CR itself (`grep -c $'\r'`, msp430-a2's CRLF check)
+still finds it.
+**Plan (tool by tool, each a bug fix):** grep; read/mapfile; $( ); sed; awk; cut, sort, uniq, comm, rev, nl, xargs;
+then any other as found ("If they ever do, it is a bug").
+**Acceptance, each tool:** a case whose parse results equal GNU's on the same data with LF line ends (generated in WSL
+with the LF form of the input), red on 646; passthrough bytes (CRLF kept) and a lone CR checked byte for byte
+(authored, od); mutations; suite three ways.
+
+## 2026-11-05 -- FIXED (the CRLF rule, first batch): grep, read, mapfile, $( ) parse a Windows program's CRLF as the line end
+**Status:** Active. The ruling above, built as a bug fix (koliada-net-b9's two reports).
+**Changed:** `ShellEncoding.CrlfBody` (a line without the CR of a CRLF end). grep matches the line without it (`$`, -x,
+-w, -o, -i, -E, -F, -P), unless a pattern names the CR itself (`$'\r'`, or `\r` under -P): then the raw line, so
+msp430-a2's `grep -c $'\r'` still counts CRLF lines; it PRINTS the line as it came (CRLF kept; -v, context and -b
+offsets count the real bytes); -f's pattern lines lose a trailing CR (a pattern file is lines). `read` drops the CR of
+a line an LF ended (a CR with no LF after it, at the end of the input, stays data); `mapfile -t` drops a CRLF as it
+drops the LF (without -t the element keeps it); `$( )` trims trailing CRLFs as newlines (`WordExpander.TrimLineEnds`),
+an inner CRLF stays.
+**Tests:** `crlf_lines_gnu` (expected = GNU via WSL on the same data with LF; WSLENV=CRLF_REFERENCE): red on 646 (32);
+`crlf_lines_keep` (authored, od, checked by hand): red on 646 (11). `crlf` (2026-10-03, GNU): five expected lines now
+the ruling's (read -r, read -r a b, mapfile -t, two `$( )` captures of "A\377\r\n": the \377 byte still survives); its
+header says so. Mutations, each red: grep not stripping (8/9), the CR-naming exception ignored (keep 2), -f not
+stripping (2: needed a CRLF pattern file over LF data; the first probe, both CRLF, could not tell), grep printing the
+stripped line (keep 4), read not stripping (18), read stripping at EOF (keep 2), mapfile -t not stripping (2), $( )
+not trimming the CR (4/2). Live, the new build: `dotnet --list-sdks | grep -c ']$'` 24 of 24 (646: 0);
+`$(dotnet --version)` "10.0.201" (646: "10.0.201\r").
+**Next batches:** sed, awk, then cut/sort/uniq/comm/rev/nl/xargs.
+**Suite:** 248/1 console and detached, 256/1 with Git's cmd on PATH: the one failure stdin_shared, whose `head -c;read`
+probe reads "b\r\n": read now gives "[b]" (GNU "[b\r]"), the ruling's; that one expected line updated, the header says so.
+**Implemented by:** rev 648.
+
+## 2026-11-05 -- DEPLOYED 648 (the CRLF rule, first batch): suite (-Detached) 253/0, battery 217
+**Status:** Record. Live: `nupkg.exe --help | grep -c 'slower)$'` 1 (646: 0). One message to koliada-net-b9 (its
+case fixed; sed/awk/cut/sort/uniq to come). Global CLAUDE.md's CRLF line narrowed to the tools not yet done.
+
+## 2026-11-05 -- FIXED (the CRLF rule, second batch): sed and awk parse a Windows program's CRLF as the line end
+**Status:** Active. The ruling (2026-11-05), built as a bug fix.
+**sed:** a line's end is one of none / LF / CRLF (`SedEnd`), read by SedInput and written back by SedOut, so the
+pattern space never holds a CRLF line's CR (`s/dll$/X/` puts X before it) and every line goes out as it came;
+`sed -i` leaves a CRLF file CRLF. N, G and H put the earlier line's CR back before the joining newline (`CrOf`), so
+`sed N` keeps both lines' CRLF. Text sed writes itself (a, i, c, =) ends in LF (the architect: tools bash controls
+use LF). A script that names the CR (`\r`, `\x0d`, `\o015`, `\d013`, a CR) sees CRs as data, as before: `sed
+'s/\r$//'` (dos2unix's idiom) still strips them. Off under -z.
+**awk:** under the default RS a CRLF record loses its CR into RT ("\r\n"): $0, NF, $NF and length() never see it.
+`print` with the default ORS ends a CRLF record with CRLF while the main rules run (BEGIN and END write "\n"; a set
+ORS is used as set; printf writes what it is given), so an awk edit keeps a CRLF file CRLF (msp430-a2's 2026-10-03
+damage). A program that names the CR (`sub(/\r$/, "")`, `\015`, `\x0d`, a CR) sees CRs as data, as before.
+**Tests:** crlf_lines_gnu grew sed and awk probes (content through `tr -d '\r'`, GNU on the LF data): identical; red
+on 648 (19). crlf_lines_keep grew their bytes (authored, od): red on 648 (7). `crlf`: one more expected line is the
+ruling's (`awk -F' ' '{print NF}'` over a CRLF record: "1\r\n", GNU "1\n"); its header says so.
+Mutations, each red: sed not stripping (5/4), SedOut not writing the CR back (keep 8), CrOf empty (keep 4), sed's
+CR-naming exception off (keep 2), awk not stripping (14/3), Ors() plain (keep 4), awk's CR-naming exception off
+(keep 2), END left "in main" (keep 2).
+**Next batch:** cut, sort, uniq, comm, rev, nl, xargs.
+**Suite:** 249/0 console and detached, 257/0 with Git's cmd on PATH.
+**Implemented by:** rev 651.

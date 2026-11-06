@@ -1,0 +1,34 @@
+grep 'dll$' (passed through):
+   a   .   d   l   l  \r  \n   e   .   d   l   l  \n
+grep -v 'dll$':
+   b   .   t   x   t  \r  \n   c  \r   d  \r  \n
+grep -c $'\r': 3  grep -cP '\r$': 3
+a CR inside a line is data: 1 0
+-b -o (the real bytes): 9:txt
+mapfile, no -t (passed through):
+   a   .   d   l   l  \r  \n
+$( ) keeps an inner CRLF:
+   x  \r  \n   y
+read, a CR with no LF after it:
+   z  \r
+sed s/dll$/X/:
+   a   .   X  \r  \n   b  \r  \n
+sed N, G:
+   a   .   d   l   l  \r  \n   b  \r  \n
+   a   .   d   l   l  \r  \n  \n   b  \r  \n  \n
+sed 's/\r$//' (names the CR, dos2unix):
+   a   .   d   l   l  \n   b  \n
+sed -i keeps CRLF:
+   a   .   d   l   l  \r  \n   B  \r  \n
+sed a (text sed writes: LF):
+   a   .   d   l   l  \r  \n   n   e   w  \n   b  \r  \n
+awk /dll$/ (passed through):
+   a       b   .   d   l   l  \r  \n
+awk print $NF (the record's end):
+   b   .   d   l   l  \r  \n   d  \r  \n
+awk printf, END (what awk writes: LF):
+   b   .   d   l   l   |   d   |   2  \n
+awk sub(/\r$/, "") (names the CR):
+   a       b   .   d   l   l  \n   c       d  \n
+awk ORS set:
+   a   ;   c   ;

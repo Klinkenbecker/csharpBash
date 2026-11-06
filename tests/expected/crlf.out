@@ -1,7 +1,7 @@
 cat                    a \r \n b \r \n c \n
 awk                    a \r \n b \r \n c \n
 awk $NF                z \n 2 \r \n
-awk NF                 2 \n 1 \n
+awk NF                 2 \n 1 \r \n
 head                   a \r \n b \r \n
 head lone              x \r y z \n
 tail                   b \r \n c \n
@@ -26,9 +26,9 @@ pipe|head              a \r \n b \r \n
 pipe|awk               a \r \n b \r \n c \n
 pipe|grep              b \r \n
 capture                a \r \n b \r \n c
-read -r                a \r | b \r | c |
-read -r a b            x \r y | z | 2 \r | |
-mapfile -t             a \r | b \r | c |
+read -r                a | b | c |
+read -r a b            x \r y | z | 2 | |
+mapfile -t             a | b | c |
 head;sed shared        a \r \n b \r \n c \n
 grep -m1;sed shared    a \r \n b \r \n c \n
 head bom8              357 273 277 h e l l o \r \n
@@ -38,5 +38,5 @@ head bom16             377 376 A B \n
 pipe|head bom16        377 376 A B \n
 head < bom16           377 376 A B \n
 ext pipe               A 377 \r \n
-ext capture            A 377 \r \n
-ext 1>&2 group         A 377 \r \n
+ext capture            A 377 \n
+ext 1>&2 group         A 377 \n

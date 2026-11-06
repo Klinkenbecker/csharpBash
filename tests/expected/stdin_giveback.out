@@ -1,0 +1,7 @@
+1 a native program in <( ) does not eat the stage's input: zz
+2 cmd reads nothing, then cat: [zz]
+3 100000 lines past cmd: 100000
+4 sort.exe reads all, then cat: []
+5 set /p reads part, then cat: [got %x% ]
+6 a slow producer: [a b ]
+7 a loop calling cmd: [l=1 l=2 l=3 ]

@@ -1,0 +1,8 @@
+find 1: rc=124
+find 2: rc=124
+yes 1: rc=124
+yes 2: rc=124
+yes 3: rc=124
+a while loop after: 3
+a substitution after: ab
+done

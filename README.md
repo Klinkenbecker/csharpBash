@@ -12,21 +12,21 @@ It was built to be the shell Claude Code uses on Windows. Claude Code starts a f
 
 | benchmark (seconds) | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.153** | 1.491 | 0.421 | 9.7× | 2.8× |
-| `arith` — 200 k `$(( ))` evaluations | **0.244** | 2.075 | 0.626 | 8.5× | 2.6× |
-| `func` — 100 k function calls | **0.212** | 2.308 | 0.585 | 10.9× | 2.8× |
-| `loop_big` — 2 M iterations | **1.430** | 15.061 | 3.467 | 10.5× | 2.4× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.053** | 13.889 | 0.825 | **262×** | 15.6× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.086** | 0.243 | 0.131 | 2.8× | 1.5× |
-| `find` — walk 400 files | **0.015** | 0.129 | 0.214 | 8.6× | 14.3× |
-| startup — `bash -c 'exit 0'` | **0.0089** | 0.0231 | 0.1131 | 2.6× | 12.7× |
+| `loop` — 200 k `while` iterations | **0.155** | 1.525 | 0.437 | 9.8× | 2.8× |
+| `arith` — 200 k `$(( ))` evaluations | **0.250** | 2.081 | 0.643 | 8.3× | 2.6× |
+| `func` — 100 k function calls | **0.222** | 2.341 | 0.601 | 10.5× | 2.7× |
+| `loop_big` — 2 M iterations | **1.500** | 15.600 | 3.654 | 10.4× | 2.4× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.055** | 15.246 | 0.850 | **277×** | 15.5× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.087** | 0.262 | 0.137 | 3.0× | 1.6× |
+| `find` — walk 400 files | **0.015** | 0.129 | 0.231 | 8.6× | 15.4× |
+| startup — `bash -c 'exit 0'` | **0.0095** | 0.0245 | 0.1210 | 2.6× | 12.7× |
 
 Every row gives the same output in all three shells, so a fast wrong answer can't count as a win. Where the speed
 comes from:
 
 - **No new process per command.** The `coreutils` row runs 900 small commands. Under Git Bash that is 900 Windows
   processes; under C#Bash it is none.
-- **It starts fast:** 8.9 ms, against Git Bash's 23.1 ms or WSL's 113.1 ms. Claude Code pays that on every call.
+- **It starts fast:** 9.5 ms, against Git Bash's 24.5 ms or WSL's 121.0 ms. Claude Code pays that on every call.
 - **It remembers where programs are.** On Windows, finding a program on a long PATH is slow, and not finding one is
   slower still. C#Bash remembers both, so a simple Claude Code call takes about 11 ms in all.
 
@@ -90,6 +90,9 @@ yourself, the start file, and tips: [Using C#Bash](docs/USING.md).
 - **Windows paths both ways:** `/c/Users/you` and `C:/Users/you` both work, and paths come back with forward slashes,
   which a script can safely take apart.
 - **Bytes stay bytes:** data that isn't valid UTF-8 survives variables, `$( )`, pipes and files unchanged.
+- **Windows programs' CRLF lines just work:** `grep 'x$'`, `read`, `$( )`, `sed` and `awk` take a CRLF as the end of
+  a line, so the output of a .NET or other Windows program matches as you'd expect, and a line they pass on keeps its
+  CRLF (`sed -i` leaves a CRLF file CRLF).
 - **Help that points at the manual:** `help grep` or `grep --help` gives you the GNU manual page for it.
 - **An interactive shell too:** line editing, history, tab completion, prompts.
 - **`sh` too:** the installer makes `sh.exe` a hard link to `Bash.exe`, as Git for Windows ships its own (by hand: copy
@@ -110,13 +113,13 @@ Everything, in detail: [Features](docs/FEATURES.md).
 
 ## How it's tested
 
-254 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
+261 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
 bug fails a test instead of becoming its expected answer. A battery of 237 probes runs the same commands through both
 shells and compares them. Building and testing it yourself, and how the source is laid out: [Developing C#Bash](docs/DEVELOPING.md).
 
 ## Thanks
 
-`help` sends you to the GNU Project's manuals, and to man7.org, jqlang.org and sourceware.org for a few more. Thank
+`help` sends you to the GNU Project's manuals, and to man7.org, jqlang.org, sourceware.org and manpages.debian.org for a few more. Thank
 you to the GNU Project and the Free Software Foundation for writing those manuals and keeping them open to everyone,
 and to the FSF's administrators for their patience when an early version of our link checker went too fast.
 

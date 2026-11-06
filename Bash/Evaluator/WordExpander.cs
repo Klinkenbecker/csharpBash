@@ -1170,7 +1170,21 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			}
 		LastSubstStatus = status;
 		_env.LastExitCode = status;
-		return captured.ToString().TrimEnd('\n');
+		return TrimLineEnds(captured.ToString());
+		}
+
+	/// <summary>`$( )`'s trailing newlines removed, a Windows program's CRLF counting as one: `v=$(nupkg.exe --version)`
+	/// was "1.0\r" and `[ "$v" = 1.0 ]` false (DECISIONS 2026-11-05 "RULED: Windows programs' CRLF lines"). A CR that
+	/// is not before an LF stays, as does every CRLF inside the value.</summary>
+	internal static string TrimLineEnds(string s)
+		{
+		int end = s.Length;
+		while (end > 0 && s[end - 1] == '\n')
+			{
+			end--;
+			if (end > 0 && s[end - 1] == '\r') end--;
+			}
+		return end == s.Length ? s : s[..end];
 		}
 
 	/// <summary>A substitution's own EXIT trap, run before its output is released; an `exit` in the

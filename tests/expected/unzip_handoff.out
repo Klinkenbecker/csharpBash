@@ -1,0 +1,64 @@
+--- unzip enc.zip
+[rc=2]
+ERR: unzip: encrypted: an encrypted entry is not read in-process
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+--- unzip -p enc.zip
+[rc=2]
+ERR: unzip: encrypted: an encrypted entry is not read in-process
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+--- unzip bz.zip
+[rc=2]
+ERR: unzip: method 12: this compression method is not read in-process
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+--- unzip -t bz.zip
+[rc=2]
+ERR: unzip: method 12: this compression method is not read in-process
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+--- unzip link.zip
+[rc=2]
+ERR: unzip: symlink: a symbolic-link entry is not made in-process
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+--- unzip -v enc.zip
+[rc=2]
+ERR: unzip: invalid option -- 'v'
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+--- unzip 
+[rc=2]
+ERR: unzip: usage: no archive: the usage text is not printed in-process
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+--- unzip -lt enc.zip
+[rc=2]
+ERR: unzip: -l: only one of -l, -t and -p is read in-process
+ERR: unzip: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+written: 
+--- unzip -l enc.zip
+Archive:  enc.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        6  2024-03-05 14:07   plain.txt
+       21  2024-03-05 14:07   secret.txt
+---------                     -------
+       27                     2 files
+[rc=0]
+--- unzip -l bz.zip
+Archive:  bz.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+      120  2024-03-05 14:07   bz.txt
+---------                     -------
+      120                     1 file
+[rc=0]
+--- unzip -p link.zip link.txt
+target.txt[rc=0]
+
+--- unzip -t link.zip
+Archive:  link.zip
+    testing: target.txt               OK
+    testing: link.txt                 OK
+No errors detected in compressed data of link.zip.
+[rc=0]
+--- unzip -o enc.zip plain.txt
+Archive:  enc.zip
+ extracting: plain.txt               
+[rc=0]
+plain

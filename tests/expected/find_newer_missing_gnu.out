@@ -1,0 +1,12 @@
+== -newer, a missing reference
+find: 'missing.txt': No such file or directory
+exit 1
+== the same, with -o -print after it
+find: 'missing.txt': No such file or directory
+exit 1
+== -samefile, a missing reference
+find: 'missing.txt': No such file or directory
+exit 1
+== an existing reference
+t/b.txt
+exit 0

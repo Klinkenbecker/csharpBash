@@ -1074,6 +1074,21 @@ public sealed partial class Builtins
 		private bool _fieldsValid = true;
 		private int _nr, _fnr;
 		private string _rt = "";   // RT (gawk): the text that ended the last record read
+		private bool _crlf;        // a CRLF ends a record under the default RS (not for a program that names the CR)
+		private bool _inMain;      // the main rules run (not BEGIN or END): print's default ORS follows the record's end
+
+		/// <summary>ORS as print writes it: the default "\n" ends a CRLF record with CRLF while the main rules run, so a
+		/// line passed through keeps its line end (the architect: "keep it", 2026-11-05).</summary>
+		private string Ors()
+			{
+			var ors = S(_vars["ORS"]);
+			return _inMain && ors == "\n" && _rt == "\r\n" ? "\r\n" : ors;
+			}
+
+		/// <summary>A program that names the CR (`sub(/\r$/, "")`, dos2unix's idiom; `\015`, `\x0d`, a CR) sees it as data.</summary>
+		private static bool AwkNamesCr(string s) =>
+			s.Contains('\r') || s.Contains("\\r", StringComparison.Ordinal) || s.Contains("\\015", StringComparison.Ordinal)
+			|| s.Contains("\\x0d", StringComparison.OrdinalIgnoreCase);
 		private int _exitCode;
 		private bool _exiting;
 		private Dictionary<string, AFunc> _funcs = new(StringComparer.Ordinal);
@@ -1087,6 +1102,9 @@ public sealed partial class Builtins
 		private bool NextRecord(AwkRecords input, out string record)
 			{
 			if (!input.Next(S(_vars["RS"]), GetRegex, out record, out var rt)) return false;
+			// a Windows program's CRLF under the default RS: the CR is the record's end (RT "\r\n"), not its text
+			// (DECISIONS 2026-11-05 "RULED: Windows programs' CRLF lines")
+			if (_crlf && rt == "\n" && record.Length > 0 && record[^1] == '\r' && S(_vars["RS"]) == "\n") { record = record[..^1]; rt = "\r\n"; }
 			_rt = rt;
 			return true;
 			}
@@ -1840,7 +1858,7 @@ public sealed partial class Builtins
 						var ofmt = _vars["OFMT"].Text("%.6g");
 						string Out(AwkVal v) => v.Kind == AwkVal.K.Num ? AwkVal.NumToString(v.Number, ofmt) : S(v);
 						var text = p.Args.Count == 0 ? _record : string.Join(S(_vars["OFS"]), p.Args.Select(e => Out(Eval(e))));
-						sink.Write(text + S(_vars["ORS"]));
+						sink.Write(text + Ors());
 						}
 					if (ReferenceEquals(sink, Console.Error)) sink.Flush();
 					break;
@@ -1913,6 +1931,7 @@ public sealed partial class Builtins
 		public int Run(string program, List<string> operands)
 			{
 			var prog = new AwkParser(AwkLex(program)).ParseProgram();
+			_crlf = !AwkNamesCr(program);
 			Running = true;   // from here a refusal is not handed to the PATH awk (see Awk)
 			_funcs = prog.Funcs;
 			_mainOps = operands;   // BEGIN's `getline` reads it too
@@ -1926,6 +1945,7 @@ public sealed partial class Builtins
 				if (needInput)
 					{
 					// the main input (shared with a plain `getline`; see NextMainLine)
+					_inMain = true;
 					while (!_exiting && NextMainLine(out var line))
 						{
 						_nr++; _fnr++;
@@ -1933,6 +1953,7 @@ public sealed partial class Builtins
 						if (RunRules(prog, rangeActive)) { _exiting = true; break; }
 						}
 					}
+				_inMain = false;
 				try { foreach (var b in prog.End) Exec(b); }
 				catch (AwkExitException) { }
 				}
@@ -1972,7 +1993,7 @@ public sealed partial class Builtins
 						else { fire = true; if (Eval(rule.PatternEnd).Truth) rangeActive[i] = false; }
 						}
 					if (!fire) continue;
-					if (rule.Action is null) Console.Out.Write(_record + S(_vars["ORS"]));
+					if (rule.Action is null) Console.Out.Write(_record + Ors());
 					else Exec(rule.Action);
 					}
 				}

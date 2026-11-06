@@ -15,6 +15,12 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
+  <!-- No debug symbols in any release build, neither a .pdb nor embedded (the global standing order, 2026-11-05).
+       tools/publish-aot.cmd passes -p:DebugType=none too. -->
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
   <!-- `help`'s default table, name to manual page(s); written to %USERPROFILE%/.bash/help.json when that file is
        missing, and answering for any name the file lacks (DECISIONS 2026-10-27) -->
   <ItemGroup>

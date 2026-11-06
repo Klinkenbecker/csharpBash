@@ -2632,7 +2632,10 @@ public sealed class Evaluator
 			}
 		finally
 			{
-			foreach (var p in pipes.Values) p.Child.Dispose();   // the child holds its own pipe ends: EOF reaches us when it exits
+			// the child holds its own pipe ends: EOF reaches us when it exits. A give-back pipe's read end is kept, to
+			// read back what the child leaves in it
+			foreach (var (end, p) in pipes)
+				if (end is not InPumpFd { GiveBack: not null }) p.Child.Dispose();
 			}
 
 		if (_currentJob is not null) _currentJob.ChildPid = proc.Id;
@@ -2641,11 +2644,19 @@ public sealed class Evaluator
 
 		bool brokenPipe = false;
 		var pumps = new List<Thread>(2);
+		GiveBackFeed? giveBack = null;   // the stdin give-back (2026-11-05)
 		try
 			{
 			foreach (var (end, pipe) in pipes)
 				{
 				var shellEnd = new FileStream(pipe.Shell, end is InPumpFd ? FileAccess.Write : FileAccess.Read, 4096, false);
+				if (end is InPumpFd { GiveBack: not null } gb)
+					{
+					var g = giveBack = new GiveBackFeed { ReadEnd = pipe.Child };
+					g.Feeder = new Thread(() => FeedChildGivingBack(gb, shellEnd, g)) { IsBackground = true };
+					g.Feeder.Start();
+					continue;
+					}
 				Thread t = end switch
 					{
 					InPumpFd i  => new Thread(() => FeedChild(i, shellEnd)),
@@ -2660,6 +2671,22 @@ public sealed class Evaluator
 			proc.WaitForExit();
 			if (Timing.On) Timing.Mark("ext- " + name);
 			foreach (var t in pumps) t.Join();
+			if (giveBack is { } gbf && fds[0] is InPumpFd { GiveBack: { } stagePipe })
+				{
+				// What the child did not read goes back to the stage's pipe, as a shared OS pipe leaves it (bash, Git Bash).
+				// Stop the feeder (a read blocked on the stage's pipe wakes); a write blocked on the full OS pipe is freed by
+				// reading the pipe back; then the rest of it, and what the feeder held: in that order.
+				gbf.Stop.Cancel();
+				var back = new MemoryStream();
+				ChildLauncher.ReadAvailable(gbf.ReadEnd!, back);
+				if (gbf.Feeder!.Join(10000))
+					{
+					ChildLauncher.ReadAvailable(gbf.ReadEnd!, back);
+					if (gbf.InHand is { Length: > 0 } held) back.Write(held, 0, held.Length);
+					stagePipe.Unread(back.ToArray());
+					}
+				gbf.ReadEnd!.Dispose();
+				}
 			if (fds[0] is SharedFileFd read && ChildLauncher.HandlePosition(read.Handle) is >= 0 and var at)
 				try { read.File.Position = at; } catch (IOException) { }   // the shell reads on from where the child stopped
 			foreach (var fs in handedOff) { try { fs.Seek(0, SeekOrigin.End); } catch { } }   // after what the child wrote
@@ -2687,7 +2714,40 @@ public sealed class Evaluator
 	/// <c>PipeStage</c>: a closed reader is SIGPIPE), else text into <c>Text</c>.</summary>
 	private sealed record OutPumpFd(Stream? Raw, TextWriter? Text, bool PipeStage) : ChildFd;
 	/// <summary>An in-process source: bytes from <c>Raw</c>, text from <c>Text</c>, or a literal (a here-doc).</summary>
-	private sealed record InPumpFd(Stream? Raw, TextReader? Text, string? Literal) : ChildFd;
+	private sealed record InPumpFd(Stream? Raw, TextReader? Text, string? Literal, PipeBuffer? GiveBack = null, byte[]? Prefix = null) : ChildFd;   // GiveBack, Prefix: the stdin give-back
+
+	// The stdin give-back (2026-11-05; the 2026-11-01 spike): a pipeline stage's pipe fed to a native child, and what comes back after it.
+	// It was CopyTo to the end and never joined: what the child did not read was lost (koliada-net-73's `grep -f <(hg)`), and the
+	// feeder went on taking input meant for the next command (the 2026-10-10 loop limitation).
+	private sealed class GiveBackFeed
+		{
+		public readonly CancellationTokenSource Stop = new();
+		public byte[]? InHand;   // read from the stage's pipe, not yet written to the child's
+		public Thread? Feeder;
+		public SafeFileHandle? ReadEnd;   // the shell's own read end of the child's stdin pipe
+		}
+
+	/// <summary>The prefix (what a read before us had buffered), then the stage's pipe a read at a time, into the
+	/// child's stdin; stops as soon as it is told, holding nothing back: what it read and could not write is InHand.</summary>
+	private static void FeedChildGivingBack(InPumpFd src, FileStream toChild, GiveBackFeed g)
+		{
+		try
+			{
+			if (src.Prefix is { Length: > 0 } pre) { g.InHand = pre; toChild.Write(pre, 0, pre.Length); toChild.Flush(); g.InHand = null; }
+			var buf = new byte[4096];
+			while (true)
+				{
+				int n = src.GiveBack!.Read(buf, 0, buf.Length, g.Stop.Token);
+				if (n <= 0) break;   // 0: the stage's input ended; -1: told to stop
+				g.InHand = buf[..n];
+				toChild.Write(buf, 0, n);
+				toChild.Flush();
+				g.InHand = null;
+				}
+			}
+		catch { }
+		try { toChild.Dispose(); } catch { }
+		}
 
 	/// <summary>The child's stdin by default: a pipeline stage's pipe, an in-process `&lt; file` or
 	/// here-doc, or this process's own stdin -- with whatever a `read` before us buffered and did
@@ -2717,6 +2777,9 @@ public sealed class Evaluator
 			if (pendingBytes == 0 || ChildLauncher.SeekHandle(h, -pendingBytes, fromCurrent: true)) return new InheritFd(0);
 			}
 		Stream Prefixed(Stream raw) => pending is { Length: > 0 } ? new PrefixedStream(ShellEncoding.Utf8.GetBytes(pending), raw) : raw;
+		// a pipeline stage's pipe is fed so that what the child does not read comes back (the stdin give-back)
+		if (ConsoleMux.RawIn is { } pr && PipeBuffer.Of(pr) is { } pb)
+			return new InPumpFd(null, null, null, pb, pending is { Length: > 0 } ? ShellEncoding.Utf8.GetBytes(pending) : null);
 		if (ConsoleMux.RawIn is { } raw) return new InPumpFd(Prefixed(raw), null, null);
 		if (ConsoleMux.InSwapped)        return new InPumpFd(null, ConsoleMux.In, null);   // a text source
 		if (pending is { Length: > 0 })  return new InPumpFd(Prefixed(Console.OpenStandardInput()), null, null);

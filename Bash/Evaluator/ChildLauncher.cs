@@ -414,6 +414,23 @@ public static class ChildLauncher
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern bool CreatePipe(out SafeFileHandle hReadPipe, out SafeFileHandle hWritePipe, IntPtr lpPipeAttributes, int nSize);
 
+	// the stdin give-back (2026-11-05, built from the 2026-11-01 spike): what is still unread in a pipe the shell holds a read end of
+	[DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool PeekNamedPipe(SafeFileHandle hNamedPipe, IntPtr lpBuffer, int nBufferSize, IntPtr lpBytesRead, out int lpTotalBytesAvail, IntPtr lpBytesLeftThisMessage);
+	[DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool ReadFile(SafeFileHandle hFile, byte[] lpBuffer, int nNumberOfBytesToRead, out int lpNumberOfBytesRead, IntPtr lpOverlapped);
+
+	/// <summary>Read what is in the pipe now, without waiting (PeekNamedPipe says how much), into <paramref name="into"/>.</summary>
+	public static void ReadAvailable(SafeFileHandle readEnd, MemoryStream into)
+		{
+		while (PeekNamedPipe(readEnd, IntPtr.Zero, 0, IntPtr.Zero, out int avail, IntPtr.Zero) && avail > 0)
+			{
+			var buf = new byte[avail];
+			if (!ReadFile(readEnd, buf, avail, out int got, IntPtr.Zero) || got <= 0) return;
+			into.Write(buf, 0, got);
+			}
+		}
+
 	private static readonly IntPtr InvalidHandle = new(-1);
 	private static readonly IntPtr PROC_THREAD_ATTRIBUTE_HANDLE_LIST = new(0x20002);
 	private const uint CREATE_SUSPENDED = 0x4, CREATE_UNICODE_ENVIRONMENT = 0x400, CREATE_NO_WINDOW = 0x08000000,

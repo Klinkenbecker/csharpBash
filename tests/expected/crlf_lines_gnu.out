@@ -1,0 +1,43 @@
+== grep
+dll$: 1  ERE: 2  -x: 1  -w: 1
+-v: 4  -F -x: 1  -P: 1  -i: 1
+-o: a.dll 
+-n: 2:b.txt
+-f (a CRLF pattern file): 2
+-f over LF data: 2
+== read, mapfile, $( )
+[a.dll|]
+[b.txt|]
+[c.dll.bak|]
+[d|DEPLOY_PLAN.md]
+[whole|word]
+<dll>
+<txt>
+<dll.bak>
+<md>
+<>
+mapfile -t: 5 [a.dll] [whole word] 16
+$( ): [1.0] 3
+compare: equal
+count: 6
+== sed (content: tr -d CR; the bytes are crlf_lines_keep's)
+-n /dll$/p: 1  $=: 5  /^b.txt$/=: 2
+a.X
+b.txt
+c.dll.bak
+DEPLOY_PLAN.md d
+whole word
+a.dll+b.txT
+== awk
+$NF ~ /dll$/: 1  /md$/: 1  $2=="word": 1
+1 5 a.dll
+1 5 b.txt
+1 9 c.dll.bak
+2 14 DEPLOY_PLAN.md
+2 4 word
+dll
+txt
+bak
+md
+whole word
+45

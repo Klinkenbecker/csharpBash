@@ -1,15 +1,21 @@
 # Project Context: Bash
 
 > ## RESUME HERE — 2026-11-01 (session 9df18ad7 = bash-b6, context low). SUPERSEDES every block below; they are history.
-> **TRUE STATE (written at hg 630, 2026-11-03):** **DEPLOYED rev 629** (`1.0.0+hg.f325c6c66dba 629`: diff on large files, pwd -W, whoami; dist/sh.exe is a
-> HARD LINK to dist/Bash.exe, re-linked by every deploy; rollback dist/Bash.exe.rev626 + dist/sh.exe.rev626, one file).
-> **PUBLISHED 2026-11-02: GitHub main = git f7e9816 = hg 616; release hg-616 = Bash.exe (612) + csharpBash-setup.exe
+> **TRUE STATE (written at hg 650, 2026-11-05):** **DEPLOYED rev 648** (`1.0.0+hg.79cf2041583c 648`: the CRLF rule's FIRST BATCH (grep, read, mapfile, $( )); unzip in-process,
+> the timeout interrupt fix, the stdin give-back (642), no debug symbols; dist/sh.exe is a HARD LINK to dist/Bash.exe,
+> re-linked by every deploy; rollback dist/Bash.exe.rev646 + dist/sh.exe.rev646).
+> **PUBLISHED 2026-11-03: GitHub main = git 93b0a6e = hg 636; release hg-636 = Bash.exe (635) + csharpBash-setup.exe
 > rebuilt from it (InstallGen specification 2, FROZEN since hg-600 shipped 2026-11-01T17:39:50Z).** Deployed,
-> NOT published: 620 (pwd -W), 624 (whoami), 629 (diff large). Suite: 252 cases (3 AOT-only). Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell
+> NOT published: 639-646. Suite: 251 cases detached. Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell
 > Tax.url" are the architect's: leave them. A real install is on this machine (his, C:/Users/guy/.bash/bin, PATH
-> declined; build 612, upgraded by release.sh, which now does it at every publish). The NEW two-rename swap in deploy.sh has not yet run
-> for real (tested on a scratch dist): watch the first deploy.
+> declined; upgraded by release.sh at every publish). The two-rename swap in deploy.sh has run for real (639, 642, 646).
+> **IN PROGRESS (GO, the architect 2026-11-05: "keep it"): the CRLF rule** -- DECISIONS "RULED: Windows programs' CRLF
+> lines": the line tools parse CRLF as a line end, a passed-through line KEEPS its CRLF, pipes/files stay bytes. Build
+> tool by tool as bug fixes: grep, read/mapfile, $( ) (DONE, 648); NEXT sed, awk, then cut/sort/uniq/comm/rev/nl/xargs. When it ships:
+> one message to koliada-net-b9, and REMOVE the global CLAUDE.md Known-limits CRLF line.
 > **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro. koliada-net-73 ENDED (pwd -W live in 626, not told: no session to tell).
+> **DEBUG SYMBOLS (global order 2026-11-05):** checked clean; csproj Release DebugType none (643); publish-aot.cmd fails on
+> any .pdb in its output (644). OPEN (the architect's): whether the "It is a bug" scope reaches beyond the line tools.
 > **LIVE SESSIONS (8):** koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, kes-install-43 (real
 > hardware installs), qa-de, c-parser-ac, esdk-a2 (its CC8051 build runs ON dist/sh.exe + dist/Bash.exe). Message
 > only the session that must act or know (memory peer-messages-flood-his-screens).
@@ -20,19 +26,20 @@
 > publish.sh runs it with a console on dist/Bash.exe first; deploy makes dist/sh.exe a HARD LINK to dist/Bash.exe
 > (confirmed with -ef, else a copy). The bug-fix rule's pre-commit runs are unchanged (he did not address them). NEVER sweep the shared TEMP (other sessions' live files).
 > American spelling everywhere (global rule; history verbatim). Every byte matters (global memory).
-> **AWAITING THE ARCHITECT (do NOT build before his word):**
+> **THE OPEN LIST, BEING WORKED (RULED 2026-11-05: "So that's 9 issues, with nothing being done about them…"): when no
+> peer bug presses, build these in order on Claude's stated positions (memory work-the-list-when-idle). NOT Claude's
+> alone: another session's item (3b), his machine, publishing (his word), a new design fork with no stated position.**
 > 1. (The installer: SHIPPED in hg-600; DONE. docs/installer-plan.md; `bash tools/installer.sh`, run by release.sh;
 >    installer/try-install.cmd for a real install. Spec 2 is frozen: a manifest change needs a spec version 3.)
-> 2. **Build the stdin give-back** (DECISIONS "SPIKE: give a native child's unread stdin back"; the patch is
->    docs/spikes/2026-11-01-stdin-giveback.patch): equals Git Bash on 8 probes, fixes koliada-net-73's
->    `grep -f <(hg)` and the 2026-10-10 loop limitation. Claude: build. Separate findings: a nested C#Bash `read` takes
->    a whole pipe (GNU reads a pipe a byte at a time); feeding a native child is slow (1M lines ~250-375 ms vs Git
->    Bash's 73).
+> 2. (BUILT rev 642, 2026-11-05: the stdin give-back, DECISIONS "FIXED: a native child's unread stdin is given back";
+>    answers nupkg-33's while-read report too. Still open from its spike: a nested C#Bash `read` takes a whole pipe
+>    (GNU reads a pipe a byte at a time); feeding a native child is slow (1M lines ~250-375 ms vs Git Bash's 73).)
 > 3. **ls -l's link column** (still 1; rev 579 left it): reading it costs ~17% on a 2000-file ls -l (~12 us a file,
 >    diagnostic). Claude: show it.
 > 3b. **Installer INST-Q-055** (installer-a4 to him): InstallGen strips `_` keys when embedding a manifest (they shipped
 >    our local path); installer-a4 and Claude recommend it. Ours has no comment meanwhile.
 > 3c. **iconv** (installer-a4's need, 2026-11-01: a UTF-16LE INF). Claude: in-process for UTF-8/16/32, Latin-1, 1252.
+> 3e. Small gaps found: awk srand(); jq --rawfile; find -anewer/-cnewer/-newerXY (they fall to the PATH find).
 > 3d. **OOM guard** (2026-11-03): a builtin's OutOfMemoryException kills the shell; Claude: "<name>: memory exhausted", exit 2. WATCH: external_redirects failed once (35/35 alone; check commit first).
 > 4. **The test runners are PowerShell** (run-tests.ps1, run-compat.ps1; he asked "Why are you using powershell",
 >    2026-11-01). External to the shell by design (DECISIONS 2026-06-13). Claude: if PowerShell should go, a small
@@ -46,7 +53,9 @@
 > (findstr and cmd's type cannot open forward-slash folder paths: accepted, as for $PWD); `$!` stays synthetic;
 > grep -P `\Q...\E`; grep -f with an empty file; help's path forward slashes; the installer's PATH default "no".
 > (Unblocked 2026-11-03: 626 deployed once Brave was quit. The page file is now 8192-65536 MB, in effect after a restart.)
-> **NEXT:** only on his word (peer bugs under the bug-fix rule meanwhile).
+> **NEXT:** finish the CRLF rule (IN PROGRESS above); then the open list in order: OOM guard (3d), ls -l's link column
+> (3), iconv (3c), the small gaps (3e), the .NET test runner (4), the older items (5). Peer bugs first (the bug-fix
+> rule). Publish only on his word.
 >
 > ## RESUME HERE — 2026-10-31 — HISTORY: superseded by the 2026-11-01 block above
 > **TRUE STATE (verified 2026-10-31, written at hg 569):** **DEPLOYED rev 568** (`1.0.0+hg.67b82a75e52b 568`: dist/Bash.exe

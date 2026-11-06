@@ -209,6 +209,8 @@ if (cFlagCmd is not null)
 	// force (on, and not suspended by && / || / if, as inside Claude Code's `eval '…' && pwd`); a
 	// script file ends with 1 (measured against bash 5.1, 2026-10-08)
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.ExpansionError && !ex.ErrexitInForce ? 127 : ex.Code; }
+	// an interrupt nothing handled ends the shell as SIGINT ends bash: 130, no .NET stack trace (2026-11-05)
+	catch (InterruptException) { evaluator.RunExitTrap(); return 130; }
 	}
 
 // ── script file mode: bash script.sh ─────────────────────────────────────────────
@@ -229,6 +231,7 @@ if (scriptPath is not null)
 	catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or System.Security.SecurityException)
 		{ Console.Error.WriteLine($"bash: {scriptPath}: {ex.Message}"); return 126; }
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }
+	catch (InterruptException) { evaluator.RunExitTrap(); return 130; }   // as SIGINT ends bash (2026-11-05)
 	}
 
 // ── non-interactive stdin (piped script): no prompts, no editor ───────────────────
@@ -240,6 +243,7 @@ if (!interactive)
 	var src = Console.In.ReadToEnd();
 	try { var code = evaluator.RunString(src, origin: evaluator.Env.Get("0"), mainLoop: true); evaluator.RunExitTrap(); return code; }   // its input name is $0 (bash: `/bin/bash: line 2: ...`)
 	catch (ExitException ex) { evaluator.RunExitTrap(); return ex.Code; }
+	catch (InterruptException) { evaluator.RunExitTrap(); return 130; }   // as SIGINT ends bash (2026-11-05)
 	}
 
 // ── interactive REPL mode ────────────────────────────────────────────────────────

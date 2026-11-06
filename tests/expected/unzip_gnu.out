@@ -1,0 +1,420 @@
+== list
+--- unzip -l t.zip
+Archive:  t.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+       12  2024-03-05 14:07   a.txt
+        0  2024-03-05 14:07   dir/
+        6  2024-03-05 14:07   dir/b.txt
+      400  2024-03-05 14:07   dir/sub/c.txt
+        0  2024-03-05 14:07   empty.txt
+        7  2024-03-05 14:07   dir/été.txt
+---------                     -------
+      425                     6 files
+[rc=0]
+--- unzip -l t
+Archive:  t.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+       12  2024-03-05 14:07   a.txt
+        0  2024-03-05 14:07   dir/
+        6  2024-03-05 14:07   dir/b.txt
+      400  2024-03-05 14:07   dir/sub/c.txt
+        0  2024-03-05 14:07   empty.txt
+        7  2024-03-05 14:07   dir/été.txt
+---------                     -------
+      425                     6 files
+[rc=0]
+--- unzip -lq t.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+       12  2024-03-05 14:07   a.txt
+        0  2024-03-05 14:07   dir/
+        6  2024-03-05 14:07   dir/b.txt
+      400  2024-03-05 14:07   dir/sub/c.txt
+        0  2024-03-05 14:07   empty.txt
+        7  2024-03-05 14:07   dir/été.txt
+---------                     -------
+      425                     6 files
+[rc=0]
+--- unzip -qql t.zip
+       12  2024-03-05 14:07   a.txt
+        0  2024-03-05 14:07   dir/
+        6  2024-03-05 14:07   dir/b.txt
+      400  2024-03-05 14:07   dir/sub/c.txt
+        0  2024-03-05 14:07   empty.txt
+        7  2024-03-05 14:07   dir/été.txt
+[rc=0]
+--- unzip -l t.zip dir/[bé]* *.TXT
+Archive:  t.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        6  2024-03-05 14:07   dir/b.txt
+        7  2024-03-05 14:07   dir/été.txt
+---------                     -------
+       13                     2 files
+[rc=0]
+--- unzip -l t.zip */*.txt
+Archive:  t.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        6  2024-03-05 14:07   dir/b.txt
+      400  2024-03-05 14:07   dir/sub/c.txt
+        7  2024-03-05 14:07   dir/été.txt
+---------                     -------
+      413                     3 files
+[rc=0]
+--- unzip -l t.zip nosuch
+Archive:  t.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+---------                     -------
+        0                     0 files
+[rc=11]
+--- unzip -qql t.zip nosuch
+[rc=11]
+--- unzip -l long.zip
+Archive:  long.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+  1234567  2024-03-05 14:07   a_rather_long_file_name_here.txt
+     1024  1999-12-31 23:59   b.bin
+---------                     -------
+  1235591                     2 files
+[rc=0]
+--- unzip -l ut.zip
+Archive:  ut.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        3  2020-01-01 19:04   u.txt
+---------                     -------
+        3                     1 file
+[rc=0]
+--- unzip -l evil.zip
+Archive:  evil.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        5  2024-03-05 14:07   ../evil.txt
+        4  2024-03-05 14:07   /abs.txt
+        3  2024-03-05 14:07   ok/../../up.txt
+---------                     -------
+       12                     3 files
+[rc=0]
+the reporter's anchor: 1 line(s) end in bin, 0 CR
+== extract
+--- unzip ../t.zip
+Archive:  ../t.zip
+  inflating: a.txt                   
+   creating: dir/
+ extracting: dir/b.txt               
+  inflating: dir/sub/c.txt           
+ extracting: empty.txt               
+  inflating: dir/été.txt           
+[rc=0]
+.
+./a.txt
+./dir
+./dir/b.txt
+./dir/sub
+./dir/sub/c.txt
+./dir/été.txt
+./empty.txt
+./err
+a.txt 12 1709676442
+dir/b.txt 6 1709676442
+dir/sub/c.txt 400 1709676442
+empty.txt 0 1709676442
+dir/été.txt 7 1709676442
+dir 1709676442
+hello
+world
+bravo
+charlie
+charlie
+--- unzip ../t.zip
+Archive:  ../t.zip
+[rc=1]
+ERR: replace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename:  NULL
+ERR: (EOF or read error, treating as "[N]one" ...)
+--- unzip ../t.zip a.txt empty.txt
+Archive:  ../t.zip
+ extracting: empty.txt               
+[rc=0]
+ERR: replace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: replace empty.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: --- unzip ../t.zip
+Archive:  ../t.zip
+[rc=0]
+ERR: replace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: --- unzip ../t.zip a.txt dir/b.txt
+Archive:  ../t.zip
+  inflating: a.txt                   
+ extracting: dir/b.txt               
+[rc=0]
+ERR: replace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: --- unzip ../t.zip a.txt
+Archive:  ../t.zip
+[rc=0]
+ERR: replace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: error:  invalid response [x]
+ERR: replace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: --- unzip ../t.zip a.txt
+Archive:  ../t.zip
+  inflating: new.txt                 
+[rc=0]
+ERR: replace a.txt? [y]es, [n]o, [A]ll, [N]one, [r]ename: new name: hello
+world
+--- unzip -n ../t.zip
+Archive:  ../t.zip
+[rc=0]
+--- unzip -o ../t.zip a.txt
+Archive:  ../t.zip
+  inflating: a.txt                   
+[rc=0]
+--- unzip -o ../t.zip dir/
+Archive:  ../t.zip
+[rc=0]
+--- unzip -q t.zip -d q
+[rc=0]
+q
+q/a.txt
+q/dir
+q/dir/b.txt
+q/dir/sub
+q/dir/sub/c.txt
+q/dir/été.txt
+q/empty.txt
+--- unzip -d d2 t.zip a.txt
+Archive:  t.zip
+  inflating: d2/a.txt                
+[rc=0]
+--- unzip -o -dD1/ t.zip a.txt
+Archive:  t.zip
+  inflating: D1/a.txt                
+[rc=0]
+--- unzip -o -d ./D3// t.zip a.txt
+Archive:  t.zip
+  inflating: ./D3//a.txt             
+[rc=0]
+--- unzip -o t.zip -d m a.txt
+Archive:  t.zip
+  inflating: m/a.txt                 
+[rc=0]
+--- unzip -oq t.zip -d  empty.txt
+[rc=0]
+--- unzip -o t.zip -d
+[rc=10]
+ERR: error:  must specify directory to which to extract with -d option
+== members, -x, -j
+--- unzip t.zip dir/* -d m2
+Archive:  t.zip
+   creating: m2/dir/
+ extracting: m2/dir/b.txt            
+  inflating: m2/dir/sub/c.txt        
+  inflating: m2/dir/été.txt        
+[rc=0]
+--- unzip t.zip -x dir/* -d x
+Archive:  t.zip
+  inflating: x/a.txt                 
+ extracting: x/empty.txt             
+[rc=0]
+--- unzip -o t.zip -x nosuch -d x3
+Archive:  t.zip
+  inflating: x3/a.txt                
+   creating: x3/dir/
+ extracting: x3/dir/b.txt            
+  inflating: x3/dir/sub/c.txt        
+ extracting: x3/empty.txt            
+  inflating: x3/dir/été.txt        
+[rc=0]
+ERR: caution: excluded filename not matched:  nosuch
+--- unzip -o t.zip a.txt -d D4 -x a.txt
+Archive:  t.zip
+[rc=11]
+--- unzip -o t.zip nosuch a.txt -d n1
+Archive:  t.zip
+  inflating: n1/a.txt                
+[rc=11]
+ERR: caution: filename not matched:  nosuch
+--- unzip -q t.zip nosuch -d n2
+[rc=11]
+ERR: caution: filename not matched:  nosuch
+--- unzip -j t.zip -d j
+Archive:  t.zip
+  inflating: j/a.txt                 
+ extracting: j/b.txt                 
+  inflating: j/c.txt                 
+ extracting: j/empty.txt             
+  inflating: j/été.txt             
+[rc=0]
+j
+j/a.txt
+j/b.txt
+j/c.txt
+j/empty.txt
+j/été.txt
+--- unzip -oj t.zip dir/* -d jj
+Archive:  t.zip
+ extracting: jj/b.txt                
+  inflating: jj/c.txt                
+  inflating: jj/été.txt            
+[rc=0]
+jj
+jj/b.txt
+jj/c.txt
+jj/été.txt
+== pipe
+--- unzip -p t.zip a.txt dir/b.txt
+hello
+world
+bravo
+[rc=0]
+--- unzip -p t.zip nosuch
+[rc=11]
+ERR: caution: filename not matched:  nosuch
+binary: 2721443265 1024  00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f
+== test
+--- unzip -t t.zip
+Archive:  t.zip
+    testing: a.txt                    OK
+    testing: dir/                     OK
+    testing: dir/b.txt                OK
+    testing: dir/sub/c.txt            OK
+    testing: empty.txt                OK
+    testing: dir/été.txt            OK
+No errors detected in compressed data of t.zip.
+[rc=0]
+--- unzip -t t.zip a.txt
+Archive:  t.zip
+    testing: a.txt                    OK
+No errors detected in t.zip for the 1 file tested.
+[rc=0]
+--- unzip -t t.zip dir/*
+Archive:  t.zip
+    testing: dir/                     OK
+    testing: dir/b.txt                OK
+    testing: dir/sub/c.txt            OK
+    testing: dir/été.txt            OK
+No errors detected in t.zip for the 4 files tested.
+[rc=0]
+--- unzip -tq t.zip
+No errors detected in compressed data of t.zip.
+[rc=0]
+--- unzip -tqq t.zip
+[rc=0]
+--- unzip -t t.zip nosuch
+Archive:  t.zip
+caution: filename not matched:  nosuch
+At least one error was detected in t.zip.
+[rc=11]
+--- unzip -tq t.zip nosuch
+caution: filename not matched:  nosuch
+At least one error was detected in t.zip.
+[rc=11]
+--- unzip -t long.zip
+Archive:  long.zip
+    testing: a_rather_long_file_name_here.txt   OK
+    testing: b.bin                    OK
+No errors detected in compressed data of long.zip.
+[rc=0]
+== damage, paths, times, errors
+--- unzip -t bad.zip
+Archive:  bad.zip
+    testing: a.txt                    OK
+    testing: dir/                     OK
+    testing: dir/b.txt                bad CRC a116a399  (should be a6baa6af)
+    testing: dir/sub/c.txt            OK
+    testing: empty.txt                OK
+    testing: dir/été.txt            OK
+At least one error was detected in bad.zip.
+[rc=2]
+--- unzip -o bad.zip dir/b.txt -d bad
+Archive:  bad.zip
+ extracting: bad/dir/b.txt           [rc=2]
+ERR:  bad CRC a116a399  (should be a6baa6af)
+--- unzip -p bad.zip dir/b.txt
+Bravo
+[rc=2]
+ERR: dir/b.txt               bad CRC a116a399  (should be a6baa6af)
+--- unzip -t infl.zip
+Archive:  infl.zip
+    testing: c.txt                   
+  error:  invalid compressed data to inflate
+At least one error was detected in infl.zip.
+[rc=2]
+--- unzip -o infl.zip -d i1
+Archive:  infl.zip
+  inflating: i1/c.txt                [rc=2]
+ERR: 
+ERR:   error:  invalid compressed data to inflate
+--- unzip -p infl.zip
+[rc=2]
+ERR:   error:  invalid compressed data to inflate c.txt
+--- unzip -q -o bad.zip dir/b.txt -d b2
+[rc=2]
+ERR: b2/dir/b.txt            bad CRC a116a399  (should be a6baa6af)
+--- unzip -tq bad.zip
+dir/b.txt               bad CRC a116a399  (should be a6baa6af)
+At least one error was detected in bad.zip.
+[rc=2]
+--- unzip -o t.zip a.txt *.TXT -d w1
+Archive:  t.zip
+  inflating: w1/a.txt                
+[rc=11]
+ERR: caution: filename not matched:  *.TXT
+--- unzip -t t.zip a.txt *.TXT
+Archive:  t.zip
+    testing: a.txt                    OK
+caution: filename not matched:  *.TXT
+At least one error was detected in t.zip.
+[rc=11]
+--- unzip -p t.zip a.txt *.TXT
+hello
+world
+[rc=11]
+ERR: caution: filename not matched:  *.TXT
+--- unzip evil.zip -d e
+Archive:  evil.zip
+warning:  skipped "../" path component(s) in ../evil.txt
+ extracting: e/evil.txt              
+ extracting: e/abs.txt               
+warning:  skipped "../" path component(s) in ok/../../up.txt
+ extracting: e/ok/up.txt             
+[rc=1]
+ERR: warning:  stripped absolute path spec from /abs.txt
+e
+e/abs.txt
+e/evil.txt
+e/ok
+e/ok/up.txt
+--- unzip -q evil.zip -d e2
+[rc=1]
+ERR: warning:  stripped absolute path spec from /abs.txt
+--- unzip -o ut.zip -d ut
+Archive:  ut.zip
+ extracting: ut/u.txt                
+[rc=0]
+ut/u.txt 3 1577934245
+--- unzip -o long.zip -d lg
+Archive:  long.zip
+  inflating: lg/a_rather_long_file_name_here.txt  
+  inflating: lg/b.bin                
+[rc=0]
+lg/a_rather_long_file_name_here.txt 1234567 1709676442
+lg/b.bin 1024 946713598
+--- unzip nosuch
+[rc=9]
+ERR: unzip:  cannot find or open nosuch, nosuch.zip or nosuch.ZIP.
+--- unzip notzip.zip
+Archive:  notzip.zip
+[rc=9]
+ERR:   End-of-central-directory signature not found.  Either this file is not
+ERR:   a zipfile, or it constitutes one disk of a multi-part archive.  In the
+ERR:   latter case the central directory and zipfile comment will be found on
+ERR:   the last disk(s) of this archive.
+ERR: unzip:  cannot find zipfile directory in one of notzip.zip or
+ERR:         notzip.zip.zip, and cannot find notzip.zip.ZIP, period.
+--- unzip notzip.exe
+Archive:  notzip.exe
+[rc=9]
+ERR:   End-of-central-directory signature not found.  Either this file is not
+ERR:   a zipfile, or it constitutes one disk of a multi-part archive.  In the
+ERR:   latter case the central directory and zipfile comment will be found on
+ERR:   the last disk(s) of this archive.
+ERR: note:  notzip.exe may be a plain executable, not an archive
+ERR: unzip:  cannot find zipfile directory in one of notzip.exe or
+ERR:         notzip.exe.zip, and cannot find notzip.exe.ZIP, period.

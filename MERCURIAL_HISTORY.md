@@ -12,11 +12,27 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 637 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 653 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 652 | 2026-11-05 | Publish doc review: README table and figures from compare3 on 651 (2026-11-05, a quiet machine), PERFORMANCE; 261 cases; README/FEATURES/IMPLEMENTATION describe the CRLF rule; results.md |
+| 651 | 2026-11-05 | The line tools parse a Windows program's CRLF as the line end, second batch: sed (the line end travels with the line; N/G/H keep the CR inside; -i keeps a CRLF file CRLF) and awk (RT "\r\n"; print's default ORS follows the record); a script naming the CR sees it as data (dos2unix's idioms); crlf: one more expected line is the ruling's |
+| 650 | 2026-11-05 | Anchor: 648 deployed; the CRLF rule's next batch is sed and awk |
+| 649 | 2026-11-05 | Deployed 648 (the CRLF rule, first batch) |
+| 648 | 2026-11-05 | The line tools parse a Windows program's CRLF as the line end, first batch: grep (a CR-naming pattern still sees the raw line; lines print as they came), read, mapfile -t, $( )'s trailing CRLFs (koliada-net-b9; the architect's ruling); cases crlf_lines_gnu, crlf_lines_keep; crlf and stdin_shared: six expected lines are now the ruling's |
+| 647 | 2026-11-05 | Deployed 646 (unzip, the timeout interrupt, no debug symbols); RULED: the line tools parse CRLF as a line end, a passed-through line keeps it, pipes stay bytes (the architect: "keep it"); anchor |
+| 646 | 2026-11-05 | timeout clears the interrupt it raised to stop an in-process command (the next loop pass threw: a .NET stack trace, exit 9); a stray interrupt ends a non-interactive shell with 130, never a trace; case timeout_loop_gnu (koliada-net-forms-cb) |
+| 645 | 2026-11-05 | unzip in-process: UnZip 6.00's -l -t -p, extraction (-o/-n/the replace prompt), -q/-qq, -j, -d, members and -x, byte for byte; LF line ends (koliada-net-b9: UnxUtils' unzip wrote CRLF; the architect: "priority addition"); cases unzip_gnu, unzip_handoff |
+| 644 | 2026-11-05 | publish-aot.cmd clears the AOT bin folder and fails on any .pdb in its output: a stale 2026-10-18 Bash.pdb was copied into every publish since (never shipped; dist/ and every release checked). Records the unzip GO. |
+| 643 | 2026-11-05 | Release builds set DebugType none in the project (the global standing order, 2026-11-05: no debug symbols in any release build); publish-aot.cmd already passed it. Checked: no .pdb with it, Bash.pdb without (control) |
+| 642 | 2026-11-05 | A native child's unread stdin is given back to the pipeline stage (the 2026-11-01 spike, built); case stdin_giveback (koliada-net-73, nupkg-33) |
+| 641 | 2026-11-05 | find -newer fix confirmed by c-parser-ac |
+| 640 | 2026-11-05 | Deployed rev 639 (find -newer); anchor |
+| 639 | 2026-11-05 | find -newer with a missing reference is GNU's error, exit 1 (it listed every file, exit 0); case find_newer_missing_gnu (c-parser-ac) |
+| 638 | 2026-11-03 | GitHub issues #1 and #2 closed with comments (fixed in hg-636) |
+| 637 | 2026-11-03 | Deployed 635 and published: GitHub main = git 93b0a6e = hg 636, release hg-636 (Bash.exe 635 + installer); local install upgraded; anchor |
 | 636 | 2026-11-03 | doc review for the publish: README's table and PERFORMANCE.md from the 2026-11-03 compare3 run of deployed 635 (outputs identical in all three shells); case count 254; results.md |
 | 635 | 2026-11-03 | the shell's own folder FIRST on its own PATH: a nested bash and sh are this shell, ahead of WSL's launcher or Git (the architect); cases own_dir_first, own_dir_first_sh; two cases adjusted to the new order |
 | 634 | 2026-11-03 | docs: Claude Code issue #94077 appears fixed in 2.1.316 (measured): USING's setx step, PERFORMANCE's note |

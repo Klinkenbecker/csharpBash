@@ -699,9 +699,15 @@ public sealed partial class Builtins
 		if (child > 0) worker.Join(5000);
 		if (!done && child == 0)
 			{
-			// in-process command: cannot be interrupted safely; wait for it but report expiry
+			// in-process command: cannot be interrupted safely; wait for it but report expiry. The interrupt raised to
+			// stop it is cleared once it has ended: the command ran in its own shell, which stops on its PARENT's flag
+			// and clears only its own, so this shell's stayed set and its next check (a `for` loop's next pass) threw
+			// with nothing to catch it: a stack trace, exit 9 (koliada-net-forms-cb, 2026-11-05). An interrupt that was
+			// already pending (Ctrl+C) is left for this shell.
+			bool pending = _eval.Interrupted;
 			_eval.RequestInterrupt();
 			worker.Join();
+			if (!pending) _eval.ClearInterrupt();
 			}
 		return preserve ? rc : 124;
 		}

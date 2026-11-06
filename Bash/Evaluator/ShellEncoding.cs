@@ -105,6 +105,12 @@ public sealed class ShellEncoding : Encoding
 	/// An <see cref="LfReader"/> (every stdin the shell installs) answers by block scan; any other
 	/// reader -- a here-document, an interactive console -- is read char by char, so it is never
 	/// consumed past the line.</summary>
+	/// <summary>A line as a tool PARSES it: without the CR of a CRLF ending. Windows programs end lines with CRLF
+	/// (.NET's Console.WriteLine, C's text mode); a line tool must cope (`grep 'dll$'` found nothing). Lines still split
+	/// at LF only, a CR inside a line is still data, and a line passed through keeps its CRLF (DECISIONS 2026-11-05
+	/// "RULED: Windows programs' CRLF lines").</summary>
+	public static string CrlfBody(string line) => line.Length > 0 && line[^1] == '\r' ? line[..^1] : line;
+
 	public static string? ReadLine(TextReader r)
 		{
 		if (ReferenceEquals(r, Console.In)) r = ConsoleMux.In;   // resolve the per-thread slot once

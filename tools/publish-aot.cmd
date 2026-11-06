@@ -39,9 +39,14 @@ where link.exe   >nul 2>&1 || (echo publish-aot: link.exe is not on PATH after v
 cd /d "%~dp0.."
 REM obj MUST go: a stale intermediate is silently reused and the new settings are ignored.
 rmdir /s /q Bash\obj 2>nul
+REM so must the AOT bin folder: a native Bash.pdb left there on 2026-10-18 was copied into every publish since
+REM (found 2026-11-05; never shipped: deploy takes only Bash.exe).
+rmdir /s /q Bash\bin\x64\Release 2>nul
 rmdir /s /q "%OUT%" 2>nul
 dotnet publish Bash\Bash.csproj -c Release -r win-x64 -p:PublishAot=true -p:DebugType=none -o "%OUT%" --nologo -v q
 if errorlevel 1 (echo publish-aot: FAILED & exit /b 1)
+REM No debug symbols in any release build (the global standing order, 2026-11-05): the output must hold no .pdb.
+if exist "%OUT%\*.pdb" (echo publish-aot: a .pdb is in %OUT% - no debug symbols may ship & exit /b 1)
 
 echo.
 "%OUT%\Bash.exe" --version

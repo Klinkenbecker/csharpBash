@@ -640,7 +640,11 @@ public sealed partial class Builtins
 				sb.Append(c);
 				}
 			}
-		var line = sb.ToString();   // a CR before the LF is data, as in bash (DECISIONS 2026-10-03)
+		var line = sb.ToString();
+		// a Windows program's CRLF: the CR ends the line with the LF, it is not the last field's text (DECISIONS
+		// 2026-11-05 "RULED: … CRLF"; this supersedes 2026-10-03's "a CR before the LF is data" here). Only a line an LF
+		// ended: a CR at the very end of the input, with no LF, stays data.
+		if (!eof && delim == "\n") line = ShellEncoding.CrlfBody(line);
 
 		var ifs = _env.IsSet("IFS") ? _env.Get("IFS") : " \t\n";
 		if (arrayName is not null)
@@ -691,7 +695,8 @@ public sealed partial class Builtins
 			sb.Append((char)ch);
 			if ((char)ch == delim[0])
 				{
-				lines.Add(trim ? sb.ToString()[..^1] : sb.ToString());
+				// -t drops a CRLF as it drops the LF (a Windows program's line end); without -t the element keeps it
+				lines.Add(trim ? (delim == "\n" ? ShellEncoding.CrlfBody(sb.ToString()[..^1]) : sb.ToString()[..^1]) : sb.ToString());
 				sb.Clear();
 				if (count > 0 && lines.Count >= skip + count) break;
 				}

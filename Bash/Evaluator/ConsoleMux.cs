@@ -221,6 +221,47 @@ public sealed class PipeBuffer
 			}
 		}
 
+	// the stdin give-back (2026-11-05): a read a native child's feeder can be stopped in, and bytes put back at the front
+	/// <summary>As Read, but -1 at once when <paramref name="stop"/> is cancelled (woken by Monitor, no polling).</summary>
+	public int Read(byte[] buffer, int offset, int count, CancellationToken stop)
+		{
+		using var reg = stop.Register(() => { lock (_lock) Monitor.PulseAll(_lock); });
+		lock (_lock)
+			{
+			while (_chunks.Count == 0 && !_writeClosed && !stop.IsCancellationRequested) Monitor.Wait(_lock);
+			if (stop.IsCancellationRequested) return -1;
+			if (_chunks.Count == 0) return 0;
+			var head = _chunks.Peek();
+			int n = Math.Min(head.Length - _readOffset, count);
+			Buffer.BlockCopy(head, _readOffset, buffer, offset, n);
+			_readOffset += n;
+			_size -= n;
+			if (_readOffset >= head.Length) { _chunks.Dequeue(); _readOffset = 0; }
+			Monitor.PulseAll(_lock);
+			return n;
+			}
+		}
+
+	/// <summary>Put <paramref name="data"/> back in front of everything unread (what a native child did not read).</summary>
+	public void Unread(byte[] data)
+		{
+		if (data.Length == 0) return;
+		lock (_lock)
+			{
+			if (_readClosed) return;
+			var rest = new List<byte[]> { data };
+			if (_chunks.Count > 0 && _readOffset > 0) { var head = _chunks.Dequeue(); rest.Add(head[_readOffset..]); _readOffset = 0; }
+			rest.AddRange(_chunks);
+			_chunks.Clear();
+			foreach (var c in rest) _chunks.Enqueue(c);
+			_size += data.Length;
+			Monitor.PulseAll(_lock);
+			}
+		}
+
+	/// <summary>The pipe behind a read end, or null for any other stream.</summary>
+	public static PipeBuffer? Of(Stream s) => s is ReadStream r ? r.Owner : null;
+
 	public void CloseWrite() { lock (_lock) { _writeClosed = true; Monitor.PulseAll(_lock); } }
 	public void CloseRead()  { lock (_lock) { _readClosed = true; _chunks.Clear(); _size = 0; _readOffset = 0; Monitor.PulseAll(_lock); } }
 	public bool ReadClosed  { get { lock (_lock) return _readClosed; } }
@@ -243,6 +284,7 @@ public sealed class PipeBuffer
 
 	private sealed class ReadStream(PipeBuffer p) : Stream
 		{
+		public PipeBuffer Owner => p;   // the stdin give-back: the pipe a stage reads
 		public override bool CanRead => true;
 		public override bool CanSeek => false;
 		public override bool CanWrite => false;
