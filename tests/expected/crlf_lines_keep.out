@@ -24,11 +24,28 @@ sed a (text sed writes: LF):
    a   .   d   l   l  \r  \n   n   e   w  \n   b  \r  \n
 awk /dll$/ (passed through):
    a       b   .   d   l   l  \r  \n
-awk print $NF (the record's end):
-   b   .   d   l   l  \r  \n   d  \r  \n
+awk print $NF (what awk makes ends with LF):
+   b   .   d   l   l  \n   d  \n
+awk $2 = "X"; print (the record, edited, keeps its end):
+   a       X  \r  \n   c       X  \r  \n
 awk printf, END (what awk writes: LF):
    b   .   d   l   l   |   d   |   2  \n
 awk sub(/\r$/, "") (names the CR):
    a       b   .   d   l   l  \n   c       d  \n
 awk ORS set:
    a   ;   c   ;
+cut -d' ' -f1 (what cut selects ends with LF):
+   a  \n   d  \n
+cut -c2-3:
+       b  \n       e  \n
+cut -f1 (no delimiter: the line whole):
+   a       b       c  \r  \n   d       e  \n
+rev (what rev writes ends with LF):
+   c       b       a  \n   e       d  \n
+uniq (the first line as it came):
+   x  \r  \n   y  \n
+sort (each line as it came):
+   a  \n   b  \r  \n
+nl (a CRLF blank line is not numbered):
+                       1  \t   x  \r  \n                        
+  \r  \n

@@ -1,7 +1,7 @@
 cat                    a \r \n b \r \n c \n
 awk                    a \r \n b \r \n c \n
-awk $NF                z \n 2 \r \n
-awk NF                 2 \n 1 \r \n
+awk $NF                z \n 2 \n
+awk NF                 2 \n 1 \n
 head                   a \r \n b \r \n
 head lone              x \r y z \n
 tail                   b \r \n c \n
@@ -10,18 +10,18 @@ grep -c CR             2 \n
 grep -c lone           2 \n
 wc -l lone             2 \n
 sed                    a \r \n b \r \n c \n
-cut                    a \r \n b \r \n c \n
+cut                    a \n b \n c \n
 sort                   a \r \n b \r \n c \n
 uniq                   b \r \n a \r \n b \r \n
 sort -u                a \r \n b \r \n
 tac                    c \n b \r \n a \r \n
-rev                    \r a \n \r b \n c \n
+rev                    a \n b \n c \n
 nl                     1 \t a \r \n 2 \t b \r \n 3 \t c \n
 paste                  a \r \t a \r \n b \r \t b \r \n c \t c \n
 comm                   b \r \n a \r \n b \r \n
 tee                    a \r \n b \r \n c \n
-xargs                  [ a \r ] [ b \r ] [ c ]
-xargs -I               < a \r > < b \r > < c >
+xargs                  [ a ] [ b ] [ c ]
+xargs -I               < a > < b > < c >
 pipe|head              a \r \n b \r \n
 pipe|awk               a \r \n b \r \n c \n
 pipe|grep              b \r \n

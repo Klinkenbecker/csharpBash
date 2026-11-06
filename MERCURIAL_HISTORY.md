@@ -12,11 +12,16 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 653 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 658 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 657 | 2026-11-05 | Publish doc review: README table and figures from compare3 on 655 (2026-11-05, a quiet machine), PERFORMANCE; results.md |
+| 656 | 2026-11-05 | Deployed 655 (the CRLF rule complete, corrected); README/FEATURES list every tool it covers; anchor |
+| 655 | 2026-11-05 | CRLF rule corrected: what a tool makes from a CRLF line ends with LF (cut's selections, rev, awk's print of fields); only a line passed through or edited in place keeps its CRLF (the battery caught `curl --version \| cut -d' ' -f1`) |
+| 654 | 2026-11-05 | The line tools parse a Windows program's CRLF as the line end, third batch: xargs (items), cut, sort, uniq, comm (compared and split without the CR, lines written as they came), rev, nl; crlf and xargs_stream_gnu: their CR probes are now the ruling's |
+| 653 | 2026-11-05 | Published hg 652 (release hg-652, Bash.exe 651): record; anchor; OPEN: diff and the CRLF rule |
 | 652 | 2026-11-05 | Publish doc review: README table and figures from compare3 on 651 (2026-11-05, a quiet machine), PERFORMANCE; 261 cases; README/FEATURES/IMPLEMENTATION describe the CRLF rule; results.md |
 | 651 | 2026-11-05 | The line tools parse a Windows program's CRLF as the line end, second batch: sed (the line end travels with the line; N/G/H keep the CR inside; -i keeps a CRLF file CRLF) and awk (RT "\r\n"; print's default ORS follows the record); a script naming the CR sees it as data (dos2unix's idioms); crlf: one more expected line is the ruling's |
 | 650 | 2026-11-05 | Anchor: 648 deployed; the CRLF rule's next batch is sed and awk |

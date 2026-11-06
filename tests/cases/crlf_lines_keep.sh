@@ -22,8 +22,18 @@ cp s.txt i.txt; sed -i 's/^b$/B/' i.txt; echo "sed -i keeps CRLF:"; od -An -c i.
 echo "sed a (text sed writes: LF):"; sed '1a new' s.txt | od -An -c
 printf 'a b.dll\r\nc d\r\n' > w.txt
 echo "awk /dll\$/ (passed through):"; awk '/dll$/' w.txt | od -An -c
-echo "awk print \$NF (the record's end):"; awk '{print $NF}' w.txt | od -An -c
+echo "awk print \$NF (what awk makes ends with LF):"; awk '{print $NF}' w.txt | od -An -c
+echo "awk \$2 = \"X\"; print (the record, edited, keeps its end):"; awk '{$2 = "X"; print}' w.txt | od -An -c
 echo "awk printf, END (what awk writes: LF):"; awk '{printf "%s|", $2} END {print NR}' w.txt | od -An -c
 echo "awk sub(/\\r\$/, \"\") (names the CR):"; awk '{sub(/\r$/, "")} 1' w.txt | od -An -c
 echo "awk ORS set:"; awk -v ORS=';' '{print $1}' w.txt | od -An -c
+printf 'a b c\r\nd e\n' > t.txt
+echo "cut -d' ' -f1 (what cut selects ends with LF):"; cut -d' ' -f1 t.txt | od -An -c
+echo "cut -c2-3:"; cut -c2-3 t.txt | od -An -c
+echo "cut -f1 (no delimiter: the line whole):"; cut -f1 t.txt | od -An -c
+echo "rev (what rev writes ends with LF):"; rev t.txt | od -An -c
+printf 'x\r\nx\r\ny\n' > u.txt
+echo "uniq (the first line as it came):"; uniq u.txt | od -An -c
+echo "sort (each line as it came):"; printf 'b\r\na\n' | sort | od -An -c
+echo "nl (a CRLF blank line is not numbered):"; printf 'x\r\n\r\n' | nl | od -An -c
 cd / && rm -rf "$w"

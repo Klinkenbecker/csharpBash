@@ -11706,3 +11706,64 @@ CR-naming exception off (keep 2), awk not stripping (14/3), Ors() plain (keep 4)
 **Next batch:** cut, sort, uniq, comm, rev, nl, xargs.
 **Suite:** 249/0 console and detached, 257/0 with Git's cmd on PATH.
 **Implemented by:** rev 651.
+
+## 2026-11-05 -- DEPLOYED 651 and PUBLISHED: GitHub main = git fb76a63 = hg rev 652; release hg-652
+**Status:** Record. The architect: "publish whwn ready, no other sessions active until I get back" (every peer idle,
+checked). Deployed 651 (the CRLF rule's second batch: sed, awk): suite (-Detached) 253/0, battery 217, sh.exe
+re-linked; rollback dist/Bash.exe.rev648. compare3 on 651 (quiet machine): loop 0.155 / arith 0.250 / func 0.222 /
+loop_big 1.500 / coreutils 0.055 (277x Git) / pipeline 0.087 / find 0.015 / startup 9.5 ms (Git 24.5, WSL 121.0); all
+three shells a little slower than 2026-10-29's run, most likely the machine; every output agrees. Doc review (rev 652):
+README table and figures, PERFORMANCE, 261 cases, the CRLF rule in README/FEATURES/IMPLEMENTATION. publish.sh: suite
+with a console on dist/Bash.exe 253/0; history 653 changesets; pushed 93b0a6e..fb76a63; release hg-652 = Bash.exe
+(651, SHA-256 00e542f9…) + csharpBash-setup.exe (f3dde1ef…), both downloaded back and matched; this machine's
+install upgraded to 651 (sh.exe a hard link). Debug symbols, looked after the publish: no .pdb in the release, the
+payload or dist/; the installed Bash.exe has no MPDB and no RSDS record.
+**OPEN (the architect's, do not derive):** `diff` and the CRLF rule. diff is a comparison tool, often used to SEE a
+CRLF-vs-LF difference; GNU offers `--strip-trailing-cr` for when it should not count. Claude's position: leave diff
+comparing the bytes it is given (and offer --strip-trailing-cr if asked for); the rest of the third batch (cut, sort,
+uniq, comm, rev, nl, xargs) follows the rule.
+
+## 2026-11-05 -- FIXED (the CRLF rule, third batch): xargs, cut, sort, uniq, comm, rev, nl
+**Status:** Active. The ruling, built as a bug fix; with it every line tool Claude uses copes with CRLF.
+**Changed:** xargs: a line an LF ended loses its CR before it is split into items (default, -I, and -d '\n'; -0 and
+other delimiters untouched): `nupkg list | xargs -n1 cmd` passed each line's last item with a CR. cut: fields and
+characters are taken from the line without the CR, and the output ends with the line's own end (a line without the
+delimiter goes out whole). rev: the text reversed, the CRLF kept at the end. uniq and comm: compared without the CR,
+each line written as it came. sort: keys and the last-resort whole-line compare without the CR (not under -z), each
+line written as it came. nl: a CRLF line with nothing else is blank (not numbered), the line kept as it came.
+**Tests:** crlf_lines_gnu grew a mix of CRLF and LF lines (sort, -u, -r, -k2, -k2r, uniq -c/-d, comm, nl, xargs -n1/-I/-d,
+rev): identical to GNU on the LF data; crlf_lines_keep grew their bytes (od, by hand); both red on 651 (10 lines each).
+`crlf`: three more expected lines are the ruling's (rev keeps the CR at the end, GNU reverses it to the front; xargs
+and xargs -I items without the CR); its header says so. Mutations, each red: xargs not stripping (2), -d '\n' not
+stripping (2), cut not stripping (keep 4), cut ending LF (keep 2), rev not stripping (keep 2), uniq's key (2), nl's
+blank test (2/4), comm comparing raw (2), sort comparing raw (2).
+**Left as it is, on purpose (OPEN, the architect's):** diff (see the publish entry above). Not touched: wc, head,
+tail, tac, tr, cat (they count or pass bytes, nothing to parse); paste, join (not reported).
+**Suite:** 248/1 console and detached, 256/1 with Git's cmd on PATH: the one failure xargs_stream_gnu's probe "a CR is
+data" (`printf 'a\r\nb\n' | xargs -n1 echo`: now "a", GNU "a\r"), the ruling's: relabeled ("a CRLF ends a line"), its
+expected lines regenerated (two), the header says so.
+**Implemented by:** rev 654.
+
+## 2026-11-05 -- CORRECTED (the CRLF rule): what a tool MAKES from a CRLF line ends with LF; only a line passed through (or edited in place) keeps its CRLF
+**Status:** Active. Corrects Claude's over-application in the awk (651) and third-batch (654) entries above; the
+ruling itself is unchanged and is now applied as the architect stated it.
+**Caught by:** the deploy of 654: the battery regressed (216 of 237): probe 186, `curl --version | head -1 | cut -d' '
+-f1` (Windows' curl writes CRLF) gave "curl\r\n", GNU "curl\n". Claude had ended cut's selections, rev's output and
+awk's `print $1` with the record's CRLF, reading "keep it" too widely: the question it answered was about "a line a
+tool passes through unchanged (grep's matches, sed's output, head, awk '{print}')"; and the architect's principle is
+"every tool bash 'controls' should [end lines with LF]".
+**Now:** passed through or edited in place, the line keeps its end: grep, sed, sort, uniq, comm, nl's numbered line,
+awk's `print` / `print $0` / a rule with no action (also after `$2 = …`), cut on a line without the delimiter. MADE by
+the tool, LF: cut's -f/-c selections, rev, awk's `print` of anything else (`print $1`, `print NF`), printf, END.
+So `crlf`'s `awk NF` probe is GNU's again; its `awk $NF`, `cut -c1-` and `rev` probes now end in LF where GNU kept
+the CR (in the last field; rev moved it to the front); the header lists every line that is not GNU's.
+**Checked:** crlf_lines_gnu identical; crlf_lines_keep's cut, rev and awk `print $NF` lines now LF, an awk edit
+(`$2 = "X"; print`) keeps CRLF; mutations of awk's record test both ways red (2, 2); the battery 217 of 237 again.
+**Suite:** 249/0 console and detached, 257/0 with Git's cmd on PATH. **Implemented by:** rev 655.
+
+## 2026-11-05 -- DEPLOYED 655 (the CRLF rule complete, corrected): suite (-Detached) 253/0, battery 217
+**Status:** Record. Live on 655: `curl --version | head -1 | cut -d' ' -f1` "curl\n"; `dotnet --list-sdks | cut -d' '
+-f1 | xargs -I{}` items without a CR; `dotnet --list-sdks | sort -r | grep -c ']$'` 24 of 24; `sed -i` keeps a CRLF
+file CRLF. The global CLAUDE.md's CRLF limit REMOVED (moved to "No longer limits"); one closing message to
+koliada-net-b9. README and FEATURES list every tool the rule covers. Publishing next, on the architect's "publish whwn
+ready" (the published 651 still ends awk's `print $1` of a CRLF record with CRLF, which 655 corrects).

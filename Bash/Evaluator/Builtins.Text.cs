@@ -540,7 +540,13 @@ public sealed partial class Builtins
 		foreach (var f in FilesOrStdin(o))
 			{
 			TextReader? r = null;
-			try { r = OpenText(f); foreach (var line in ReadLines(r)) { var a = line.ToCharArray(); Array.Reverse(a); Console.WriteLine(new string(a)); } }
+			try
+				{
+				r = OpenText(f);
+				// a Windows program's CRLF ends the line: the text is reversed without it, and ends with LF (what rev writes is
+				// its own; GNU moved the CR to the front of the line) (DECISIONS 2026-11-05)
+				foreach (var raw in ReadLines(r)) { var line = ShellEncoding.CrlfBody(raw); var a = line.ToCharArray(); Array.Reverse(a); Console.Out.Write(new string(a) + "\n"); }
+				}
 			catch (BrokenPipeException) { throw; }
 			catch (Exception ex) { Console.Error.WriteLine($"rev: cannot open {f}: {IoError(ex)}"); rc = 1; }
 			finally { if (f != "-") r?.Dispose(); }
@@ -761,22 +767,26 @@ public sealed partial class Builtins
 			try
 				{
 				r = OpenText(f);
-				foreach (var line in ReadLines(r))
+				foreach (var raw in ReadLines(r))
 					{
+					// a Windows program's CRLF ends the line: the fields never see the CR. What cut selects is its own output
+					// and ends with LF ("every tool bash controls"); a line without the delimiter goes out whole, as it came
+					// (DECISIONS 2026-11-05 "RULED: Windows programs' CRLF lines"; the battery: `curl --version | cut -f1`)
+					string line = ShellEncoding.CrlfBody(raw), end = "\n";
 					if (fieldList is null)
 						{
 						var sb = new StringBuilder();
 						for (int k = 0; k < line.Length; k++)
 							if (InRanges(ranges, k + 1) != complement) sb.Append(line[k]);
-						Console.WriteLine(sb.ToString());
+						Console.Out.Write(sb.ToString() + end);
 						}
 					else
 						{
-						if (!line.Contains(delim)) { if (!onlyDelimited) Console.WriteLine(line); continue; }
+						if (!line.Contains(delim)) { if (!onlyDelimited) Console.Out.Write(raw + "\n"); continue; }
 						var parts = line.Split(delim);
 						var sel = new List<string>();
 						for (int k = 0; k < parts.Length; k++) if (InRanges(ranges, k + 1) != complement) sel.Add(parts[k]);
-						Console.WriteLine(string.Join(outDelim, sel));
+						Console.Out.Write(string.Join(outDelim, sel) + end);
 						}
 					}
 				}
@@ -868,7 +878,7 @@ public sealed partial class Builtins
 				}
 			while (ShellEncoding.ReadRecord(r, sep, out _) is string line)
 				{
-				var key = KeyOf(line);
+				var key = KeyOf(sep == '\n' ? ShellEncoding.CrlfBody(line) : line);   // a CRLF ends the line: not the key's (2026-11-05)
 				if (first is not null && key == firstKey)
 					{
 					if (++n == 2 && laterRepeated && firstRepeated) w.Write(first + sep);
@@ -907,8 +917,9 @@ public sealed partial class Builtins
 				r = OpenText(f);
 				foreach (var line in ReadLines(r))
 					{
-					bool number = style[0] switch { 'a' => true, 'n' => false, 'p' => bodyRe!.IsMatch(line), _ => line.Length > 0 };
-					if (!number) { Console.WriteLine(new string(' ', width) + (style[0] == 'n' || line.Length == 0 ? "" : sep) + line); continue; }
+					var body = ShellEncoding.CrlfBody(line);   // a CRLF ends the line: "\r" alone is a blank line (2026-11-05)
+					bool number = style[0] switch { 'a' => true, 'n' => false, 'p' => bodyRe!.IsMatch(body), _ => body.Length > 0 };
+					if (!number) { Console.WriteLine(new string(' ', width) + (style[0] == 'n' || body.Length == 0 ? "" : sep) + line); continue; }
 					n += incr;
 					var num = fmt switch { "ln" => n.ToString().PadRight(width), "rz" => n.ToString().PadLeft(width, '0'), _ => n.ToString().PadLeft(width) };
 					Console.WriteLine(num + sep + line);
@@ -1112,6 +1123,8 @@ public sealed partial class Builtins
 		int check = o.HasLong("check-order") ? 2 : o.HasLong("nocheck-order") ? 0 : 1;
 		// byte order, as GNU's in the C locale and as sort's (2026-10-30: it was UTF-16 order, and so was sort's)
 		IComparer<string> cmp = icase ? StringComparer.OrdinalIgnoreCase : Comparer<string>.Create(ShellEncoding.CompareBytes);
+		// a Windows program's CRLF ends the line: lines compare without it, and are written as they came (2026-11-05)
+		if (sep == '\n') { var bytes = cmp; cmp = Comparer<string>.Create((a, b) => bytes.Compare(ShellEncoding.CrlfBody(a), ShellEncoding.CrlfBody(b))); }
 		var r = new TextReader?[2];
 		try
 			{
@@ -1341,9 +1354,13 @@ public sealed partial class Builtins
 			return text;
 			}
 
+		// a Windows program's CRLF ends the line: keys and the whole-line compare never see the CR; the line is written as
+		// it came (DECISIONS 2026-11-05 "RULED: Windows programs' CRLF lines"); -z records are left alone
+		string Body(string line) => o.Has('z') ? line : ShellEncoding.CrlfBody(line);
+
 		int CompareKey(string a, string b, SortKey k)
 			{
-			string ka = KeyText(a, k), kb = KeyText(b, k);
+			string ka = KeyText(Body(a), k), kb = KeyText(Body(b), k);
 			int c;
 			if (k.Numeric) c = NumericPrefix(ka).CompareTo(NumericPrefix(kb));
 			else if (k.Human) c = HumanValue(ka).CompareTo(HumanValue(kb));
@@ -1356,7 +1373,7 @@ public sealed partial class Builtins
 			{
 			foreach (var k in keys) { int c = CompareKey(a, b, k); if (c != 0) return c; }
 			if (o.Has('s') || unique) return 0;
-			int last = ShellEncoding.CompareBytes(a, b);      // last-resort whole-line compare, in byte order
+			int last = ShellEncoding.CompareBytes(Body(a), Body(b));      // last-resort whole-line compare, in byte order
 			return gReverse ? -last : last;
 			}
 

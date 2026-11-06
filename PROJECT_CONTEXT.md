@@ -1,18 +1,18 @@
 # Project Context: Bash
 
 > ## RESUME HERE — 2026-11-01 (session 9df18ad7 = bash-b6, context low). SUPERSEDES every block below; they are history.
-> **TRUE STATE (written at hg 650, 2026-11-05):** **DEPLOYED rev 648** (`1.0.0+hg.79cf2041583c 648`: the CRLF rule's FIRST BATCH (grep, read, mapfile, $( )); unzip in-process,
+> **TRUE STATE (written at hg 653, 2026-11-05):** **DEPLOYED AND PUBLISHED rev 651** (`1.0.0+hg.ca2e508ee62a 651`: the CRLF rule (grep, read, mapfile, $( ), sed, awk); unzip in-process,
 > the timeout interrupt fix, the stdin give-back (642), no debug symbols; dist/sh.exe is a HARD LINK to dist/Bash.exe,
-> re-linked by every deploy; rollback dist/Bash.exe.rev646 + dist/sh.exe.rev646).
-> **PUBLISHED 2026-11-03: GitHub main = git 93b0a6e = hg 636; release hg-636 = Bash.exe (635) + csharpBash-setup.exe
+> re-linked by every deploy; rollback dist/Bash.exe.rev651 + dist/sh.exe.rev651).
+> **PUBLISHED 2026-11-05: GitHub main = git fb76a63 = hg 652; release hg-652 = Bash.exe (651) + csharpBash-setup.exe
 > rebuilt from it (InstallGen specification 2, FROZEN since hg-600 shipped 2026-11-01T17:39:50Z).** Deployed,
-> NOT published: 639-646. Suite: 251 cases detached. Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell
+> NOT published: 653-655 (publishing next, the architect: "publish whwn ready"). Suite: 261 cases (4 AOT-only). Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell
 > Tax.url" are the architect's: leave them. A real install is on this machine (his, C:/Users/guy/.bash/bin, PATH
 > declined; upgraded by release.sh at every publish). The two-rename swap in deploy.sh has run for real (639, 642, 646).
-> **IN PROGRESS (GO, the architect 2026-11-05: "keep it"): the CRLF rule** -- DECISIONS "RULED: Windows programs' CRLF
-> lines": the line tools parse CRLF as a line end, a passed-through line KEEPS its CRLF, pipes/files stay bytes. Build
-> tool by tool as bug fixes: grep, read/mapfile, $( ) (DONE, 648); NEXT sed, awk, then cut/sort/uniq/comm/rev/nl/xargs. When it ships:
-> one message to koliada-net-b9, and REMOVE the global CLAUDE.md Known-limits CRLF line.
+> **DONE (655): the CRLF rule** -- DECISIONS "RULED: Windows programs' CRLF lines" + "CORRECTED": the line tools parse
+> CRLF as a line end; a line passed through or edited in place KEEPS its CRLF; what a tool MAKES from it (cut -f, rev,
+> awk's print $1) ends in LF; pipes/files stay bytes. grep, read, mapfile, $( ), sed, awk, cut, sort, uniq, comm, nl,
+> xargs, rev. Global limit removed, koliada-net-b9 told. OPEN (the architect's): diff (Claude: leave it byte-exact).
 > **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro. koliada-net-73 ENDED (pwd -W live in 626, not told: no session to tell).
 > **DEBUG SYMBOLS (global order 2026-11-05):** checked clean; csproj Release DebugType none (643); publish-aot.cmd fails on
 > any .pdb in its output (644). OPEN (the architect's): whether the "It is a bug" scope reaches beyond the line tools.

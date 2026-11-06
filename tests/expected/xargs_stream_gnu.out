@@ -99,5 +99,5 @@ rc=123
 hi
 hi
 rc=0
---- a CR is data
-0000000   a  \r  \n   b  \n
+--- a CRLF ends a line (not GNU's: the 2026-11-05 ruling)
+0000000   a  \n   b  \n

@@ -31,4 +31,15 @@ echo "\$NF ~ /dll\$/: $(awk '$NF ~ /dll$/' f.txt | wc -l)  /md\$/: $(awk '/md$/'
 awk '{print NF, length($NF), $NF}' f.txt | tr -d '\r'
 awk -F. '{print $NF}' f.txt | tr -d '\r'
 awk '{n += length($0)} END {print n}' f.txt
+echo "== sort, uniq, comm, nl, xargs, rev (a mix of CRLF and LF lines; content through tr -d CR)"
+printf "b$e\na\nb\na$e\nc$e\n" > m.txt
+echo "sort: $(sort m.txt | tr -d '\r' | tr '\n' ' ')  sort -u: $(sort -u m.txt | tr -d '\r' | tr '\n' ' ')  sort -r: $(sort -r m.txt | tr -d '\r' | tr '\n' ' ')"
+echo "uniq -c: $(sort m.txt | uniq -c | tr -d '\r' | tr -s ' ' | tr '\n' ' ')  uniq -d: $(sort m.txt | uniq -d | tr -d '\r' | tr '\n' ' ')"
+printf "k2 b$e\nk1 a\nk3 c$e\n" > k.txt
+echo "sort -k2: $(sort -k2 k.txt | tr -d '\r' | tr '\n' ' ')  sort -k2r: $(sort -k2r k.txt | tr -d '\r' | tr '\n' ' ')"
+printf "a$e\nb\nd$e\n" > c1.txt; printf "a\nb$e\nc\n" > c2.txt
+echo "comm: $(comm c1.txt c2.txt | tr -d '\r' | tr '\t' '>' | tr '\n' ' ')"
+echo "nl: $(printf "x$e\n$e\ny$e\n" | nl | tr -d '\r' | tr '\t' '>' | tr -s ' ' | tr '\n' ' ')"
+echo "xargs: $(printf "a$e\nb c$e\n" | xargs -n1 printf '<%s>')  -I: $(printf "a$e\nb$e\n" | xargs -I{} printf '[{}]')  -d: $(printf "a$e\nb$e\n" | xargs -d '\n' printf '(%s)')"
+echo "rev | od: $(printf "abc$e\n" | rev | tr -d '\r')"
 cd / && rm -rf "$w"

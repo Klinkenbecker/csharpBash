@@ -1077,8 +1077,10 @@ public sealed partial class Builtins
 		private bool _crlf;        // a CRLF ends a record under the default RS (not for a program that names the CR)
 		private bool _inMain;      // the main rules run (not BEGIN or END): print's default ORS follows the record's end
 
-		/// <summary>ORS as print writes it: the default "\n" ends a CRLF record with CRLF while the main rules run, so a
-		/// line passed through keeps its line end (the architect: "keep it", 2026-11-05).</summary>
+		/// <summary>ORS as print writes THE RECORD (`print`, `print $0`, a rule with no action): the default "\n" ends a
+		/// CRLF record with CRLF while the main rules run, so a line passed through, or edited ($2 = …), keeps its line end
+		/// (the architect: "keep it", 2026-11-05). What awk makes from it (`print $1`, `print NF`) ends with ORS as set:
+		/// "every tool bash controls" ends lines with LF (the same day; `print $1` with CRLF was caught by the battery).</summary>
 		private string Ors()
 			{
 			var ors = S(_vars["ORS"]);
@@ -1858,7 +1860,9 @@ public sealed partial class Builtins
 						var ofmt = _vars["OFMT"].Text("%.6g");
 						string Out(AwkVal v) => v.Kind == AwkVal.K.Num ? AwkVal.NumToString(v.Number, ofmt) : S(v);
 						var text = p.Args.Count == 0 ? _record : string.Join(S(_vars["OFS"]), p.Args.Select(e => Out(Eval(e))));
-						sink.Write(text + Ors());
+						// the record itself (`print`, `print $0`) keeps its line end; anything else awk made ends with ORS as set
+						bool record = p.Args.Count == 0 || (p.Args.Count == 1 && p.Args[0] is AField { Index: ANum { V: 0 } });
+						sink.Write(text + (record ? Ors() : S(_vars["ORS"])));
 						}
 					if (ReferenceEquals(sink, Console.Error)) sink.Flush();
 					break;

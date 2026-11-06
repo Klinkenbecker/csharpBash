@@ -2,6 +2,8 @@
 # does, instead of reading all its input first. A batch is -n args, -L lines, one -I line, or (default) what fits in
 # -s chars (131072): every word, the command's own included, counts its length + 1. Shown without timing: when xargs
 # stops early (a command exits 255, or -E's word), a 3-million-line producer is cut off rather than run to its end.
+# 2026-11-05 (the architect's ruling, DECISIONS "RULED: Windows programs' CRLF lines"): one probe is no longer GNU's:
+# `printf 'a\r\nb\n' | xargs -n1 echo` gives "a" (GNU "a\r"), a CRLF ending the line.
 # A command's stdin is /dev/null (GNU's, unless -a), so it cannot eat the items still to come. The reader is GNU's:
 # a quote must close on its line ("unmatched ... quote", the items before it still run, status 1), quotes and
 # backslashes work under -I too, -0 and -d keep empty items, -E compares after quote removal and is ignored (with a
@@ -43,5 +45,5 @@ p "-E under -0"; printf 'a\0STOP\0b\0' | xargs -0 -E STOP echo 2>err; err
 p "255's message"; printf 'a\nb\n' | xargs -n1 "$BASH" -c 'echo "$1"; exit 255' x 2>err; echo "rc=$?"; err
 p "123"; printf 'a\nb\n' | xargs -n1 "$BASH" -c 'exit 1' x; echo "rc=$?"
 p "no input runs once; -r does not"; printf '' | xargs echo hi; printf '  \n' | xargs echo hi; printf '' | xargs -r echo hi; echo "rc=$?"
-p "a CR is data"; printf 'a\r\nb\n' | xargs -n1 echo | od -c | sed -n 1p
+p "a CRLF ends a line (not GNU's: the 2026-11-05 ruling)"; printf 'a\r\nb\n' | xargs -n1 echo | od -c | sed -n 1p
 cd .. && rm -rf "$d"

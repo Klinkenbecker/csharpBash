@@ -993,14 +993,16 @@ public sealed partial class Builtins
 		// The items in order; null marks an input line's end (-L counts them; a line ending in a blank goes on). -0 and
 		// -d: a record each, empty ones kept, a trailing separator ending nothing (GNU). Otherwise blanks separate, quotes
 		// group within a line, a backslash takes the next character (a newline too); -I: one item a line, leading blanks
-		// dropped, a blank line skipped, quotes and backslashes as before. A CR is data. -E's word ends the input.
+		// dropped, a blank line skipped, quotes and backslashes as before. A CR inside a line is data; a CRLF ends a line
+		// (2026-11-05: `nupkg list | xargs -n1 cmd` gave each last item a CR). -E's word ends the input.
 		IEnumerable<string?> Items()
 			{
 			if (nullSep || delim is not null)
 				{
 				char sep = nullSep ? '\0' : delim!.Value;
 				string? rec;
-				while ((rec = ShellEncoding.ReadRecord(src, sep, out _)) is not null) yield return rec;
+				while ((rec = ShellEncoding.ReadRecord(src, sep, out bool recEnded)) is not null)
+					yield return sep == '\n' && recEnded ? ShellEncoding.CrlfBody(rec) : rec;   // -d '\n' reads lines: a CRLF ends one
 				yield break;
 				}
 			bool perLine = replace is not null;
@@ -1010,6 +1012,7 @@ public sealed partial class Builtins
 			string? text;
 			while ((text = ShellEncoding.ReadRecord(src, '\n', out bool ended)) is not null)
 				{
+				if (ended) text = ShellEncoding.CrlfBody(text);   // a Windows program's CRLF ends the line (DECISIONS 2026-11-05 "RULED: … CRLF")
 				int end = ended ? text.Length + 1 : text.Length;   // the newline, when there was one, is the last character
 				for (int i = 0; i < end; i++)
 					{

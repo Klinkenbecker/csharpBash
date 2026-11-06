@@ -41,3 +41,11 @@ bak
 md
 whole word
 45
+== sort, uniq, comm, nl, xargs, rev (a mix of CRLF and LF lines; content through tr -d CR)
+sort: a a b b c   sort -u: a b c   sort -r: c b b a a 
+uniq -c:  2 a  2 b  1 c   uniq -d: a b 
+sort -k2: k1 a k2 b k3 c   sort -k2r: k3 c k2 b k1 a 
+comm: >>a >>b >c d 
+nl:  1>x    2>y 
+xargs: <a><b><c>  -I: [a][b]  -d: (a)(b)
+rev | od: cba
