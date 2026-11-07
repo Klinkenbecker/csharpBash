@@ -43,6 +43,52 @@ public static class ShellFile
 		return (i.VolumeSerialNumber, ((ulong)i.FileIndexHigh << 32) | i.FileIndexLow, i.NumberOfLinks);
 		}
 
+	/// <summary>A file's hard-link count, read by NAME with no handle opened where Windows can (NtQueryInformationByName,
+	/// FileStatInformation: Windows 10 1809 and later, as Cygwin reads it), else through <see cref="Identity"/>'s open;
+	/// 1 when neither can read it. For `ls -l`'s link column (2026-11-05: it was 1 for every file).</summary>
+	public static uint LinkCount(string path)
+		{
+		if (s_statByName)
+			{
+			// the NT form of a Win32 path: \??\C:\x, \??\UNC\server\share\x
+			string nt = path.StartsWith(@"\\?\", StringComparison.Ordinal) ? @"\??\" + path[4..]
+			          : path.StartsWith(@"\\", StringComparison.Ordinal) ? @"\??\UNC\" + path[2..] : @"\??\" + path;
+			var chars = System.Runtime.InteropServices.GCHandle.Alloc(nt, System.Runtime.InteropServices.GCHandleType.Pinned);
+			var name = new UnicodeString[] { new() { Length = (ushort)(nt.Length * 2), MaximumLength = (ushort)(nt.Length * 2), Buffer = chars.AddrOfPinnedObject() } };
+			var pinned = System.Runtime.InteropServices.GCHandle.Alloc(name, System.Runtime.InteropServices.GCHandleType.Pinned);
+			try
+				{
+				var oa = new ObjectAttributes { Length = System.Runtime.CompilerServices.Unsafe.SizeOf<ObjectAttributes>(), ObjectName = pinned.AddrOfPinnedObject(), Attributes = 0x40 /* OBJ_CASE_INSENSITIVE */ };
+				int status = NtQueryInformationByName(ref oa, out _, out var stat, (uint)System.Runtime.CompilerServices.Unsafe.SizeOf<FileStatInformation>(), 68 /* FileStatInformation */);
+				if (status >= 0) return stat.NumberOfLinks;
+				if (status is unchecked((int)0xC0000003) or unchecked((int)0xC0000002)) s_statByName = false;   // invalid info class, not implemented: an older Windows
+				}
+			finally { pinned.Free(); chars.Free(); }
+			}
+		return Identity(path, follow: false)?.Links ?? 1;
+		}
+
+	private static bool s_statByName = true;
+
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+	private struct UnicodeString { public ushort Length, MaximumLength; public IntPtr Buffer; }
+
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+	private struct ObjectAttributes { public int Length; public IntPtr RootDirectory, ObjectName; public uint Attributes; public IntPtr SecurityDescriptor, SecurityQualityOfService; }
+
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+	private struct IoStatusBlock { public IntPtr Status, Information; }
+
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+	private struct FileStatInformation
+		{
+		public long FileId, CreationTime, LastAccessTime, LastWriteTime, ChangeTime, AllocationSize, EndOfFile;
+		public uint FileAttributes, ReparseTag, NumberOfLinks, EffectiveAccess;
+		}
+
+	[System.Runtime.InteropServices.DllImport("ntdll.dll")]
+	private static extern int NtQueryInformationByName(ref ObjectAttributes attributes, out IoStatusBlock io, out FileStatInformation info, uint length, int infoClass);
+
 	private const uint FileReadAttributes = 0x80, BackupSemantics = 0x02000000, OpenReparsePoint = 0x00200000;
 
 	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]

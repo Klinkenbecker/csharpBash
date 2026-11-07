@@ -154,6 +154,26 @@ public static class ChildLauncher
 		}
 	private static readonly Dictionary<string, bool> s_msysDirs = new(StringComparer.OrdinalIgnoreCase);
 
+	/// <summary>This shell's own program, under any of its names (dist/sh.exe is a hard link to dist/Bash.exe): one
+	/// file, by volume and index. It reads `/c/x` itself, as an MSYS program does, so it is handed its environment as
+	/// typed: under Git Bash a nested bash (an MSYS program) sees `/c/x` (2026-11-07). Another C#Bash build is not
+	/// recognized, and gets the Windows form, which it reads as well.</summary>
+	public static bool IsThisShell(string path)
+		{
+		lock (s_selfFiles)
+			{
+			if (s_selfFiles.TryGetValue(path, out bool self)) return self;
+			try
+				{
+				self = Environment.ProcessPath is { } me && ShellFile.Identity(me) is { } a && ShellFile.Identity(Path.GetFullPath(path)) is { } b
+				       && a.Volume == b.Volume && a.Index == b.Index;
+				}
+			catch (Exception) { self = false; }
+			return s_selfFiles[path] = self;
+			}
+		}
+	private static readonly Dictionary<string, bool> s_selfFiles = new(StringComparer.OrdinalIgnoreCase);
+
 	/// <summary>This process's own std handle for fd 0, 1 or 2.</summary>
 	public static IntPtr StdHandle(int fd) => GetStdHandle(fd switch { 0 => -10, 1 => -11, _ => -12 });
 

@@ -52,6 +52,7 @@ public sealed partial class Builtins
 		{
 		FileNotFoundException or DirectoryNotFoundException => "No such file or directory",
 		UnauthorizedAccessException => "Permission denied",
+		OutOfMemoryException => "memory exhausted",   // GNU's words (xalloc_die); .NET's said "Insufficient memory to continue…"
 		_ when ex.HResult == ErrorInvalidName => "No such file or directory",
 		_ => ex.Message,
 		};

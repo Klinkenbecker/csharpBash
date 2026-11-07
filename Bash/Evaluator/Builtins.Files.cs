@@ -548,11 +548,11 @@ public sealed partial class Builtins
 				{
 				var sb = new StringBuilder();
 				// -i: the file index (lstat's unless -L), one open per entry (2026-11-01: it was 0 for every file). -l's link count
-				// stays 1: reading it costs an open per entry, ~17% on 2000 files (measured 2026-11-01): the architect's call
+				// is the real one (2026-11-05; it was 1 for every file): read by name, no open, where Windows can (ShellFile.LinkCount)
 				var id = inode ? ShellFile.Identity(info.FullName, follow: o.Has('L')) : null;
 				if (inode) sb.Append(id?.Index ?? 0).Append(' ');
 				if (blocks) sb.Append(((info is FileInfo f0 ? (f0.Length + 1023) / 1024 : 0)).ToString().PadLeft(4)).Append(' ');
-				if (longFmt) sb.Append(LongLine(info, human, noGroup, timeStyle)).Append(' ');
+				if (longFmt) sb.Append(LongLine(info, human, noGroup, timeStyle, id?.Links ?? ShellFile.LinkCount(info.FullName))).Append(' ');
 				sb.Append(Name(display, info));
 				if (longFmt && info.LinkTarget is string lt) sb.Append(" -> ").Append(lt);
 				Console.WriteLine(sb.ToString());

@@ -139,6 +139,7 @@ public static class CommandPrinter
 					// printed from its expression, as bash does: a bare word gets `-n` (`[[ $x ]]` → `[[ -n $x ]]`)
 					_wasHeredoc = false;
 					_sb.Append("[[ ").Append(Cond(ce.Expr)).Append(" ]]");
+					Redirects(ce.Redirects);
 					break;
 				case SimpleCommand or ArrayElementAssign or ArrayCompoundAssign or ArithmeticCommand:
 					Leaf(node);

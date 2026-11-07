@@ -291,8 +291,8 @@ public sealed record CaseItem(
 
 public enum CaseTerminator { Break, FallThrough, TestNext }
 
-/// <summary>[[ expression ]]</summary>
-public sealed record ConditionalExpression(CondExpr Expr) : Node;
+/// <summary>[[ expression ]], with its redirections (`[[ … ]] 2>/dev/null`; a syntax error until 2026-11-07)</summary>
+public sealed record ConditionalExpression(CondExpr Expr, List<Redirect> Redirects) : Node;
 
 // ── Conditional expressions ([[ ]]) ──────────────────────────────────────────
 

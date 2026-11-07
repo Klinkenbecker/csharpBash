@@ -21,7 +21,7 @@ mkdir bin && printf '@echo PATH sort %%*\r\n' > bin/sort.cmd
 case "$PATH" in *\;*) sep=';' ;; *) sep=':' ;; esac
 (export PATH="$PWD/bin$sep$PATH"; sort --zzz f)   # an unsupported option, handed to the PATH sort
 BASH_COREUTILS=builtin sort --zzz f 2> /dev/null   # ... and with nothing to hand it to
-awk 'BEGIN { f = "%e\n"; printf f, 1 }' 2> /dev/null   # awk: refused while the program ran
+awk 'BEGIN { f = "%a\n"; printf f, 1 }' 2> /dev/null   # awk: refused while the program ran
 complete -F f x 2> /dev/null                       # not currently available
 set -o posix 2> /dev/null; set +o posix            # not available, going on
 eval 'cat >(cat)' 2> /dev/null                     # refused when parsed

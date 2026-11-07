@@ -1,0 +1,13 @@
+before
+printf: memory exhausted
+printf: rc=2
+printf: memory exhausted
+in $( ): rc=2 len=0
+printf: memory exhausted
+a pipeline stage: 2 0
+awk: memory exhausted
+awk: rc=2
+printf: memory exhausted
+the function goes on: rc=2
+after f: rc=0
+after

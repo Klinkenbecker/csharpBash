@@ -25,4 +25,5 @@ echo "find -links -2: $(find . -type f -links -2 | sort | tr '\n' ' ')"
 echo "find -inum (a's): $(find . -inum "$(stat -c %i a)" | sort | tr '\n' ' ')"
 find . -type f -printf '%p %n\n' | sort
 [ "$(find . -name a -printf %i)" = "$(stat -c %i a)" ] && echo "find -printf %i: as stat" || echo "find -printf %i: differs"
-rm b; echo "after rm b: a has $(stat -c %h a) link"
+echo "ls -l's link column (2026-11-05; it was 1): $(ls -l a b c | awk '{print $NF "=" $2}' | tr '\n' ' ')"
+rm b; echo "after rm b: a has $(stat -c %h a) link, ls -l says $(ls -l a | awk '{print $2}')"

@@ -287,19 +287,62 @@ public sealed class ShellEnvironment
 	private string _baseCwd = "";
 
 	/// <summary>
-	/// A Windows program's argument, with an MSYS-form path at its START converted to Windows form, as
-	/// Git Bash does: `/c/x` → `C:/x` (a drive that exists, so `/a/b` with no A: stays), `/tmp/x` → the
-	/// temp directory. Never a bare `/c` (`cmd /c`), never inside an argument (`--file=/c/x`), and the
-	/// rest of the argument is left as typed (no backslash rewriting). `//x` is Git Bash's escape for a
-	/// Windows switch (<see cref="DoubleSlash"/>): `cmd //c` runs `cmd /c`. `~` the shell expands before.
-	/// <paramref name="excluded"/>: Git Bash's MSYS2_ARG_CONV_EXCL prefixes. Until 2026-10-10 every
-	/// argument reached the program verbatim, so `git -C /f/repo` failed while the shell's own
-	/// `cd /f/repo` worked (the architect: "your recommendation is good").
+	/// A Windows program's argument, with MSYS-form paths converted to Windows form where Git Bash converts them:
+	/// <see cref="NativeValue"/>, unless the argument starts with one of <paramref name="excluded"/> (Git Bash's
+	/// MSYS2_ARG_CONV_EXCL prefixes). Until 2026-10-10 every argument reached the program verbatim, so
+	/// `git -C /f/repo` failed while the shell's own `cd /f/repo` worked (the architect: "your recommendation is good").
 	/// </summary>
 	public static string NativeArgument(string arg, string[]? excluded = null)
 		{
-		if (arg.Length < 2 || arg[0] != '/') return arg;
-		if (excluded is not null) foreach (var p in excluded) if (p.Length > 0 && arg.StartsWith(p, StringComparison.Ordinal)) return arg;
+		if (excluded is not null && Array.Exists(excluded, p => p.Length > 0 && arg.StartsWith(p, StringComparison.Ordinal))) return arg;
+		return NativeValue(arg);
+		}
+
+	/// <summary>
+	/// An argument or an environment value as Git Bash hands it to a Windows program (measured against Git Bash 4.4.23):
+	/// an MSYS-form path at the START becomes Windows form, `/c/x` → `C:/x` (a drive that exists, so `/a/b` with no A:
+	/// stays), `/tmp/x` → the temp directory, a list of such paths `/c/x:/f/y` → `C:/x;F:/y`; and the same INSIDE it, after
+	/// the first `=` (`--file=/c/x`, `a=b=/c/x`, recursively) and after `-` and one letter (`-I/c/x`), each part as a whole
+	/// argument would be. Left as typed: anything holding `;` (a Windows list already: Git Bash converts none of it), an
+	/// `=` in one holding `://` or starting with a drive (`http://h/a=/c/x`, `C:/a=/c/x`), a bare `/c` (`cmd /c`) or `/`
+	/// anywhere. Slashes stay forward (Git Bash writes a list with `\`). `//x` is Git Bash's escape for a Windows switch
+	/// (<see cref="DoubleSlash"/>): `cmd //c` runs `cmd /c`. `~` the shell expands before. Until 2026-11-07 only the start
+	/// was converted (`--file=/c/x` reached the program as typed) and `/c/x;/f/y` had its first item converted alone.
+	/// </summary>
+	internal static string NativeValue(string arg)
+		{
+		// /dev/null for a Windows program is `nul`: the whole argument, after `=`, or after a one-letter option, as Git Bash
+		// (measured 2026-11-05: `nul`, `--out=nul`, `-onul`; `x/dev/null` stays). It was passed as typed, a path that does
+		// not exist: `curl -o /dev/null` exited 23, a write error.
+		if (arg.EndsWith("/dev/null", StringComparison.Ordinal))
+			{
+			var head = arg[..^9];
+			if (head.Length == 0 || head[^1] == '=' || (head.Length == 2 && head[0] == '-' && char.IsAsciiLetter(head[1]))) return head + "nul";
+			}
+		if (arg.Contains(';')) return arg;
+		if (arg.Length >= 2 && arg[0] == '/') return StartConverted(arg);
+		int eq = arg.IndexOf('=');
+		if (eq >= 0)
+			{
+			if (arg.Contains("://", StringComparison.Ordinal) || (arg.Length >= 3 && char.IsAsciiLetter(arg[0]) && arg[1] == ':' && arg[2] is '/' or '\\'))
+				return arg;
+			var value = arg[(eq + 1)..];
+			var converted = NativeValue(value);
+			return ReferenceEquals(converted, value) ? arg : arg[..(eq + 1)] + converted;
+			}
+		if (arg.Length >= 4 && arg[0] == '-' && char.IsAsciiLetter(arg[1]) && arg[2] == '/')
+			{
+			var value = arg[2..];
+			var converted = StartConverted(value);
+			return ReferenceEquals(converted, value) ? arg : arg[..2] + converted;
+			}
+		return arg;
+		}
+
+	/// <summary>An argument starting with `/`, its MSYS-form path converted (see <see cref="NativeValue"/>).</summary>
+	private static string StartConverted(string arg)
+		{
+		if (arg.Length < 2) return arg;
 		if (arg[1] == '/') return DoubleSlash(arg);
 		// a colon: a PATH-style list when every piece is a /-rooted path, converted whole, `/c/x:/f/y` -> `C:/x;F:/y`
 		// (each piece as a lone argument would be); with any other piece the argument is left as typed (`/c/x:rel`,

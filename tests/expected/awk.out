@@ -138,7 +138,7 @@ bob
 awk: unsupported: getline
 
 awk: unsupported: print piped to a command
-awk: unsupported: printf %e
+awk: unsupported: printf %a
 rc=2
 awk: unsupported: ENVIRON
 awk: cmd. line:1: fatal: function `d': calls nested too deep for C#Bash's in-process awk

@@ -49,6 +49,25 @@ public sealed partial class Builtins
 						catch (Json.ParseException) { Console.Error.WriteLine($"jq: Invalid JSON text passed to --argjson"); return 2; }
 						continue;
 						}
+					case "--rawfile":
+						{
+						// $name is the file's text (2026-11-07, the open list's small gaps; jq 1.6's messages)
+						if (i + 2 >= args.Count)
+							{
+							Console.Error.WriteLine("jq: --rawfile takes two parameters (e.g. --rawfile varname filename)");
+							Console.Error.WriteLine("Use jq --help for help with command-line options,\nor see the jq manpage, or online docs  at https://stedolan.github.io/jq");
+							return 2;
+							}
+						var name = args[i + 1]; var file = args[i + 2];
+						i += 2;
+						try { named[name] = ShellEncoding.Utf8.GetString(ShellFile.ReadAllBytes(ShellEnvironment.TranslatePath(file))); }
+						catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+							{
+							Console.Error.WriteLine($"jq: Bad JSON in --rawfile {name} {file}: Could not open {file}: {IoError(ex)}");
+							return 2;
+							}
+						continue;
+						}
 					}
 				throw new UnsupportedOptionException("jq", a);
 				}

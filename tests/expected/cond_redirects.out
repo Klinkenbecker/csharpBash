@@ -1,0 +1,21 @@
+2>/dev/null: runs
+false with > /dev/null: 1
+> file: 0 size 0
+in a pipeline: 0
+|| after the redirect
+f: yes
+f () 
+{ 
+    [[ -n $1 ]] 2> /dev/null && echo "f: $1"
+}
+--- errors inside
+invalid regex: 2
+invalid regex || true: 0
+true && invalid regex: 2
+invalid regex || false: 1
+! invalid regex: 0
+invalid regex prints: 0
+bad number: 1
+bad number || true: 0
+bad number prints: 1 line(s)
+silenced by its own 2>/dev/null: 0

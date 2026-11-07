@@ -12,11 +12,40 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 658 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 687 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 686 | 2026-11-07 | Doc review for the publish of 681: README table and startup line from compare3 on deployed 681 (a busy machine, said in PERFORMANCE); KNOWN_ISSUES.md names this release's fixes; a release carries only the installer (the architect: "drop bash.exe from the github release"): release.sh, publish.sh, README, USING, IMPLEMENTATION |
+| 685 | 2026-11-07 | The start procedure recorded (the home-folder session's b60267f and 285c529; claude.bat hands off to the installed claude.cmd); release.sh checks the installed claude.cmd; USING shows the hand-off; RESUME corrected |
+| 684 | 2026-11-07 | KNOWN_ISSUES.md (DRAFT for the architect): the known issues of a build, installed beside ~/.bash/unserviced.jsonl with every publish (the architect's ruling); the installer stages it with the build stamped and checks the sandboxed install; release.sh checks this machine's copy; README, USING, IMPLEMENTATION, PROJECT_CONTEXT |
+| 683 | 2026-11-07 | Raised: one source for known issues (guy-bf, for the architect); the proposal recorded, awaiting him |
+| 682 | 2026-11-07 | Deployed 681 (f1-f3, the jq pass); guy-e3's reply rewritten for 681; anchor: 660-681 unpublished, def deferred, f4 open |
+| 681 | 2026-11-07 | jq match, capture, scan and --rawfile as jq 1.6 (offsets in code points, captures in pattern order, zero-width matches as jq), the array forms of test/match/capture; case jq_regex_match; new sessions on guy-windows8 start on the published build (guy-bc, the architect's decision): recorded; suite 260/0 both modes, 268/0 with Git on PATH |
+| 680 | 2026-11-07 | [[ ]] takes redirections ([[ … ]] 2>/dev/null was a syntax error) and a test that cannot be evaluated is false as bash (invalid regex silent, status 2; a bad number reported inside the redirections); quoted text inside an =~ set goes over as written, as bash; a nested C#Bash gets its arguments as typed, as Git Bash; jq def deferred (the architect); suite 259/0 both modes, 267/0 with Git on PATH |
+| 679 | 2026-11-07 | GO recorded: the jq pass (capture/match/scan, --rawfile); jq def put to the architect as a fork with pros and cons (Claude: defer); anchor |
+| 678 | 2026-11-07 | Deployed 677 (=~ brackets; native arguments and environment as Git Bash); reply to guy-e3 written; anchor: 660-677 unpublished, jq def need, found f1-f4 |
+| 677 | 2026-11-07 | [[ =~ ]] reads POSIX bracket expressions as glibc ([[:digit:]] never matched; 'a]' matched ^[[:alpha:]]$); a Windows program's arguments converted after = and -X, a word holding ; left whole (its first item was converted), and its environment converted, all as Git Bash (guy-e3's review; the architect's "yes"); cases regex_posix_classes, native_args_within, native_env; suite 258/0 both modes, 266/0 with Git on PATH |
+| 676 | 2026-11-07 | Doc sweep before a new session: the RESUME block rewritten (deployed 671, 660-671 unpublished, needs and open questions, live sessions), PROJECT_CONTEXT's body, counts 267, stale lines in README, DEVELOPING, USING, PERFORMANCE, FEATURES, ARCHITECTURE, IMPLEMENTATION; the delegated runner plan |
+| 675 | 2026-11-07 | Anchor: the two needs awaiting his word (file, jq capture/match), the open questions, 660-671 unpublished |
+| 674 | 2026-11-07 | Need (guy-96): jq capture() and match(); Claude's position recorded, awaiting the architect |
+| 673 | 2026-11-06 | Need (daq-a1): file, for encoding and line endings before an edit; Claude's position recorded, awaiting the architect |
+| 672 | 2026-11-05 | Deployed 671 (awk printf %e/%g); anchor |
+| 671 | 2026-11-05 | awk's printf %e %E %g %G, C's, as gawk's (they were refused); the cases that used %e as an unsupported example use %a; case awk_printf_eg_gnu |
+| 670 | 2026-11-05 | Deployed 669 (/dev/null, awk math); anchor |
+| 669 | 2026-11-05 | awk's sqrt, exp, log, sin, cos, atan2 (they were refused); rand/srand stay refused until gawk's generator is matched (OPEN); found: awk printf %e/%g refused; case awk_math_gnu |
+| 668 | 2026-11-05 | A Windows program is given nul for /dev/null (whole, after =, after a one-letter option), as Git Bash: curl -o /dev/null exited 23; case native_devnull |
+| 667 | 2026-11-05 | Raised: /dev/null reaches a native program verbatim (curl -o /dev/null exits 23); OPEN: Git Bash converts --file=/c/x |
+| 666 | 2026-11-05 | Deployed 665 (iconv); anchor; found: curl -o /dev/null exits 23 under C#Bash (to check) |
+| 665 | 2026-11-05 | iconv in-process, as glibc's for UTF-8/16/32, ISO-8859-1, Windows-1252, ASCII: its BOM handling, messages and byte positions, -c, -o, -l (installer-a4's need; the open list's 3c); cases iconv_gnu, iconv_local |
+| 664 | 2026-11-05 | Record correction: a deploy's rollback pair is still hard-linked (2 links, rightly); anchor's NEXT line |
+| 663 | 2026-11-05 | Deployed 662 (ls -l's link column); anchor |
+| 662 | 2026-11-05 | ls -l's link column shows the real hard-link count, read by name with no open (NtQueryInformationByName; else the open): +1-4% on 2000 files (diagnostic), where the open cost ~8%; it was 1 for every file |
+| 661 | 2026-11-05 | Deployed 660 (the OOM guard); anchor |
+| 660 | 2026-11-05 | OOM guard: a builtin out of memory ends "NAME: memory exhausted", status 2, and the shell goes on (it was an unhandled exception, a stack trace, exit 134); case oom_guard |
+| 659 | 2026-11-05 | Anchor: true state is 655, deployed and published |
+| 658 | 2026-11-05 | Published hg 657 (release hg-657, Bash.exe 655): record; anchor |
 | 657 | 2026-11-05 | Publish doc review: README table and figures from compare3 on 655 (2026-11-05, a quiet machine), PERFORMANCE; results.md |
 | 656 | 2026-11-05 | Deployed 655 (the CRLF rule complete, corrected); README/FEATURES list every tool it covers; anchor |
 | 655 | 2026-11-05 | CRLF rule corrected: what a tool makes from a CRLF line ends with LF (cut's selections, rev, awk's print of fields); only a line passed through or edited in place keeps its CRLF (the battery caught `curl --version \| cut -d' ' -f1`) |

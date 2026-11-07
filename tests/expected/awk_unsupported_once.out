@@ -1,6 +1,6 @@
 == a format known only while running
 first
-awk: unsupported: printf %e
+awk: unsupported: printf %a
 awk: (C#Bash: ...)
 status 2
 == out-of-range numbers

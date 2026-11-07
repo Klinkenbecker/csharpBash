@@ -4,7 +4,7 @@ no log
 PATH sort --zzz f
 sort | --zzz | fell through to sort.cmd, exit 0 | --zzz f
 sort | --zzz | failed, exit 2 | --zzz f
-awk | unsupported | failed while running, exit 2 | BEGIN { f = "%e\n"; printf f, 1 }
+awk | unsupported | failed while running, exit 2 | BEGIN { f = "%a\n"; printf f, 1 }
 complete | complete (programmable completion) | not available | 
 set | POSIX mode (set -o posix) | not available, went on without it | 
 bash | output process substitution >( ) is not supported | refused when parsed, exit 2 | 

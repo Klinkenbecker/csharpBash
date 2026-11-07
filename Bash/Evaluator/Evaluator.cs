@@ -2397,8 +2397,16 @@ public sealed class Evaluator
 		var excl = Setting("MSYS2_ARG_CONV_EXCL");
 		bool convert = !ChildLauncher.IsMsysProgram(fileName) && Setting("MSYS_NO_PATHCONV").Length == 0 && excl != "*";
 		var excluded = excl.Length > 0 ? excl.Split(';') : null;
+		// this shell run again reads /c/x itself, as an MSYS program does, so it gets its arguments as typed: Git Bash's
+		// nested bash gets `/c/x` (`bash -c 'echo $1' _ /c/x` printed C:/x here until 2026-11-07). Looked up only when an
+		// argument would change.
+		bool? self = null;
 		foreach (var arg in args)
-			psi.ArgumentList.Add(convert ? ShellEnvironment.NativeArgument(arg, excluded) : arg);
+			{
+			var a = convert ? ShellEnvironment.NativeArgument(arg, excluded) : arg;
+			if (a != arg && (self ??= ChildLauncher.IsThisShell(fileName))) a = arg;
+			psi.ArgumentList.Add(a);
+			}
 
 		// a child's environment is the shell's exported variables and nothing else, as bash: it began as C#Bash's own
 		// process environment, so `unset X` and `export -n X` (PATH included) never reached a child, and an exported
@@ -2426,6 +2434,28 @@ public sealed class Evaluator
 		// nor in a child's: a program C#Bash starts would take an empty PATH entry as its cwd too (2026-10-17)
 		if (psi.Environment.TryGetValue("PATH", out var childPath) && childPath is not null)
 			psi.Environment["PATH"] = ShellEnvironment.WithoutEmptyPathEntries(childPath);
+		// a Windows program's environment as Git Bash hands it over: each value converted as an argument would be
+		// (ShellEnvironment.NativeValue). `P=/e/x prog` gave a .NET program `/e/x`, which it read as C:/e/x (guy-e3,
+		// 2026-11-07; the architect's "yes"). Not PATH (its exit form, above), not an exported function; not for an MSYS
+		// program or this shell itself, which read /c/x themselves (Git Bash's nested bash sees /c/x). Off with
+		// MSYS_NO_PATHCONV; MSYS2_ARG_CONV_EXCL does not touch it (Git Bash converts under `*`, measured); MSYS2_ENV_CONV_EXCL
+		// is `*` or `;`-separated prefixes of NAME=value, case-sensitive, as Git Bash.
+		var envExcl = Setting("MSYS2_ENV_CONV_EXCL");
+		if (!msysChild && Setting("MSYS_NO_PATHCONV").Length == 0 && envExcl != "*")
+			{
+			var envExcluded = envExcl.Length > 0 ? envExcl.Split(';', StringSplitOptions.RemoveEmptyEntries) : null;
+			foreach (var k in psi.Environment.Keys.ToList())
+				{
+				if (k.Equals("PATH", StringComparison.OrdinalIgnoreCase) || k.StartsWith("BASH_FUNC_", StringComparison.Ordinal)
+				    || psi.Environment[k] is not { Length: >= 2 } v) continue;
+				var nv = ShellEnvironment.NativeValue(v);
+				if (nv == v) continue;
+				if (envExcluded is not null && Array.Exists(envExcluded, p => (k + "=" + v).StartsWith(p, StringComparison.Ordinal))) continue;
+				self ??= ChildLauncher.IsThisShell(fileName);   // looked up only when a value would change
+				if (self.Value) break;
+				psi.Environment[k] = nv;
+				}
+			}
 
 		// ── the child's std handles (DECISIONS 2026-10-04: the real file handle) ─────────────
 		// Each of fd 0-2 starts where this shell's own stream points NOW -- the newest installation
@@ -3414,8 +3444,9 @@ public sealed class Evaluator
 
 	private int ExecConditional(ConditionalExpression ce)
 		{
+		using var scope = ce.Redirects.Count > 0 ? ApplyRedirects(ce.Redirects) : null;
 		_errexitSuppress++;
-		try { return EvalCondExpr(ce.Expr) ? 0 : 1; }
+		try { _condFalseStatus = 1; return EvalCondExpr(ce.Expr) ? 0 : _condFalseStatus; }
 		finally { _errexitSuppress--; }
 		}
 
@@ -3423,13 +3454,38 @@ public sealed class Evaluator
 		{
 		CondAnd a    => EvalCondExpr(a.Left) && EvalCondExpr(a.Right),
 		CondOr  o    => EvalCondExpr(o.Left) || EvalCondExpr(o.Right),
-		CondNot n    => !EvalCondNot(n),
-		CondUnary u  => EvalCondUnary(u.Op, CondTraced(u.Op, _expander.ExpandToString(u.Operand))),
-		CondBinary b => EvalCondBinary(b),
-		CondWord w   => CondTraced("-n", _expander.ExpandToString(w.Value)).Length > 0,   // bash traces a lone word as -n
+		CondNot n    => CondNegated(n),
 		CondGroup g  => EvalCondExpr(g.Inner),
-		_ => false
+		_            => EvalCondPrimary(expr),
 		};
+
+	/// <summary>The status a false `[[ ]]` returns: 1, or the failed test's own (2 for an invalid regex) when that test
+	/// was the last one evaluated, as bash's.</summary>
+	private int _condFalseStatus = 1;
+
+	/// <summary>A test that could not be evaluated, as bash treats one: false, and `[[ ]]` goes on (`[[ a =~ [[:foo:]] ||
+	/// -n x ]]` is 0); <see cref="Status"/> is `[[ ]]`'s when it ends on it. Its message, if any, is already printed,
+	/// inside `[[ ]]`'s redirections. The whole `[[ ]]` stopped, status 2, until 2026-11-07.</summary>
+	private sealed class CondTestError(int status) : Exception { public int Status { get; } = status; }
+
+	private bool CondNegated(CondNot n) { bool r = !EvalCondNot(n); _condFalseStatus = 1; return r; }
+
+	private bool EvalCondPrimary(CondExpr expr)
+		{
+		try
+			{
+			bool r = expr switch
+				{
+				CondUnary u  => EvalCondUnary(u.Op, CondTraced(u.Op, _expander.ExpandToString(u.Operand))),
+				CondBinary b => EvalCondBinary(b),
+				CondWord w   => CondTraced("-n", _expander.ExpandToString(w.Value)).Length > 0,   // bash traces a lone word as -n
+				_ => false
+				};
+			_condFalseStatus = 1;   // set after the operands' expansions, which may run a `[[ ]]` of their own
+			return r;
+			}
+		catch (CondTestError e) { _condFalseStatus = e.Status; return false; }
+		}
 
 	/// <summary>set -x traces each `[[ ]]` test as it is evaluated, its operands expanded (bash: `+ [[ a b == a* ]]`,
 	/// one line per primary); `[[ ]]` was not traced (2026-10-17). The line is built only under set -x: every
@@ -3496,10 +3552,11 @@ public sealed class Evaluator
 				System.Text.RegularExpressions.Match m;
 				try
 					{
-					m = System.Text.RegularExpressions.Regex.Match(left, pattern,
+					// glibc's bracket expressions made .NET's ([[:digit:]] was read as the set `[:digt` then `]`, 2026-11-07)
+					m = System.Text.RegularExpressions.Regex.Match(left, Builtins.PosixBrackets(pattern),
 						Options.NoCaseMatch ? System.Text.RegularExpressions.RegexOptions.IgnoreCase : System.Text.RegularExpressions.RegexOptions.None);
 					}
-				catch (ArgumentException) { throw new EvalException($"invalid regular expression: {pattern}"); }
+				catch (ArgumentException) { throw new CondTestError(2); }   // bash says nothing: status 2 (2026-11-07; it printed one)
 				if (m.Success)
 					{
 					var groups = new List<string>();
@@ -3518,8 +3575,19 @@ public sealed class Evaluator
 			case ">": return string.Compare(left, right, StringComparison.Ordinal) > 0;
 			case "-eq": case "-ne": case "-lt": case "-le": case "-gt": case "-ge":
 				{
-				long l = _expander.EvalArithmetic(left.Length == 0 ? "0" : left);
-				long r = _expander.EvalArithmetic(right.Length == 0 ? "0" : right);
+				long l, r;
+				try
+					{
+					l = _expander.EvalArithmetic(left.Length == 0 ? "0" : left);
+					r = _expander.EvalArithmetic(right.Length == 0 ? "0" : right);
+					}
+				// reported here, inside `[[ ]]`'s redirections (`2>/dev/null` silences it), and the test is false, as bash's:
+				// it escaped them and stopped the whole `[[ ]]` with status 2 (2026-11-07). The words are still C#Bash's.
+				catch (EvalException ex) when (ex is not FatalShellException)
+					{
+					Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}");
+					throw new CondTestError(1);
+					}
 				return b.Op switch
 					{
 					"-eq" => l == r, "-ne" => l != r, "-lt" => l < r,

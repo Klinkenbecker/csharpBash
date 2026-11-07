@@ -184,7 +184,7 @@ public static class PrintfFormatter
 		return sign + digits;
 		}
 
-	private static string FormatDouble(double d, char conv, int prec, bool plus, bool space, bool alt)
+	internal static string FormatDouble(double d, char conv, int prec, bool plus, bool space, bool alt)   // awk's printf too (2026-11-05)
 		{
 		if (!double.IsFinite(d))
 			{

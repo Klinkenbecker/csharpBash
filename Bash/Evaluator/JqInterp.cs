@@ -20,6 +20,7 @@ internal sealed class JqInterp(JObj env)
 		"min/0", "max/0", "min_by/1", "max_by/1", "reverse/0", "first/0", "last/0", "first/1", "last/1",
 		"flatten/0", "flatten/1", "range/1", "range/2", "range/3", "tostring/0", "tonumber/0", "type/0",
 		"tojson/0", "fromjson/0", "split/1", "join/1", "test/1", "test/2", "sub/2", "sub/3", "gsub/2", "gsub/3",
+		"match/1", "match/2", "capture/1", "capture/2", "scan/1",
 		"startswith/1", "endswith/1", "ltrimstr/1", "rtrimstr/1", "ascii_downcase/0", "ascii_upcase/0",
 		"contains/1", "error/0", "error/1", "env/0", "del/1", "floor/0", "ceil/0", "round/0", "sqrt/0", "fabs/0",
 		"arrays/0", "objects/0", "iterables/0", "booleans/0", "numbers/0", "strings/0", "nulls/0", "scalars/0",
@@ -751,7 +752,10 @@ internal sealed class JqInterp(JObj env)
 			case ("split", 1): return ArgValues(a, input, vars).Select(s => input is string str && s[0] is string sep
 				? (object?)Split(str, sep) : throw new JqError("split input and separator must be strings"));
 			case ("join", 1): return ArgValues(a, input, vars).Select(s => Join(input, s[0]));
-			case ("test", _): return ArgValues(a, input, vars).Select(s => (object?)CompileRegex(input, s[0], s.Length > 1 ? s[1] : null).IsMatch((string)input!));
+			case ("test", _): return ArgValues(a, input, vars).Select(s => { var (re, fl) = RegexArgs(s); return (object?)CompileRegex(input, re, fl).IsMatch((string)input!); });
+			case ("match", _): return ArgValues(a, input, vars).SelectMany(s => { var (re, fl) = RegexArgs(s); return Matches(input, re, fl); });
+			case ("capture", _): return ArgValues(a, input, vars).SelectMany(s => { var (re, fl) = RegexArgs(s); return Matches(input, re, fl).Select(CaptureObject); });
+			case ("scan", 1): return ArgValues(a, input, vars).SelectMany(s => Matches(input, s[0], "g").Select(ScanValue));
 			case ("sub", _): return Sub(c, input, vars, global: false);
 			case ("gsub", _): return Sub(c, input, vars, global: true);
 			case ("startswith", 1): return ArgValues(a, input, vars).Select(s => input is string x && s[0] is string y
@@ -1020,6 +1024,138 @@ internal sealed class JqInterp(JObj env)
 			RegexCache[(pattern, f)] = rx;
 			return rx;
 			}
+		}
+
+	/// <summary>test/match/capture's arguments as jq 1.6 defines them: `(re; flags)`, or one value that is the regex or an
+	/// array `[re, flags]` / `[re]`; anything else is "&lt;type&gt; not a string or array".</summary>
+	private static (object? Re, object? Flags) RegexArgs(object?[] s)
+		{
+		if (s.Length > 1) return (s[0], s[1]);
+		return s[0] switch
+			{
+			string re => (re, null),
+			List<object?> { Count: > 1 } arr => (arr[0], arr[1]),
+			List<object?> { Count: 1 } arr => (arr[0], null),
+			var v => throw new JqError($"{Json.TypeName(v)} not a string or array"),
+			};
+		}
+
+	/// <summary>jq 1.6's match objects for <paramref name="re"/> on the input, as its f_match makes them (measured against
+	/// jq 1.6, 2026-11-07): `{offset, length, string, captures}`, offsets and lengths in code points; a capture is `{offset,
+	/// length, string, name}` (name null when unnamed), one that did not take part `{offset: -1, string: null, length: 0,
+	/// name}`, in the order of the pattern's groups; a zero-width match has no captures. "g": every match, a zero-width one
+	/// moving the search start on by one (so `(?=b)` on "ab" gives offset 1 twice, as jq); "n": empty matches skipped. jq
+	/// 1.6 steps a zero-width match by a BYTE and crashed on "aéb" (`match(""; "g")`): here it steps a code point.</summary>
+	private static List<object?> Matches(object? input, object? re, object? flags)
+		{
+		var rx = CompileRegex(input, re, flags);
+		var f = flags as string ?? "";
+		bool global = f.Contains('g'), notEmpty = f.Contains('n');
+		var s = (string)input!;
+		var groups = CaptureGroups(rx, (string)re!);
+		var list = new List<object?>();
+		int start = 0;
+		do
+			{
+			var m = rx.Match(s, start);
+			while (notEmpty && m.Success && m.Length == 0)
+				m = m.Index < s.Length ? rx.Match(s, NextCodePoint(s, m.Index)) : Match.Empty;
+			if (!m.Success) break;
+			list.Add(MatchObject(s, m, groups));
+			start = m.Length == 0 ? NextCodePoint(s, start) : m.Index + m.Length;
+			}
+		while (global && start < s.Length);
+		return list;
+		}
+
+	private static int NextCodePoint(string s, int i) => i + (i + 1 < s.Length && char.IsHighSurrogate(s[i]) && char.IsLowSurrogate(s[i + 1]) ? 2 : 1);
+
+	/// <summary>The number of code points in s[..utf16] (jq counts offsets and lengths in code points).</summary>
+	private static double CodePoints(string s, int from, int count)
+		{
+		int n = count;
+		for (int k = from; k < from + count; k++) if (char.IsLowSurrogate(s[k]) && k > from && char.IsHighSurrogate(s[k - 1])) n--;
+		return n;
+		}
+
+	private static JObj MatchObject(string s, Match m, List<(int Number, string? Name)> groups)
+		{
+		var o = new JObj();
+		o.Set("offset", CodePoints(s, 0, m.Index));
+		o.Set("length", CodePoints(s, m.Index, m.Length));
+		o.Set("string", m.Value);
+		var captures = new List<object?>();
+		if (m.Length > 0)
+			foreach (var (number, name) in groups)
+				{
+				var g = m.Groups[number];
+				var c = new JObj();
+				if (g.Success)
+					{
+					c.Set("offset", CodePoints(s, 0, g.Index));
+					c.Set("length", CodePoints(s, g.Index, g.Length));
+					c.Set("string", g.Value);
+					}
+				else { c.Set("offset", -1.0); c.Set("string", null); c.Set("length", 0.0); }
+				c.Set("name", name);
+				captures.Add(c);
+				}
+		o.Set("captures", captures);
+		return o;
+		}
+
+	/// <summary>capture: a match's named captures as an object, name → string (null when it did not take part).</summary>
+	private static object? CaptureObject(object? match)
+		{
+		var o = new JObj();
+		foreach (var c in (List<object?>)((JObj)match!).Get("captures")!)
+			if (((JObj)c!).Get("name") is string name) o.Set(name, ((JObj)c).Get("string"));
+		return o;
+		}
+
+	/// <summary>scan: the matched string, or the array of its captures' strings when the regex has groups.</summary>
+	private static object? ScanValue(object? match)
+		{
+		var m = (JObj)match!;
+		var captures = (List<object?>)m.Get("captures")!;
+		return captures.Count > 0 ? captures.Select(c => ((JObj)c!).Get("string")).ToList() : m.Get("string");
+		}
+
+	/// <summary>The capture groups in the order their `(` opens in the pattern, as Oniguruma numbers them, each with its
+	/// .NET group number: .NET numbers the unnamed groups first and the named ones after them.</summary>
+	private static List<(int Number, string? Name)> CaptureGroups(Regex rx, string pattern)
+		{
+		var list = new List<(int, string?)>();
+		int unnamed = 0;
+		for (int i = 0; i < pattern.Length; i++)
+			{
+			char c = pattern[i];
+			if (c == '\\') { i++; continue; }
+			if (c == '[')
+				{
+				int j = i + 1;
+				if (j < pattern.Length && pattern[j] == '^') j++;
+				if (j < pattern.Length && pattern[j] == ']') j++;
+				for (; j < pattern.Length && pattern[j] != ']'; j++) if (pattern[j] == '\\') j++;
+				i = j;
+				continue;
+				}
+			if (c != '(') continue;
+			if (i + 1 < pattern.Length && pattern[i + 1] == '?')
+				{
+				int n = i + 2;
+				if (n < pattern.Length && pattern[n] == 'P') n++;
+				if (n < pattern.Length && pattern[n] is '<' or '\'' && n + 1 < pattern.Length && pattern[n + 1] is not ('=' or '!'))
+					{
+					char close = pattern[n] == '<' ? '>' : '\'';
+					int end = pattern.IndexOf(close, n + 1);
+					if (end > n + 1) { var name = pattern[(n + 1)..end]; list.Add((rx.GroupNumberFromName(name), name)); }
+					}
+				continue;   // any other (?...) is not a capture
+				}
+			list.Add((++unnamed, null));
+			}
+		return list;
 		}
 
 	private IEnumerable<object?> Sub(JCall c, object? input, Vars? vars, bool global)

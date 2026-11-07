@@ -180,6 +180,94 @@ public sealed partial class Builtins
 		return sb.ToString();
 		}
 
+	/// <summary>A POSIX class's members as the inside of a .NET character class (`digit` → `0-9`); null for a name that is
+	/// not a class. ASCII, as every C#Bash regex tool reads them.</summary>
+	internal static string? PosixClass(string name) => name switch
+		{
+		"alpha" => "a-zA-Z", "digit" => "0-9", "alnum" => "a-zA-Z0-9", "upper" => "A-Z", "lower" => "a-z",
+		"space" => "\\s", "blank" => " \\t", "punct" => "!-/:-@\\[-`{-~", "print" => "\\x20-\\x7e",
+		"graph" => "\\x21-\\x7e", "cntrl" => "\\x00-\\x1f\\x7f", "xdigit" => "0-9A-Fa-f", "word" => "\\w", _ => null,
+		};
+
+	/// <summary>`[[ =~ ]]`'s pattern (bash hands it to glibc's ERE) made .NET's. Only its bracket expressions change:
+	/// a POSIX class becomes its members (<see cref="PosixClass"/>), `[=c=]` and `[.c.]` the character c, a `]` first in
+	/// the set stays a member. Everything else passes as written: what glibc and .NET already read alike was measured
+	/// (`\d`, alternation, `*?`, a `\` escaping inside a set, as bash's own quoting leaves it). Outside a set `\x` is one
+	/// unit, so ExpandToRegex's escaped quoted text (`\[`) never opens one. Until 2026-11-07 the pattern reached .NET
+	/// untranslated: `[[:digit:]]` was the set `[:digt` then a `]`, so `[[ 5 =~ [[:digit:]] ]]` failed and
+	/// `[[ 'a]' =~ ^[[:alpha:]]$ ]]` matched (guy-e3's review). Throws ArgumentException for an unknown class or a
+	/// longer collating symbol, which glibc refuses too (status 2).</summary>
+	internal static string PosixBrackets(string re)
+		{
+		if (re.IndexOf('[') < 0) return re;
+		var sb = new StringBuilder(re.Length + 16);
+		for (int i = 0; i < re.Length; i++)
+			{
+			char c = re[i];
+			if (c == '\\' && i + 1 < re.Length) { sb.Append(c).Append(re[++i]); continue; }
+			int close = c == '[' ? BracketClose(re, i) : -1;
+			if (close < 0) { sb.Append(c); continue; }   // not a set, or unterminated: as written
+			sb.Append('[');
+			int p = i + 1;
+			if (re[p] == '^') { sb.Append('^'); p++; }
+			if (re[p] == ']') { sb.Append("\\]"); p++; }
+			while (p < close)
+				{
+				if (re[p] == '\\' && p + 1 < close) { sb.Append(re, p, 2); p += 2; continue; }
+				if (re[p] == '[' && re[p + 1] is ':' or '=' or '.')
+					{
+					char kind = re[p + 1];
+					int end = re.IndexOf(kind + "]", p + 2, StringComparison.Ordinal);
+					if (end < 0 || end >= close) { sb.Append(re[p++]); continue; }   // no closing `:]`: a plain `[`
+					var name = re[(p + 2)..end];
+					if (kind == ':') sb.Append(PosixClass(name) ?? throw new ArgumentException($"invalid character class [:{name}:]"));
+					else if (name.Length == 1) sb.Append(name[0] is '\\' or ']' or '[' or '^' or '-' ? "\\" + name : name);
+					else throw new ArgumentException($"invalid collating element [{kind}{name}{kind}]");
+					p = end + 2;
+					continue;
+					}
+				sb.Append(re[p++]);
+				}
+			sb.Append(']');
+			i = close;
+			}
+		return sb.ToString();
+		}
+
+	/// <summary>Whether <paramref name="re"/> ends inside an open bracket expression (`a[b` yes, `a[b]` and `a\[b` no).</summary>
+	internal static bool EndsInsideSet(string re)
+		{
+		for (int i = 0; i < re.Length; i++)
+			{
+			if (re[i] == '\\') { i++; continue; }
+			if (re[i] != '[') continue;
+			int close = BracketClose(re, i);
+			if (close < 0) return true;
+			i = close;
+			}
+		return false;
+		}
+
+	/// <summary>The index of the `]` closing the set opened at <paramref name="open"/>, or -1: a `]` right after `[` or
+	/// `[^` is a member, `[:x:]` `[=x=]` `[.x.]` are skipped whole, `\x` is one unit (as .NET and bash's quoting read it).</summary>
+	private static int BracketClose(string re, int open)
+		{
+		int k = open + 1;
+		if (k < re.Length && re[k] == '^') k++;
+		if (k < re.Length && re[k] == ']') k++;
+		for (; k < re.Length; k++)
+			{
+			if (re[k] == '\\') { k++; continue; }
+			if (re[k] == '[' && k + 1 < re.Length && re[k + 1] is ':' or '=' or '.')
+				{
+				int end = re.IndexOf(re[k + 1] + "]", k + 2, StringComparison.Ordinal);
+				if (end > 0) { k = end + 1; continue; }
+				}
+			if (re[k] == ']') return k;
+			}
+		return -1;
+		}
+
 	/// <summary>Copy a bracket expression starting at <paramref name="i"/>, expanding POSIX
 	/// classes; returns the index of the closing bracket (or of `[` when unterminated).</summary>
 	private static int AppendBracket(string pat, int i, StringBuilder sb)
@@ -209,12 +297,7 @@ public sealed partial class Builtins
 				int end = body.IndexOf(":]", p + 2, StringComparison.Ordinal);
 				if (end > 0)
 					{
-					sb.Append(body[(p + 2)..end] switch
-						{
-						"alpha" => "a-zA-Z", "digit" => "0-9", "alnum" => "a-zA-Z0-9", "upper" => "A-Z", "lower" => "a-z",
-						"space" => "\\s", "blank" => " \\t", "punct" => "!-/:-@\\[-`{-~", "print" => "\\x20-\\x7e",
-						"graph" => "\\x21-\\x7e", "cntrl" => "\\x00-\\x1f\\x7f", "xdigit" => "0-9A-Fa-f", "word" => "\\w", _ => "",
-						});
+					sb.Append(PosixClass(body[(p + 2)..end]) ?? "");
 					p = end + 1;
 					continue;
 					}

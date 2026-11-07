@@ -7,11 +7,11 @@ shell, how it starts and finds commands, and how its help and its log of unsuppo
 
 Claude Code on Windows needs *a* `bash.exe`; it finds Git for Windows by default, or whatever `CLAUDE_CODE_GIT_BASH_PATH` names. C#Bash is built to be that shell (with or without Git installed):
 
-To skip building it: run the installer (README, "Use it with Claude Code"), or download [the latest `Bash.exe`](https://github.com/Klinkenbecker/csharpBash/releases/latest/download/Bash.exe) and its `Bash.exe.sha256` from [Releases](https://github.com/Klinkenbecker/csharpBash/releases), compare the two (`certutil -hashfile Bash.exe SHA256`), put it in a folder of its own, and go to step 2. It is not code-signed, so Windows may warn about it the first time.
+To skip building it: run the installer (README, "Use it with Claude Code"; from [Releases](https://github.com/Klinkenbecker/csharpBash/releases), with its `.sha256`), which puts `Bash.exe` in `%USERPROFILE%/.bash/bin`, and go to step 2. It is not code-signed, so Windows may warn about it the first time. Since 2026-11-07 a release carries only the installer; up to hg-657 it also carried `Bash.exe` on its own.
 
 1. Publish the Native AOT build somewhere the build never touches:
    ```cmd
-   tools\publish-aot.cmd            REM -> dist\Bash.exe, ~6.9 MB
+   tools\publish-aot.cmd            REM -> dist\Bash.exe, ~7.6 MiB
    ```
    One static executable. No .NET runtime on the target, and **~9 ms startup, against Git Bash's ~23 ms as Claude Code starts it** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
 
@@ -53,18 +53,27 @@ set "PATH=C:/path/to"
 endlocal
 ```
 
-`setlocal` keeps the narrowed PATH out of the console you start it from, and `%*` passes your arguments (`--resume`, …) through. `CLAUDE_CODE_USE_POWERSHELL_TOOL=0` stops Claude Code reaching for PowerShell before bash. The installer's `claude.cmd` is this file, finding its own folder. Anything `claude.exe` starts by itself rather than through the shell (the status line, hooks, MCP servers) then sees only that narrow PATH, so give those commands full paths: `C:/Windows/py.exe statusline.py`, not `py statusline.py`.
+`setlocal` keeps the narrowed PATH out of the console you start it from, and `%*` passes your arguments (`--resume`, …) through. `CLAUDE_CODE_USE_POWERSHELL_TOOL=0` stops Claude Code reaching for PowerShell before bash. The installer's `claude.cmd` is this file, finding its own folder. Anything `claude.exe` starts by itself rather than through the shell (the status line, hooks, MCP servers) then sees only that narrow PATH, so give those commands full paths: `C:/Windows/py.exe statusline.py`, not `py statusline.py`. `bash` alone is the exception: that PATH is C#Bash's own folder, so `bash statusline.sh` finds C#Bash.
+
+To keep typing `claude` without putting C#Bash's folder on your PATH, give a folder that IS on your PATH a one-line `claude.bat` that hands off to the installed start file (the development machine starts this way since 2026-11-07):
+
+```bat
+@echo off
+"%USERPROFILE%/.bash/bin/claude.cmd" %*
+```
+
+Each install rewrites `claude.cmd`, so the hand-off always starts the installed build; the installer never touches `claude.bat`.
 
 ### Getting the best out of it
 
-- **Write paths with forward slashes** (`C:/x/y` or `/c/x/y`). A backslash is the shell's escape character, and a Windows program handed `/c/x` gets `C:/x`, as under Git Bash (a colon list, `/c/x:/f/y`, gets `C:/x;F:/y`; any other argument with a colon is passed as typed); pass a switch to `cmd` as `cmd //c …`.
+- **Write paths with forward slashes** (`C:/x/y` or `/c/x/y`). A backslash is the shell's escape character, and a Windows program handed `/c/x` gets `C:/x`, as under Git Bash (a colon list, `/c/x:/f/y`, gets `C:/x;F:/y`; any other argument with a colon is passed as typed); pass a switch to `cmd` as `cmd //c …`. The same goes inside an argument after the first `=` and after `-` and one letter (`--file=/c/x` → `--file=C:/x`, `-I/c/x` → `-IC:/x`), and for the program's environment (`X=/c/x prog`, or an exported `X`, reaches it as `C:/x`); a word holding `;` is passed whole, a bare `/c` or `/` as typed. `MSYS_NO_PATHCONV=1` turns all of it off, `MSYS2_ARG_CONV_EXCL` (`*` or `;`-separated prefixes) the arguments, `MSYS2_ENV_CONV_EXCL` (prefixes of `NAME=value`) the environment, as in Git Bash. A nested `bash` (this shell) and an MSYS program get the environment as typed.
 - **There is no terminal.** `/dev/tty` reports "No such device or address" and a program that would prompt on one fails instead of hanging; give tools their input on stdin or their non-interactive flags.
 - **After installing a tool**, run `hash -r`.
 - **Reproduce from a script file, not through PowerShell.** Windows PowerShell 5.1 strips the inner double quotes when it hands `-c 'echo "x (y) z"'` to a native executable, so the shell receives `echo x (y) z` — and then correctly reports a syntax error. A report observed only through `& Bash.exe -c "..."` from PowerShell measures PowerShell's quoting, not the shell (2026-09-05, one full false report).
 - **Quote the build in a bug report.** `Bash.exe --version` prints a third line, `C#Bash build 1.0.0+hg.<hash> <rev>`, stamped from the Mercurial revision at build time (a trailing `+` means an uncommitted tree).
 - **Measure a call yourself** with `BASH_TIMING_LOG=<file>`: the shell appends where its time went (start, set-up, each `source`, `eval` and external program, exit) to that file when it exits. It costs about 2 ms a launch while set, nothing when not.
 
-Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracking, heredocs, process substitution, `timeout`, and the `rg`/`pkill` shims it defines have all been verified end to end, both with Git on PATH and on a PATH with no Git at all ([`PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md), P5).
+Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracking, heredocs, process substitution, `timeout`, and the `rg`/`pkill` shims it defines have all been verified end to end, both with Git on PATH and on a PATH with no Git at all ([`DECISIONS.md`](../DECISIONS.md), 2026-09-04, "P5 verified: Claude Code driven by C#Bash on a Git-less PATH").
 
 ## Startup and command lookup
 
@@ -81,7 +90,7 @@ Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracki
 
 **Finding a command**, in this order: an alias, a keyword, a function, a builtin or embedded tool; a name with a slash (or a drive, `F:x`) is that path, from the shell's own directory and never searched for; anything else is searched on PATH, trying each entry as named and then with every `PATHEXT` extension (`.COM`, `.EXE`, `.BAT`, `.CMD`, …), and taking the first match that can run (a program Windows starts, `.com` `.exe` `.bat` `.cmd`, a `.sh` file, or a `#!` line: what `[ -x ]` says). A `.js`, `.vbs` or other `PATHEXT` file that runs only through a file association is passed over, as Git Bash does. A `#!` script runs by its interpreter line (bash and sh scripts in-process), found on PATH or by its path; a `.sh` file without one runs in-process too, and so does any other text file with no `#!` named by its path (`./build`), as bash and msys run one (binary content is refused: "cannot execute binary file: Exec format error"); found on PATH by a bare name, such a file is not run. `/bin/NAME` and `/usr/bin/NAME`, when the drive has no such folder, run `NAME` (a builtin first, then PATH), as a `#!` line does. A bare name never runs a script from the current directory: write `./script`, as in bash.
 
-- **`sh` is a copy of the shell named `sh.exe`**, beside `Bash.exe`, as Git for Windows and MSYS2 ship theirs (each one's `sh.exe` is byte-for-byte its `bash.exe`). Step 4 above puts that folder on PATH, so `sh -c`, `sh script`, `… | sh`, `xargs sh -c` and `find -exec sh -c` find it, and so do the programs the shell starts (`make`, say); something started outside C#Bash needs the folder on its own PATH. Started as `sh`, it runs bash's default mode, as a `#!/bin/sh` script does: POSIX mode is not available, and nothing is printed about it. Its messages name it by its path (`$0` is the path it was started by). `tools/deploy.sh` makes `dist/sh.exe` a hard link to `dist/Bash.exe` (since 2026-11-01; one file on disk, re-made at every deploy so it never keeps an old build). With only `Bash.exe` downloaded, make it yourself: a copy, or a hard link (`ln Bash.exe sh.exe` in C#Bash), made again after each new `Bash.exe`, since a link keeps the build it was made to.
+- **`sh` is the shell under the name `sh.exe`**, beside `Bash.exe` (the installer and deploy make it a hard link; by hand a copy works), as Git for Windows and MSYS2 ship theirs (each one's `sh.exe` is byte-for-byte its `bash.exe`). Step 4 above puts that folder on PATH, so `sh -c`, `sh script`, `… | sh`, `xargs sh -c` and `find -exec sh -c` find it, and so do the programs the shell starts (`make`, say); something started outside C#Bash needs the folder on its own PATH. Started as `sh`, it runs bash's default mode, as a `#!/bin/sh` script does: POSIX mode is not available, and nothing is printed about it. Its messages name it by its path (`$0` is the path it was started by). `tools/deploy.sh` makes `dist/sh.exe` a hard link to `dist/Bash.exe` (since 2026-11-01; one file on disk, re-made at every deploy so it never keeps an old build). With only `Bash.exe` downloaded, make it yourself: a copy, or a hard link (`ln Bash.exe sh.exe` in C#Bash), made again after each new `Bash.exe`, since a link keeps the build it was made to.
 - **Lookups are remembered across shells**, in `~/.bash/commands`, one small file per PATH value. A remembered program is used after one existence check, so a moved or deleted one is simply searched for again. A program installed later in a folder earlier on PATH stays hidden behind the remembered one until `hash -r`.
 - **`hash name` also remembers a miss.** In a later shell it answers `hash: x: not found (remembered miss: hash -r searches again)` without searching. Running a program, `command -v` and `type` always search, as bash does. After installing a tool you had probed with `hash`, run `hash -r` (or `hash -d name`).
 - **Windows limits that remain:** a program whose own path is over 260 characters, or one started from a directory over 258 characters, cannot be started (cmd cannot either; C#Bash says so, 126), though the shell itself can `cd` there and work with its files. A file name ending in a dot or a space cannot exist through Windows' file API, which drops it: a command name `s1.` finds nothing, but `cat s1.` reads `s1`.
@@ -104,3 +113,7 @@ unsupported option (whether a PATH program then ran it or not), a feature that i
 when parsed, a bash builtin C#Bash lacks, a help topic not implemented or not found. It is the list of things to
 consider implementing. The full arguments are kept, in your profile, as `~/.bash_history` keeps commands; nothing is
 sent anywhere. `BASH_UNSERVICED_LOG` names another file; `/dev/null` turns the log off (the test runners do).
+
+Beside it, the installer puts `KNOWN_ISSUES.md`: the known issues of the build it installs (open wrong answers,
+limits, and what was fixed since the release before), its first lines naming that build. It is the repository's
+[`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) as of that release.

@@ -271,19 +271,25 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		return ShellEncoding.Canonical(sb.ToString());   // as ExpandToString: `$'\xc3\xa9'` matches é
 		}
 
-	/// <summary>Expand a word into a regex for `[[ =~ ]]`: quoted parts are literal.</summary>
+	/// <summary>Expand a word into a regex for `[[ =~ ]]`: quoted parts are literal, except inside a bracket expression,
+	/// where bash hands quoted text over as written (`^["[:digit:]"]$` is the class, `["^a"]` a negated set: measured
+	/// against bash 5.1, 2026-11-07; both were escaped into literals); there only a `\` is doubled, .NET's escape in a set.</summary>
 	public string ExpandToRegex(Word word)
 		{
 		var sb = new System.Text.StringBuilder();
 		foreach (var p in word.Parts)
 			{
-			switch (p)
+			string? quoted = p switch
 				{
-				case SingleQuotedPart s: sb.Append(System.Text.RegularExpressions.Regex.Escape(s.Value)); break;
-				case AnsiCQuotedPart a:  sb.Append(System.Text.RegularExpressions.Regex.Escape(a.Value)); break;
-				case DoubleQuotedPart d: sb.Append(System.Text.RegularExpressions.Regex.Escape(string.Concat(d.Parts.Select(ExpandPart)))); break;
-				default: sb.Append(ExpandPart(p)); break;
-				}
+				SingleQuotedPart s => s.Value,
+				AnsiCQuotedPart a  => a.Value,
+				DoubleQuotedPart d => string.Concat(d.Parts.Select(ExpandPart)),
+				_ => null,
+				};
+			if (quoted is null) { sb.Append(ExpandPart(p)); continue; }
+			sb.Append(quoted.Length > 0 && Builtins.EndsInsideSet(sb.ToString())
+				? quoted.Replace("\\", "\\\\")
+				: System.Text.RegularExpressions.Regex.Escape(quoted));
 			}
 		return ShellEncoding.Canonical(sb.ToString());
 		}

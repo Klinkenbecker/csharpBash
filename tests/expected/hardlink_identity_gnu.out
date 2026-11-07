@@ -19,4 +19,5 @@ find -inum (a's): ./a ./b
 ./b 2
 ./c 1
 find -printf %i: as stat
-after rm b: a has 1 link
+ls -l's link column (2026-11-05; it was 1): a=2 b=2 c=1 
+after rm b: a has 1 link, ls -l says 1

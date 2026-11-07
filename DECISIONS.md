@@ -11767,3 +11767,374 @@ the CR (in the last field; rev moved it to the front); the header lists every li
 file CRLF. The global CLAUDE.md's CRLF limit REMOVED (moved to "No longer limits"); one closing message to
 koliada-net-b9. README and FEATURES list every tool the rule covers. Publishing next, on the architect's "publish whwn
 ready" (the published 651 still ends awk's `print $1` of a CRLF record with CRLF, which 655 corrects).
+
+## 2026-11-05 -- PUBLISHED again: GitHub main = git 8dff6e3 = hg rev 657; release hg-657 (Bash.exe 655)
+**Status:** Record. On the architect's "publish whwn ready": the CRLF rule complete and corrected (the published 651
+ended awk's `print $1` of a CRLF record with CRLF). compare3 on 655, every session idle (koliada-net-b9 waited out):
+loop 0.158 / arith 0.251 / func 0.211 / loop_big 1.452 / coreutils 0.058 (247x Git) / pipeline 0.090 / find 0.016 /
+startup 9.1 ms (Git 23.5, WSL 145.6); all within run-to-run noise of 651's (pipeline 0.087 -> 0.090 not called a
+change from one run); every output agrees. Doc review rev 657. publish.sh: console suite 253/0 on dist/Bash.exe;
+history 658 changesets; pushed fb76a63..8dff6e3; release hg-657 = Bash.exe (655, 41604014…) + csharpBash-setup.exe
+(b0ea40a0…), both downloaded back and matched; this machine's install upgraded to 655. No debug symbols: release
+assets Bash.exe, .sha256, setup exe, .sha256 only; the installed Bash.exe has no MPDB, no RSDS.
+
+## 2026-11-05 -- BUILT: the OOM guard: a builtin out of memory ends "NAME: memory exhausted", status 2, and the shell goes on
+**Status:** Active. The open list's item 3d (raised 2026-11-03 with diff's n x m table; Claude's position stated
+then; the architect's "go" on the list).
+**Was (655):** an OutOfMemoryException in any builtin escaped TryExecute (its last-resort guard caught only I/O and
+permission errors): an unhandled exception, a .NET stack trace, exit 134; every later command, every pipeline stage
+and the output before it lost. Reproduced deterministically: `printf '%2000000000s' x` (a string past .NET's
+largest, refused before anything is allocated: string.PadLeft).
+**Fix:** TryExecute catches OutOfMemoryException: "NAME: memory exhausted" (GNU's xalloc_die words) on stderr,
+status 2 (Claude's position; GNU's sort, grep and diff use 2 for trouble, most coreutils 1), the shell goes on.
+IoError maps it to "memory exhausted" too, so a tool's per-file catch-all says GNU's words, not .NET's.
+**Test:** `oom_guard` (authored: GNU's printf would write 2 GB): direct, in `$( )`, a pipeline stage, awk's
+printf, inside a function; red on 655 (12 lines: the crash); the guard mutated away red (13). The case merges stderr into stdout (`exec 2>&1`): the runner compares stdout only, and the first suite run failed on an expected file made with 2>&1. IoError's mapping is not
+reached by a test (no per-file path found that a test can drive out of memory without really allocating).
+**Not covered:** an OOM outside a builtin (the evaluator itself, e.g. a huge expansion) still ends the shell.
+**Suite:** 250/0 console and detached, 258/0 with Git's cmd on PATH. **Implemented by:** rev 660.
+
+## 2026-11-05 -- DEPLOYED 660 (the OOM guard): suite (-Detached) 254/0, battery 217
+**Status:** Record. Live on 660: `printf "%2000000000s" x > /dev/null` then `echo after` → "printf: memory exhausted",
+"after: rc=2", the shell exit 0 (655: the unhandled exception, exit 134). No peer reported it: no message sent.
+Next on the open list: ls -l's link column (3).
+
+## 2026-11-05 -- BUILT: ls -l's link column shows the real hard-link count, read by name (no open)
+**Status:** Active. The open list's item 3 (HELD 2026-11-01, rev 579: "ls -l's link column stays 1. Reading it costs
+an open per entry … +~17%"); Claude's position "show it"; the architect's "go" on the list.
+**What made the cost go away:** Windows 10 1809+ reads a file's FILE_STAT_INFORMATION by NAME, no handle opened
+(NtQueryInformationByName, FileStatInformation), as Cygwin does. `ShellFile.LinkCount`: that, else Identity's open
+(older Windows, a failure), else 1. A directory's count stays Windows' 1 (Unix: 2 + subdirectories), as recorded.
+**Measured (a diagnostic, NOT the benchmark: three Release builds, alternating, 10 runs of `ls -l` over 2000 files,
+three rounds):** the column fixed at 1: 149/150/151 ms; by name: 151/155/157 (+1-4%, 1-3 us a file); by an open:
+165/162/161 (~+8%). So by name.
+**Test:** `hardlink_identity_gnu` (GNU via WSL) grew `ls -l a b c` link counts (a=2 b=2 c=1) and ls -l after `rm b`
+(1): identical; red on 660 (2). Mutations: the count fixed at 1 red (2); the by-name path off (Identity's open alone)
+green, as it must be (the fallback is right too).
+**Suite:** 250/0 console and detached, 258/0 with Git's cmd on PATH. **Implemented by:** rev 662.
+
+## 2026-11-05 -- DEPLOYED 662 (ls -l's link column): suite (-Detached) 254/0, battery 217
+**Status:** Record. Live on the AOT build: `ls -l dist/Bash.exe dist/sh.exe` shows 2 links each (the deploy's hard
+link), a rollback copy 1. Next on the open list: iconv in-process (3c).
+**Correction (same day, to the line above):** the rollback copy shows 2 links as well, rightly: `Bash.exe.rev660` and
+`sh.exe.rev660` are the previous hard-linked pair, renamed by the deploy's swap, so each still has the other.
+
+## 2026-11-05 -- BUILT: iconv in-process (glibc's, for the encodings Windows hands out)
+**Status:** Active. The open list's item 3c (installer-a4's need of 2026-11-01: `iconv -f UTF-16 -t UTF-8` of a Windows
+INF, "command not found": no iconv on this PATH); Claude's position of that day; the architect's "go" on the list.
+**Measured first (glibc via WSL), then matched:** UTF-16/UTF-32 output: a little-endian BOM written with the FIRST
+character (empty input: none); input: a BOM read and dropped, none means LITTLE-endian (the machine's order; Claude had
+assumed the spec's big-endian: the GNU case caught it); -LE/-BE never take a BOM (U+FEFF is a character); "iconv:
+illegal input sequence at position N", N the input byte of the bad or unconvertible sequence, after writing what came
+before, exit 1; "incomplete character or shift sequence at end of buffer" (also under -c); -c drops invalid input and
+unconvertible characters, exit 0; each file its own conversion (its own BOM, positions from its start); "cannot open
+input file `F': …"; the default encoding UTF-8 (the locale's); names case-insensitive with glibc's aliases.
+**Built:** Bash/Evaluator/Builtins.Iconv.cs: written-out decoders (UTF-8 with the narrow second-byte ranges that keep
+out overlong forms, surrogates and values past U+10FFFF; UTF-16 pairs; UTF-32; Latin-1; Windows-1252 with its five
+undefined bytes refused, as glibc; ASCII), streaming in 64 KiB blocks (a sequence cut by a block is carried), encoders
+for each; -f -t -c -o -l -s, --from-code/--to-code/--output. Other encodings and //TRANSLIT, //IGNORE go to the PATH
+iconv (none here: said, exit 2). -l lists the 28 names in glibc's form.
+**Tests:** `iconv_gnu` (glibc via WSL; 38 probes incl. a 100,000-character round trip, a block edge, an error past a
+block): identical; red on 662 (142). `iconv_local` (authored): the hand-offs, -l, an INF in UTF-16LE with CRLF; red on
+662 (26). Mutations, each red: no BOM read as BE (2), the BOM eager (3), -c ignored on input (5), positions per block (2),
+UTF-8's narrow ranges off (15: needed new probes, an overlong form, an encoded surrogate, past U+10FFFF; the first run
+survived), CP1252's euro (7). help_builtin's count of builtins 134 -> 135.
+**Suite:** 252/0 console and detached, 260/0 with Git's cmd on PATH. **Implemented by:** rev 665.
+
+## 2026-11-05 -- DEPLOYED 665 (iconv): suite (-Detached) 256/0, battery 217
+**Status:** Record. Live on 665: `iconv -f UTF-16 -t UTF-8 C:/Windows/INF/1394.inf` (a real UTF-16LE INF with a BOM)
+reads as text, rc 0, its CRLF kept. One message to installer-a4 (its need of 2026-11-01). A stray `err` (66 bytes, the
+iconv case's stderr capture, made by Claude's mutation runs at 18:38) removed from the repository root.
+**Found beside it (off-plan, reported, not chased):** `curl -s -o /dev/null …` exited 23 (a write error) under C#Bash:
+a native program given the literal path /dev/null (MSYS converts it for native programs; C#Bash may not). To check.
+Next on the open list: the small gaps (3e: awk srand(), jq --rawfile, find -anewer/-cnewer/-newerXY).
+
+## 2026-11-05 -- RAISED (a bug, Claude's find): /dev/null reaches a native program as a path that does not exist
+**Status:** Raised to the architect with a position; under the bug-fix rule, built after ~10 minutes unless he objects.
+**Measured (665 vs Git Bash 4.4.23, `cmd //c echo …`):** Git Bash hands a Windows program `nul` for `/dev/null`, for
+`--out=/dev/null` (`--out=nul`) and for `-o/dev/null` (`-onul`); `/dev/null/x` stays. C#Bash passes `/dev/null`
+verbatim: `curl -s -o /dev/null file:///C:/Windows/win.ini` exits 23 (a write error) under C#Bash, 0 under Git Bash
+(and on Linux). Position: NativeArgument converts `/dev/null` to `nul` in those three places, as Git Bash; not
+Git Bash's `/dev/zero` -> `/Device/Null` or `/dev/stdout` -> `<git root>/dev/stdout` (meaningless to Windows programs).
+**OPEN, separate (the architect's; do not change without his word):** the same measurement shows Git Bash converting
+`--file=/c/x` to `--file=C:/x`, where NativeArgument's 2026-10-10 rule (approved: "your recommendation is good") says
+Git Bash converts only at an argument's start. Either Git Bash differs from that day's measurement, or it was mismeasured.
+
+## 2026-11-05 -- FIXED: /dev/null reaches a Windows program as `nul`, as under Git Bash (Claude's find, raised above)
+**Status:** Active. Raised with the position; built after the wait (no objection).
+**Fix:** ShellEnvironment.NativeArgument: `/dev/null` as the whole argument, after `=`, or after a one-letter option
+becomes `nul` (Git Bash's measured three); `x/dev/null`, `/dev/null/x` stay; an MSYS2_ARG_CONV_EXCL prefix leaves it
+(and `*` or MSYS_NO_PATHCONV turn all conversion off, as before; MSYS programs are never converted).
+**Test:** `native_devnull` (expected = Git Bash 4.4.23, the reference for what a Windows program receives): identical;
+red on 665 (8). Mutations, each red: the whole argument (14), after `=` (2), the exclusion ignored (2).
+
+## 2026-11-05 -- BUILT (the small gaps, part): awk's sqrt, exp, log, sin, cos, atan2; rand/srand NOT yet
+**Status:** Active. The open list's 3e named "awk srand()": every math built-in was refused ("awk: unsupported:
+sqrt()"), handed to a PATH awk (none here).
+**Built:** sqrt, exp, log, sin, cos, atan2 on C doubles (System.Math), as gawk's. `awk_math_gnu` (gawk 5.1 via WSL:
+values, OFMT %.12g, a mean and standard deviation, a hypotenuse, a sine/cosine table): identical; red on 665 (25).
+Mutations: atan2's arguments swapped red (14), log as log10 red (4).
+**rand()/srand() NOT built (OPEN):** a port of BSD random() as gawk's from memory (63 words, Park-Miller seeding, 630
+draws dropped, two draws per rand()) gave 0.291066… where gawk 5.1 gives 0.92404581539912467 for the first rand();
+a search over the likely variants (state size and separation, old/new/glibc seeding, weak seeding, 0-1260 dropped
+draws) matched nothing. Not shipped unverified: they stay refused (handed to a PATH awk). Next: take the generator
+from gawk 5.1's own source. gawk's measured facts kept for that: srand() returns the previous seed and the first
+srand() returns 1; srand(5), srand(7), rand(), rand() → 0.11289516293734114 0.42623727928700772; srand(0); rand() →
+0.85556592365572337.
+**Found beside it (a gap):** awk's printf refuses %e, %E, %g, %G ("awk: unsupported: printf %g"); %d %i %f %x %o %c %s
+match gawk.
+**Suite (both entries above):** 254/0 console and detached, 262/0 with Git's cmd on PATH. **Implemented by:** revs 668
+(/dev/null) and 669 (awk math).
+
+## 2026-11-05 -- DEPLOYED 669 (/dev/null for Windows programs; awk's math): suite (-Detached) 258/0, battery 217
+**Status:** Record. Live on 669: `curl -s -o /dev/null file:///C:/Windows/win.ini` rc 0 (665: 23); awk `sqrt(2)`,
+`atan2(0, -1)` → 1.41421 3.14159. No peer reported either: no message sent. Not published (his word).
+
+## 2026-11-05 -- BUILT: awk's printf %e, %E, %g, %G (found refused beside the awk math work)
+**Status:** Active. The small gaps.
+**Built:** awk's printf takes them through the shell printf's C formatting (PrintfFormatter.FormatDouble, now
+internal: C's two-digit exponent, %g's form and trimmed zeros, `#`), with awk's own sign, flags and padding, inf/nan as
+gawk; the parse-time check (`diouxXfFcs`) admits e E g G. `awk_printf_eg_gnu` (gawk 5.1 via WSL: 9 lines of flags,
+widths, precisions, %g's switch to exponent form, 0, inf, -nan, input fields): identical. Mutations: the parse check as
+it was red (21), every conversion as %f red (16).
+**Suite:** a first run failed 3 (awk, awk_unsupported_once, unserviced_log): they used `%e` as the example of an awk
+feature refused (a loud-boundary probe; a format refused while the program runs). Now `%a` (gawk's hex float, which
+gawk prints as 0x1p+0 and C#Bash still refuses) plays that part; awk's old `%.3e` probe answers gawk's 1.234e+04.
+Then 255/0 console and detached, 263/0 with Git's cmd on PATH. **Implemented by:** rev 671.
+
+## 2026-11-05 -- DEPLOYED 671 (awk's printf %e/%g): suite (-Detached) 259/0, battery 217
+**Status:** Record. Live on 671: awk `printf "%.3e %g", 12345, 0.00001` → 1.234e+04 1e-05. Not published (his word).
+
+## 2026-11-06 -- NEED (daq-a1): `file` (to check a text file's encoding and line endings before an edit); awaiting the architect
+**Status:** Recorded; a feature, so it waits for his word. daq-a1: `file PROJECT_CONTEXT.md DECISIONS.md` → "file:
+command not found", exit 127 (no `file` on this PATH; Git for Windows ships libmagic's in /usr/bin). Its workaround:
+`grep -c $'\r'` and `od -c`. Why it matters: the global rules (LF, and Edit rewriting a mixed file to its dominant
+ending) send every session to check line endings before editing, and `file` is the command Claude reaches for.
+**Claude's position:** an in-process `file` for the text subset, in libmagic's words (measured against WSL's file
+first): ASCII / UTF-8 (Unicode) / UTF-8 with BOM / UTF-16 LE and BE text, "with CRLF line terminators", "with CR line
+terminators", mixed, "empty", "directory", "data" for anything binary; any other type (images, archives, executables)
+handed to a PATH `file` where there is one, said otherwise. What would change it: the request count staying at one.
+
+## 2026-11-07 -- NEED (guy-96, guy-windows8): jq's capture() and match(); awaiting the architect
+**Status:** Recorded; a feature, so it waits for his word. guy-96: `echo '"ab12"' | jq -r 'capture("(?<n>[0-9]+)") |
+.n'` and `jq -r 'match("[0-9]+") | .string'` → "jq: capture/1 (match/1): not supported by C#Bash's in-process jq",
+exit 2; `test()` works (its control); GNU jq 1.6 prints 12 for both. Its use: splitting `grep -n` output of a Claude
+Code transcript into the line number and the JSON (`jq -R 'capture("^(?<n>[0-9]+):(?<j>.*)$") | … (.j | fromjson?)'`);
+worked around with grep -o and a while-read loop.
+**Claude's position:** build match/1, match/2 (flags) and capture/1, capture/2 on the regex test() already uses (.NET's
+`(?<name>…)` is jq's Oniguruma syntax): match's object {offset, length, string, captures: [{offset, length, string,
+name}]}, offsets in code points as jq counts them, "g" giving one object per match; capture the object of named
+groups; scan with them. Checked against jq 1.6 (WSL). What would change it: nothing else asked for in jq's regex set.
+
+## 2026-11-07 -- DELEGATED: the test runners' replacement is Claude's call (how and when)
+**Status:** Active. The architect: "powershell is desperatly slow, c#bash is the fastest thing on any windows
+machine!" and then "I will leave it up to you how and when those scripts are updated." (The global CLAUDE.md, 2026-11-06:
+no PowerShell in any project without his authorization; existing .ps1 files grandfathered, replaced as convenient.)
+**Claude's plan (open-list item 4, replacing its .NET-runner proposal):** run-tests and the compat battery become bash
+scripts run by the DEPLOYED dist/Bash.exe, testing the candidate build (two binaries: the build under test never judges
+itself, the 2026-06-13 reason the runners were kept outside the shell); detached launches (no console, stdin NUL, stdout
+to a file, as Claude Code starts a shell) through tools/benchtimer, our own CreateProcessW launcher, taught that flag.
+The suite's wall time measured before and after.
+
+## 2026-11-07 -- Doc sweep before a new session (the architect: "do a sweep of the docs for updates/ambiguities/inconsistencies/refs and save everything")
+**Status:** Record. A fresh read-only reviewer (subagent) went through README, PROJECT_CONTEXT, IMPLEMENTATION,
+ARCHITECTURE and docs/*; Claude checked its evidence (case count 267 with 4 AOT-only, dist 671, rollback rev669,
+the live sessions) and fixed: PROJECT_CONTEXT's RESUME block rewritten (it said 655 deployed and nothing unpublished
+where 671 is deployed and 660-671 unpublished; done items listed open; the .NET-runner plan superseded; a stale
+session list); its body (BASH_PROJECT_HANDOFF.md, which no longer exists; 51/45-case counts; the battery text fused into
+the compare3 bullet; `<( )` listed out of scope; tools/); counts 261 -> 267 (README, DEVELOPING); DEVELOPING's `pwsh`
+(not installed here; the tools run powershell.exe); USING's binary size, a "PROJECT_CONTEXT, P5" reference (it is
+DECISIONS 2026-09-04), "sh is a copy" (a hard link); PERFORMANCE's measured-on line and pipeline figures; FEATURES's
+"xargs reads all of its input first" (false since 2026-10-30), awk's math/%e/%g/rand, the README's tool and CRLF lists
+and /dev/null; ARCHITECTURE's and a code comment's "%e/%g refused" examples (now %a); IMPLEMENTATION's ReadBytes (gone),
+publish-aot.cmd, release.sh, installer.sh rows, and six rows' recent behavior. Checked and clean: markdown links, cited
+DECISIONS titles, American spelling in current text.
+
+## 2026-11-07 -- RAISED (guy-e3's review, E:/BashRequest.md): `=~` misreads POSIX bracket classes; native arguments and the environment as Git Bash converts them
+**Status:** Active. guy-e3 (guy-windows11) sent three findings on build 655 at the architect's request; reply to go in
+E:/BashRequest-reply.md with the build carrying each fix. Its probes were PowerShell; not run here (no PowerShell without
+his authorization): measured with `cmd //c echo` / `cmd //c set` on deployed 671, GNU bash 5.1.16 (WSL), Git Bash 4.4.23.
+**References (the architect, 2026-11-07, restating the 2026-10-12 RULING):** "GNU bash for 'gold master' and git bash
+for 'critical' (claude) items". `=~` is GNU's; what a Windows program receives is Claude's (Git Bash).
+**1. `[[ =~ ]]` and POSIX brackets (a BUG, GNU's):** all nine classes fail (`[[ 5 =~ [[:digit:]] ]]`), through `$re`
+too; `'a]' =~ ^[[:alpha:]]$` matches; `[[=a=]]`, `[[.a.]]` fail. Cause: Evaluator's `=~` hands ExpandToRegex's string
+to .NET untranslated (grep/sed/awk translate through Builtins.AppendBracket). Already as GNU, measured: `[]a]`, a
+backslash in a bracket, `\d`, alternation's BASH_REMATCH, `*?`. Fix: translate the bracket expressions (classes from
+AppendBracket's table, `[=c=]`, `[.c.]`), nothing else; an unknown class is an invalid regex, as glibc.
+**2. Native arguments (Git Bash, measured; the architect's "yes" for 2b-2d):**
+- (2a, a BUG) an argument holding `;` is left as typed, as Git Bash (`/e/x;/c/y`, `/e/x;`, `/e/x;rel`,
+  `--file=/e/x;/c/y`); C#Bash converted the first item only (`E:/x;/c/y`).
+- (2b) the part after an argument's FIRST `=` is converted as a whole argument would be, recursively: `--file=/e/x`,
+  `path=`, `-o=`, `-Dk=`, `x:y=`, `=/e/x`, `a=b=/e/x` -> `a=b=E:/x`; `--file=/e/a:/c/b` -> `--file=E:/a;C:/b`.
+  Not when the argument holds `://` (`http://h/a=/e/x`) or starts with a drive (`C:/a=/e/x`): both left, as Git Bash.
+- (2c) after `-` and ONE ASCII letter: `-I/e/x` -> `-IE:/x`; not `-ab/e/x`, `--I/`, `-1/`, `+I/`, `-/e/x`.
+- (2d) a Windows child's ENVIRONMENT: each exported or `VAR=x cmd` value converted as an argument (`/e/x`, a colon list,
+  `/tmp/x`, `--file=/e/x`, `-I/e/x`; a `;` value left). Off with MSYS_NO_PATHCONV; NOT with MSYS2_ARG_CONV_EXCL (Git
+  Bash converts the environment under `*` and any prefix, measured); MSYS2_ENV_CONV_EXCL: `*`, or `;`-separated prefixes
+  of `NAME=value`, case-sensitive (`ZZP`, `ZZP1=/e` exclude; `zzp1`, `ZZP1=/c`, empty do not). PATH keeps its own rule
+  (always the exit form). An MSYS child gets the environment as is, as its arguments.
+**Kept different from Git Bash (C#Bash's 2026-10-10 rule, Claude relies on none of them):** a bare `/x`, `/` and
+anything that is not `/<drive>/...` or `/tmp` stays as typed wherever it appears (Git Bash: `/i` -> `I:/`, `/` and
+`/api/v1` -> its install folder, `--file=/e` -> `E:/`); a drive that does not exist stays; lists get forward slashes
+(Git Bash: backslashes; the architect's forward-slash mandate).
+**Supersedes** the 2026-10-10 entry's "never inside an argument (`--file=/c/x`)" clause: that rule was to be Git Bash's,
+and Git Bash converts there (the 2026-11-05 OPEN observation, confirmed). The rest of that entry stands.
+**3. jq `def`:** a NEED, awaiting the architect: refused in the jq subset's ratified scope (2026-09, "Refused (or
+deferred): def, ..."). Claude's position: build it in one jq pass with capture()/match() and --rawfile when he says go;
+what would change it: his keeping the subset at its ratified scope while one session asks.
+
+## 2026-11-07 -- BUILT: `=~` POSIX brackets as glibc; native arguments after `=` / `-X`, `;` whole, and the environment, as Git Bash (raised above)
+**Status:** Active. Built on the bug-fix rule (1, 2a) and the architect's "yes" (2b-2d).
+**Code:** `Builtins.PosixBrackets` (+ `BracketClose`; the class table moved to `Builtins.PosixClass`, shared with
+AppendBracket) called by Evaluator's `=~`; `ShellEnvironment.NativeValue` (the conversion: `;` whole, the start
+(`StartConverted`, the old body), after the first `=` unless `://` or a drive start, after `-X`) behind `NativeArgument`
+(the MSYS2_ARG_CONV_EXCL prefixes, now checked first for every argument); ExecExternal converts each environment value
+of a Windows child with NativeValue (not PATH, not BASH_FUNC_*; MSYS_NO_PATHCONV, MSYS2_ENV_CONV_EXCL), unless the child
+is an MSYS program or `ChildLauncher.IsThisShell` (one file with Environment.ProcessPath by volume and index, so
+dist/sh.exe too): a nested bash keeps `/c/x`, as Git Bash's does. Another C#Bash build is not recognized (gets C:/x).
+**Tests:** new `regex_posix_classes` (GNU via WSL; red on 671), `native_args_within` (36 checks, red on 671 in 18),
+`native_env` (29 lines, red on 671 in 14), both expected = Git Bash 4.4.23 with the KEPT rows authored (each checked:
+under Git Bash only the KEPT rows and /tmp's own-form rows differ); `native_args`' "inside" row now expects
+`--file=C:/x`; `native_args_msys` gains "msys env ok" (MSYS printenv gets `/c/Windows`). Mutations, each red: the MSYS
+exemption, the self exemption, MSYS2_ENV_CONV_EXCL ignored, MSYS2_ARG_CONV_EXCL applied to the environment, the `://`
+guard, the drive guard, the class table (`digit` 1-9: green at first, the case tested `5`; now `0`, red). Green, kept:
+removing `\x` as one unit inside a set (copying char by char gives the same text; it matters only for `\[:`, inside the
+gap f2 below). Suite (Release JIT): console 258/0 (12 skipped), -Detached 258/0, with Git's cmd on PATH 266/0 (4 AOT-only).
+**Found, not chased (to the architect):** (f1) `[[ a == a ]] 2>/dev/null` is a syntax error in C#Bash; GNU takes a
+redirection after `[[ ]]`. (f2) quoted text inside an unquoted set: GNU `[[ 5 =~ ^["[:digit:]"]$ ]]` matches (bash
+5.1 leaves quoted text in a set unescaped); C#Bash escapes it (ExpandToRegex knows no set). (f3) a nested C#Bash's
+ARGUMENTS are converted (`bash -c 'echo $1' _ /c/x` prints `C:/x`; Git Bash `/c/x`), since 2026-10-10; Claude's
+position: hand this shell its arguments as typed too (IsThisShell, as the environment). (f4) the class table is ASCII
+(as grep/sed/awk's); GNU in a UTF-8 locale likely matches `é` with `[[:alpha:]]`: unmeasured.
+
+## 2026-11-07 -- DEPLOYED 677 (`=~` brackets; native arguments and environment): suite (-Detached, AOT) 262/0, battery 217
+**Status:** Record. `1.0.0+hg.bcd4e7f8a64e 677`; sh.exe hard link confirmed; rollback dist/*.rev671. On the live build
+guy-e3's probes give: every class matches, `'a]'` does not; `--file=E:/x`, `path=E:/x`, `-IE:/x`, `/e/x;/c/Users`
+whole, `P=/e/x prog` -> `E:/x`; a nested bash still sees `/c/x`. Reply written to E:/BashRequest-reply.md (verdict per
+case, build 677, not published) and one message sent to guy-e3 (bridge:session_017y6DxN6Zdu7yB4yTBDV53K; the server:
+delivery not confirmed, that session "has not reported that it can receive cross-session messages"). Not published.
+
+## 2026-11-07 -- GO: the jq pass (capture/match/scan, --rawfile); `def` is a FORK put to the architect with pros and cons
+**Status:** Active. Claude's message ended "Do I have your go for [the conversions]? The jq pass (`def`,
+`capture`/`match`, `--rawfile`) is also still waiting for your word"; he answered "yes", and Claude read it as the
+conversions only. The architect: "I already told you go, and go means go." So the jq pass is GO: match/1, match/2,
+capture/1, capture/2, scan (guy-96's NEED above) and `--rawfile` (the open list's small gaps), each checked against
+jq 1.6 (WSL). `def` is NOT in it: "a valid point and is a fork which needs pros/cons for me to review", because the jq
+subset's ratified scope refused it. Claude's case, put to him the same day: DEFER `def` (reasons in the chat record:
+no silent wrong answer today, one asker who called the error "fine as it is", closures/recursion are where a new class
+of wrong answers would come from); what would change it: a second session hitting it, or a script that cannot be
+written without it. This replaces Claude's "build it in one jq pass" in the RAISED entry above, which named no
+criteria. Awaiting his review; do NOT build `def` before it.
+
+## 2026-11-07 -- RULED: jq `def` deferred until a second request
+**Status:** Active. The architect, on the pros and cons above: "I concur (defer until next request), continue". `def`
+stays refused with its clear message (exit 2). Revisit when a second session asks, or a script cannot be written
+without it. guy-e3's reply file says so.
+
+## 2026-11-07 -- FIXED (f1-f3, found during guy-e3's review; the bug rule, no objection after the wait)
+**Status:** Active. Not deployed yet.
+- **f1, `[[ ]]`'s redirections (GNU's):** `ConditionalExpression` carries `Redirects`, parsed after `]]` as `(( ))`'s are,
+  applied around the test, printed by `declare -f` (`[[ -n $1 ]] 2> /dev/null`). `[[ … ]] 2>/dev/null` was "syntax error
+  near unexpected token `2'". With it, measured against GNU: a test that cannot be evaluated is FALSE and `[[ ]]` goes on
+  (`EvalCondPrimary`, `CondTestError`): an invalid regex silently, status 2 when `[[ ]]` ends on it (`[[ a =~ [[:foo:]]
+  || -n x ]]` is 0, `&& ` it 2, `|| -z x` 1); a bad number (`-eq 1+`) reported inside the redirections, status 1. Both
+  stopped the whole `[[ ]]` with status 2 and printed outside its redirections; the invalid regex printed a message bash
+  does not. Other errors in a test (a bad operator, an expansion's) go on up as before. Message words unchanged (the
+  open list's arithmetic-error parity).
+- **f2, quoted text inside an `=~` set (GNU's):** ExpandToRegex appends quoted text that lands inside an open bracket
+  expression as written, only `\` doubled (`Builtins.EndsInsideSet`): `^["[:digit:]"]$` is the class, `["^a"]` a
+  negated set, as bash 5.1 (14 probes, all as GNU; three differed). Outside a set quoted text stays literal.
+- **f3, a nested C#Bash's arguments (Git Bash's):** ExecExternal hands `ChildLauncher.IsThisShell` its arguments as
+  typed, as its environment (`bash -c 'echo $1' _ /c/x` printed `C:/x`; Git Bash `/c/x`), looked up only when an
+  argument would change.
+**Tests:** new `cond_redirects` (GNU via WSL; 677 cannot parse it); `regex_posix_classes` + the 14 quoted-set probes
+(red on 677 in 3); `native_args_within` + a self-shell row (red on 677; Git Bash passes it). Mutations, each red: the
+redirect scope, the regex status 2, the status reset after a test, the arithmetic error kept inside, `declare -f`'s
+redirection, the inside-a-set check. Suite (Release JIT): console 259/0, -Detached 259/0, with Git's cmd on PATH 267/0 (4 AOT-only).
+
+## 2026-11-07 -- BUILT: the jq pass: match, capture, scan and --rawfile, as jq 1.6 (the architect's go)
+**Status:** Active. Not deployed yet. guy-96's NEED (2026-11-07) and the open list's `--rawfile`; `def` deferred (RULED
+above).
+**Built (JqInterp, Builtins.Jq):** `match/1-2`, `capture/1-2`, `scan/1` (jq 1.6 has no `scan/2`: "is not defined", rc 3,
+as it already said), and `test`'s array form, all through `RegexArgs` (jq 1.6's `(re; flags)` or one value, the regex or
+`[re, flags]`/`[re]`; else "<type> not a string or array"). `Matches` follows jq 1.6's f_match, MEASURED there, not
+recalled: `{offset, length, string, captures}` in code points; a capture `{offset, length, string, name}` (name null if
+unnamed), one that did not take part `{offset: -1, string: null, length: 0, name}` (jq's key order); captures in the
+order of the pattern's `(` (`CaptureGroups`: .NET numbers unnamed groups before named ones); a zero-width match has NO
+captures and moves the search start on by one (`(?=b)` "g" on "ab" gives offset 1 twice, as jq); "n" skips empty
+matches (approximated: retried one place on, where Oniguruma tries a non-empty alternative at the same place). jq 1.6
+crashes (SIGSEGV) on `"aéb" | match(""; "g")`, stepping a byte into a character: here it steps a code point.
+`--rawfile name file`: $name is the file's text; jq 1.6's two messages, exit 2.
+**Tests:** new `jq_regex_match` (88 lines, expected = jq 1.6 via WSL; red on 677 in 84); jq_subset, jq_messages,
+jq_raw_input unchanged. Mutations, each red: capture order, the unmatched key order, zero-width captures, the zero-width
+start, code points, "n", the array form. Found while building: an empty input string crashed `match(""; "g")` (s[0] on
+""), fixed before the commit. Suite (Release JIT): console 260/0, -Detached 260/0, with Git's cmd on PATH 268/0 (4 AOT-only).
+
+## 2026-11-07 -- DEPLOYED 681 (f1-f3 of 680; the jq pass): suite (-Detached, AOT) 264/0, battery 217
+**Status:** Record. `1.0.0+hg.1d3f4ab0198e 681`; sh.exe hard link confirmed; rollback dist/*.rev677. On the live build
+cond_redirects, regex_posix_classes, native_args_within and jq_regex_match all equal their references, and guy-96's
+command (`capture("^(?<n>[0-9]+):(?<j>.*)$") | [.n, (.j|fromjson)]`) gives `["12",{"a":1}]`. E:/BashRequest-reply.md
+rewritten for 681 (the follow-ups, jq def deferred, new guy-windows8 sessions on 655) and one message sent to guy-e3
+(delivery not confirmed by the server). guy-96 is not live (not in ListAgents): no notice sent. Not published.
+
+## 2026-11-07 -- RAISED: one source for C#Bash's known issues (guy-bf, for the architect); awaiting his ruling
+**Status:** Awaiting the architect. guy-bf (guy-windows8's home-folder session): the architect wants ~/.claude/CLAUDE.md's
+C#Bash bug list (entries by build, stale as soon as a fix ships) replaced by one pointer to "your existing scheme".
+Measured: no per-build issue list exists. docs/USING.md has the usage limits (unversioned); README "What it won't do"
+the scope; DECISIONS the RAISED/FIXED/DEPLOYED record per rev (no release); ~/.bash/unserviced.jsonl the unmet requests.
+guy-bf told so and asked to hold the pointer.
+**Claude's proposal (criteria: one source, kept by the session that fixes; readable from both machines; each entry
+checkable against `bash --version`; an entry leaves when its fix is PUBLISHED, since a deploy no longer reaches new
+sessions):** docs/KNOWN-ISSUES.md in this repo, published with each release, two sections: OPEN (what, since which
+build, the workaround) and FIXED, NOT YET PUBLISHED (what, fixed in build N); kept in the bug flow (raise: an OPEN entry;
+deploy: moved, with the build; publish: removed). Design limits stay in USING.md, which it links. CLAUDE.md's pointer:
+the GitHub URL (both machines) and the local path on guy-windows8. What would change it: his preferring a README
+section to a separate file.
+
+## 2026-11-07 -- RULED: KNOWN_ISSUES.md, installed beside ~/.bash/unserviced.jsonl with every publish (supersedes Claude's docs/KNOWN-ISSUES.md proposal above)
+**Status:** Active. The architect: "There are two pieces to this - one is something that should be in the githup
+repo. and the other is something local to ~/.bash on each machine" and "right next to that file we should add the
+'KNOWN_ISSUES.md' file that you will produce, carry forward, update and install for each publish within the
+installer." One file serves both: KNOWN_ISSUES.md at the repository root (on GitHub with every publish) and its copy
+installed to %USERPROFILE%/.bash by the installer, its "**This copy:**" line naming the build it was installed with.
+`unserviced.jsonl` (requests refused, logged per machine) stays as it is: it cannot record a wrong answer.
+**Built:** KNOWN_ISSUES.md (DRAFT for his review: Open = four wrong answers re-measured today against GNU 5.1 on 681:
+classes ASCII only, `{x\,y,z}`, `@( )` in `[[ ]]` with extglob off, arithmetic message wording; Limits = USING's and
+README's plus `df -i`; Fixed since hg-657 = 660-681, each with its build. The recorded `"*"*` glob-quoting limit did
+not reproduce in one probe and is left out until measured). installer/csharpBash.json: artifact
+`{from KNOWN_ISSUES.md, to home:}`; tools/installer.sh stages it with the stamp (refuses a file without the line;
+checked by making it fail) and checks the sandboxed install; tools/release.sh's text names it and step 5 checks
+~/.bash/KNOWN_ISSUES.md names the released build. Measured: installer.sh on deployed 681 builds (3,824,359 bytes,
+InstallGen spec 2 valid) and the sandbox install has KNOWN_ISSUES.md in home/, stamped "installed with C#Bash build
+1.0.0+hg.1d3f4ab0198e 681". Docs: README (installer step 2), USING (beside the request log), IMPLEMENTATION,
+PROJECT_CONTEXT (the bug-flow rule).
+**OPEN, the architect's (raised the same day, "I'm thinking"):** drop Bash.exe from the GitHub release, leaving the
+installer. Claude's case in the chat record; not built.
+
+## 2026-11-07 -- RECORDED: the Claude Code start procedure on guy-windows8 (the architect: "can you ask it for details ... make any updates to the docs and ensure .bash/ claude startscript is included in the installer")
+**Status:** Record. The session that made the change (the home-folder session, then guy-bc; restarted by the architect
+as guy-bf, so no session remembers it) is known from its record: ~/.claude commit b60267f (CLAUDE.md's start bullet:
+both machines on ~/.bash/bin/Bash.exe, 655; guy-windows8 starts through ~/bin/claude.bat, which runs the installer's
+~/.bash/bin/claude.cmd; dist stays on the system PATH, so `bash` by name in a session is dist), 285c529 (the status
+line runs `bash` by name, not dist/Bash.exe by path: in a new session that is ~/.bash/bin's), and
+C:/Users/guy/bin/claude.bat itself (one line; the old one kept as claude.bat.dist677).
+**Checked:** ~/.bash/bin/claude.cmd is byte for byte installer/claude.cmd: the installer already ships the start file
+(installer.sh's sandbox check compares it). Added: tools/release.sh step 5 now also compares this machine's installed
+claude.cmd with the released payload's; USING.md shows the one-line claude.bat hand-off and why `bash` alone works in a
+status line under the start file; PROJECT_CONTEXT's RESUME note corrected (the status line is no longer dist by path).
+The global CLAUDE.md is not this session's to edit.
+
+## 2026-11-07 -- RULED: a GitHub release carries only the installer; Bash.exe is no longer an asset (from the next publish)
+**Status:** Active. The architect: "I'm thinking the bash.exe & sh.exe should be dropped from the github release
+folder", then, after Claude's case (for: only the installer delivers a complete ~/.bash, KNOWN_ISSUES.md for its
+build included; one install path; bytes. Against: the README's by-hand path, `releases/latest/download/Bash.exe`
+links, anyone who will not run an installer, release.sh's no-release check keyed on Bash.exe.sha256): "drop bash.exe
+from the github release". (sh.exe was never an asset: the installer makes it.) Releases up to hg-657 keep theirs.
+**Changed:** tools/release.sh: no Bash.exe / Bash.exe.sha256 upload or download-back; the no-release check reads the
+newest release's TEXT for this Bash.exe's SHA-256 (every release text has named it, hg-657's as "SHA-256: <sum>", so it
+holds across the switch); the text names the build and its Bash.exe SHA-256 inside the installer; step 5 also compares
+the installed Bash.exe's SHA-256 with the released build's. publish.sh's header; README (the download line: the
+installer only; "By hand" became "Without the start file": run the installer, then setx), USING (to skip building),
+IMPLEMENTATION's row. A `releases/latest/download/Bash.exe` link stops working once a release without it is the latest.
+Consequence kept from 2026-11-01: a change to the manifest, the start file or KNOWN_ISSUES.md alone, with no new
+Bash.exe, makes no release; it ships with the next build.

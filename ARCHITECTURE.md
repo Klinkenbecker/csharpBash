@@ -365,8 +365,8 @@ Two model points:
   `match`; 2026-10-12, main-input `getline` / `getline var` (one reader shared with the rule loop).
   Pipes (`print | cmd`, `cmd | getline`) and `system()` stay loud. A program that still goes to the
   PATH awk (Git's gawk) gets `-v BINMODE=3`, so CR survives as on Linux. **A program never runs
-  twice (2026-10-18):** what the text shows (a literal `printf`/`sprintf` format with `%e`/`%g`, a
-  literal `RS`) is refused at parse time, so the PATH awk runs it once; a refusal met only while the
+  twice (2026-10-18):** what the text shows (a literal `printf`/`sprintf` format with `%a`, `system()`;
+  `%e`/`%g` and any `RS` are in-process since) is refused at parse time, so the PATH awk runs it once; a refusal met only while the
   program runs (`AwkInterp.Running`) is loud, status 2, since the PATH awk would start again after
   this run's output, stdin reads and `system()` calls. Out-of-range numbers print as gawk 5.1's
   `+inf`/`-nan`.
@@ -399,9 +399,13 @@ Two model points:
   `TranslatePath` (inbound) and `ToShellPath` (outbound) both produce `E:/dir/file`, which every
   Windows API accepts — so a path that leaves through `pwd` and returns as an argument is the same
   string. Within the shell the conversion is a path boundary only, so `grep '\.txt'` and
-  `printf 'a\tb'` keep their escapes. Arguments are rewritten only for a WINDOWS program, as Git Bash
-  does, and only at the start: `/c/…` becomes `C:/…` and `/tmp` the temp directory, never a bare
-  `/c` (`MSYS_NO_PATHCONV` / `MSYS2_ARG_CONV_EXCL` switch it off; `ShellEnvironment.NativeArgument`).
+  `printf 'a\tb'` keep their escapes. Arguments AND environment values are rewritten only for a WINDOWS
+  program, where Git Bash rewrites them: at the start, after the first `=` and after `-X` (`--file=/c/x`,
+  `-I/c/x`), `/c/…` becomes `C:/…` and `/tmp` the temp directory; never a bare `/c` or `/`, never a
+  word holding `;` (`ShellEnvironment.NativeArgument`/`NativeValue`). `MSYS_NO_PATHCONV` switches both
+  off; `MSYS2_ARG_CONV_EXCL` the arguments, `MSYS2_ENV_CONV_EXCL` the environment (prefixes of
+  `NAME=value`); PATH keeps its own exit form; an MSYS program and the shell itself get the environment
+  as typed (2026-11-07).
   An argument starting `//` is Git Bash's escape for a Windows switch: one leading `/` goes and `\`
   becomes `/` (`cmd //c` runs `cmd /c`), except a UNC path (exactly two slashes and a later `/`) or a
   word holding a glob or quote character (`ShellEnvironment.DoubleSlash`).

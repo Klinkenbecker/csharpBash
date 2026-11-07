@@ -1,0 +1,18 @@
+--- iconv -f UCS-2 -t UTF-8
+iconv: -f UCS-2: this encoding is not converted in-process
+iconv: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+[rc=2]
+--- iconv -f UTF-8 -t ASCII//TRANSLIT
+iconv: -t ASCII//TRANSLIT: this encoding is not converted in-process
+iconv: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+[rc=2]
+--- iconv -f UTF-8 -t EBCDIC-US
+iconv: -t EBCDIC-US: this encoding is not converted in-process
+iconv: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)
+[rc=2]
+UTF-8//
+UTF8//
+UTF-16//
+UTF16//
+names: 28
+the INF case:  [ V e r s i o n ] \r \n

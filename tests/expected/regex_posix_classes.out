@@ -1,0 +1,58 @@
+match    [[:alpha:]] yes
+no (1)   [[:alpha:]] no
+match    [[:digit:]] yes
+no (1)   [[:digit:]] no
+match    [[:alnum:]] yes
+no (1)   [[:alnum:]] no
+match    [[:upper:]] yes
+no (1)   [[:upper:]] no
+match    [[:lower:]] yes
+no (1)   [[:lower:]] no
+match    [[:space:]] yes
+no (1)   [[:space:]] no
+match    [[:blank:]] yes
+no (1)   [[:blank:]] no
+match    [[:punct:]] yes
+no (1)   [[:punct:]] no
+match    [[:xdigit:]] yes
+no (1)   [[:xdigit:]] no
+match    [[:print:]] yes
+no (1)   [[:print:]] no
+match    [[:graph:]] yes
+no (1)   [[:graph:]] no
+match    [[:cntrl:]] yes
+no (1)   [[:cntrl:]] no
+no (1)   'a]' is not ^[[:alpha:]]$
+no (1)   ':]' is not ^[[:alpha:]]$
+match    through $re
+match    negated [^[:digit:]]
+no (1)   negated, a digit
+match    class and chars [[:digit:]x]
+match    two classes [[:upper:][:digit:]]
+match    leading ] then a class
+match    equivalence [[=a=]]
+no (1)   equivalence, not b
+match    collating [[.a.]]
+match    collating [[.-.]] in a set
+match    quoted class is literal
+no (1)   quoted class, not a digit
+no (2)   unknown class [[:foo:]]
+REMATCH: ab12 ab 12
+status line: 17
+match    nocasematch [[:upper:]] on q
+match    range still works [0-9]
+match    ] first [-]a] on ]
+match    5 =~ ^["[:digit:]"]$
+match    b =~ ^["a-c"]$
+no (1)   - =~ ^["a-c"]$
+match    x =~ ^["x"]$
+no (1)   ] =~ ^[x"]"]$
+match    x] =~ ^[x"]"]$
+match    \ =~ ^["\\"]$
+no (1)   a =~ ^[^"a"]$
+match    b =~ ^["^a"]$
+match    ^ =~ ^["^a"]$
+match    5 =~ ^['[:digit:]']$
+match    . =~ "." (outside)
+no (1)   x =~ "." (outside)
+match    x =~ ["x"]+"*"

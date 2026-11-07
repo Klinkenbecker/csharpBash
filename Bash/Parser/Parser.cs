@@ -923,7 +923,11 @@ public sealed class Parser
 		SkipNewlines();   // bash reads on for the `]]` (at the end of the text: "looking for `]]'")
 		if (!PeekWord("]]")) throw CondError($"syntax error in conditional expression: unexpected token `{SyntaxMessage.Shown(Peek())}'");
 		Advance();
-		return new ConditionalExpression(expr) { Line = openTok.Line, Span = SpanFrom(openTok) };
+		var span = SpanFrom(openTok);
+		// a compound command takes redirections, as `(( ))` does: `[[ … ]] 2>/dev/null` was "syntax error near
+		// unexpected token `2'" (found 2026-11-07 writing guy-e3's =~ case; GNU runs it)
+		var redirects = ParseRedirects();
+		return new ConditionalExpression(expr, redirects) { Line = openTok.Line, Span = span };
 		}
 
 	/// <summary>A `[[ ]]` syntax error, reported as bash's cond_error does (measured against bash 5.1,

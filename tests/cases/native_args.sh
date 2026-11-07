@@ -16,7 +16,7 @@ check root       "$(show /c/)"                   "C:/"
 check tmp        "$(show /tmp/x)"                "$tmp/x"
 check tmp-bare   "$(show /tmp)"                  "$tmp"
 check bare-c     "$(show /c)"                    "/c"
-check inside     "$(show --file=/c/x)"           "--file=/c/x"
+check inside     "$(show --file=/c/x)"           "--file=C:/x"   # 2026-11-07: after `=` as Git Bash (native_args_within)
 check middle     "$(show x/c/y)"                 "x/c/y"
 check unc        "$(show //host/share/x)"        "//host/share/x"
 check no-drive   "$(show /$nd/x)"                "/$nd/x"

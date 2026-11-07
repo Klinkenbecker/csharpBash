@@ -1,63 +1,72 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-01 (session 9df18ad7 = bash-b6, context low). SUPERSEDES every block below; they are history.
-> **TRUE STATE (written at hg 653, 2026-11-05):** **DEPLOYED AND PUBLISHED rev 651** (`1.0.0+hg.ca2e508ee62a 651`: the CRLF rule (grep, read, mapfile, $( ), sed, awk); unzip in-process,
-> the timeout interrupt fix, the stdin give-back (642), no debug symbols; dist/sh.exe is a HARD LINK to dist/Bash.exe,
-> re-linked by every deploy; rollback dist/Bash.exe.rev651 + dist/sh.exe.rev651).
-> **PUBLISHED 2026-11-05: GitHub main = git fb76a63 = hg 652; release hg-652 = Bash.exe (651) + csharpBash-setup.exe
-> rebuilt from it (InstallGen specification 2, FROZEN since hg-600 shipped 2026-11-01T17:39:50Z).** Deployed,
-> NOT published: 653-655 (publishing next, the architect: "publish whwn ready"). Suite: 261 cases (4 AOT-only). Untracked root files BENCHMARK-PROVENANCE.md and "The Windows Shell
-> Tax.url" are the architect's: leave them. A real install is on this machine (his, C:/Users/guy/.bash/bin, PATH
-> declined; upgraded by release.sh at every publish). The two-rename swap in deploy.sh has run for real (639, 642, 646).
-> **DONE (655): the CRLF rule** -- DECISIONS "RULED: Windows programs' CRLF lines" + "CORRECTED": the line tools parse
-> CRLF as a line end; a line passed through or edited in place KEEPS its CRLF; what a tool MAKES from it (cut -f, rev,
-> awk's print $1) ends in LF; pipes/files stay bytes. grep, read, mapfile, $( ), sed, awk, cut, sort, uniq, comm, nl,
-> xargs, rev. Global limit removed, koliada-net-b9 told. OPEN (the architect's): diff (Claude: leave it byte-exact).
-> **PENDING REPLIES (no action owed):** c-parser-ac re-runs its `\x27` repro. koliada-net-73 ENDED (pwd -W live in 626, not told: no session to tell).
-> **DEBUG SYMBOLS (global order 2026-11-05):** checked clean; csproj Release DebugType none (643); publish-aot.cmd fails on
-> any .pdb in its output (644). OPEN (the architect's): whether the "It is a bug" scope reaches beyond the line tools.
-> **LIVE SESSIONS (8):** koliada-net-73, installer-a4, kes-term-a1, koliada-net-forms-cb, kes-install-43 (real
-> hardware installs), qa-de, c-parser-ac, esdk-a2 (its CC8051 build runs ON dist/sh.exe + dist/Bash.exe). Message
-> only the session that must act or know (memory peer-messages-flood-his-screens).
+> ## RESUME HERE — 2026-11-07 (session 9df18ad7 = bash-b6; updated by bash-81 at hg 682). SUPERSEDES every block below; they are history.
+> **TRUE STATE (written at hg 682, 2026-11-07):** **DEPLOYED rev 681** (`1.0.0+hg.1d3f4ab0198e 681`; dist/sh.exe is a
+> HARD LINK to dist/Bash.exe, re-linked by every deploy; rollback dist/Bash.exe.rev677 + dist/sh.exe.rev677, a linked pair).
+> **PUBLISHED 2026-11-05: GitHub main = git 8dff6e3 = hg 657; release hg-657 = Bash.exe (655) + csharpBash-setup.exe
+> (InstallGen specification 2, FROZEN since hg-600).** **Deployed, NOT published: 660-681** (OOM guard 660, ls -l link
+> counts 662, iconv 665, /dev/null -> nul for Windows programs 668, awk sqrt/exp/log/sin/cos/atan2 669, awk printf
+> %e/%g 671; 677: `=~` POSIX brackets as glibc, a Windows program's arguments after `=`/`-X`, `;` words whole, and its
+> ENVIRONMENT converted as Git Bash; 680: `[[ ]]` redirections and its errors as GNU, quoted text in an `=~` set, a
+> nested C#Bash's arguments as typed; 681: jq match/capture/scan/--rawfile. guy-e3's review: DECISIONS 2026-11-07,
+> reply E:/BashRequest-reply.md written for 681, two messages sent, delivery unconfirmed by the server). REFERENCES (the architect, 2026-11-07 = the 2026-10-12 RULING): GNU bash is the gold master; Git Bash decides
+> what Claude relies on on Windows (what a Windows program receives). Suite: 272 cases (4 AOT-only); battery 237 probes,
+> 217 pass. Untracked root files BENCHMARK-PROVENANCE.md
+> and "The Windows Shell Tax.url" are the architect's: leave them. His install on this machine (C:/Users/guy/.bash/bin,
+> PATH declined) is upgraded by release.sh at every publish.
+> **SINCE 2026-11-07 (the architect's decision, done by guy-bc): NEW sessions on guy-windows8 start on ~/.bash/bin/Bash.exe
+> (the PUBLISHED build, 655)** via C:/Users/guy/bin/claude.bat -> ~/.bash/bin/claude.cmd (old file: claude.bat.dist677).
+> dist/ stays on the system PATH (entry 3): inside such a session `bash` by name is dist/ while $BASH is 655. The
+> status line runs `bash` by name since 2026-11-07 (~/.claude settings.json, commit 285c529, guy-bc = the home-folder
+> session, restarted the same day as guy-bf, so it no longer remembers the work: the commits are the record): ~/.bash/bin's in a new session, whose claude.exe PATH is that folder alone. So a DEPLOY reaches only sessions
+> started before and `bash` by name inside a session; a new session gets a fix only from a PUBLISH. Running sessions
+> keep the shell they started with (this one: dist). The record: ~/.claude commit b60267f (CLAUDE.md's start bullet).
+> **DONE 2026-11-05 (DECISIONS has each):** unzip in-process (645); the stdin give-back (642); the timeout interrupt (646);
+> no debug symbols (643, 644: publish-aot.cmd fails on a .pdb); the CRLF rule (648-655, "RULED" + "CORRECTED": the line
+> tools parse CRLF as a line end; a line passed through or edited in place KEEPS its CRLF; what a tool MAKES from it
+> ends in LF; pipes and files stay bytes; the global CLAUDE.md limit removed).
+> **AWAITING THE ARCHITECT (do NOT build before his word; Claude's positions in DECISIONS):** `file` for text files
+> (daq-a1, 2026-11-06); publishing 660-681 (Claude: publish next; new guy-windows8 sessions run 655 until then).
+> RULED 2026-11-07: jq `def` DEFERRED until a second request (do NOT build). DONE 2026-11-07: the jq pass (681) and f1-f3
+> (680). STILL OPEN, Claude's: (f4) POSIX classes are ASCII only; measure GNU in a UTF-8 locale first. OPEN
+> questions put to him: diff and the CRLF rule (Claude: leave diff byte-exact); whether "It is a bug" reaches beyond the
+> line tools; INST-Q-055 (installer-a4's, to him). (Git Bash's `--file=/c/x`: SETTLED 2026-11-07, built in 677.)
+> **CLAUDE'S CALL (delegated 2026-11-07, DECISIONS "DELEGATED"):** the test runners leave PowerShell: bash scripts run by
+> the DEPLOYED dist/Bash.exe, testing the candidate build; detached launches through tools/benchtimer; wall time
+> measured before and after.
+> **PENDING REPLIES (no action owed):** c-parser-ac's `\x27` repro (that session has ended; c-parser-92 is live).
+> **LIVE SESSIONS (2026-11-07, 11):** daq-a1, lantern-5f, c-parser-92, msp430-be, installer-a4, koliada-net-forms-cb,
+> guy-bc, nupkg-33, kes-install-43 (real hardware installs), qa-de, koliada-net-b9; guy-96 reports from guy-windows8.
+> esdk-a2's CC8051 build runs ON dist/sh.exe + dist/Bash.exe when it is live. Message only the session that must act or
+> know (memory peer-messages-flood-his-screens).
 > **HOW WE WORK:** a peer's BUG: verify against GNU, raise with a position, wait ~10 min, fix (a GNU-checked case red on
-> the deployed build, mutations, the suite in both modes AND once with Git's cmd on PATH, commit), the slot from ALL,
-> deploy (NO window, no go-round: the swap is two renames, RULED 2026-11-01; only compare3 needs quiet), ONE message to the reporter, record. A FEATURE or DESIGN change waits for the architect's word. Publish only on his word (compare3
-> in a quiet window + the doc review + tools/publish.sh). RULED 2026-11-01: deploy.sh runs the suite -Detached only;
-> publish.sh runs it with a console on dist/Bash.exe first; deploy makes dist/sh.exe a HARD LINK to dist/Bash.exe
-> (confirmed with -ef, else a copy). The bug-fix rule's pre-commit runs are unchanged (he did not address them). NEVER sweep the shared TEMP (other sessions' live files).
-> American spelling everywhere (global rule; history verbatim). Every byte matters (global memory).
-> **THE OPEN LIST, BEING WORKED (RULED 2026-11-05: "So that's 9 issues, with nothing being done about them…"): when no
-> peer bug presses, build these in order on Claude's stated positions (memory work-the-list-when-idle). NOT Claude's
-> alone: another session's item (3b), his machine, publishing (his word), a new design fork with no stated position.**
-> 1. (The installer: SHIPPED in hg-600; DONE. docs/installer-plan.md; `bash tools/installer.sh`, run by release.sh;
->    installer/try-install.cmd for a real install. Spec 2 is frozen: a manifest change needs a spec version 3.)
-> 2. (BUILT rev 642, 2026-11-05: the stdin give-back, DECISIONS "FIXED: a native child's unread stdin is given back";
->    answers nupkg-33's while-read report too. Still open from its spike: a nested C#Bash `read` takes a whole pipe
->    (GNU reads a pipe a byte at a time); feeding a native child is slow (1M lines ~250-375 ms vs Git Bash's 73).)
-> 3. **ls -l's link column** (still 1; rev 579 left it): reading it costs ~17% on a 2000-file ls -l (~12 us a file,
->    diagnostic). Claude: show it.
-> 3b. **Installer INST-Q-055** (installer-a4 to him): InstallGen strips `_` keys when embedding a manifest (they shipped
->    our local path); installer-a4 and Claude recommend it. Ours has no comment meanwhile.
-> 3c. **iconv** (installer-a4's need, 2026-11-01: a UTF-16LE INF). Claude: in-process for UTF-8/16/32, Latin-1, 1252.
-> 3e. Small gaps found: awk srand(); jq --rawfile; find -anewer/-cnewer/-newerXY (they fall to the PATH find).
-> 3d. **OOM guard** (2026-11-03): a builtin's OutOfMemoryException kills the shell; Claude: "<name>: memory exhausted", exit 2. WATCH: external_redirects failed once (35/35 alone; check commit first).
-> 4. **The test runners are PowerShell** (run-tests.ps1, run-compat.ps1; he asked "Why are you using powershell",
->    2026-11-01). External to the shell by design (DECISIONS 2026-06-13). Claude: if PowerShell should go, a small
->    single-file .NET runner replacing both (starts detached natively, none of 5.1's quirks). Not started.
-> 5. Older, unchanged (the history blocks below, DECISIONS): the awk suite HANG (rev 360); arithmetic-error parity; R4
->    items 4-9 + OutputEncoding; output buffering's design; a polite web fetcher; deploy.sh's EarlierHelpTables guard;
->    PortableBash / 2.0 (its own session); parked: serial I/O, `compgen -c`.
-> **SETTLED 2026-10-31..11-01, do NOT re-open (DECISIONS has each):** $PATH's two forms (`/c/x:/f/y` inside,
+> the deployed build, mutations, the suite in both modes AND once with Git's cmd on PATH, commit), deploy (NO window,
+> no go-round: the swap is two renames, RULED 2026-11-01; only compare3 needs quiet), ONE message to the reporter,
+> record. A FEATURE or DESIGN change waits for the architect's word. Publish only on his word (compare3 in a quiet
+> window + the doc review + tools/publish.sh). RULED 2026-11-01: deploy.sh runs the suite -Detached only; publish.sh
+> runs it with a console on dist/Bash.exe first; deploy makes dist/sh.exe a HARD LINK to dist/Bash.exe (confirmed with
+> -ef, else a copy). The runner compares STDOUT only: a case shows its stderr with `2>&1` itself. NEVER sweep the shared
+> TEMP (other sessions' live files). American spelling everywhere (global rule; history verbatim). Every byte matters.
+> **THE OPEN LIST (RULED 2026-11-05, "So that's 9 issues, with nothing being done about them…": when no peer bug
+> presses, build these in order on Claude's stated positions; memory work-the-list-when-idle. NOT Claude's alone:
+> another session's item, his machine, publishing, a new design fork with no stated position):**
+> (a) small gaps: awk rand()/srand() taken from gawk 5.1's SOURCE (a port from memory failed; gawk's values are in
+>     DECISIONS "BUILT (the small gaps, part)"); jq --rawfile; find -anewer/-cnewer/-newerXY (they fall to a PATH find).
+> (b) the runners (CLAUDE'S CALL above).
+> (c) found, not chased: a nested C#Bash `read` takes a whole pipe (GNU reads a pipe a byte at a time); feeding a native
+>     child is slow (1M lines ~250-375 ms vs Git Bash's 73).
+> (d) older (DECISIONS, the history blocks below): the awk suite HANG (rev 360); arithmetic-error parity; R4 items 4-9 +
+>     OutputEncoding; output buffering's design; a polite web fetcher; deploy.sh's EarlierHelpTables guard; PortableBash
+>     / 2.0 (its own session); parked: serial I/O, `compgen -c`. WATCH: external_redirects failed once (check commit first).
+> **SETTLED 2026-10-31..11-07, do NOT re-open (DECISIONS has each):** the CRLF rule and its correction (above); $PATH's two forms (`/c/x:/f/y` inside,
 > `C:/x;F:/y` forward slashes at every exit; empty entries kept; `./A`; colon-list arguments as Git Bash); dd and cksum
 > in-process (GNU 8.32); awk any RS (gawk 5.1) and RT; kill/kill -0 and `wait $!` as GNU; `<( )` forward-slash path
 > (findstr and cmd's type cannot open forward-slash folder paths: accepted, as for $PWD); `$!` stays synthetic;
 > grep -P `\Q...\E`; grep -f with an empty file; help's path forward slashes; the installer's PATH default "no".
 > (Unblocked 2026-11-03: 626 deployed once Brave was quit. The page file is now 8192-65536 MB, in effect after a restart.)
-> **NEXT:** finish the CRLF rule (IN PROGRESS above); then the open list in order: OOM guard (3d), ls -l's link column
-> (3), iconv (3c), the small gaps (3e), the .NET test runner (4), the older items (5). Peer bugs first (the bug-fix
-> rule). Publish only on his word.
+> **NEXT:** peer bugs first (the bug-fix rule); then the open list in order, (a) to (d). Publish only on his word.
 >
-> ## RESUME HERE — 2026-10-31 — HISTORY: superseded by the 2026-11-01 block above
+> ## RESUME HERE — 2026-10-31 — HISTORY: superseded by the 2026-11-07 block above
 > **TRUE STATE (verified 2026-10-31, written at hg 569):** **DEPLOYED rev 568** (`1.0.0+hg.67b82a75e52b 568`: dist/Bash.exe
 > AND dist/sh.exe; suite 235/0 both modes, battery 217; rollback dist/Bash.exe.rev564 + dist/sh.exe.rev564).
 > **PUBLISHED 2026-10-31: GitHub main = git 5abfc5f = hg rev 555; latest release hg-555 (Bash.exe build 553).**
@@ -580,6 +589,15 @@ language, every built-in command), `docs/PERFORMANCE.md` (method, caveats, a cal
 `docs/DEVELOPING.md` (build, test, tooling, layout, Mercurial). Publish's doc review updates the README's table AND
 docs/PERFORMANCE.md's prose (tools/publish.sh header).
 
+**`KNOWN_ISSUES.md`** (2026-11-07, the architect: installed "right next to" `~/.bash/unserviced.jsonl`, produced,
+carried forward, updated and installed with every publish by this session): the known issues of a build, for the
+sessions that run it (the one source ~/.claude/CLAUDE.md points to). Sections: Open (wrong answers, each measured
+against GNU, with the build), Limits (by design or Windows'), Fixed since the latest release (each with the build
+that fixed it). KEEP IT IN THE BUG FLOW: a bug raised or found gets an Open entry; its fix moves it to "Fixed since"
+with the build; at a publish, "Fixed since" names that release and the next cycle starts a new one. tools/installer.sh
+stamps its "**This copy:**" line with the build and checks the sandboxed install; tools/release.sh checks this
+machine's ~/.bash/KNOWN_ISSUES.md names the released build.
+
 ## Architecture
 ```
 <repo root>/
@@ -607,7 +625,8 @@ docs/PERFORMANCE.md's prose (tools/publish.sh header).
       CompletionEngine.cs← command (builtin/func/PATH) + filename + variable completion
       PromptExpander.cs  ← PS1/PS2 backslash-escape + promptvars expansion
   tests/               ← run-tests.ps1 + cases/ + expected/
-  tools/               ← bench.csx throughput harness
+  tools/               ← deploy.sh, publish.sh, release.sh, installer.sh, publish-aot.cmd, benchtimer/ (the
+                         benchmark's CreateProcessW launcher), check-help-urls.sh, bench.csx and attrib.csx (older harnesses)
   Bash.sln
 ```
 
@@ -624,9 +643,8 @@ are sourced through `Evaluator.SourceFile`; `-c`/scripts run via `Evaluator.RunS
 (syntax error → `bash: <origin>: line N: …`, status 2).
 
 ## Pending Actions
-> Note: the phase numbering below is the original plan. BASH_PROJECT_HANDOFF.md
-> (project root) uses a later, reorganized numbering. Status here is reconciled
-> against the actual source.
+> Note: the phase numbering below is the original plan (an early handoff file with a later numbering,
+> BASH_PROJECT_HANDOFF.md, is no longer in the repository). Status here is reconciled against the source.
 - [x] Phase 1 — Lexer + token stream
 - [x] Phase 2 — Parser → AST (commands, pipes, redirects, lists)
 - [x] Phase 3 — Evaluator: external process execution + builtins
@@ -858,8 +876,8 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   `CLAUDE_CODE_GIT_BASH_PATH=…\Bash.exe`; `cd sub` in one call was still in effect in the next.
 
 ## Test Assets
-- **`tests/run-tests.ps1 [-NoBuild] [-Detached] [-Interpreter <exe>]`** (51 cases on
-  2026-10-03). `-Detached` starts every case as Claude Code starts its shell: DETACHED_PROCESS, no
+- **`tests/run-tests.ps1 [-NoBuild] [-Detached] [-Interpreter <exe>]`** (272 cases on
+  2026-11-07, 4 of them AOT-only). `-Detached` starts every case as Claude Code starts its shell: DETACHED_PROCESS, no
   console, stdin NUL, stdout to a file. That is the only way to exercise the console-less spawn
   path; a run from a console cannot reach it. `-Interpreter` tests a given exe, such as the AOT
   publish or `dist/`. The runner prints the interpreter and build it tested. A case registered
@@ -871,9 +889,8 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   `-NoBuild` skips the build. Expected files are authored from bash semantics
   (not captured blindly): for `awk`/`procsub`/`sysutils2` (P4) they were generated by
   running the same script under Git Bash/gawk, diffed against C#Bash, and only the
-  by-design lines (the loud boundary) kept from C#Bash's output. Currently 45 cases
-  (…, hash, grep, sed, claude_wrapper, flags, shellbuiltins, specialvars, heredoc,
-  pipes2, awk, procsub, sysutils2, procs, parser2) — all green. `parser2` guards the
+  by-design lines (the loud boundary) kept from C#Bash's output. The cases and why each exists: the
+  table in tests/run-tests.ps1 (one commented line each). `parser2` guards the
   2026-09-05 defect report (nested `$( )` inside `$(( ))`, backslash-newline continuation,
   quoted `$(cmd arg)`, `echo -e`/`printf`). The build step first kills any stale
   interpreter instance under the project (a hung test process locks Bash.exe and fails
@@ -900,8 +917,9 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   first unless `--no-build` / `--cs`.
 - **`tests/bench/compare3.sh --build`** — the benchmark of the committed tree: refuses a dirty tree,
   publishes AOT with `tools/publish-aot.cmd` to `tests/bench/aot` (ignored), checks the stamp, and times
-  it against `dist/Bash.exe` in alternating rounds (columns `deployed` and `change`). `work/` is scratch (ignored). Seeded 2026-09-04
-  at 86/228; 217/228 after P4. Probe 172 (`export -p | grep -c PATH`) is deliberately NOT in
+  it against `dist/Bash.exe` in alternating rounds (columns `deployed` and `change`).
+- **The compat battery** (`tests/compat/run-compat.ps1`, probes.txt, baseline.txt; `work/` is scratch, ignored): seeded
+  2026-09-04 at 86/228; 217/228 after P4; 237 probes, 217 pass (2026-11-07). Probe 172 (`export -p | grep -c PATH`) is deliberately NOT in
   the baseline: its count depends on the launching environment (Git Bash adds `ORIGINAL_PATH`).
   **Probe authoring (web-d6's observation, 2026-09-08):** a parse-time defect is invisible to a
   probe that lives in the same file as the construct it tests — the whole probe dies before
@@ -932,6 +950,6 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   startup; per-iteration A/Bs belong to `tools/bench.csx --no-cache`.
 
 ## Out of Scope
-- Full bash 5.x fidelity (coproc, process substitution <(), etc.)
+- Full bash 5.x fidelity (coproc, output process substitution `>( )`, etc.; input `<( )` works)
 - Real job control with terminal hand-off / Ctrl+Z suspend (no fork/SIGTSTP on
   Windows). Basic background `&`/`jobs`/`wait` ARE implemented (Phase 10).

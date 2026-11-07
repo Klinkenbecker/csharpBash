@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Release: attach the deployed Bash.exe and its SHA-256 to a GitHub Release for the published hg rev, so nobody has to
-# build C#Bash to use it (docs/installer-plan.md, phase 1; the architect, 2026-10-29: "fix mv first and then P1 & 2").
+# Release: attach the installer, built from the deployed Bash.exe, and its SHA-256 to a GitHub Release for the published
+# hg rev, so nobody has to build C#Bash to use it (docs/installer-plan.md, phase 1; the architect, 2026-10-29: "fix mv
+# first and then P1 & 2"). Bash.exe itself is no longer an asset (the architect, 2026-11-07: "drop bash.exe from the
+# github release"): it ships inside the installer, with sh.exe, claude.cmd and that build's KNOWN_ISSUES.md.
 #
 #   bash tools/release.sh <token-file> [--dry-run]     (tools/publish.sh calls it once its push has landed; run it
 #                                                        alone to retry a release that failed)
@@ -8,20 +10,23 @@
 # A CONTRACT TOOL. It runs one way:
 #   1. the release is for the commit GitHub's main has now (git HEAD after publish), tagged hg-<rev>: the hg rev that
 #      commit published, read from its message's first line ("C#Bash at hg rev <rev>: ...");
-#   2. the asset is dist/Bash.exe, the DEPLOYED build (the one publish's benchmark is of); its stamp names its own rev,
-#      which can be older than the published one (records-only revs follow a deploy), and the release text says both;
+#   2. the build is dist/Bash.exe, the DEPLOYED build (the one publish's benchmark is of); its stamp names its own rev,
+#      which can be older than the published one (records-only revs follow a deploy), and the release text says both,
+#      with that Bash.exe's SHA-256;
 #   3. a release that already exists for the tag is reused (a retry), and an asset already on it is left; with none,
-#      and the newest release already carrying this Bash.exe (its Bash.exe.sha256 names the same SHA-256), NO release
-#      is made: the Releases page lists builds, not publishes (the architect, 2026-10-29: "Yes, I agree; go");
+#      and the newest release's text already naming this Bash.exe's SHA-256, NO release is made: the Releases page
+#      lists builds, not publishes (the architect, 2026-10-29: "Yes, I agree; go"). Until hg-657 that SHA-256 was also
+#      a Bash.exe.sha256 asset; its text named it too, so the same check reads both;
 #   2b. the INSTALLER, shipped from 2026-11-01 (the architect: "Yes, go"): tools/installer.sh builds
 #      dist.installer/csharpBash-setup.exe and its .sha256 from this same dist/Bash.exe and checks it by a sandboxed
-#      install; both are attached beside Bash.exe (the installer's content follows Bash.exe: a publish whose Bash.exe the
-#      newest release already carries makes no release, so a change to the manifest or the start file alone ships with
-#      the next new build);
-#   4. after the uploads, Bash.exe and the installer are downloaded back from their public URLs and must match their
-#      SHA-256s (an installer left on the release by an earlier run: its own .sha256), or exit 1;
+#      install; they are the release's two assets (until hg-657 Bash.exe and Bash.exe.sha256 were attached beside
+#      them). The installer's content follows Bash.exe: a publish whose Bash.exe the newest release already carries
+#      makes no release, so a change to the manifest, the start file or KNOWN_ISSUES.md alone ships with the next build;
+#   4. after the uploads, the installer is downloaded back from its public URL and must match its SHA-256 (one left on
+#      the release by an earlier run: the release's own .sha256), or exit 1;
 #   5. this machine's own install (~/.bash/bin) is upgraded by running the downloaded installer --silent (PATH: its
-#      default, not added), then checked: the released build, sh.exe the same file (2026-11-02).
+#      default, not added), then checked: the released build (its stamp and SHA-256), sh.exe the same file
+#      (2026-11-02), the start file and KNOWN_ISSUES.md (2026-11-07).
 # The token reaches curl on its standard input (`--config -`), never on a command line, and nothing prints it.
 # --dry-run: everything up to the first request, then what would be sent; needs no token and no network.
 set -u
@@ -52,19 +57,18 @@ binrev=${stamp##* }
 sum=$(sha256sum < "$exe" | cut -c1-64)
 work=$(mktemp -d) || die "mktemp failed"
 trap 'rm -rf "$work"' EXIT
-printf '%s  Bash.exe\n' "$sum" > "$work/Bash.exe.sha256"
 # 2b. the installer, from this same Bash.exe
 setup=$root/dist.installer/csharpBash-setup.exe
 bash "$root/tools/installer.sh" > "$work/installer.log" 2>&1 || { cat "$work/installer.log" >&2; die "the installer did not build or failed its sandboxed check"; }
 setup_sum=$(sha256sum < "$setup" | cut -c1-64)
 [ "$(cut -c1-64 "$setup.sha256")" = "$setup_sum" ] || die "$setup does not match its .sha256"
 grep -q "installer: payload from $stamp;" "$work/installer.log" || die "the installer was not built from $stamp"
-body=$(printf '%s\n\nBash.exe: %s (Native AOT, win-x64: one file, no .NET runtime needed)\nSHA-256: %s\n\ncsharpBash-setup.exe: the installer for that Bash.exe: Bash.exe, sh.exe (a hard link to it) and the start file claude.cmd into %%USERPROFILE%%/.bash/bin; it asks before adding that folder to PATH (default no). No .NET runtime needed.\nSHA-256: %s\n\nHow to use it with Claude Code: README.md.' \
+body=$(printf '%s\n\ncsharpBash-setup.exe installs %s (Native AOT, win-x64: one file, no .NET runtime needed; that Bash.exe'"'"'s SHA-256: %s): Bash.exe, sh.exe (a hard link to it) and the start file claude.cmd into %%USERPROFILE%%/.bash/bin, and this build'"'"'s KNOWN_ISSUES.md into %%USERPROFILE%%/.bash; it asks before adding that folder to PATH (default no).\nInstaller SHA-256: %s\n\nHow to use it with Claude Code: README.md.' \
 	"$("$GIT" log -1 --format=%b HEAD)" "$stamp" "$sum" "$setup_sum")
 create=$(jq -n --arg t "$tag" --arg c "$head" --arg n "C#Bash hg rev $rev" --arg b "$body" \
 	'{tag_name: $t, target_commitish: $c, name: $n, body: $b, draft: false, prerelease: false}') || die "jq failed"
 if [ -n "$dry" ]; then
-	echo "release: DRY RUN: $tag at git ${head:0:7}; Bash.exe = $stamp, SHA-256 $sum; csharpBash-setup.exe SHA-256 $setup_sum; it would create (if absent):"
+	echo "release: DRY RUN: $tag at git ${head:0:7}; csharpBash-setup.exe SHA-256 $setup_sum, installing $stamp (Bash.exe SHA-256 $sum); it would create (if absent):"
 	printf '%s\n' "$create"
 	exit 0
 fi
@@ -84,10 +88,10 @@ why() { jq -r '.message // empty' <<< "$json" 2> /dev/null; }
 split "$(api GET "https://api.github.com/repos/$REPO/releases/tags/$tag")"
 if [ "$code" = 404 ]; then
 	# through the API, never the releases/latest/download/ link: asking that link before the release exists left
-	# GitHub's edge redirecting it to the PREVIOUS release's Bash.exe.sha256 for a while after hg-600 (2026-11-01)
-	newest_url=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.assets[]? | select(.name == "Bash.exe.sha256") | .browser_download_url')
-	newest=""; [ -n "$newest_url" ] && newest=$(curl -s -L "$newest_url" | head -1 | cut -c1-64)
-	if [ "$newest" = "$sum" ]; then
+	# GitHub's edge redirecting it to the PREVIOUS release's Bash.exe.sha256 for a while after hg-600 (2026-11-01).
+	# The newest release's TEXT names its Bash.exe's SHA-256 (every release's has, hg-657's and before as "SHA-256: <sum>")
+	newest=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | jq -r '.body // empty')
+	if [ -n "$newest" ] && grep -qF "$sum" <<< "$newest"; then
 		echo "release: the newest release already carries this Bash.exe ($stamp, SHA-256 $sum): no release for $tag"
 		exit 0
 	fi
@@ -105,16 +109,10 @@ upload() {
 	[ "$code" = 201 ] || die "uploading $name failed: HTTP $code $(why)"
 	echo "release: $name uploaded"
 }
-upload "$exe" Bash.exe application/octet-stream
-upload "$work/Bash.exe.sha256" Bash.exe.sha256 text/plain
 upload "$setup" csharpBash-setup.exe application/octet-stream
 upload "$setup.sha256" csharpBash-setup.exe.sha256 text/plain
 
 # 4. downloaded back, as a user would
-url="https://github.com/$REPO/releases/download/$tag/Bash.exe"
-got=$(curl -s -L "$url" | sha256sum | cut -c1-64)
-[ "$got" = "$sum" ] || { echo "release: $url gives SHA-256 $got, not $sum" >&2; exit 1; }
-echo "release: $tag = git ${head:0:7}: Bash.exe ($stamp) downloaded back, SHA-256 $sum matches: $url"
 surl="https://github.com/$REPO/releases/download/$tag/csharpBash-setup.exe"
 # an installer already on the release (a retry) is checked against the release's own .sha256: a rebuild here is not
 # byte-identical (InstallGen's output differs from build to build), so this run's setup_sum names a different file
@@ -124,7 +122,7 @@ inst="$work/csharpBash-setup.exe"
 curl -s -L -o "$inst" "$surl" || { echo "release: could not download $surl" >&2; exit 1; }
 got=$(sha256sum < "$inst" | cut -c1-64)
 [ "$got" = "$exp" ] || { echo "release: $surl gives SHA-256 $got, not $exp" >&2; exit 1; }
-echo "release: csharpBash-setup.exe downloaded back, SHA-256 $exp matches: $surl"
+echo "release: $tag = git ${head:0:7}: csharpBash-setup.exe ($stamp inside) downloaded back, SHA-256 $exp matches: $surl"
 
 # 5. this machine's own install, upgraded "for free" by the installer just released, as a user gets it (the architect,
 #    2026-11-02: "publish should prolly upgrade it 'for free'?"): --silent, so PATH takes its default (not added);
@@ -135,6 +133,14 @@ bin="$HOME/.bash/bin"
 [ $irc -eq 0 ] || { cat "$work/install.log" >&2; echo "release: the released installer exited $irc on this machine (the release itself landed)" >&2; exit 1; }
 istamp=$("$bin/Bash.exe" --version 2>/dev/null | tail -1 | sed 's/^ *//')
 [ "$istamp" = "$stamp" ] || { echo "release: $bin/Bash.exe reports '$istamp', not '$stamp' after the install" >&2; exit 1; }
+isum=$(sha256sum < "$bin/Bash.exe" | cut -c1-64)
+[ "$isum" = "$sum" ] || { echo "release: $bin/Bash.exe has SHA-256 $isum, not the released build's $sum" >&2; exit 1; }
 [ "$bin/sh.exe" -ef "$bin/Bash.exe" ] || grep -q "sh.exe: copy of Bash.exe" "$work/install.log" ||
 	{ echo "release: $bin/sh.exe is not Bash.exe after the install" >&2; exit 1; }
+# the start file this machine starts Claude Code with (C:/Users/guy/bin/claude.bat hands off to it since 2026-11-07)
+cmp -s "$bin/claude.cmd" "$root/dist.installer/payload/claude.cmd" ||
+	{ echo "release: $bin/claude.cmd is not the released start file after the install" >&2; exit 1; }
+# and the known issues of that build, beside unserviced.jsonl (2026-11-07)
+grep -qxF "**This copy:** installed with $stamp." "$HOME/.bash/KNOWN_ISSUES.md" 2>/dev/null ||
+	{ echo "release: $HOME/.bash/KNOWN_ISSUES.md does not name $stamp after the install" >&2; exit 1; }
 echo "release: this machine's install upgraded by it: $bin/Bash.exe = $stamp; $(grep -o 'sh\.exe: \(hard link\|copy of\)[^\r]*' "$work/install.log" | head -1)"

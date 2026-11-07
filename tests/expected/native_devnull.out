@@ -1,0 +1,4 @@
+nul --out=nul -onul x/dev/null /dev/null/x
+-o/dev/null nul
+curl -o /dev/null: rc=0
+000| rc=0

@@ -172,7 +172,7 @@ public sealed partial class Builtins
 		}
 
 	/// <summary>The first conversion <see cref="AwkFormat"/> refuses, in a format known when the program is parsed
-	/// (`printf "%e"`, `sprintf("%g", x)`), or null. Refused then, the PATH awk runs the program once (DECISIONS
+	/// (`printf "%a"`, `sprintf("%a", x)`; %e and %g are in-process since 2026-11-05), or null. Refused then, the PATH awk runs the program once (DECISIONS
 	/// 2026-09-04: "parse-time … loud"); found only when the format ran, after output, the PATH awk ran it all again
 	/// ("first" printed twice, 2026-10-18).</summary>
 	private static string? UnsupportedConversion(string fmt)
@@ -192,7 +192,7 @@ public sealed partial class Builtins
 				}
 			while (j < fmt.Length && "hlLqjzt".IndexOf(fmt[j]) >= 0) j++;
 			if (j >= fmt.Length) break;
-			if ("diouxXfFcs".IndexOf(fmt[j]) < 0) return $"printf %{fmt[j]}";
+			if ("diouxXfFeEgGcs".IndexOf(fmt[j]) < 0) return $"printf %{fmt[j]}";   // e E g G since 2026-11-05
 			i = j;
 			}
 		return null;
@@ -265,7 +265,15 @@ public sealed partial class Builtins
 					break;
 					}
 				case 'e' or 'E' or 'g' or 'G':
-					throw new AwkUnsupportedException($"printf %{conv}");
+					{
+					// C's %e and %g, the shell printf's formatting (2026-11-05: they were refused, "awk: unsupported: printf %g")
+					double d = Next().Number;
+					if (!double.IsFinite(d)) { body = NonFinite(d, conv is 'E' or 'G'); break; }
+					var digits = PrintfFormatter.FormatDouble(Math.Abs(d), conv, prec, false, false, alt);
+					string sign = d < 0 || (d == 0 && double.IsNegative(d)) ? "-" : plus ? "+" : space ? " " : "";
+					body = PadNumber(sign, digits, width, left, zero);
+					break;
+					}
 				case 'c':
 					{
 					var v = Next();
@@ -1005,8 +1013,9 @@ public sealed partial class Builtins
 					_p++;
 					if (t.Text is "system" or "systime" or "strftime" or "gensub" or "asort" or "asorti")
 						throw new AwkUnsupportedException($"{t.Text}()");
-					if (t.Text is "sqrt" or "exp" or "log" or "sin" or "cos" or "atan2" or "rand" or "srand")
-						throw new AwkUnsupportedException($"{t.Text}()");
+					// rand() and srand(): not yet gawk's sequence (2026-11-05: a port of BSD random() from memory did not
+					// reproduce gawk 5.1's values; to be taken from its source): handed to the PATH awk
+					if (t.Text is "rand" or "srand") throw new AwkUnsupportedException($"{t.Text}()");
 					if (!IsOp("("))
 						{
 						if (t.Text == "length") return new ACall("length", []);
@@ -1812,6 +1821,13 @@ public sealed partial class Builtins
 					return AwkVal.Str(AwkFormat(S(Eval(a[0])), a.Skip(1).Select(Eval).ToList(), Convfmt));
 					}
 				case "int": return AwkVal.Num(Math.Truncate(Eval(a[0]).Number));
+				// the math built-ins (2026-11-05; they were refused): C doubles, as gawk's
+				case "sqrt": return AwkVal.Num(Math.Sqrt(Eval(a[0]).Number));
+				case "exp": return AwkVal.Num(Math.Exp(Eval(a[0]).Number));
+				case "log": return AwkVal.Num(Math.Log(Eval(a[0]).Number));
+				case "sin": return AwkVal.Num(Math.Sin(Eval(a[0]).Number));
+				case "cos": return AwkVal.Num(Math.Cos(Eval(a[0]).Number));
+				case "atan2": return AwkVal.Num(Math.Atan2(Eval(a[0]).Number, Eval(a[1]).Number));
 				}
 			throw new AwkUnsupportedException($"{c.Name}()");
 			}

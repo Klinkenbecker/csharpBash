@@ -30,8 +30,9 @@
 #   5. commit with the message file; push with the token as an http.extraHeader given on the command
 #      line only (git 2.28 here: its credential prompt needs /dev/tty and it predates GIT_CONFIG_COUNT),
 #      output masked; then the header must be absent from git config and the remote main must be HEAD;
-#   6. tools/release.sh: GitHub release hg-<tip> with the deployed dist/Bash.exe and its SHA-256, downloaded back
-#      and checked (2026-10-29, the installer plan's phase 1; the token on curl's stdin, never a command line).
+#   6. tools/release.sh: GitHub release hg-<tip> with the installer built from the deployed dist/Bash.exe and its
+#      SHA-256, downloaded back and checked (2026-10-29, the installer plan's phase 1; the token on curl's stdin, never a
+#      command line). Bash.exe alone is no longer an asset (the architect, 2026-11-07).
 # The token is briefly visible on git's command line to processes of the same user.
 set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"

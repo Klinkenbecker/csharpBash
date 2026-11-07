@@ -30,7 +30,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"touch", "rmdir", "cmp", "tee", "comm", "paste", "rm", "mv", "cp",
 		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "df", "od", "sort", "split", "find", "ls", "xargs", "diff", "hash",
 		"grep", "egrep", "fgrep", "which", "sed",
-		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings", "dd", "cksum", "unzip",
+		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings", "dd", "cksum", "unzip", "iconv",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
 		"timeout", "id", "whoami", "nproc", "printenv", "tty", "arch", "awk",
 		"pgrep", "pkill", "ps", "jq", "help", "enable",
@@ -44,7 +44,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		"tr", "cut", "uniq", "nl", "fold", "touch", "rmdir", "cmp", "tee", "comm", "paste", "rm", "mv", "cp",
 		"uname", "hostname", "factor", "cal", "date", "kill", "expr", "du", "df", "od", "sort", "split", "find", "ls", "xargs", "diff",
 		"grep", "egrep", "fgrep", "which", "sed", "yes", "sleep", "env",
-		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings", "dd", "cksum", "unzip",
+		"base64", "md5sum", "sha1sum", "sha256sum", "sha512sum", "hexdump", "strings", "dd", "cksum", "unzip", "iconv",
 		"stat", "mktemp", "realpath", "readlink", "chmod", "ln", "truncate",
 		"timeout", "id", "whoami", "nproc", "printenv", "tty", "arch", "awk",
 		"pgrep", "pkill", "ps", "jq",
@@ -150,6 +150,15 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			{
 			Console.Error.WriteLine($"{name}: {IoError(ex)}");
 			exitCode = 1;
+			return true;
+			}
+		// A builtin out of memory ends as a GNU tool does, "NAME: memory exhausted" (xalloc_die), status 2, and the shell
+		// goes on: it took the whole shell down, every pipeline stage and the output before it lost, a .NET stack trace
+		// and exit 134 (`printf '%2000000000s'`; diff's n x m table until rev 629). DECISIONS 2026-11-05 "OOM guard".
+		catch (OutOfMemoryException)
+			{
+			try { Console.Error.WriteLine($"{name}: memory exhausted"); } catch (Exception) { }
+			exitCode = 2;
 			return true;
 			}
 		finally
@@ -364,6 +373,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"dd"      => Dd(args),      // GNU 8.32's (2026-10-31; Builtins.Dd.cs)
 			"cksum"   => Cksum(args),
 			"unzip"   => Unzip(args),   // UnZip 6.00's most-used forms (2026-11-05; Builtins.Unzip.cs)
+			"iconv"   => Iconv(args),   // glibc's, for the Unicode forms, Latin-1, 1252, ASCII (2026-11-05; Builtins.Iconv.cs)
 			"stat"    => Stat(args),
 			"mktemp"  => Mktemp(args),
 			"realpath"=> Realpath(args),
