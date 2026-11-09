@@ -230,7 +230,12 @@ public enum ListOperator { And, Or, Sequential, Background }
 /// <summary>
 /// A sequence of pipelines joined by &&, ||, ;, or &.
 /// </summary>
-public sealed record List(List<(Node Pipeline, ListOperator? Op)> Items) : Node;
+public sealed record List(List<(Node Pipeline, ListOperator? Op)> Items) : Node
+	{
+	/// <summary>One statement of assignments, an array's among them (`a=() b=1`), made as a sequence: printed as written
+	/// (Parser.AssignmentSequence, 2026-11-07).</summary>
+	public bool Assignments { get; init; }
+	}
 
 // ── Compound commands ─────────────────────────────────────────────────────────
 

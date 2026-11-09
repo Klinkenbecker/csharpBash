@@ -217,7 +217,7 @@ $tests = @(
     @{ Name = 'awk_fallthrough';    Script = 'cases\awk_fallthrough.sh';    Args = @() }   # 2026-10-20: from awk_unsupported_once and awk_getline: the PATH awk runs a refused program once, and keeps CR (SKIP without a PATH awk)
     @{ Name = 'awk_unsupported_once'; Script = 'cases\awk_unsupported_once.sh'; Args = @() }   # 2026-10-18: a construct outside the in-process awk visible in the text (literal %e/%g, RS, system()) falls through before running; one met while running fails loud (2): the PATH awk ran the program again ("first" twice); +inf/-nan as gawk 5.1 (authored: needs Git's awk; the number lines are gawk's)
     @{ Name = 'printf_nonfinite';   Script = 'cases\printf_nonfinite.sh';   Args = @() }   # 2026-10-18: printf inf/-inf/nan/-nan as C (INF/NAN for capitals, sign flags, spaces not zeros), the words read in any case; %g of an infinity threw (expected = GNU via WSL)
-    @{ Name = 'startup_env';        Script = 'cases\startup_env.sh';        Args = @() }   # 2026-10-18: a Git on PATH adds its usr/bin and mingw64/bin: a mingw64/bin entry names Git's root (it was never reached), an entry with / is not added twice; a child's PPID is $$ (authored)
+    @{ Name = 'startup_env';        Script = 'cases\startup_env.sh';        Args = @() }   # 2026-11-09 (the architect: "remove the git search entirely"): a Git on PATH adds nothing, every PATH comes back as given (until then its usr/bin and mingw64/bin were put first, 2026-10-18); a child's PPID is $$ (authored)
     @{ Name = 'long_paths';         Script = 'cases\long_paths.sh';         Args = @() }   # 2026-10-17: cd into a directory over 260 characters (longPathAware manifest); a program from there, or with a long path of its own: the Windows limit said, 126 (authored: Windows-specific)
     @{ Name = 'xtrace_compound';    Script = 'cases\xtrace_compound.sh';    Args = @() }   # 2026-10-17: set -x traces [[ ]] tests (operands expanded, -n for a lone word, ! kept, quoted pattern chars backslashed), (( )), for heads per turn, arithmetic-for parts, case heads (expected = GNU via WSL)
     @{ Name = 'xtrace_fidelity';    Script = 'cases\xtrace_fidelity.sh';    Args = @() }   # 2026-10-17: set -x as bash: assignments traced, `++` levels per command substitution, words quoted, PS4 prompt escapes decoded (expected = GNU via WSL)
@@ -297,8 +297,15 @@ $tests = @(
     @{ Name = 'awk_divzero_gnu';    Script = 'cases\awk_divzero_gnu.sh';    Args = @() }   # 2026-11-01 (found by Claude): awk's division by zero is gawk's run-time fatal (the input's place, the operator's line, in `%' / `/=' / `%=', exit 2); a constant 1/0 its parse-time error (exit 1); it was "unsupported: syntax" (expected = gawk 5.1 via WSL)
     @{ Name = 'find_newer_missing_gnu'; Script = 'cases\find_newer_missing_gnu.sh'; Args = @() }   # 2026-11-05 (c-parser-ac): find -newer with a missing reference is GNU's error, exit 1, nothing listed; it listed every file, exit 0 (expected = GNU findutils via WSL, LC_ALL=C)
     @{ Name = 'awk_printf_eg_gnu';  Script = 'cases\awk_printf_eg_gnu.sh';  Args = @() }   # 2026-11-05: awk's printf %e %E %g %G (they were refused): precision, width, flags, exponents, %g's form and trimmed zeros, inf/nan (expected = gawk 5.1 via WSL)
-    @{ Name = 'awk_math_gnu';       Script = 'cases\awk_math_gnu.sh';       Args = @() }   # 2026-11-05 (the open list's small gaps): awk's sqrt, exp, log, sin, cos, atan2 (they were refused); rand/srand stay refused until gawk's generator is matched; red on 665 (expected = gawk 5.1 via WSL)
+    @{ Name = 'awk_math_gnu';       Script = 'cases\awk_math_gnu.sh';       Args = @() }   # 2026-11-05 (the open list's small gaps): awk's sqrt, exp, log, sin, cos, atan2 (they were refused); red on 665 (expected = gawk 5.1 via WSL)
+    @{ Name = 'awk_rand_gnu';       Script = 'cases\awk_rand_gnu.sh';       Args = @() }   # 2026-11-09 (git-b3): rand/srand by their documented behavior; only that a seed reproduces its sequence matters, not the values (expected = gawk 5.1 via WSL: properties only)
     @{ Name = 'regex_posix_classes'; Script = 'cases\regex_posix_classes.sh'; Args = @() }   # 2026-11-07 (guy-e3's review): [[ =~ ]] reads POSIX bracket expressions (all classes, [=c=], [.c.], a leading ]) as glibc; the pattern reached .NET untranslated ([[:digit:]] never matched, 'a]' matched ^[[:alpha:]]$); red on 671 (expected = GNU via WSL)
+    @{ Name = 'device_names';       Script = 'cases\device_names.sh';       Args = @() }   # 2026-11-07 (the architect's ruling): a device name with a folder part (d/nul, ./aux.txt, d/com1) is the file for cat, wc, cp, test, > and >>; a bare name (nul, > nul, 2>nul) stays the device; needs MSYS cp/cat (SKIP otherwise); red on 702 (authored)
+    @{ Name = 'assign_array_list';  Script = 'cases\assign_array_list.sh';  Args = @() }   # 2026-11-07 (git-b3): an array assignment beside other assignments in one statement, as bash (a=() b=() was a syntax error; x= y=1 z=() assigned nothing), left to right; before a command word an array assignment does nothing (bash); declare -f and set -x as bash; red on 696 (expected = GNU via WSL)
+    @{ Name = 'regex_escapes';      Script = 'cases\regex_escapes.sh';      Args = @() }   # 2026-11-07 (KNOWN_ISSUES open list): in [[ =~ ]] every backslash-escaped character is literal (^a\+b$ matches a+b, not aab; \( \| \^ \$), as bash; outside =~ escapes unchanged; red on 694 (expected = GNU via WSL)
+    @{ Name = 'rm_reserved_names';  Script = 'cases\rm_reserved_names.sh';  Args = @() }   # 2026-11-07 (guy-bf): rm removes files named nul, con, aux.txt, com1, `x.` (an extended path), and a failure on one entry names that entry and the rest still goes, exit 1, as MSYS rm (GNU coreutils); rm -rf of a tree with an MSYS dev/nul exited 0 and left it; needs an MSYS touch.exe (SKIP otherwise); red on 692 (authored)
+    @{ Name = 'brace_glob_quoting'; Script = 'cases\brace_glob_quoting.sh'; Args = @() }   # 2026-11-07 (KNOWN_ISSUES open list): brace and pathname expansion take a quoted character as plain ({x\,y,z} is x,y z; "{"a,b} stays; "a[1]"* is literal), an expansion's result is no brace expansion (x='{a,b}'; echo $x), an escaped dot ({1\..3}; =~ a\.b); red on 690 (expected = GNU via WSL)
+    @{ Name = 'posix_classes_unicode'; Script = 'cases\posix_classes_unicode.sh'; Args = @() }   # 2026-11-07 (KNOWN_ISSUES open list): the POSIX classes as GNU in a UTF-8 locale ([[:alpha:]] matches é) in =~, globs, grep, sed, awk; tr stays ASCII as GNU tr; every BMP character's class checked by count and checksum; red on 681 (expected = GNU via WSL, LANG=C.UTF-8)
     @{ Name = 'jq_regex_match';     Script = 'cases\jq_regex_match.sh';     Args = @() }   # 2026-11-07 (guy-96's need; the architect's go): jq match/1-2, capture/1-2, scan/1 (array forms; code-point offsets; captures in pattern order; an unmatched group's key order; zero-width matches without captures, the start moved on by one; "g", "n") and --rawfile; they were refused; red on 677 (expected = jq 1.6 via WSL)
     @{ Name = 'cond_redirects';     Script = 'cases\cond_redirects.sh';     Args = @() }   # 2026-11-07 (found writing guy-e3's case): [[ ]] takes redirections ([[ … ]] 2>/dev/null was a syntax error); a test that cannot be evaluated is false and [[ ]] goes on (an invalid regex silently, status 2 when it ends on it; a bad number reported inside the redirections), as bash; declare -f prints the redirection; red on 677 (expected = GNU via WSL)
     @{ Name = 'native_args_within'; Script = 'cases\native_args_within.sh'; Args = @() }   # 2026-11-07 (guy-e3; the architect's "yes"): a Windows program's argument converted after the first = and after -X, as Git Bash; one holding ; left whole (its first item was converted); :// and a drive start left; red on 671 (expected = Git Bash 4.4.23, KEPT rows authored)
@@ -375,7 +382,7 @@ $tests = @(
 )
 
 Push-Location $testsDir
-$pass = 0; $fail = 0; $skip = 0; $failed = @(); $skipped = @()
+$pass = 0; $fail = 0; $skip = 0; $failed = @(); $skipped = @(); $bypass = 0; $bypassed = @(); $bypassWhy = ''
 try {
     foreach ($t in $tests) {
         if ($t.AotOnly -and -not $aot) { Write-Host ("SKIP  {0}  (Native AOT only)" -f $t.Name) -ForegroundColor Yellow; $skip++; $skipped += "$($t.Name) (Native AOT only)"; continue }
@@ -405,6 +412,13 @@ try {
             Write-Host ("SKIP  {0}  ({1})" -f $t.Name, $why) -ForegroundColor Yellow
             $skip++; $skipped += "$($t.Name) ($why)"; continue
         }
+        # a case whose optional program (MSYS: cases/msys_pin.inc) is nowhere says "BYPASSED: <reason>" (2026-11-09, the
+        # architect: a loud complaint, never a failure: MSYS is a luxury, not a requirement)
+        if ($actual.Count -eq 1 -and $actual[0] -clike 'BYPASSED: *') {
+            $why = $actual[0].Substring(10)
+            Write-Host ("BYPASSED  {0}  ({1})" -f $t.Name, $why) -ForegroundColor Red
+            $bypass++; $bypassed += $t.Name; $bypassWhy = $why; continue
+        }
         $diff = Compare-Object $expected $actual -SyncWindow 0
         if ($null -eq $diff) {
             Write-Host ("PASS  {0}" -f $t.Name) -ForegroundColor Green
@@ -425,5 +439,6 @@ Write-Host ""
 $summaryColor = if ($fail -eq 0) { 'Green' } else { 'Red' }
 Write-Host ("{0} passed, {1} failed" -f $pass, $fail) -ForegroundColor $summaryColor
 if ($skip -gt 0) { Write-Host ("{0} skipped: {1}" -f $skip, ($skipped -join '; ')) -ForegroundColor Yellow }   # its own line: deploy.sh reads "N passed, N failed"
+if ($bypass -gt 0) { Write-Host ("!!! {0} BYPASSED, NOT TESTED ({1}): {2}" -f $bypass, $bypassWhy, ($bypassed -join ', ')) -ForegroundColor Red }   # its own line too: deploy.sh echoes it
 if ($fail -gt 0) { Write-Host ("Failed: {0}" -f ($failed -join ', ')) -ForegroundColor Red; exit 1 }
 exit 0

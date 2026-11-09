@@ -2,9 +2,9 @@
 # so that a missing PATH awk skips only these lines. A construct outside the in-process subset that is visible in the
 # program text (a literal printf/sprintf format with %e %g, system(); a literal RS until 2026-10-31, in-process since: awk_rs_gnu) is refused before anything runs,
 # so the PATH awk runs the program once; a program that falls through (`cmd | getline`) or BASH_COREUTILS=external
-# gets -v BINMODE=3 and keeps CR. SKIP without a PATH awk. Expected: the "first" counts authored, the CR counts GNU
-# awk's (via WSL).
-type -P awk > /dev/null || { echo "SKIP: needs a PATH awk"; exit 0; }
+# gets -v BINMODE=3 and keeps CR. The PATH awk is MSYS's gawk (cases/msys_pin.inc). Expected: the "first" counts
+# authored, the CR counts GNU awk's (via WSL).
+. cases/msys_pin.inc
 once() { local out; out=$(eval "$1" 2>&1); printf '%-24s first x%s\n' "$2" "$(grep -c '^first$' <<< "$out")"; }
 once 'awk "BEGIN { print \"first\"; printf \"%e\n\", 1 }"' 'literal %e'
 once 'awk "BEGIN { print \"first\"; x = sprintf(\"%G\", 2.5); print x }"' 'literal sprintf %G'

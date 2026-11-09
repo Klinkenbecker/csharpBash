@@ -1,42 +1,86 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-07 (session 9df18ad7 = bash-b6; updated by bash-81 at hg 682). SUPERSEDES every block below; they are history.
-> **TRUE STATE (written at hg 682, 2026-11-07):** **DEPLOYED rev 681** (`1.0.0+hg.1d3f4ab0198e 681`; dist/sh.exe is a
-> HARD LINK to dist/Bash.exe, re-linked by every deploy; rollback dist/Bash.exe.rev677 + dist/sh.exe.rev677, a linked pair).
-> **PUBLISHED 2026-11-05: GitHub main = git 8dff6e3 = hg 657; release hg-657 = Bash.exe (655) + csharpBash-setup.exe
-> (InstallGen specification 2, FROZEN since hg-600).** **Deployed, NOT published: 660-681** (OOM guard 660, ls -l link
-> counts 662, iconv 665, /dev/null -> nul for Windows programs 668, awk sqrt/exp/log/sin/cos/atan2 669, awk printf
-> %e/%g 671; 677: `=~` POSIX brackets as glibc, a Windows program's arguments after `=`/`-X`, `;` words whole, and its
-> ENVIRONMENT converted as Git Bash; 680: `[[ ]]` redirections and its errors as GNU, quoted text in an `=~` set, a
-> nested C#Bash's arguments as typed; 681: jq match/capture/scan/--rawfile. guy-e3's review: DECISIONS 2026-11-07,
-> reply E:/BashRequest-reply.md written for 681, two messages sent, delivery unconfirmed by the server). REFERENCES (the architect, 2026-11-07 = the 2026-10-12 RULING): GNU bash is the gold master; Git Bash decides
-> what Claude relies on on Windows (what a Windows program receives). Suite: 272 cases (4 AOT-only); battery 237 probes,
+> ## RESUME HERE — 2026-11-08 (bash-81 wrote it at hg 709; bash-1b, the next session, carries it). SUPERSEDES every block below.
+> **NOW (bash-1b, 2026-11-09): DEPLOYED 726 and PUBLISHING it (the architect: "commit, deploy and publish"). 726 =
+> no Git search at start-up (716), awk rand()/srand() on System.Random (725), the tests' MSYS pinned to
+> PortableGit-2.28.0/usr/bin (726; else a PATH search for msys-2.0.dll, else BYPASSED, loud, never a failure).
+> compare3 on 726 (05:28, window held, baselines -1.0..+1.3%) is the README's table. compare3: Git Bash and WSL
+> optional (both missing: bypassed), any Git Bash version, shown under its title. DECISIONS 2026-11-09 has each.**
+> RULED 2026-11-09 (every project): NO TOOL'S SOURCE, ever, nor recall of it ("we don't translate any tools source").
+> RULED: contracts and current-state docs state only what is (history is in the file history).
+> **AWAITING THE ARCHITECT: (1) env name case: Claude: upper-case as Git Bash (verify MSYS's rule from its
+> documentation). OPEN BUG (KNOWN_ISSUES): a quoted non-ASCII word reaches an MSYS2 (msys64, runtime 3.1.7) program
+> with its quotes on; cause not found. TBD list (e): the build's and deploy's outside dependencies.**
+> (History, done: the calibration's go and window.) Do NOT run compare3 without his go and a window.
+> - What happened: the 704 publish's compare3 (2026-11-07 16:48) was STOPPED before it appended to results.md (checked:
+>   no 704 table, results.md unchanged, no benchtimer left): F:/Tools/PortableGit had become bash 5.3.15 (installed
+>   2026-11-07 10:33, guy-bf deleted the old 2.28), which adopts the PWD its parent hands it (C#Bash's `F:/x`), so `pwd`
+>   gave F:/... and to_wsl made /mntF:/... (every WSL row FAILED), and Git Bash's column got much faster. The architect:
+>   "The bechmark should not have changed at all. If the benchmark fails, then the tests should have failed too, before
+>   ever reaching the benchmark." Explained to him: no test runs Git Bash's bash.exe; the benchmark is its only user.
+>   He also: "we are writing our own git [Wombat]. when that is finished i am disposing of PortableGit and git bash will
+>   be no more."
+> - Done (hg 708, DECISIONS "PREPARED"): PortableGit 2.28.0 64-bit downloaded (SHA-256 0cd68218...3b13 = published) and
+>   unpacked (WSL's 7z) into F:/Tools/PortableGit-2.28.0 (bash 4.4.23(1)-release, the reference build; 301 MB; on no
+>   PATH; post-install.bat NOT run). compare3.sh: GITBASH pinned there, refused unless 4.4.23(1)-release; `here` by
+>   `pwd -P`; to_wsl takes F:/x and /f/x; a WSL-sees-the-folder check before timing; the host is no longer refused and is
+>   printed ("host :"). Dry-checked under both hosts. NOT yet timed.
+> - On his go: A = `F:/Tools/PortableGit-2.28.0/bin/bash.exe tests/bench/compare3.sh` (host Git Bash, the reference);
+>   B = `dist/Bash.exe tests/bench/compare3.sh` (host C#Bash 704); A again. Each from F:/Koliada/Tools/bash, output to a
+>   file of Claude's own (memory task-output-can-vanish), a quiet machine (ListAgents: none busy). A-to-A = noise,
+>   A-to-B beyond it = the host's effect: report the per-row deltas, record them (DECISIONS, PERFORMANCE).
+> - Then THE PUBLISH (his earlier go): the doc review from a host-A run (README table + startup line "It starts fast",
+>   docs/PERFORMANCE.md's measured-on line and figures; counts 278), KNOWN_ISSUES.md is ALREADY the 704 release's (Fixed
+>   in this release (build 704) since hg-686; no-cygpath and extglob Limits lines), commit, then
+>   `bash tools/publish.sh <msgfile> C:/Users/guy/klinkenbecker.gh-token` (msgfile first line "C#Bash at hg rev <tip>: ...",
+>   body: 690-704 summary, see DECISIONS 2026-11-07/08). publish.sh: console suite, push, release hg-<tip> (installer only),
+>   download-back, this machine's ~/.bash upgraded and checked (stamp, SHA-256, sh.exe, claude.cmd, KNOWN_ISSUES.md).
+>   Check GitHub's releases/latest afterwards (it lagged after hg-686). Tell guy-bf? No: nothing owed.
+> **AFTER THE PUBLISH, in order:** (1) koliada-net-b9's BUG (704): `x=$(( ((2026 - 2000) & 63) << 26 ))` fails "Unexpected
+> character ')'" (inside a function "unexpected end of file"); GNU 1744830464; controls `$(( (26 & 63) << 26 ))` fine:
+> verify, raise with a position, wait 10 min, fix, ONE message to koliada-net-b9. (2) GO (the architect: "Yes, that; go"):
+> NO cygpath built-in ("get over it, you don't need cygpath"): a hint in the not-found message for `cygpath` alone
+> ("C#Bash's paths are already Windows-rooted: use \"$PWD/x\""), verify `realpath` gives C:/ (then add it to the
+> KNOWN_ISSUES line), tell lantern-5f (its memory says use cygpath -w) the equivalent. Deploy both together.
+> **TRUE STATE:** **DEPLOYED rev 704** (`1.0.0+hg.63492c1217e6 704`; dist/sh.exe a HARD LINK to dist/Bash.exe; rollback
+> dist/*.rev702). **PUBLISHED: GitHub main = git 14a6f22 = hg 686; release hg-686 = csharpBash-setup.exe (build 681) ONLY**
+> (Bash.exe dropped from releases, RULED 2026-11-07). Deployed, NOT published: 690 (POSIX classes as GNU in UTF-8), 692
+> (quoted characters plain in brace/glob expansion), 694 (rm and device names: guy-bf's, told), 696 (=~ escapes literal),
+> 702 (array assignments beside others: git-b3's, told), 704 (a device name with a folder part is the file, a bare one
+> the device: RULED). docs/unserviced-log.md: the request log's spec, AGREED with git-b3/Wombat (delegated by the
+> architect; secrets as *** in args/message). guy-e3's review: all done. REFERENCES (the architect, 2026-11-07 = the 2026-10-12 RULING): GNU bash is the gold master; Git Bash decides
+> what Claude relies on on Windows (what a Windows program receives). Suite: 278 cases (4 AOT-only); battery 237 probes,
 > 217 pass. Untracked root files BENCHMARK-PROVENANCE.md
 > and "The Windows Shell Tax.url" are the architect's: leave them. His install on this machine (C:/Users/guy/.bash/bin,
 > PATH declined) is upgraded by release.sh at every publish.
 > **SINCE 2026-11-07 (the architect's decision, done by guy-bc): NEW sessions on guy-windows8 start on ~/.bash/bin/Bash.exe
-> (the PUBLISHED build, 655)** via C:/Users/guy/bin/claude.bat -> ~/.bash/bin/claude.cmd (old file: claude.bat.dist677).
-> dist/ stays on the system PATH (entry 3): inside such a session `bash` by name is dist/ while $BASH is 655. The
+> (the PUBLISHED build: 681 since hg-686)** via C:/Users/guy/bin/claude.bat -> ~/.bash/bin/claude.cmd (old file: claude.bat.dist677).
+> dist/ stays on the system PATH (entry 3), AFTER ~/.bash/bin: inside such a session `bash` by name is ~/.bash/bin's
+> (measured 2026-11-08 by bash-1b: `type -a bash` = ~/.bash/bin/Bash.exe, then dist; $BASH = ~/.bash/bin, 681). The
 > status line runs `bash` by name since 2026-11-07 (~/.claude settings.json, commit 285c529, guy-bc = the home-folder
 > session, restarted the same day as guy-bf, so it no longer remembers the work: the commits are the record): ~/.bash/bin's in a new session, whose claude.exe PATH is that folder alone. So a DEPLOY reaches only sessions
-> started before and `bash` by name inside a session; a new session gets a fix only from a PUBLISH. Running sessions
-> keep the shell they started with (this one: dist). The record: ~/.claude commit b60267f (CLAUDE.md's start bullet).
+> started before that change; a new session gets a fix only from a PUBLISH (or `dist/Bash.exe` by path). Running
+> sessions keep the shell they started with (bash-1b: ~/.bash/bin, 681). The record: ~/.claude commit b60267f (CLAUDE.md's start bullet).
+> guy-windows11 (guy-e3, relayed by guy-bf, 2026-11-07): hg-686 installed (681, KNOWN_ISSUES.md 681), the same
+> ~/bin/claude.bat hand-off, user PATH starting with %USERPROFILE%/bin. Both machines now run the published 681.
 > **DONE 2026-11-05 (DECISIONS has each):** unzip in-process (645); the stdin give-back (642); the timeout interrupt (646);
 > no debug symbols (643, 644: publish-aot.cmd fails on a .pdb); the CRLF rule (648-655, "RULED" + "CORRECTED": the line
 > tools parse CRLF as a line end; a line passed through or edited in place KEEPS its CRLF; what a tool MAKES from it
 > ends in LF; pipes and files stay bytes; the global CLAUDE.md limit removed).
 > **AWAITING THE ARCHITECT (do NOT build before his word; Claude's positions in DECISIONS):** `file` for text files
-> (daq-a1, 2026-11-06); publishing 660-681 (Claude: publish next; new guy-windows8 sessions run 655 until then).
-> RULED 2026-11-07: jq `def` DEFERRED until a second request (do NOT build). DONE 2026-11-07: the jq pass (681) and f1-f3
-> (680). STILL OPEN, Claude's: (f4) POSIX classes are ASCII only; measure GNU in a UTF-8 locale first. OPEN
-> questions put to him: diff and the CRLF rule (Claude: leave diff byte-exact); whether "It is a bug" reaches beyond the
-> line tools; INST-Q-055 (installer-a4's, to him). (Git Bash's `--file=/c/x`: SETTLED 2026-11-07, built in 677.)
+> (daq-a1, 2026-11-06). RULED 2026-11-07: jq `def` DEFERRED until a second request (do NOT build). STILL OPEN, Claude's
+> list (KNOWN_ISSUES.md "Open"): `@( )` in `[[ ]]` with extglob off; the arithmetic error wording. Found, not chased:
+> awk's strtonum (gawk) refused; C#Bash's request-log lines redact no secrets yet (docs/unserviced-log.md: a candidate);
+> a one-off MSYS echo.exe empty output in a Git-on-PATH suite run (passed 15 reruns; a busy machine). OPEN questions put
+> to him: diff and the CRLF rule (Claude: leave diff byte-exact); whether "It is a bug" reaches beyond the line tools;
+> INST-Q-055 (installer-a4's, to him). SETTLED 2026-11-07: Git Bash's `--file=/c/x` (built 677); device names (704).
 > **CLAUDE'S CALL (delegated 2026-11-07, DECISIONS "DELEGATED"):** the test runners leave PowerShell: bash scripts run by
 > the DEPLOYED dist/Bash.exe, testing the candidate build; detached launches through tools/benchtimer; wall time
 > measured before and after.
 > **PENDING REPLIES (no action owed):** c-parser-ac's `\x27` repro (that session has ended; c-parser-92 is live).
-> **LIVE SESSIONS (2026-11-07, 11):** daq-a1, lantern-5f, c-parser-92, msp430-be, installer-a4, koliada-net-forms-cb,
-> guy-bc, nupkg-33, kes-install-43 (real hardware installs), qa-de, koliada-net-b9; guy-96 reports from guy-windows8.
+> **LIVE SESSIONS (2026-11-08, 12; bash-1b is C#Bash):** daq-a1, lantern-92 (was lantern-5f), c-parser-92, msp430-be, installer-a4, koliada-net-forms-cb,
+> nupkg-33, kes-install-43 (real hardware installs), qa-de, koliada-net-b9, guy-bf (home folder; was guy-bc before a
+> restart), git-b3 (Wombat, F:/Koliada/Tools/git: a git.exe for ~/.bash/bin, one installer artifact later).
 > esdk-a2's CC8051 build runs ON dist/sh.exe + dist/Bash.exe when it is live. Message only the session that must act or
 > know (memory peer-messages-flood-his-screens).
 > **HOW WE WORK:** a peer's BUG: verify against GNU, raise with a position, wait ~10 min, fix (a GNU-checked case red on
@@ -50,14 +94,19 @@
 > **THE OPEN LIST (RULED 2026-11-05, "So that's 9 issues, with nothing being done about them…": when no peer bug
 > presses, build these in order on Claude's stated positions; memory work-the-list-when-idle. NOT Claude's alone:
 > another session's item, his machine, publishing, a new design fork with no stated position):**
-> (a) small gaps: awk rand()/srand() taken from gawk 5.1's SOURCE (a port from memory failed; gawk's values are in
->     DECISIONS "BUILT (the small gaps, part)"); jq --rawfile; find -anewer/-cnewer/-newerXY (they fall to a PATH find).
+> (a) small gaps: awk rand()/srand() AWAITING THE ARCHITECT (never from gawk's source: RULED 2026-11-09; Claude's
+>     position in DECISIONS "no tool's source"); jq --rawfile; find -anewer/-cnewer/-newerXY (they fall to a PATH find).
 > (b) the runners (CLAUDE'S CALL above).
 > (c) found, not chased: a nested C#Bash `read` takes a whole pipe (GNU reads a pipe a byte at a time); feeding a native
 >     child is slow (1M lines ~250-375 ms vs Git Bash's 73).
 > (d) older (DECISIONS, the history blocks below): the awk suite HANG (rev 360); arithmetic-error parity; R4 items 4-9 +
 >     OutputEncoding; output buffering's design; a polite web fetcher; deploy.sh's EarlierHelpTables guard; PortableBash
 >     / 2.0 (its own session); parked: serial I/O, `compgen -c`. WATCH: external_redirects failed once (check commit first).
+> (e) TBD, the build's and deploy's outside dependencies (the architect, 2026-11-09: C#Bash must build and deploy
+>     "with _NO_ external dependancies"; ".NET is never 'external', however the 'never event horizon' is never that far
+>     away!"): the deploy's battery needs WSL (its reference; "we will come back to wsl"); the AOT link needs Visual
+>     Studio's C++ tools (publish-aot.cmd, vcvars64.bat); the runners are PowerShell (run-tests.ps1, run-compat.ps1);
+>     publish.sh needs git.exe to push. MSYS and any extra Unix tools are users' luxuries, never required.
 > **SETTLED 2026-10-31..11-07, do NOT re-open (DECISIONS has each):** the CRLF rule and its correction (above); $PATH's two forms (`/c/x:/f/y` inside,
 > `C:/x;F:/y` forward slashes at every exit; empty entries kept; `./A`; colon-list arguments as Git Bash); dd and cksum
 > in-process (GNU 8.32); awk any RS (gawk 5.1) and RT; kill/kill -0 and `wait $!` as GNU; `<( )` forward-slash path
@@ -626,7 +675,7 @@ machine's ~/.bash/KNOWN_ISSUES.md names the released build.
       PromptExpander.cs  ← PS1/PS2 backslash-escape + promptvars expansion
   tests/               ← run-tests.ps1 + cases/ + expected/
   tools/               ← deploy.sh, publish.sh, release.sh, installer.sh, publish-aot.cmd, benchtimer/ (the
-                         benchmark's CreateProcessW launcher), check-help-urls.sh, bench.csx and attrib.csx (older harnesses)
+                         benchmark's CreateProcessW launcher and its --sieve baseline), check-help-urls.sh, bench.csx and attrib.csx (older harnesses)
   Bash.sln
 ```
 
@@ -814,9 +863,7 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   boundaries — measured under Claude Code). awk's `print > "/dev/stderr"` and `"/dev/stdout"`
   were admitted at the same time.
 - **Still in `Builtins.cs`:** `factor cal expr which hash kill trap jobs fg bg history exec`.
-- **PATH:** Git for Windows' `usr/bin` and `mingw64/bin` are prepended when `git.exe` is on PATH
-  (as Git Bash does), the shell's own directory is appended (nested `bash -c` resolves on a
-  Git-less PATH), and `$PATH` assignments are mirrored into the process environment that command
+- **PATH:** the inherited one, the shell's own directory first, and `$PATH` assignments are mirrored into the process environment that command
   lookup reads. `Path` (Windows spelling) is imported as `PATH`.
 - **Quoted-glob bug FIXED (2026-06-14):** `echo '*'` / `echo "*.cs"` / `echo '{a,b}'`
   used to glob/brace-expand (ExpandToFields applied them to ALL fields, losing quotedness).
@@ -876,7 +923,7 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   `CLAUDE_CODE_GIT_BASH_PATH=…\Bash.exe`; `cd sub` in one call was still in effect in the next.
 
 ## Test Assets
-- **`tests/run-tests.ps1 [-NoBuild] [-Detached] [-Interpreter <exe>]`** (272 cases on
+- **`tests/run-tests.ps1 [-NoBuild] [-Detached] [-Interpreter <exe>]`** (278 cases on
   2026-11-07, 4 of them AOT-only). `-Detached` starts every case as Claude Code starts its shell: DETACHED_PROCESS, no
   console, stdin NUL, stdout to a file. That is the only way to exercise the console-less spawn
   path; a run from a console cannot reach it. `-Interpreter` tests a given exe, such as the AOT

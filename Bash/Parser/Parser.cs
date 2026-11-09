@@ -397,6 +397,10 @@ public sealed class Parser
 		var firstTok = Peek();
 		int line = firstTok.Line;
 		_heredocEnd = -1;
+		// the statement's leading assignments in order, once one of them is an array's: (name, value) or its node. An
+		// array assignment ended the statement and dropped the scalars before it: `a=() b=()` was a syntax error and
+		// `x= y=1 z=()` assigned nothing (git-b3, 2026-11-07)
+		List<object>? order = null;
 
 		while (true)
 			{
@@ -406,6 +410,7 @@ public sealed class Parser
 
 			if (IsWordToken())
 				{
+				var wordTok = Peek();
 				var word = ParseWord()!;
 
 				// arr=(a b c) / arr+=(d) — compound array assignment
@@ -428,21 +433,27 @@ public sealed class Parser
 					if (Peek().Type != TokenType.RParen)
 						throw new ParseException("unexpected token in an array literal", Peek().Line, Peek().Column) { At = Peek(), Status = 1 };
 					Advance();
-					while (true) { var tr = TryParseRedirect(); if (tr is null) break; redirects.Add(tr); }
-					return new ArrayCompoundAssign(acName!, values, redirects) { Append = acAppend, Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
+					// a word glued to the `)` (`a=(1 2)c`, which bash takes as one scalar) stays the syntax error it was:
+					// read as an array then a command, `c` would run
+					if (IsWordToken() && !Peek().HasLeadingSpace) throw Error($"syntax error near unexpected token `{Peek().Value}'");
+					(order ??= [.. assignments.Select(a => (object)a)]).Add(
+						new ArrayCompoundAssign(acName!, values, []) { Append = acAppend, Line = line, Span = SpanFrom(wordTok) });
+					continue;
 					}
 
 				// arr[n]=val / arr[n]+=val — indexed element assignment
 				if (name is null && args.Count == 0 && IsArrayElementAssign(word, out var aeName, out var aeIdx, out var aeVal, out bool aeAppend))
 					{
-					while (true) { var tr = TryParseRedirect(); if (tr is null) break; redirects.Add(tr); }
-					return new ArrayElementAssign(aeName!, aeIdx!, aeVal!, redirects) { Append = aeAppend, Line = line, Span = SpanFrom(firstTok, _heredocEnd), IndexText = RawSubscript(word) };
+					(order ??= [.. assignments.Select(a => (object)a)]).Add(
+						new ArrayElementAssign(aeName!, aeIdx!, aeVal!, []) { Append = aeAppend, Line = line, Span = SpanFrom(wordTok), IndexText = RawSubscript(word) });
+					continue;
 					}
 
 				// NAME=VALUE scalar assignment before the command name
 				if (name is null && args.Count == 0 && IsAssignment(word, out var aName, out var aVal))
 					{
 					assignments.Add((aName!, aVal!));
+					order?.Add((aName!, aVal!));
 					continue;
 					}
 
@@ -495,10 +506,41 @@ public sealed class Parser
 			redirects.Add(r);
 			}
 
+		if (order is not null && name is null) return AssignmentSequence(order, redirects, line, firstTok);
+		// (before a command word an array assignment does nothing, as bash: `a=(1 2) b=3 f` gives f b=3 and no a, measured;
+		// the scalars are its prefixes, in `assignments`)
+
 		if (name is null && assignments.Count == 0 && redirects.Count == 0)
 			return null;
 
 		return new SimpleCommand(assignments, name, args, redirects) { Line = line, Span = SpanFrom(firstTok, _heredocEnd) };
+		}
+
+	/// <summary>A statement of assignments, one or more of them an array's, made left to right as bash makes them: runs of
+	/// scalar ones as a SimpleCommand each, the array ones as their own nodes, one after another. A lone array assignment
+	/// is its node, with the statement's redirections, as before.</summary>
+	private Node AssignmentSequence(List<object> order, List<Redirect> redirects, int line, Token firstTok)
+		{
+		var span = SpanFrom(firstTok, _heredocEnd);
+		if (order.Count == 1)
+			return order[0] switch
+				{
+				ArrayCompoundAssign ac => ac with { Redirects = redirects, Span = span },
+				ArrayElementAssign ae => ae with { Redirects = redirects, Span = span },
+				_ => throw new InvalidOperationException("an assignment sequence without an array"),
+				};
+		var steps = new List<(Node, ListOperator?)>();
+		if (redirects.Count > 0) steps.Add((new SimpleCommand([], null, [], redirects) { Line = line, Span = span }, ListOperator.Sequential));
+		var chunk = new List<(string, Word)>();
+		foreach (var item in order)
+			{
+			if (item is ValueTuple<string, Word> scalar) { chunk.Add(scalar); continue; }
+			if (chunk.Count > 0) { steps.Add((new SimpleCommand(chunk, null, [], []) { Line = line, Span = span }, ListOperator.Sequential)); chunk = []; }
+			steps.Add(((Node)item, ListOperator.Sequential));
+			}
+		if (chunk.Count > 0) steps.Add((new SimpleCommand(chunk, null, [], []) { Line = line, Span = span }, ListOperator.Sequential));
+		steps[^1] = (steps[^1].Item1, null);
+		return new List(steps) { Line = line, Span = span, Assignments = true };
 		}
 
 	/// <summary>The text from <paramref name="first"/> to the last token consumed (or to the end of a
@@ -1053,6 +1095,16 @@ public sealed class Parser
 	/// bash's rule that quoted portions of the pattern match literally.</summary>
 	private Word ParseRegexOperand()
 		{
+		_regexOperand = true;
+		try { return ParseRegexOperandParts(); }
+		finally { _regexOperand = false; }
+		}
+
+	// while `=~`'s operand is parsed: every escaped character in it is quoted (Token.EscapedAt)
+	private bool _regexOperand;
+
+	private Word ParseRegexOperandParts()
+		{
 		var parts = new List<WordPart>();
 		int depth = 0;
 		bool first = true;
@@ -1209,8 +1261,10 @@ public sealed class Parser
 			case TokenType.Word:
 			case TokenType.Digit:
 				Advance();
-				// a backslash-escaped `* ? [ { } , ~` (marked by the lexer) is a QUOTED character
-				if (t.Value.IndexOf(Lexer.Lexer.EscapeMark) >= 0)
+				// a backslash-escaped `* ? [ { } , ~ \ .` (marked by the lexer) is a QUOTED character; in `=~`'s operand every
+				// escaped character is (Token.EscapedAt: `^a\+b$` is a literal +, as bash; 2026-11-07)
+				int[]? escapedAt = _regexOperand ? t.EscapedAt : null;
+				if (t.Value.IndexOf(Lexer.Lexer.EscapeMark) >= 0 || escapedAt is not null)
 					{
 					var lit = new System.Text.StringBuilder();
 					for (int i = 0; i < t.Value.Length; i++)
@@ -1219,6 +1273,11 @@ public sealed class Parser
 							{
 							if (lit.Length > 0) { yield return new LiteralPart(lit.ToString()); lit.Clear(); }
 							yield return new SingleQuotedPart(t.Value[++i].ToString());
+							}
+						else if (escapedAt is not null && Array.IndexOf(escapedAt, i) >= 0)
+							{
+							if (lit.Length > 0) { yield return new LiteralPart(lit.ToString()); lit.Clear(); }
+							yield return new SingleQuotedPart(t.Value[i].ToString());
 							}
 						else lit.Append(t.Value[i]);
 						}

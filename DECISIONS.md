@@ -12138,3 +12138,512 @@ installer only; "By hand" became "Without the start file": run the installer, th
 IMPLEMENTATION's row. A `releases/latest/download/Bash.exe` link stops working once a release without it is the latest.
 Consequence kept from 2026-11-01: a change to the manifest, the start file or KNOWN_ISSUES.md alone, with no new
 Bash.exe, makes no release; it ships with the next build.
+
+## 2026-11-07 -- PUBLISHED: GitHub main = git 14a6f22 = hg 686; release hg-686 = the installer only (build 681)
+**Status:** Record. The architect: "looks good ... if so we can go ahead and publish", then "drop bash.exe from the
+github release". compare3 on deployed 681 (2026-11-07 08:25) on a busy machine: every shell slower than the 655 run
+(Git Bash 2-30 % a row, C#Bash 0-12 %, startup 12 % for both: 10.2 ms against Git Bash's 26.3; ratios held; every
+output agreed); README and PERFORMANCE carry it and say so. The new no-release check was tested read-only against
+hg-657's text first (its 655 SHA-256 found, 681's not). publish.sh: suite with a console on deployed 681 264/0;
+MERCURIAL_HISTORY 687 changesets; release hg-686 with csharpBash-setup.exe (3,824,336 bytes) and its .sha256 only,
+downloaded back and matched; this machine's install upgraded: ~/.bash/bin/Bash.exe = 681 (stamp and SHA-256), sh.exe
+a hard link, claude.cmd the released one, ~/.bash/KNOWN_ISSUES.md "installed with ... 681". GitHub's releases/latest
+API still answered hg-657 minutes later (hg-686 is first in the list): the edge lag seen after hg-600.
+E:/BashRequest-reply.md now says published. guy-windows11's install (655) upgrades when its installer is run there.
+
+## 2026-11-07 -- Removed: E:/BashRequest.md and E:/BashRequest-reply.md (the architect: "yes, delete both")
+**Status:** Record. guy-e3 suggested it once everything had shipped; the architect said yes. The reply (Claude's) was
+deleted here; the request was already gone when looked for. The entries above that cite them stay as written: every
+verdict, measurement and build is in them.
+
+## 2026-11-07 -- FIXED (the open list, the architect's "carry on with the list"): the POSIX classes as GNU in a UTF-8 locale
+**Status:** Active. Not deployed yet. KNOWN_ISSUES.md's first open item. C#Bash is a UTF-8-locale shell everywhere
+else (measured: `${#x}` of é 1, `${x^^}` ÉA, `wc -m` 2, as GNU under C.UTF-8; GNU under C gives 2, éA, 3), so GNU under
+LANG=C.UTF-8 (WSL's only UTF-8 locale; glibc 2.35) is the reference. Every class was ASCII in =~, globs, grep, sed, awk.
+**Built:** Evaluator/PosixClasses.cs: one predicate per class from .NET's Unicode categories plus what GNU's answer
+showed: alpha = letters, letter numbers, non-ASCII decimal digits, and Other_Alphabetic (153 BMP ranges); digit and
+xdigit ASCII; upper = Lu, Lt, U+2160-216F, U+24B6-24CF; lower = Ll, a titlecase letter only if it has an uppercase form
+(ǅ yes, Greek ᾈ no), U+2170-217F, U+24D0-24E9, Other_Lowercase (18 ranges); space/blank leave out U+00A0, U+2007,
+U+202F; cntrl = Cc + U+2028/2029; print = assigned, not those; graph = print less space; punct = graph less alnum. The
+two range tables are GNU's answer less the categories (gawk over the difference lists, 2026-11-07). NetSet makes each
+class's .NET set as BMP ranges once; Builtins.PosixClass (grep, sed, awk, =~) and Glob.PosixClass use it. A surrogate
+is print/graph/punct only (an emoji is two units to a regex: a stated limit). tr keeps ASCII: GNU tr works on bytes
+(measured: `tr -d '[:alpha:]'` keeps é).
+**Measured:** GNU grep under C.UTF-8 on all 63,486 BMP characters (less NUL, LF, surrogates) against C#Bash's grep:
+every class identical except CR (a CRLF line end to a C#Bash line tool: checked through =~ instead) and U+0CF3, U+0ECE
+(Unicode 15, unassigned in glibc's 14).
+**Test:** new posix_classes_unicode (a 32-character table through =~, glob and grep; CR; sed, awk, tr, a negated set;
+every BMP class by count and cksum; expected = GNU via WSL; red on 681 in 39 lines). Mutations, each red: the
+Other_Alphabetic table, the Other_Lowercase table, the titlecase rule, the no-break spaces, the separators in cntrl,
+non-ASCII digits in alpha. Suite (Release JIT): console 261/0, -Detached 261/0, with Git's cmd on PATH 269/0 (4 AOT-only). Found: awk's strtonum (a gawk extension) is refused; noted, not chased.
+
+## 2026-11-07 -- DEPLOYED 690 (the POSIX classes as GNU in a UTF-8 locale): suite (-Detached, AOT) 265/0, battery 217
+**Status:** Record. `1.0.0+hg.769e1f4570e2 690`; sh.exe hard link confirmed; rollback dist/*.rev681. posix_classes_unicode
+equals GNU on the live build. Not published (the next publish; KNOWN_ISSUES.md lists it under "Fixed since hg-686").
+
+## 2026-11-07 -- FIXED (the open list): a quoted character is plain in brace and pathname expansion; an expansion's result is no brace expansion
+**Status:** Active. Not deployed yet. Raised with a position, built after the wait (no objection). KNOWN_ISSUES.md's
+`{x\,y,z}` item; measured against GNU 5.1: 16 of 19 quoting probes differed, plus `x='{a,b}'; echo $x` (bash
+brace-expands only a word's literal text) and two `{$y,c}` forms.
+**Cause:** brace and glob expansion see a field after quote removal, with one flag per field (an unquoted metachar);
+every quoted `{ } , * ? [` in such a field was live. The 2026-10 KNOWN LIMITATION ("a fix needs its own escape marker,
+not backslash") said so.
+**Built:** ExpandToFields records where the field holds inert characters (a quoted span; an unquoted expansion's
+`{ } , .`) and, only when the field goes on to brace/glob expansion, Flush replaces each with a mark: a noncharacter,
+U+FDE0 + its index in Glob.Markable (`{},.*?[]\!^-`; U+FDD0/FDD1 are the lexer's marks). ExpandBraces needs no change
+(a mark is no brace character); Glob.ToRegexBody takes a mark as its escaped character (inside brackets too, so a quoted
+`!` or `-` is a member), a literal path segment is unmarked before the file system sees it, the dot-file check reads
+through a mark; the final results are unmarked. Fields with nothing to mark do one vectorized scan more. ${x:-word}'s
+literal text counts as an expansion's. The lexer marks an escaped `.` as quoted too: `{1\..3}` was a range and
+`[[ axb =~ a\.b ]]` matched.
+**Test:** new brace_glob_quoting (GNU via WSL; red on 690 in 20). Mutations, each red: no marking, expansion braces
+live, a mark unescaped in the regex, marks in brackets, the dot-file check, the literal segment, the lexer's dot.
+Suite (Release JIT): console 262/0, -Detached 262/0; with Git's cmd on PATH 268/1 at first (native_args_msys: Git's MSYS echo.exe printed nothing once, 'msys BAD []'; 15 direct runs then passed, commit headroom 14 GB; this change does not touch an MSYS child's path), then 270/0 on a rerun (4 AOT-only). Performance: not measured (no quiet machine); the next publish's compare3 shows it.
+**RAISED (found, a bug; Claude's next on the list):** an escaped regex character other than `. * ? [ { } \` is live in
+`=~` (`[[ 'a+b' =~ ^a\+b$ ]]` false, `aab` true; GNU the reverse): the lexer drops the backslash of any escape outside
+its set. Position: mark every escaped character in the `=~` operand (the lexer knows it is lexing `[[`'s right side, or
+the parser re-marks it), not every escape everywhere (heredoc delimiters `<<\EOF` and alias bypass `\ls` read the
+escape differently). In KNOWN_ISSUES.md's Open list with the workaround (quote it).
+
+## 2026-11-07 -- DEPLOYED 692 (a quoted character plain in brace and pathname expansion): suite (-Detached, AOT) 266/0, battery 217
+**Status:** Record. `1.0.0+hg.f48bf2f55919 692`; sh.exe hard link confirmed; rollback dist/*.rev690. brace_glob_quoting
+equals GNU on the live build. Not published.
+
+## 2026-11-07 -- RAISED (guy-bf, a bug): rm -rf cannot remove a reserved device name (nul) and abandons the tree at the first failure
+**Status:** Raised with a position; built after the wait unless the architect objects. guy-bf (build 681): deleting
+an old PortableGit whose dev/nul MSYS made; `rm -rf` left 8,577 entries. Measured here (692 code): a tree with
+MSYS-made nul, con, aux.txt, com1 under r/b: `rm -rf r` exits 0, says NOTHING, removes only r/a; MSYS rm.exe -rf
+(GNU coreutils) exits 0 and removes all. Cause: RmOne/RmTree pass Win32 plain paths (`...\b\nul` is the NUL device;
+only `\\?\` reaches the file); any exception in RmTree aborts the whole operand to the top-level catch, which names
+the operand, and drops it under -f when it is a not-found exception (so silent, status 0).
+**Position:** every file-system call of rm through an extended path (`\\?\C:\...`, `\\?\UNC\...`), as MSYS's rm; a
+failure on an entry reported with that entry's path, the rest of the tree done, exit 1 at the end (GNU); -f drops only
+"does not exist". Test: MSYS touch makes the names; MSYS rm is the control. Found, not chased: other commands on such
+names (cp, mv, ls, cat of a file named nul).
+
+## 2026-11-07 -- FIXED (guy-bf's report, raised above): rm removes device-named files and goes on past a failure
+**Status:** Active. Not deployed yet. Built after the wait (no objection).
+**Built:** ShellFile.Extended (a path as `\\?\C:\...` / `\\?\UNC\...`, made full from its PARENT folder joined with the
+final name as written: GetFullPath of the whole maps a final `nul` to `\\.\nul`). rm takes every operand by its
+extended path; RmTree lists and removes by extended paths, catches IOException/UnauthorizedAccessException per entry
+(reported with the entry's path, `failed` set, the rest done; under -f a not-found entry is skipped silently), and the
+operand's status is 1 when anything failed.
+**Test:** new rm_reserved_names (an MSYS touch.exe makes nul, con, aux.txt, com1, `dot.`; a running copy of PING.EXE is
+the entry that cannot go; SKIP without MSYS; cleans up with MSYS rm so a failing build leaves no litter; red on 692 in
+4). guy-bf's own repro: everything removed, exit 0. Mutations, each red: no extended path, abort on the first error,
+the whole path made full, the failure not reaching the status. Suite (Release JIT): console 262/0, -Detached 262/0 (the case SKIPs without Git), with Git's cmd on PATH 270/0, rm_reserved_names PASS (4 AOT-only).
+**Found and measured (to KNOWN_ISSUES.md Open; raised, Claude's next after the =~ escapes):** outside rm a device-named
+file is read as the device: `cat dir/nul` prints nothing and `wc -c < dir/nul` says 0 for a file holding hello, `cp`
+says it does not exist (MSYS cat reads it). Position: open every file through ShellFile with its extended path, as rm
+now does. (Claude's own probe was a script named nul.sh: Windows sent its heredoc to the device.)
+
+## 2026-11-07 -- DEPLOYED 694 (rm and device-named files): suite (-Detached, AOT) 266/0, battery 217
+**Status:** Record. `1.0.0+hg.ee17bbe9d277 694`; sh.exe hard link confirmed; rollback dist/*.rev692. guy-bf's repro on
+the live build: exit 0, nothing left; rm_reserved_names passes. One message sent to guy-bf. Not published.
+
+## 2026-11-07 -- FIXED (raised above): in [[ =~ ]] every backslash-escaped character is literal
+**Status:** Active. Not deployed yet. The lexer keeps an escape as quoted only for `* ? [ { } , ~ \ .` (the rest pass
+as themselves, which heredoc delimiters `<<\EOF`, alias bypass `\ls` and the like rely on), so `^a\+b$` reached the
+regex as `^a+b$`. Built: Token.EscapedAt (set by ConsumeWord only when an escape outside the set occurs: where in the
+value it stands); the parser reads it only while it parses `=~`'s operand (`_regexOperand`) and makes each such
+character a quoted part (literal in ExpandToRegex). Nothing else reads EscapedAt.
+**Test:** new regex_escapes (`\+ \( \) \| \^ \$`, an escaped space and letter, `\.`, `\{2\}`, BASH_REMATCH through
+`\(` `\)`, a regex in a variable, and escapes outside =~ unchanged; GNU via WSL; red on 694 in 7). Mutations, each red:
+the lexer not recording, the parser not reading. Suite (Release JIT): console 263/0, -Detached 263/0, with Git's cmd on PATH 271/0 (4 AOT-only).
+
+## 2026-11-07 -- DEPLOYED 696 (=~ escapes literal): suite (-Detached, AOT) 267/0, battery 217
+**Status:** Record. `1.0.0+hg.d1bcd2dbc9ab 696`; sh.exe hard link confirmed; rollback dist/*.rev694. regex_escapes equals
+GNU on the live build. Not published.
+
+## 2026-11-07 -- FORK (awaiting the architect): a Windows device name in a path outside rm: the file, or the device?
+**Status:** Awaiting the architect; do NOT build before his word. KNOWN_ISSUES.md's open item (device-named files).
+Measured (Git Bash 4.4.23 vs 696, a folder holding d/nul with "hello"): Git Bash `cat d/nul` gives hello, `echo x >
+nul` and `ls nosuch 2>nul` each CREATE a file named nul (a file Windows' own tools cannot delete: the known Git Bash
+trap, and `2>nul` is a cmd habit Claude has); 696 takes all three as the device (cat d/nul prints nothing, cp to
+d/nul writes nowhere). So the references split: Git Bash is "the file" everywhere, Windows is "the device" everywhere.
+**Claude's position (criteria: the files MSYS trees hold are readable and writable; `2>nul` never leaves an undeletable
+file; one rule a reader can hold):** a name WITH a folder part (`d/nul`, `./nul`, `C:/x/aux.txt`) is the file, through
+an extended path as rm now does; a bare name with no folder part (`nul`, `> nul`, `2>nul`, `cat con`) stays the
+device, as Windows means it. What would change it: his preferring Git Bash's rule throughout (file everywhere), or
+keeping the device everywhere (no change).
+
+## 2026-11-07 -- MEASURED for the device-name FORK: no bash-level `>nul` in 65 transcripts; Claude's position changes to "the file everywhere"
+**Status:** Awaiting the architect (the FORK above). His question: "Are these redirects seen by bash?" Yes when written
+on the bash command line (the shell opens the target before the program starts); no inside a `cmd //c "..."` string,
+which cmd.exe redirects itself. Measured (jq over guy-windows8's 65 Claude Code transcripts, this session left out):
+15 Bash commands hold a `>nul`; 12 inside a cmd string (cmd's: our rule cannot touch them), 3 are text being edited
+(sed and Python on .bat files); ZERO redirects bash itself performs (Claude writes 2>/dev/null). So the FORK entry's
+"`2>nul` is a cmd habit Claude has" was wrong at the bash level, and since 694 C#Bash's own rm removes a file named nul.
+**Claude's position, re-derived (the change comes from the measurement):** Git Bash's rule throughout: a device name in a
+path is the file (an extended path, as rm), the 2026-10-12 ruling's reference for Windows paths. What would change it:
+bash-level `>nul` in real use (guy-windows11's transcripts are not measured, nor a human at a prompt); then the
+middle rule (a folder part means the file, a bare name the device).
+
+## 2026-11-07 -- RAISED: ~/.bash/unserviced.jsonl becomes a shared format (Wombat, git-b3); a written spec for the architect to ratify
+**Status:** Awaiting the architect for the spec; the answers below sent to git-b3. git-b3 (Wombat, the architect's
+git-compatible tool in Zig at F:/Koliada/Tools/git, to ship as ~/.bash/bin/git.exe through this installer: one
+artifact later, nothing now) relays the architect's decision that Wombat logs its refusals in this log ("one list of
+unmet needs"). Told, from Unserviced.cs (the only definition): one JSON object per line, UTF-8 no BOM, LF; fields in
+order time (UTC, ms, Z), build, tool, feature, message, args, outcome, source, line; `source`/`line` are the CALLING
+script ($BASH_SOURCE, else $0) and its line, not the program (Wombat: "" and 0); append with FILE_APPEND_DATA only,
+share all, one write per line; honor BASH_UNSERVICED_LOG (/dev/null = off; the test runners set it) and USERPROFILE;
+never fail a command over the log.
+**Claude's position:** with two writers the format is a contract (the architect's): write it down as a short spec in
+this repo (docs/USING.md's log section, or its own file) for him to ratify, and change it only by his word.
+
+## 2026-11-07 -- RAISED (git-b3, a bug): an array assignment beside other assignments in one statement
+**Status:** Raised with a position; built after the wait unless the architect objects. git-b3 (Wombat's test runner),
+build 681: `a=() b=()` is "syntax error near unexpected token `b='" and `set -u; x= y=1 z=()` assigns none of the three
+(x unbound). Measured on the 696 code against GNU 5.1: every array assignment followed by another assignment is a syntax
+error (`a=(1 2) b=3`, `a+=(x) b=1`, `a=([k]=v) b=2`, `a=(1 2) b=(3 4) c=5`); scalars then an array silently assign
+nothing (`b=3 a=(1 2)`: b unset); `local`/`declare` with the same lists work; separate statements work.
+**Position:** a statement's leading assignment words are one list, each a scalar, an indexed element or an array
+(`name=(...)`, `name+=(...)`), made left to right as bash makes them; whatever bash does with an array assignment before
+a command word, measured first and matched. Test: GNU-checked case with git-b3's two lines and the forms above.
+
+## 2026-11-07 -- FIXED (git-b3's report, raised above): an array assignment beside other assignments in one statement
+**Status:** Active. Not deployed yet. Built after the wait (no objection).
+**Built:** ParseSimpleCommand keeps the statement's leading assignments in order (`order`: scalar tuples and the array
+nodes) instead of returning at the first array's `)`. With no command word: Parser.AssignmentSequence makes them a
+List flagged Assignments (runs of scalars as SimpleCommands, the array ones as their nodes, left to right; a lone array
+assignment is its node with the redirections, as before); CommandPrinter prints such a List as written (`declare -f`
+as GNU). Before a command word the array ones are dropped, the scalars its prefixes: GNU, measured, gives the array no
+effect even inside a function it prefixes. A word glued to the `)` (`a=(1 2)c`, one scalar to bash) stays the syntax
+error it was (read as an array then a command, `c` would have run).
+**Test:** new assign_array_list (git-b3's two lines, arrays/elements/appends before and after scalars, command
+substitution order, prefixes on a command and a function, local/declare, declare -f, set -x; GNU via WSL; red on 696 in
+23). Mutations, each red: scalars before the first array dropped, array prefixes kept as a statement, the printer, the
+order of runs. Suite (Release JIT): console 264/0, -Detached 264/0, with Git's cmd on PATH 272/0 (4 AOT-only).
+
+## 2026-11-07 -- DEPLOYED 702 (an array assignment beside other assignments): suite (-Detached, AOT) 268/0, battery 217
+**Status:** Record. `1.0.0+hg.33767d8b03e9 702`; sh.exe hard link confirmed; rollback dist/*.rev696. git-b3's two lines on
+the live build: ok, [][1][0]. One message sent to git-b3. Not published.
+
+## 2026-11-07 -- RULED and BUILT: a device name with a folder part is the file; a bare one is the device
+**Status:** Active. Not deployed yet. The architect: "'nul' your recommendation" (the middle rule, DECISIONS "FORK" and
+its MEASURED follow-up). Built: ShellEnvironment.TranslatePath ends in FileByDeviceName: a path whose final name is a
+Windows device name (ShellFile.IsDeviceName: CON PRN AUX NUL COM1-9 LPT1-9 and ¹²³, CONIN$, CONOUT$, any case, any
+extension, trailing dots/spaces) and which has a folder part becomes its extended path (ShellFile.Extended), so every
+built-in, redirection and test that resolves a path through TranslatePath reaches the file; a bare name, and /dev/...,
+are left as they were (the device). Test: new device_names (MSYS cp/cat make and read the files; SKIP without them;
+cleans up with MSYS rm; red on 702 in 11). Mutations, each red: no rule (11), bare names too (2), extensions ignored (3).
+Suite (Release JIT): console 264/0, -Detached 264/0 (the case SKIPs without Git), with Git's cmd on PATH 273/0, device_names PASS.
+A mutation run's output twice vanished (another Claude Code process cleared the task-output folder at its start): the
+results went to a file of Claude's own and were read from there.
+
+## 2026-11-07 -- AGREED (delegated, "you and wombat figure it out"): docs/unserviced-log.md, the request log's spec
+**Status:** Active. The spec written down from Unserviced.cs and agreed with git-b3 (Wombat), who added one rule: a
+writer that knows an argument carries a secret writes `***` in its place in args and message (Wombat: the value of a
+`-c ...extraheader` key and a URL's user:password@; C#Bash: none yet, a candidate for the same two rules: its refused
+builtin options rarely carry one). Changes are agreed between the two sessions and recorded in both DECISIONS.md.
+
+## 2026-11-07 -- DEPLOYED 704 (device names: a folder part means the file): suite (-Detached, AOT) 268/0, battery 217
+**Status:** Record. `1.0.0+hg.63492c1217e6 704`; sh.exe hard link confirmed; rollback dist/*.rev702. device_names passes
+on the live build. The publish follows (the architect: "then publish").
+
+## 2026-11-07 -- RULED: no cygpath built-in ("get over it, you don't need cygpath"); a hint and a Limits line instead
+**Status:** Active. lantern-5f's unmet need: `cygpath -m rel` was "command not found", the `$( )` came back empty and
+InstallGen failed on an empty path. Why it was missing: cygpath is Git's (usr/bin), off PATH since 2026-10-19, and
+C#Bash adds Git's usr/bin only when git.exe is on PATH; Lantern's memory dates from Git Bash. Claude's position was a
+small built-in; the architect: "I'd rather say 'no get over it, you don't need cygpath'". Agreed on the criteria (a
+correct path without it: C#Bash's paths are C:/x already, `"$PWD/x"` is absolute, a relative one works, `/c/x` reaches a
+Windows program as C:/x; the hazard is the SILENT empty result): (1) KNOWN_ISSUES.md Limits says so (in the 704 release);
+(2) the not-found message for `cygpath` alone carries the hint (next build, after the publish); `realpath` to verify and
+then name. Then "Yes, that; go". lantern-5f to be told once built.
+
+## 2026-11-07 -- RAISED (koliada-net-b9, a bug, to verify after the publish): `$(( ((a - b) & c) << d ))` fails to parse
+**Status:** To verify against GNU and raise with a position after the 704 publish (a deploy now would void its
+benchmark). Report on 704: `x=$(( ((2026 - 2000) & 63) << 26 ))` gives "Unexpected character ')' in arithmetic
+expression" (exit 2); inside a function "unexpected end of file"; GNU 1744830464; controls `$(( 5 << 2 ))` 20 and
+`$(( (26 & 63) << 26 ))` 1744830464. A `$((` followed by `((` is the suspect (arithmetic against `$( (`), not read yet.
+
+## 2026-11-08 -- NEED (git-b3, one request): extglob (`shopt -s extglob` refused on 704)
+**Status:** Recorded for the request count; a feature, so it waits for the architect's word. git-b3 (Wombat's Phase 2
+agent, writing test helpers) reached for it and worked around it; not blocking. extglob has been unsupported since the
+2026-09-04 scope (DECISIONS); KNOWN_ISSUES.md named only its `[[ ]]` symptom and now lists it under "Not available"
+(in the 704 release). Claude's position: a real bash feature with a reach across globs, case, [[ ]] and ${x//}: build
+it once requests accrue (this is the first counted one, plus the `[[ ]]` open item); what would change it: a second
+session asking, or a script that cannot do without it.
+
+## 2026-11-08 -- FORK (awaiting the architect): the benchmark's Git Bash changed (4.4.23 -> 5.3.15); the 704 publish's compare3 run STOPPED
+**Status:** Awaiting the architect. The publish of 704 is paused before its doc review. compare3 on deployed 704 (started
+2026-11-07 16:48) was stopped before it appended to results.md (the benchmark rule: a disturbed run is stopped; checked:
+no 704 table, results.md unchanged, no benchtimer left). Found: F:/Tools/PortableGit/bin/bash.exe is bash 5.3.15
+(x86_64-pc-cygwin) since 2026-11-07 10:33 (the old PortableGit 2.28, bash 4.4.23, was replaced that day; guy-bf deleted
+it), after the 08:25 run that hg-686 published. Two effects: (1) WSL's column FAILs: under 5.3 the script's folder comes
+back as `F:/Koliada/...`, and compare3's `to_wsl` (line 132: '/mnt' + an MSYS /f/x path) makes `/mntF:/...`; (2) Git Bash
+is much faster (loop_big 10.75 s against 19.88 s), so every "vs Git" ratio in the README would drop by method, not by
+C#Bash.
+**Claude's position:** repair to_wsl to take a drive form too (F:/x -> /mnt/f/x; the method unchanged: same rounds,
+shells, statistics), check compare3's other paths under 5.3, re-run, and publish against the Git Bash installed now (Git
+for Windows' current: what users run), README and PERFORMANCE saying the reference changed and why the ratios moved.
+Rejected: restoring a 4.4 for continuity (a comparison with what nobody runs now). Changing the benchmark is his call
+(memory benchmark-runs-one-way).
+
+## 2026-11-08 -- AGREED (git-b3, the architect: "close it"): docs/unserviced-log.md redacts a config WRITE's extraheader value too
+**Status:** Active. The gap: `git config http.https://github.com/.extraHeader "Authorization: Basic <token>"` is a
+config write Wombat refuses; the agreed rule covered only `-c key=value`, so the token would have been logged. The
+Wombat clause now covers any config key ending in `extraheader` (any case) given as `key=value` (after -c or alone) or as
+the argument after the key, and a URL's user:password@. C#Bash's clause unchanged.
+
+## 2026-11-08 -- PREPARED (the architect: "pull PortableGit 2.28.0 locally and calibrate the deltas between running the benchmarks with c#Bash and gitBash"): the benchmark pinned, either host; runs await his go
+**Status:** Prepared; no timing run yet ("let me know when you are ready to run the benchmarks - I will give you go").
+**The architect's rule:** "The bechmark should not have changed at all" (it had, under it: F:/Tools/PortableGit became
+bash 5.3.15 on 2026-11-07). Why the tests did not fail: no test runs Git Bash's own bash.exe (the suite runs C#Bash
+against GNU's output, the battery against WSL, the Git-on-PATH run uses only Git's small MSYS programs, which still
+work); the benchmark is its only user, as host and as a timed shell. Measured: Git Bash 5.3 takes over the PWD its
+parent hands it (C#Bash's `F:/x`), so `pwd` gave F:/... and to_wsl made /mntF:/...; with PWD removed it gives /f/....
+**Done:** PortableGit 2.28.0 64-bit downloaded from Git for Windows' v2.28.0.windows.1 release into a new empty folder,
+46,902,448 bytes, SHA-256 0cd682188b76eeb3a5da3a466d4095d2ccd892e07aae5871c45bf8c43cdb3b13 = the published one;
+unpacked with WSL's 7z (Windows' tar has no LZMA; the self-extractor would open a window) into F:/Tools/PortableGit-2.28.0
+(5,977 files, 301 MB, on no PATH, used only by the benchmark; post-install.bat not run). Its bash: 4.4.23(1)-release, the
+build every table to hg-686 timed. (F:/Tools/msys64 has a 4.4.23(2), another build and runtime: not used.)
+compare3.sh: GITBASH pinned to it and refused unless 4.4.23(1)-release; `here` by `pwd -P`; to_wsl takes `F:/x` too; a
+check that WSL sees the folder before any timing; the host is no longer refused and is named in every table ("host :").
+Dry-checked: both hosts parse it; under each, with C#Bash's PWD inherited, the folder maps to /mnt/f/Koliada/Tools/bash/
+tests/bench and WSL sees it.
+**Calibration, proposed (A B A):** A = hosted by the pinned Git Bash (the reference way, comparable with every past
+table), B = hosted by C#Bash 704, A again: the A-to-A difference is the run-to-run noise, the A-to-B one beyond it the
+host's effect. Then the publish's table from an A run. On a quiet machine, on his go.
+
+## 2026-11-08 -- GO (the architect): baselines for the benchmark, a sieve and a launch, timed around every compare3 run
+**Status:** Active (building). The architect: "we need a test to extablish the 'baseline benchmark - something like
+the seive of erasthanese? - there are a number of windows open that are just background swaping memory around - making
+benchmark 'noise'?", then, on Claude's criteria below: "go, ask for a benchmark window some windows still active".
+**Why:** compare3's tables are read against earlier ones (the README's ratios, every table to hg-686), but nothing in a
+table says how fast the machine was while it ran. The calibration (A B A) gives one sitting's run-to-run noise, not the
+machine's state against another day. Windows' own gauges do not answer on this machine (2026-11-08): typeperf "No
+valid counters" even for one counter, the WMI performance classes error, Win32_Processor LoadPercentage is empty (cause
+not chased: his machine). Measured the same morning: 19-20 GB of 65 GB physical free; commit 65.3 of 73.5 GB (the page
+file at its 8 GB start): nothing forced to page. Held memory is not noise; activity is, and that is what cannot be seen.
+**Criteria (put to him with the go):** (1) fixed and outside the comparison: never C#Bash nor a compared bash; (2) it
+feels what the rows feel; (3) short enough to run before and after every run. And it must be shown to fail: a known
+load must slow it, or it is dropped.
+**Built (Claude's defaults, stated, his to change):**
+- `benchtimer --sieve <n>`: a sieve of Eratosthenes to 10,000,000 in one thread; one untimed round, then n timed, each
+  checked to count 664,579 primes; prints "<min> <total> <n>" as a launch does. The 10 MB array is allocated once and
+  cleared in each timed round (no page faults timed); the method is compiled fully optimized at once (no tiering). It
+  feels CPU contention, core placement (the i7-12700 mixes fast and efficiency cores) and cache contention: the kind of
+  work the loop/arith/func rows do.
+- the launch: C:/Windows/System32/HOSTNAME.EXE (14,848 bytes, exits 0, reads nothing) launched as the startup row
+  launches a shell (median of 5 samples, each 100 launches / 100): what the startup row and the process-heavy rows feel
+  (process creation, Defender, the file cache). Windows' file, not ours: the table prints its size, so an update shows.
+- compare3 times both before the rows and after them and prints them in the table ("baseline :" lines), each against a
+  quiet reference once one is recorded (SIEVE_REF, LAUNCH_REF in compare3.sh). It reports; it refuses nothing (a
+  threshold, if any, after the calibration shows the spread).
+**Next:** the quiet reference and the fails-under-load check need the benchmark window (asked of the live sessions),
+then the calibration (A B A) in the same window.
+
+## 2026-11-08 -- NEED (git-b3, one request): awk srand() / rand()
+**Status:** Counted. On 681, `awk 'BEGIN { srand(1); print rand() }'` gives "awk: unsupported: srand()"; gawk (WSL)
+0.924046. Wombat's Phase 3 agent wanted pseudo-random commit histories for differential tests against git and wrote
+its own Park-Miller generator in awk instead (worked around, not blocking). Already on the open list, item (a) (port
+from gawk 5.1's source, DECISIONS "BUILT (the small gaps, part)"); this is its first counted outside request. git-b3
+also asked that its extglob request be counted: it is (2026-11-08 "NEED ... extglob"). Its `od -A d -t x1z` report was
+F:/Tools/UnixUtils' od.exe, not C#Bash's.
+
+## 2026-11-08 -- CALIBRATED (the architect's go; window 07:24-07:50, all 12 local sessions holding): the host's effect on compare3, and the baselines proven
+**Status:** Record. Steps 1-2 (bash-1b's own script, outputs in F:/TEMP/bash-1b-window): quiet sieve best 0.0300-0.0313 s,
+launch 0.0075-0.0080 s -> SIEVE_REF 0.0310, LAUNCH_REF 0.0076 (hg 711). Under 20 background sieves: sieve 13-16x, launch
+25x; 18 s after that load ended: +25% / +28%; under 4 sieves: +60-80% / 2.4-2.6x; then back to 0.0313 / 0.0075. Both
+baselines fail under load: kept. (The 20 load sieves, each 10 MB, starved each other of memory bandwidth and ran ~16x
+slow; bash-1b ended them after the two loaded measurements, by image name: the only benchtimer processes, all its own.)
+**Step 3, compare3 on deployed 704, three tables appended to results.md:** A1 (host Git Bash 4.4.23(1), 07:33-07:39),
+B (host C#Bash 704, 07:39-07:44), A2 (host Git Bash, 07:44-07:50). Baselines: A1 before +15.5% (it started 18 s after the
+load test: the machine still recovering, which the baseline showed), after -1.9%; B -2.3% / -3.5%; A2 -1.0% / -4.8%
+(launch within -3.9%..+3.9% throughout).
+| row | C#Bash A1 / A2 / B | A2-A1 | B vs A mean | Git Bash A1 / A2 / B | A2-A1 | B vs A mean |
+|---|---|---|---|---|---|---|
+| loop | 0.164 / 0.168 / 0.165 | +2.4% | -0.6% | 1.580 / 1.535 / 1.533 | -2.8% | -1.6% |
+| arith | 0.251 / 0.254 / 0.255 | +1.2% | +1.0% | 2.110 / 2.088 / 2.097 | -1.0% | -0.1% |
+| func | 0.233 / 0.216 / 0.230 | -7.3% | +2.4% | 2.377 / 2.359 / 2.369 | -0.8% | +0.0% |
+| loop_big | 1.519 / 1.498 / 1.521 | -1.4% | +0.8% | 15.660 / 15.428 / 15.431 | -1.5% | -0.7% |
+| coreutils | 0.066 / 0.060 / 0.065 | -9.1% | +3.2% | 16.318 / 16.193 / 16.205 | -0.8% | -0.3% |
+| pipeline | 0.095 / 0.093 / 0.098 | -2.1% | +4.3% | 0.282 / 0.329 / 0.332 | +16.7% | +8.7% |
+| find | 0.015 / 0.016 / 0.018 | +6.7% | +16.1% | 0.155 / 0.127 / 0.140 | -18.1% | -0.7% |
+| startup | 0.0109 / 0.0111 / 0.0125 | +1.8% | +13.6% | 0.0262 / 0.0257 / 0.0268 | -1.9% | +3.3% |
+**Reading:** every script row's host effect is inside its A-to-A noise. The one effect beyond it: C#Bash's STARTUP reads
+~1.5 ms slower when C#Bash hosts (12.5 against 10.9-11.1 ms; find, a 15-18 ms row, moves with it). Git Bash's startup
++3.3% against a 1.9% spread: marginal. WSL startup 0.1359 against 0.1369/0.1361: none. Cause NOT measured (the
+environment a C#Bash host hands down differs: name case, PATH form). Meaning: once compare3 is hosted by C#Bash (Git Bash
+retired), its C#Bash startup row reads ~1.5 ms above every earlier table unless that cause is found.
+**B's WSL script rows FAILED** (startup and the output check ran): measured cause, C#Bash keeps Windows' environment
+name case (SystemRoot, windir, ComSpec, ProgramFiles) where Git Bash upper-cases them (SYSTEMROOT, WINDIR, COMSPEC,
+PROGRAMFILES); so compare3's `${SYSTEMROOT:-/c/WINDOWS}` fell back to the MSYS form, and best() passes it under
+`MSYS2_ARG_CONV_EXCL='*'` (no conversion, both shells alike, measured), so benchtimer (.NET) resolved /c/WINDOWS against
+F:. Two items to the architect: the name case (Claude: match Git Bash, by the 2026-10-12 ruling, after verifying MSYS's
+exact rule) and compare3's fallback (Claude: a Windows-rooted one).
+**The publish's table:** from A2 (baselines -1.0%/0.0% before, -4.8%/+1.3% after). The publish waits for the architect
+to read this (Claude told him it would report first).
+
+## 2026-11-09 -- FIXED (the architect: "fix the compare3 name spelling and find the c#Bash startup difference?"): compare3 finds WSL under either host
+**Status:** Active. compare3 reads Windows' folder as `${SYSTEMROOT:-${SystemRoot:-C:/WINDOWS}}` (Git Bash's spelling,
+then Windows', then a WINDOWS-rooted default) and its second candidates are C:/WINDOWS, not /c/WINDOWS. Checked against
+hg 712's version, each host driving a real WSL launch through benchtimer: old + C#Bash host FATAL F:\c\WINDOWS\... (the
+calibration's failure, reproduced); new + C#Bash host ok; both versions under Git Bash give the same command
+(`C:\WINDOWS/System32/wsl.exe -e bash`): the reference way is unchanged. C#Bash's own name case stays OPEN (2026-11-08
+"CALIBRATED", the architect's call).
+
+## 2026-11-09 -- FOUND (the architect: "find the c#Bash startup difference?"): C#Bash's ~1.5-2 ms slower start under a C#Bash host is the Git-tools probe
+**Status:** Found and measured; the fix awaits the architect. Reproduced outside compare3, the hosts' samples interleaved
+(8 each, 100 starts per sample): C#Bash started from a Git Bash host 10.7 ms (9.7-11.4), from a C#Bash host 12.5 ms
+(12.0-13.8), no overlap; a HOSTNAME.EXE control 7.5 against 7.8 ms, so it is not launching from a C#Bash host that
+costs. The environments differ in PATH and five Git Bash-only names (EXEPATH, MSYSTEM, PLINK_PROTOCOL, TERM, _). The
+cause, measured from the C#Bash host (6 interleaved samples each): PATH unchanged (48 entries, no git.exe in any) 12.5
+ms; PortableGit's mingw64/bin first 10.6 ms (= the Git Bash host); a folder without git.exe first 12.9 ms (control).
+`AugmentPathWithGitTools` (ShellEnvironment.cs:1090) runs at every start and tries `File.Exists(<entry>/git.exe)` on
+each PATH entry until one names a Git root: ~40 us an entry. A Git Bash host puts its own mingw64/bin first, so the
+probe stops at entry 1; with Git off PATH (this machine since 2026-10-19) it walks all 48 and finds nothing. The
+2026-10-18 fix ("stops at PATH entry 2 instead of 37") was measured while Git was still on PATH.
+**What it means:** every C#Bash start on this machine pays ~2 ms (more with a longer PATH) to conclude there is no Git;
+the benchmark's reference way (Git Bash host) cannot show it, because Git Bash puts Git first. Also: once Wombat's
+git.exe sits in ~/.bash/bin, the probe finds it at entry 1-2 but ~/.bash has no usr/bin, so it walks on to the end.
+**Claude's position:** make the probe lazy: run it the first time the shell needs PATH (a PATH search for an external, a
+read or export of PATH, a child's environment), never at start; `-c 'exit 0'` and builtin-only calls then pay nothing,
+a call that runs an external pays it once, as now. What would change it: a PATH reader the trigger cannot cover
+cleanly; then a cache of "no Git root" keyed by the PATH string instead (cost of its file read measured first).
+
+## 2026-11-09 -- RULED and BUILDING: no Git search at start-up (the architect: "remove the git search entirely")
+**Status:** Active (building). Supersedes the 2026-09-04 entry's "Git for Windows' usr/bin + mingw64/bin are prepended
+to PATH when git.exe is on PATH" and the 2026-10-18 "Git-tools probe" fix. The architect, on the 2026-11-09 "FOUND"
+entry: "for a start it should _not_ search for git at all", then "remove the git search entirely". Confirmed with him
+first: an outside program's PATH lookup is already lazy (ResolveOnPath runs only for a command about to run, `type`,
+`command -v`, `hash`, `exec`; remembered in-shell and in ~/.bash/commands), and nothing else at start-up touches the disk
+per PATH entry (PrependOwnDirectoryToPath is string work); MSYS handling does not depend on the search
+(ChildLauncher.IsMsysProgram reads the program's own folder at launch: arguments as written, MSYS quoting, a write
+handle for `>>`).
+**What changes:** `AugmentPathWithGitTools` and its call are removed: the inherited PATH is the shell's PATH (C#Bash's
+own folder still first). A Git on PATH is no longer extended with its usr/bin and mingw64/bin; a script wanting Git's
+perl or xxd puts that folder on PATH itself. Saves the ~2 ms a start measured on this machine (48 entries, Git off PATH).
+**Tests:** `startup_env` checks the opposite now (a fake Git tree on PATH: every PATH comes back as given). The suite's
+third run, "with Git on PATH", now puts Git's `usr/bin`, `mingw64/bin` and `cmd` on PATH itself, in that order (what the
+search produced), so the MSYS cases (`msys_*`, `native_args_msys`, `native_args_git`, `dev_tty_git_prompt`,
+`coreutils_external`) still run instead of skipping. docs/module-contract.md (PortableBash's) names the prepend as a
+bridge candidate: left to that project.
+
+## 2026-11-09 -- RULED: no KNOWN_ISSUES line for the removed Git search ("That is not a known issue")
+**Status:** Active. Claude had added a Limits line ("a Git on PATH is used as it is; put its usr/bin on PATH for perl,
+xxd") and the same wording to docs/USING.md's startup steps and docs/DEVELOPING.md. The architect: "That is not a known
+issue. If PortableGit _was_ on the path, all the known things would be found?" Measured on the new build: Git's
+usr/bin on PATH finds perl and xxd, its cmd finds git, neither finds none: ordinary PATH lookup, as for any program.
+All three removed; USING.md's startup list is renumbered (5 steps). Rule taken from it: ordinary PATH behavior is not a
+known issue, nor a startup step; KNOWN_ISSUES lists what a user cannot get by putting a program on PATH.
+
+## 2026-11-09 -- DEPLOYED 716 (no Git search): suite (-Detached, AOT) 268/0, battery 217; start-up 1.8 ms faster
+**Status:** Record. `1.0.0+hg.c441cf422564 716`; sh.exe a hard link (confirmed); rollback dist/*.rev704. Measured from a
+C#Bash host, 8 interleaved samples of 100 starts each: 716 10.7 ms (9.9-11.1), 704 12.5 ms (12.1-14.0), no overlap:
+the same as 704 under a Git Bash host (10.7), so the host no longer changes C#Bash's start. Deployed with it, not
+published: 710-715 (benchmark baselines, calibration, compare3's WSL fix, the records). The 704 publish's table (A2) is
+for 704: a publish now needs a compare3 run on 716 (a window).
+
+## 2026-11-09 -- RULED (every project): no tool's source, ever (the architect: "we don't translate any tools source")
+**Status:** Active. Relayed by git-b3 and checked at its record (global memory feedback_no_source_translation, ~/.claude
+commit 97977a2): never open, quote, translate or port the source of a tool being re-implemented or matched (GNU bash,
+coreutils, gawk, git, any), and never write an algorithm from recall of it; only its documentation, published papers
+and black-box measurement of the real program. Why: a translation carries the code's license (gawk is GPLv3+, C#Bash
+MIT). **Supersedes** the 2026-11-05 "BUILT (the small gaps, part)" entry's "Next: take the generator from gawk 5.1's own
+source", and its "port of BSD random() as gawk's from memory" was the forbidden method too (it was never shipped:
+rand/srand stay refused). Checked the records for anything built from a source: none (that attempt was the only one
+found). PROJECT_CONTEXT's open list and Builtins.Awk.cs's comment corrected.
+**OPEN for the architect: rand()/srand() under the rule.** gawk's exact values (0.924046 after srand(1)) come from its
+generator, which neither POSIX nor the gawk manual specifies, so they cannot be reproduced from documents and
+measurement. Claude's position: build them to the documented behavior (values in [0,1), one sequence per seed,
+srand() returns the previous seed, the first one 1 as measured on gawk 5.1 (2026-11-05), time-seeded without an
+argument) with a generator of our own, tested by those properties, not gawk's digits. What would change it:
+if exact gawk output for a seeded rand() matters, it cannot be had under the rule and they stay refused.
+
+## 2026-11-09 -- UNFROZEN: docs/module-contract.md (the architect: "unfreeze it and change it in both places")
+**Status:** Active. The C#Bash copy (frozen at hg 391 when the contract moved to PortableBash, 2026-10-20) is live
+again: a correction is made here and in PortableBash's docs/module-contract.md alike. First correction, in both (C#Bash
+section 5, PortableBash section 7, PortableBash hg 58): the MSYS bridge as it works since the Git search went (716): an
+MSYS program is recognised only when it is about to run (IsMsysProgram: msys-2.0.dll or cygwin1.dll in its own
+folder, once per folder), found by the ordinary PATH lookup; "possibly the start-up's Git usr/bin and mingw64/bin
+prepend" removed; the bridge's tests need an MSYS program on PATH. Every name cited checked against the code.
+IMPLEMENTATION.md's run-time paragraph corrected the same way.
+
+## 2026-11-09 -- FOUND (a testing flaw never put to the architect): the MSYS cases run only by hand, on an unpinned MSYS
+**Status:** OPEN, awaiting the architect. Ten suite cases need an MSYS program (two need git): coreutils_external,
+dev_tty_git_prompt, device_names, msys_arguments, msys_inherited_append, msys_redirects, native_args_git,
+native_args_msys, rm_reserved_names find theirs on PATH; msys_append_shared at F:/Tools/msys64/usr/bin/ls.exe. With no
+MSYS on PATH they SKIP (ruled 2026-10-20, "yes, good call, go": a visible skip, never a pass), so the console, detached
+and deploy runs never exercise C#Bash's MSYS handling. Only a third run, Git's folders put on PATH by hand (its command
+never recorded until 2026-11-09), runs them, against whatever PortableGit is installed. Harm found: msys_redirects finds
+its echo.exe two folders above git.exe; PortableGit 2.28 has mingw64/bin/git.exe, 5.3.15 (installed 2026-11-07) has
+git.exe only in cmd/, so from 2026-11-07 it skipped even in the third run, unnoticed. What was told: the skip mechanism
+(2026-10-20) and each run's skip list. What was not: that MSYS behavior was then tested only by hand, unpinned.
+**Claude's position:** pin the tests' MSYS as the benchmark pins its Git Bash: one configured folder (MSYS2's own,
+F:/Tools/msys64, not Git's, which goes), its version checked; the runner hands it to these cases in every run (deploy's
+included); missing is a FAIL, not a skip; the two git cases go with Git. What would change it: MSYS support leaving 1.x.
+
+## 2026-11-09 -- RULED and BUILDING: the tests' MSYS pinned, else found by its signature on PATH, else a loud bypass
+**Status:** Active (building). Resolves the 2026-11-09 "FOUND" entry. The architect: "Pin it, but if there is no pin, or
+folder does not exist, fallback to a search of the path to find the MSYS signature, and if none exsits the tests that
+depend on it are bypassed with a loud fail?", then "No, i should have said 'loud complaint' or similar?", and: "The
+whole point of c#bash is to behave 'rationally' both in build, and deploy, with _NO_ external dependancies. MSYS is
+_not_ a requirement, neither are any additional unix tools. They are 'luxuries' users choose to add".
+**Built:** tests/cases/msys_pin.inc, sourced by every case that needs an MSYS program: the pin F:/Tools/msys64/usr/bin
+(MSYS2's own, not Git's) if it holds msys-2.0.dll; else the first PATH folder that does; it goes first on the case's
+PATH. None: the case prints one line `BYPASSED: <reason>`. The runner shows a bypass in red, names it on its own
+summary line, and never counts it as a failure ("N passed, N failed" unchanged); deploy.sh echoes that line. Cases:
+coreutils_external, device_names, msys_arguments, msys_append_shared, msys_inherited_append, msys_redirects,
+native_args_msys, rm_reserved_names, awk_fallthrough (its PATH awk is the MSYS gawk). native_args_git and
+dev_tty_git_prompt test git, not MSYS: their SKIP stays (they go with Git).
+**Checked (each MSYS case run directly on 716, three ways):** with the pin all pass but msys_arguments; with no pin and
+Git's MSYS on PATH (the PATH search) all nine pass; with no MSYS anywhere all nine print the BYPASSED line.
+**FOUND, not chased: msys_arguments fails on the pinned MSYS2.** `printf '[%s]\n' 'é{x}'` from C#Bash prints
+`["é{x}"]` under F:/Tools/msys64's printf (MSYS runtime 3.1.7), `[é{x}]` (GNU's answer) under Git's printf (runtime
+3.1.6 in PortableGit-2.28.0, 3.6.10 in PortableGit): a word C#Bash double-quotes for an MSYS program, when it holds a
+non-ASCII character, keeps its quotes in MSYS2's runtime (plain `é` too; `a{b}` is fine). Git's runtime is a patched
+fork of MSYS2's. Not yet known: whether C#Bash's quoting or MSYS2's parser is at fault (a cmd.exe probe failed on its
+own chcp line). With this pin the suite therefore fails that case, so a deploy would stop. NOT run: the full suite
+through the runner (its BYPASSED branch is untested there; the cases' own output was checked).
+
+## 2026-11-09 -- RULED and BUILDING: compare3 compares against whatever is installed; with neither Git Bash nor WSL it is bypassed
+**Status:** Active (building). The architect: "if either PortableGit or WSL is not installed compare3 should still run
+and compare against whatever is there, If both are missing, benchmark is bypassed. make it so and document so?" (after
+"so we should record that dependency in the build notes, so others can run the benchmark?").
+**Built:** the pinned Git Bash missing, or not 4.4.23(1)-release, drops its column with a loud note on stderr (was
+FATAL); WSL missing was already a dropped column. Both missing: a loud `compare3: BYPASSED` line, exit 0, nothing
+timed and nothing appended to results.md (C#Bash alone compares with nothing). Claude's defaults, stated: a wrong Git
+Bash version counts as missing (it is not the reference); a WSL that cannot see the folder stays FATAL (a broken setup,
+not a missing one: it caught the /mntF: failure). docs/DEVELOPING.md says what the benchmark needs and how to set it up.
+
+## 2026-11-09 -- RULED: a Git Bash of any version runs, its version under the column title (supersedes Claude's default above)
+**Status:** Active. Supersedes the default in "compare3 compares against whatever is installed" that a wrong Git Bash
+version counts as missing. The architect: "No, we should include the version in and under the column title, and it
+should still run. We should add a note the the performance section that all previous benchmarks were run with Git
+bash <version>?" and, as the repo's responsible party, that the note covers ALL previous benchmarks (Claude had checked
+only results.md's 59 tables, 2026-10-06 to 2026-11-08, all 4.4.23(1)-release). Built: compare3 runs any Git Bash, prints
+its version on a line under the "Git Bash" title (and the full one in the header), and a note when it is not
+4.4.23(1)-release; docs/PERFORMANCE.md and docs/DEVELOPING.md say so.
+
+## 2026-11-09 -- BUILT (git-b3's request; the architect's go): awk rand() and srand(), our own sequence
+**Status:** Active, not deployed. The architect: "add the gawk rand/srand functions requested by git, nothing in gawk
+docs say srand() has to be implementation predictable, only that the sequence is the same", and on the generator: use
+.NET's (Claude had written SplitMix64 from memory of the published algorithm, citing a doubt about System.Random across
+.NET versions; Microsoft's documentation, fetched: "If the same seed is used for separate Random objects, they will
+generate the same series of random numbers"; its one caveat, that an example "may produce different sequences ... on
+different versions of .NET", does not matter: "the actual sequence does not matter for gawk, only that it is
+reproducible"). Supersedes the OPEN question in "no tool's source" (2026-11-09).
+**Behavior, gawk's documented and measured (black box, WSL gawk 5.1):** the seed is 1 until srand(); srand(x) seeds
+with x's integer part (as a number: "abc" 0, "12xy" 12), returns the previous seed (-4 and 1e10 as given); srand()
+seeds with the time in seconds; rand() is in [0, 1); one seed, one sequence. **Built:** Builtins.Awk.cs (the refusal
+removed; System.Random(seed folded to 32 bits).NextDouble()). **Case** awk_rand_gnu: properties only, so gawk prints the
+same (expected = gawk 5.1 via WSL); red on 716 (refused), green on the build; mutation (srand returns the new seed) red.
+
+## 2026-11-09 -- RULED: the tests' MSYS pinned to PortableGit; the MSYS2 failure is a BUG (open)
+**Status:** Active. The architect: "'msys_arguments fails against the pinned MSYS2' flag this as a bug and pin against
+PortableGit." The pin is F:/Tools/PortableGit-2.28.0/usr/bin (the benchmark's fixed copy, MSYS runtime 3.1.6; Claude's
+choice of copy: F:/Tools/PortableGit is replaced from time to time). All nine MSYS cases pass on it (716, run directly).
+**BUG, open (KNOWN_ISSUES "Open"):** a word C#Bash double-quotes for an MSYS program, holding a non-ASCII character,
+reaches an MSYS2 (msys64, runtime 3.1.7) program with its quotes on: `'é{x}'` arrives as `"é{x}"`, a plain `é` too;
+Git's MSYS runtimes (3.1.6, 3.6.10) receive it right. Cause not yet found (C#Bash's quoting or MSYS2's parser).
+
+## 2026-11-09 -- DEPLOYED 726, benchmarked, PUBLISHING (the architect: "commit, deploy and publish")
+**Status:** Record. Deploy: `1.0.0+hg.c03e8d7a95c5 726`, suite (-Detached, AOT) 277/0 (the nine MSYS cases run on the
+PortableGit pin; no bypass), battery 217 (baseline 216); sh.exe a hard link; rollback dist/*.rev716. Benchmark window
+05:2x, all 12 sessions held; compare3 hosted by Git Bash 4.4.23(1) on 726 (results.md 2026-11-09 05:28): loop 0.163 /
+arith 0.254 / func 0.222 / loop_big 1.508 / coreutils 0.060 / pipeline 0.093 / find 0.016 / startup 0.0107 (Git Bash
+0.0265, WSL 0.1388); 8.3-13.1x Git Bash, 2.4-2.8x WSL on the interpreter rows; outputs agree; baselines -1.0%/+1.3%
+before, -1.0%/-2.6% after. Doc review: README table, startup line, 279 cases; PERFORMANCE measured-on and figures;
+DEVELOPING count; KNOWN_ISSUES "Fixed in this release (build 726)" (716, 725 added to 690-704). Then tools/publish.sh.

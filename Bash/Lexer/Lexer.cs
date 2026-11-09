@@ -14,7 +14,7 @@ namespace Bash.Lexer;
 /// </summary>
 public sealed class Lexer
 	{
-	/// <summary>Precedes a backslash-escaped `* ? [ { } , ~` inside a word token, so the parser can
+	/// <summary>Precedes a backslash-escaped `* ? [ { } , ~ \ .` inside a word token, so the parser can
 	/// emit it as a QUOTED part. U+FDD0 is a Unicode noncharacter: it never occurs in text.</summary>
 	public const char EscapeMark = '﷐';
 
@@ -693,6 +693,7 @@ public sealed class Lexer
 		{
 		int startLine = _line, startCol = _col;
 		var sb = new System.Text.StringBuilder();
+		List<int>? escapedAt = null;
 		bool continued = false;
 		while (_pos < _src.Length && (IsWordChar(Peek()) || (Peek() == '#' && (sb.Length > 0 || hashStart))))
 			{
@@ -708,7 +709,9 @@ public sealed class Lexer
 				// it `echo \*` and `find -name \*.txt` globbed (2026-10-03). An escaped backslash too:
 				// left bare, `\\` reached a pattern as a lone `\` that escaped the next character, so
 				// `case 'a\b' in *\\*)` and `[[ $x =~ \\ ]]` failed and `*\\*` matched `a*` (2026-10-08).
-				if (escaped is '*' or '?' or '[' or '{' or '}' or ',' or '~' or '\\') sb.Append(EscapeMark);
+				// An escaped dot too (2026-11-07): `{1\..3}` was a range and `[[ axb =~ a\.b ]]` matched.
+				if (escaped is '*' or '?' or '[' or '{' or '}' or ',' or '~' or '\\' or '.') sb.Append(EscapeMark);
+				else (escapedAt ??= []).Add(sb.Length);   // passed as itself; `=~` reads where (Token.EscapedAt)
 				sb.Append(escaped);
 				}
 			else
@@ -721,7 +724,8 @@ public sealed class Lexer
 		var type = value.Length > 0 && value.All(char.IsAsciiDigit)
 			? TokenType.Digit
 			: TokenType.Word;
-		return Make(type, value, startLine, startCol);
+		var token = Make(type, value, startLine, startCol);
+		return escapedAt is null ? token : token with { EscapedAt = [.. escapedAt] };
 		}
 
 	// ── helpers ───────────────────────────────────────────────────────────────

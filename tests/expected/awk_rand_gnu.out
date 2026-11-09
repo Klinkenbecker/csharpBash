@@ -1,0 +1,12 @@
+first srand() returns 1
+then 5
+after srand(2.7): 2
+srand("abc") seed 0 srand("12xy") seed 12
+negative seed kept: -4
+large seed kept: 10000000000
+same seed, same sequence: 1
+another seed, another sequence: 1
+srand(2.9) is srand(2): 1
+no srand() is srand(1): 1; two runs agree: 1
+100000 draws outside [0,1): 0  min below 0.001: 1  max above 0.999: 1  mean within 0.49-0.51: 1
+srand() seeds with the time: 1

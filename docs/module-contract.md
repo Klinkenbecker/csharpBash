@@ -1,7 +1,7 @@
 # C#Bash 2.0 utility modules: the contract (DRAFT 3, RATIFIED as the basis of version 1)
 
-> **MOVED 2026-10-20 to PortableBash:** the live copy is `F:/Koliada/Tools/PortableBash/docs/module-contract.md`. This copy is frozen as
-> of C#Bash hg rev 391 and kept only because DECISIONS entries here cite it.
+> **The live copy is PortableBash's:** `F:/Koliada/Tools/PortableBash/docs/module-contract.md`. This copy is kept because
+> DECISIONS entries here cite it, and is changed with the live copy.
 
 > **Status: RATIFIED 2026-10-20 as the basis of contract version 1** (DECISIONS "RATIFIED: contract draft 3"), Zig
 > modules and the one-file form included. Section 6 records what has been decided since and what is still open.
@@ -141,10 +141,14 @@ process). **Position:** one utility per module by default, several where they sh
 
 ## 5. The MSYS bridge: what leaves the core
 
-`ChildLauncher.IsMsysProgram` (its `csb_provides(path)`); `AppendArgument`'s MSYS quoting; the MSYS exclusion in
-`NativeArgument`; `Access.AppendAtEnd`, `OneMsysAppend`, `WritableForMsys`; awk's `-v BINMODE=3`; possibly the
-start-up's Git `usr/bin` and `mingw64/bin` prepend. Its tests (`msys_*`, `native_args_msys`, `coreutils_external`,
-`awk_fallthrough`) become the bridge's own suite; the core's needs no MSYS. C#Bash ships no MSYS.
+An MSYS program is recognized when it is about to run, and only then: `ChildLauncher.IsMsysProgram` (its
+`csb_provides(path)`) looks for `msys-2.0.dll` or `cygwin1.dll` in the program's own folder, once per folder. An MSYS
+program runs when its folder is on PATH, as any program does, and the ordinary PATH lookup finds it. For such a program: `AppendArgument`'s MSYS quoting (it re-parses an
+unquoted word like a shell); no path conversion (`NativeArgument` is skipped for it); its file handles
+(`Access.AppendAtEnd`, `OneMsysAppend`, `WritableForMsys`); awk's `-v BINMODE=3`. That is what leaves the core. Its tests
+(`msys_*`, `native_args_msys`, `coreutils_external`, `awk_fallthrough`) become the bridge's own suite; they need an MSYS
+program on PATH. The core's needs no MSYS.
+C#Bash ships no MSYS.
 
 ## 6. Decided since, and still open
 

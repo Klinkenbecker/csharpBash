@@ -11,6 +11,31 @@ namespace Bash.Evaluator;
 /// </summary>
 public static class Glob
 	{
+	// ── quoted metacharacters inside a field (2026-11-07) ──────────────────────────────────────
+	// Brace and pathname expansion see a field after quote removal, so a quoted `,` `{` `*` was live: `{x\,y,z}` gave
+	// x y z (bash: x,y z), `"{"a,b}` a b, `"a[1]"*` matched a1b. WordExpander marks each QUOTED one of these characters
+	// with a Unicode noncharacter (never valid in text, U+FDE0 + its index here), and the brace characters of an unquoted
+	// EXPANSION's result too (bash brace-expands only a word's literal text: `x='{a,b}'; echo $x` is {a,b}). Brace and
+	// glob expansion take a mark as the plain character; Unmark turns the results back.
+	internal const string Markable = "{},.*?[]\\!^-";
+	internal const int BraceMarkable = 4;   // the first four: { } , . (brace expansion's own characters)
+	internal const char FirstMark = (char)0xFDE0;   // U+FDE0.. (U+FDD0 and U+FDD1 are the lexer's EscapeMark and ArrayLiteralMark)
+	internal static readonly System.Buffers.SearchValues<char> MarkableChars = System.Buffers.SearchValues.Create(Markable);
+
+	internal static bool IsMark(char c) => c >= FirstMark && c < FirstMark + Markable.Length;
+
+	/// <summary>The character a mark stands for, or the character itself.</summary>
+	internal static char Unmark(char c) => IsMark(c) ? Markable[c - FirstMark] : c;
+
+	internal static string Unmark(string s)
+		{
+		int i = s.AsSpan().IndexOfAnyInRange(FirstMark, (char)(FirstMark + Markable.Length - 1));
+		if (i < 0) return s;
+		var chars = s.ToCharArray();
+		for (; i < chars.Length; i++) chars[i] = Unmark(chars[i]);
+		return new string(chars);
+		}
+
 	private static readonly Dictionary<(string, bool), Regex> _cache = new();
 
 	/// <summary>Translate a shell pattern to an anchored .NET regex.</summary>
@@ -65,7 +90,8 @@ public static class Glob
 								}
 							}
 						char bc = body[k];
-						if (bc is '\\' or ']' or '[' or '^' ) sb.Append('\\').Append(bc);
+						if (IsMark(bc)) sb.Append('\\').Append(Unmark(bc));   // a quoted member: `["!"a]` is ! or a
+						else if (bc is '\\' or ']' or '[' or '^' ) sb.Append('\\').Append(bc);
 						else if (bc == '-' && (k == 0 || k == body.Length - 1)) sb.Append("\\-");
 						else sb.Append(bc);
 						}
@@ -74,20 +100,15 @@ public static class Glob
 					break;
 					}
 				default:
-					sb.Append(Regex.Escape(c.ToString()));
+					sb.Append(Regex.Escape(Unmark(c).ToString()));   // a mark is its character, literally
 					break;
 				}
 			}
 		return sb.ToString();
 		}
 
-	private static string PosixClass(string name) => name switch
-		{
-		"alpha" => "a-zA-Z", "digit" => "0-9", "alnum" => "a-zA-Z0-9", "upper" => "A-Z", "lower" => "a-z",
-		"space" => "\\s", "blank" => " \\t", "punct" => "!-/:-@\\[-`{-~", "print" => "\\x20-\\x7e",
-		"graph" => "\\x21-\\x7e", "cntrl" => "\\x00-\\x1f\\x7f", "xdigit" => "0-9A-Fa-f", "word" => "\\w",
-		_ => "",
-		};
+	// as GNU reads the classes in a UTF-8 locale (PosixClasses; ASCII until 2026-11-07: `case é in [[:alpha:]])` failed)
+	private static string PosixClass(string name) => name == "word" ? "\\w" : PosixClasses.NetSet(name) ?? "";
 
 	private static int FindBracketClose(string p, int open)
 		{
@@ -223,7 +244,7 @@ public static class Glob
 
 		if (!HasMeta(seg))
 			{
-			var lit = seg.Replace("\\", "");
+			var lit = Unmark(seg.Replace("\\", ""));   // a quoted character is itself here
 			var next = Path.Combine(dir, lit);
 			var disp = Join(display, lit, sep);
 			if (last) { if (File.Exists(next) || Directory.Exists(next)) results.Add(disp); }
@@ -239,7 +260,7 @@ public static class Glob
 		foreach (var d in dirs)
 			{
 			var name = Path.GetFileName(d);
-			if (name.StartsWith('.') && !dotglob && !seg.StartsWith('.')) continue;
+			if (name.StartsWith('.') && !dotglob && Unmark(seg[0]) != '.') continue;
 			if (!re.IsMatch(name)) continue;
 			Walk(d, Join(display, name, sep), segs, idx + 1, results, sep, dotglob, nocase, globstar);
 			}
@@ -255,7 +276,7 @@ public static class Glob
 		foreach (var e in entries)
 			{
 			var name = Path.GetFileName(e);
-			if (name.StartsWith('.') && !dotglob && !seg.StartsWith('.')) continue;
+			if (name.StartsWith('.') && !dotglob && Unmark(seg[0]) != '.') continue;
 			if (!re.IsMatch(name)) continue;
 			results.Add(Join(display, name, sep));
 			}

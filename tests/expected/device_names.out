@@ -1,0 +1,13 @@
+cat-folder ok
+cat-dot ok
+redirect-in ok
+test-f ok
+cp-from ok
+cp-to ok
+redirect-out ok
+redirect-append ok
+listed ok
+bare-write ok
+bare-read ok
+bare-nothing ok
+rm ok

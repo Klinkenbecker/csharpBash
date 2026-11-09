@@ -13,10 +13,18 @@
 //
 // The child gets NUL as stdin, stdout and stderr, inherits only that handle, inherits this
 // process's console (none created per launch), and must exit 0 every time or the run fails.
+//
+//   benchtimer --sieve <n>
+//
+// The machine's baseline (DECISIONS 2026-11-08 "baselines"): a sieve of Eratosthenes to 10,000,000
+// in this thread, one untimed round and then n timed, each checked to count 664,579 primes. Prints
+// "<min> <total> <n>" in seconds, as for launches. Fixed work that is no shell being compared, so a
+// table can say how fast the machine was while it ran.
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -24,9 +32,10 @@ static class BenchTimer
 	{
 	static int Main(string[] args)
 		{
+		if (args.Length == 2 && args[0] == "--sieve") return Sieve(args[1]);
 		if (args.Length < 2 || !int.TryParse(args[0], out int n) || n < 1)
 			{
-			Console.Error.WriteLine("usage: benchtimer <n> <exe> [args...]");
+			Console.Error.WriteLine("usage: benchtimer <n> <exe> [args...]  |  benchtimer --sieve <n>");
 			return 2;
 			}
 		if (GetConsoleCP() == 0)
@@ -87,6 +96,53 @@ static class BenchTimer
 		CloseHandle(pi.hProcess);
 		if (code != 0) throw new Exception($"child exited {code}");
 		return (end - start) / (double)Stopwatch.Frequency;
+		}
+
+	const int SieveLimit = 10_000_000, SievePrimes = 664_579;
+
+	// The baseline: n timed sieves after one untimed. The array is allocated once and cleared inside each timed
+	// round, so no page faults are timed; a wrong count fails the run, so a broken sieve cannot time fast.
+	static int Sieve(string count)
+		{
+		if (!int.TryParse(count, out int n) || n < 1)
+			{
+			Console.Error.WriteLine("usage: benchtimer --sieve <n>");
+			return 2;
+			}
+		var composite = new bool[SieveLimit];
+		SieveOnce(composite);                           // untimed
+		double min = double.MaxValue, total = 0;
+		for (int i = 0; i < n; i++)
+			{
+			long start = Stopwatch.GetTimestamp();
+			int primes = SieveOnce(composite);
+			double t = (Stopwatch.GetTimestamp() - start) / (double)Stopwatch.Frequency;
+			if (primes != SievePrimes)
+				{
+				Console.Error.WriteLine($"benchtimer: FATAL: the sieve counted {primes} primes below {SieveLimit}, not {SievePrimes}");
+				return 1;
+				}
+			total += t;
+			if (t < min) min = t;
+			}
+		Console.WriteLine($"{min:F6} {total:F6} {n}");
+		return 0;
+		}
+
+	// Primes below composite.Length. Compiled fully optimized at once: no tier-0 code in a timed round.
+	[MethodImpl(MethodImplOptions.AggressiveOptimization)]
+	static int SieveOnce(bool[] composite)
+		{
+		Array.Clear(composite);
+		int len = composite.Length, primes = 0;
+		for (int i = 2; i < len; i++)
+			{
+			if (composite[i]) continue;
+			primes++;
+			if (i <= (len - 1) / i)
+				for (int j = i * i; j < len; j += i) composite[j] = true;
+			}
+		return primes;
 		}
 
 	// PROC_THREAD_ATTRIBUTE_HANDLE_LIST holding only NUL, so no other inheritable handle (such as

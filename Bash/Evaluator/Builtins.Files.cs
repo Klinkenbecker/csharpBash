@@ -202,29 +202,34 @@ public sealed partial class Builtins
 		foreach (var f in o.Operands)
 			{
 			var p = P(f);
+			// every call by the extended path: a file named nul, con, aux.txt or `x.` is then that file (2026-11-07, guy-bf:
+			// an MSYS-made dev/nul stopped `rm -rf` of a whole PortableGit)
+			var x = ShellFile.Extended(p);
 			try
 				{
-				if (Directory.Exists(p) && new DirectoryInfo(p).LinkTarget is null)
+				if (Directory.Exists(x) && new DirectoryInfo(x).LinkTarget is null)
 					{
 					// Footgun guard: never remove a filesystem root (/, C:\, …).
 					if (IsRoot(p) && !o.HasLong("no-preserve-root"))
 						{ Console.Error.WriteLine($"rm: it is dangerous to operate recursively on '{f}'\nrm: use --no-preserve-root to override this failsafe"); rc = 1; continue; }
 					if (!recursive)
 						{
-						if (emptyDir && !Directory.EnumerateFileSystemEntries(p).Any())
+						if (emptyDir && !Directory.EnumerateFileSystemEntries(x).Any())
 							{
 							if (ask && !RmAsk($"remove directory '{f}'")) continue;
-							Directory.Delete(p);
+							Directory.Delete(x);
 							if (verbose) Console.WriteLine($"removed directory '{f}'");
 							continue;
 							}
 						Console.Error.WriteLine($"rm: cannot remove '{f}': Is a directory"); rc = 1; continue;
 						}
-					RmTree(p, f, verbose, ask, force, tty);
+					bool failed = false;
+					RmTree(x, f, verbose, ask, force, tty, ref failed);
+					if (failed) rc = 1;
 					}
-				else if (File.Exists(p) || Directory.Exists(p))
+				else if (File.Exists(x) || Directory.Exists(x))
 					{
-					if (!RmOne(p, f, ask, force, tty)) continue;
+					if (!RmOne(x, f, ask, force, tty)) continue;
 					if (verbose) Console.WriteLine($"removed '{f}'");
 					}
 				else if (!force) { Console.Error.WriteLine($"rm: cannot remove '{f}': No such file or directory"); rc = 1; }
@@ -273,30 +278,64 @@ public sealed partial class Builtins
 
 	/// <summary>`rm -r`: with `-i` it asks to descend into a non-empty directory, about each entry, and to remove
 	/// the directory (GNU's order of questions); a write-protected file as in <see cref="RmOne"/>. Junctions and
-	/// directory symlinks are removed, never descended into. False when something was kept.</summary>
-	private static bool RmTree(string p, string display, bool verbose, bool ask, bool force, bool tty)
+	/// directory symlinks are removed, never descended into. False when something was kept. <paramref name="p"/> is an
+	/// extended path (<see cref="ShellFile.Extended"/>), so are the entries listed from it. An entry that cannot be
+	/// removed is reported with its own path, <paramref name="failed"/> is set and the rest still goes, as GNU: the first
+	/// failure stopped the whole tree, reported under the operand's name (dropped under -f when it was a not-found
+	/// error, so `rm -rf` of an MSYS tree with a dev/nul exited 0 and left it nearly whole; guy-bf, 2026-11-07).</summary>
+	private static bool RmTree(string p, string display, bool verbose, bool ask, bool force, bool tty, ref bool failed)
 		{
-		if (ask && Directory.EnumerateFileSystemEntries(p).Any() && !RmAsk($"descend into directory '{display}'")) return false;
+		string[] files, dirs;
+		try
+			{
+			if (ask && Directory.EnumerateFileSystemEntries(p).Any() && !RmAsk($"descend into directory '{display}'")) return false;
+			files = Directory.GetFiles(p);
+			dirs = Directory.GetDirectories(p);
+			}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+			{
+			Console.Error.WriteLine($"rm: cannot remove '{display}': {IoError(ex)}"); failed = true; return false;
+			}
 		bool all = true;
-		foreach (var f in Directory.GetFiles(p))
+		foreach (var f in files)
 			{
 			var shown = $"{display}/{Path.GetFileName(f)}";
-			if (!RmOne(f, shown, ask, force, tty)) { all = false; continue; }
-			if (verbose) Console.WriteLine($"removed '{shown}'");
+			try
+				{
+				if (!RmOne(f, shown, ask, force, tty)) { all = false; continue; }
+				if (verbose) Console.WriteLine($"removed '{shown}'");
+				}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+				{
+				if (force && ex is FileNotFoundException or DirectoryNotFoundException) continue;   // gone meanwhile
+				Console.Error.WriteLine($"rm: cannot remove '{shown}': {IoError(ex)}"); failed = true; all = false;
+				}
 			}
-		foreach (var d in Directory.GetDirectories(p))
+		foreach (var d in dirs)
 			{
 			var shown = $"{display}/{Path.GetFileName(d)}";
-			if (new DirectoryInfo(d).LinkTarget is not null)
+			try
 				{
-				if (!RmOne(d, shown, ask, force, tty)) all = false;
-				continue;
+				if (new DirectoryInfo(d).LinkTarget is not null)
+					{
+					if (!RmOne(d, shown, ask, force, tty)) all = false;
+					continue;
+					}
 				}
-			if (!RmTree(d, shown, verbose, ask, force, tty)) all = false;
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+				{
+				if (force && ex is FileNotFoundException or DirectoryNotFoundException) continue;
+				Console.Error.WriteLine($"rm: cannot remove '{shown}': {IoError(ex)}"); failed = true; all = false; continue;
+				}
+			if (!RmTree(d, shown, verbose, ask, force, tty, ref failed)) all = false;
 			}
 		if (ask && !RmAsk($"remove directory '{display}'")) return false;
 		if (!all) return false;   // an entry was kept: the directory stays (GNU: it is not empty)
-		Directory.Delete(p, false);
+		try { Directory.Delete(p, false); }
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+			{
+			Console.Error.WriteLine($"rm: cannot remove '{display}': {IoError(ex)}"); failed = true; return false;
+			}
 		if (verbose) Console.WriteLine($"removed directory '{display}'");
 		return true;
 		}

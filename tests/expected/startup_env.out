@@ -1,16 +1,10 @@
 == PATH=Git/cmd
-D/Git/usr/bin
-D/Git/mingw64/bin
 D/Git/cmd
 == PATH=Git/bin
-D/Git/usr/bin
-D/Git/mingw64/bin
 D/Git/bin
 == PATH=Git/mingw64/bin
-D/Git/usr/bin
 D/Git/mingw64/bin
 == PATH=tools;Git/mingw64/bin
-D/Git/usr/bin
 D/tools
 D/Git/mingw64/bin
 == PATH=Git/usr/bin;Git/mingw64/bin

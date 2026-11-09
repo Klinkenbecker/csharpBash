@@ -60,8 +60,11 @@ new_stamp=$("$new" --version 2>/dev/null | tail -1)
 [[ "$new_stamp" == *"hg.$node $rev" ]] || die "the published build's stamp is '$new_stamp', not rev $rev ($node)"
 
 # 3. the suite on that exact binary, detached (the console run is publish's, 2026-11-01)
-res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" -Interpreter "$new" -Detached 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
+suite=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" -Interpreter "$new" -Detached 2>&1)
+res=$(grep -E 'passed, [0-9]+ failed' <<< "$suite" | tail -1)
 echo "deploy: suite (-Detached): $res"
+# an optional program missing (MSYS: tests/cases/msys_pin.inc) is a loud complaint, never a stop (2026-11-09)
+grep -E '^!!! [0-9]+ BYPASSED' <<< "$suite" | sed 's/^/deploy: /' >&2
 [[ "$res" == *" 0 failed" ]] || die "the suite failed on $new (-Detached); not deployed"
 
 # 4. the battery, against WSL's GNU bash (its reference since 2026-10-19: Git is reached nowhere but the benchmark

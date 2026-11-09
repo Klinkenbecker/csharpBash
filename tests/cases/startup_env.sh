@@ -1,8 +1,7 @@
-# 2026-10-18: at start-up, a Git found on PATH adds its usr/bin and mingw64/bin (its MSYS tools: ssh, perl, ...) when
-# they are missing. Git's root is the parent of a `cmd` or `bin` entry holding git.exe, or the grandparent of a
-# `mingw64/bin` one. The mingw64 case was never reached (`bin` matched first), so a PATH with only `.../mingw64/bin`
-# got no usr/bin, and the probe went on through every later entry (0.66 ms a start here). And "already on PATH"
-# compared backslash paths with entries as written, so a forward-slash entry was added again.
+# 2026-11-09 (the architect: "remove the git search entirely"): start-up adds nothing to PATH for a Git found on it.
+# Until then a `cmd`, `bin` or `mingw64/bin` entry holding git.exe named a Git root and its usr/bin and mingw64/bin were
+# put first (2026-09-04; the probe fixed 2026-10-18), and every start looked for git.exe in each PATH entry (~2 ms with
+# 48 entries and no Git). Fake Git trees on PATH: every PATH comes back as given. Red on 704 (it added them).
 # PPID: a child shell's $PPID is this shell's $$ (it now comes from the current-process pseudo-handle, not a
 # Process object: ~0.45 ms a start). Authored (C#Bash's own start-up).
 d=$(mktemp -d) && cd "$d" || exit 1

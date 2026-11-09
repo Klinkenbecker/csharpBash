@@ -141,7 +141,7 @@ public static class CommandPrinter
 					_sb.Append("[[ ").Append(Cond(ce.Expr)).Append(" ]]");
 					Redirects(ce.Redirects);
 					break;
-				case SimpleCommand or ArrayElementAssign or ArrayCompoundAssign or ArithmeticCommand:
+				case SimpleCommand or ArrayElementAssign or ArrayCompoundAssign or ArithmeticCommand or List { Assignments: true }:
 					Leaf(node);
 					break;
 				case Pipeline or List:

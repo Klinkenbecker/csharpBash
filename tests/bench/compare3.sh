@@ -22,6 +22,9 @@
 #     "+1 ms" on 2026-10-06; ONE such sample moves by ~1.5 ms between runs and invented a "+1.2 ms
 #     regression" on 2026-10-10, so the architect ratified the median of 5 that day);
 #   * the outputs are compared, so a fast wrong answer cannot look like a win;
+#   * the machine's BASELINE is timed before the rows and after them (2026-11-08, DECISIONS "baselines"): a sieve
+#     (benchtimer --sieve) and a fixed small Windows program launched as the startup row launches a shell; neither is
+#     a shell being compared, so the table says how fast the machine was while it ran;
 #   * every run prints its build stamp, date and method and appends its table to results.md here.
 # The options choose WHICH build, never how it is timed: --build (2026-10-12) publishes the committed
 # tree with tools/publish-aot.cmd into tests/bench/aot (a dirty tree is refused; the stamp must name the
@@ -53,15 +56,24 @@
 #    so the row depended on how the script was started.
 set -u
 unset LANG LC_ALL LC_CTYPE LC_COLLATE LC_MESSAGES LC_MONETARY LC_NUMERIC LC_TIME
-# Under C#Bash, "Git Bash" below would be C#Bash itself and the harness's own `time` would be ours.
-case "${BASH_VERSION:-}" in *koliada*) echo "compare3: run me under Git Bash, not C#Bash (see the header)" >&2; exit 2 ;; esac
-here="$(cd "$(dirname "$0")" && pwd)"
+# The HOST (the shell running this script) is named in every table (2026-11-08, the architect: "calibrate the deltas
+# between running the benchmarks with C#Bash and Git Bash", before Git Bash is retired). Every launch is made and timed
+# by tools/benchtimer, so a host differs only in the environment the timed shells inherit. It refused C#Bash until then,
+# a rule from before the timer (2026-10-06), when the harness's own `time` was the host's.
+host="${BASH_VERSION:-?}"
+# `pwd -P`: the folder as this host names it, whatever PWD it inherited. Git Bash 5.3 takes over an inherited PWD, and
+# C#Bash hands its own (`F:/x`), so `pwd` gave F:/... and to_wsl made /mntF:/... (2026-11-07: every WSL row failed)
+here="$(cd "$(dirname "$0")" && pwd -P)"
 root="$(cd "$here/../.." && pwd)"
 
 CS_ROUNDS=9          # C#Bash: best of 9
 OTHER_ROUNDS=3       # Git Bash, WSL: best of 3
 STARTUP_N=100        # startup: total of 100 launches / 100 is one sample ...
 STARTUP_SAMPLES=5    # ... and the row is the median of 5 samples (2026-10-10)
+SIEVE_ROUNDS=9       # the baseline's sieve: best of 9 (and their mean)
+LAUNCH_EXE=C:/Windows/System32/HOSTNAME.EXE   # the baseline's launch: fixed, small, exits 0, reads nothing
+SIEVE_REF=0.0310     # quiet references in seconds: the medians of 4 quiet measurements in the window of 2026-11-08
+LAUNCH_REF=0.0076    # 07:24-07:33, all 12 sessions holding (sieve best 0.0300-0.0313, launch 0.0075-0.0080)
 
 usage() { echo "usage: tests/bench/compare3.sh [--build | --cs <exe>]   (the method is fixed; see the header)" >&2; exit 2; }
 
@@ -103,23 +115,43 @@ fi
 # Git Bash is configured, never searched for: Git's bin/bash.exe redirect, the program Claude Code starts when it
 # uses Git Bash. The redirect starts usr/bin/bash.exe and costs ~8 ms per start, which every such Claude Code call
 # pays. Until 2026-10-19 this was usr/bin/_bash.exe, started directly (README "Benchmark provenance").
-GITBASH=F:/Tools/PortableGit/bin/bash.exe
-[ -x "$GITBASH" ] || { echo "compare3: FATAL: Git Bash not found at $GITBASH (configured at the top of this script)" >&2; exit 2; }
-gitbash="$GITBASH"
+# PINNED (2026-11-08, the architect: "The benchmark should not have changed at all"): Git for Windows 2.28.0's
+# PortableGit, the Git Bash every table to hg-686 timed, in a folder only this benchmark uses (F:/Tools/PortableGit was
+# replaced by a 5.3.15 on 2026-11-07, which changed the column and broke WSL's). Downloaded from Git for Windows' 2.28.0
+# release, SHA-256 0cd682188b76eeb3a5da3a466d4095d2ccd892e07aae5871c45bf8c43cdb3b13 as published, unpacked whole.
+# Git Bash and WSL are each optional (the architect, 2026-11-09): a missing one leaves its column out with a note; with
+# neither, the benchmark is bypassed (nothing timed, nothing appended). Git Bash of any version runs, its version shown
+# under the column title; GITBASH_VERSION is the one every earlier table timed, and another is named in a note.
+GITBASH=F:/Tools/PortableGit-2.28.0/bin/bash.exe
+GITBASH_VERSION="4.4.23(1)-release"
+gitbash=""; gitver=""
+if [ ! -x "$GITBASH" ]; then
+  echo "compare3: NOTE: no Git Bash at $GITBASH (configured at the top of this script): its column is left out" >&2
+else
+  gitbash="$GITBASH"
+  gitver=$("$GITBASH" -c 'echo "$BASH_VERSION"' 2>/dev/null)
+  [ "$gitver" = "$GITBASH_VERSION" ] || echo "compare3: NOTE: Git Bash is bash '$gitver', not $GITBASH_VERSION, the version every earlier table timed: its ratios are not comparable with theirs" >&2
+fi
 
 # The launcher and clock. Built from tools/benchtimer, never searched for.
 TIMER="$root/tools/benchtimer/bin/benchtimer.exe"
 [ -x "$TIMER" ] || { echo "compare3: FATAL: the timer is not built: $TIMER (build: dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin)" >&2; exit 2; }
+"$TIMER" --sieve 1 >/dev/null 2>&1 || { echo "compare3: FATAL: the timer has no --sieve: rebuild it (build: dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin)" >&2; exit 2; }
+[ -x "$LAUNCH_EXE" ] || { echo "compare3: FATAL: the baseline's launch program is missing: $LAUNCH_EXE" >&2; exit 2; }
 
 # WSL's bash, as a command prefix: `wsl.exe -e bash` first. System32\bash.exe (the legacy
 # launcher) ranks first on a default PATH and pre-empts other shells -- including C#Bash under
 # Claude Code -- so it may have been moved away; it is only the fallback (2026-10-03).
+# Windows' folder, WINDOWS-rooted: best() hands these to benchtimer (.NET) under MSYS2_ARG_CONV_EXCL='*', unconverted,
+# and .NET resolves /c/x against the current drive (F:/c/x). Git Bash upper-cases the name (SYSTEMROOT), C#Bash keeps
+# Windows' (SystemRoot), so both are read (2026-11-08: under a C#Bash host the /c/WINDOWS fallback failed every WSL row).
+winroot="${SYSTEMROOT:-${SystemRoot:-C:/WINDOWS}}"
 wslcmd=()
-for c in "${SYSTEMROOT:-/c/WINDOWS}/System32/wsl.exe" /c/WINDOWS/System32/wsl.exe; do
+for c in "$winroot/System32/wsl.exe" C:/WINDOWS/System32/wsl.exe; do
   [ -x "$c" ] && wslcmd=("$c" -e bash) && break
 done
 if [ ${#wslcmd[@]} -eq 0 ]; then
-  for c in "${SYSTEMROOT:-/c/WINDOWS}/System32/bash.exe" /c/WINDOWS/System32/bash.exe; do
+  for c in "$winroot/System32/bash.exe" C:/WINDOWS/System32/bash.exe; do
     [ -x "$c" ] && wslcmd=("$c") && break
   done
 fi
@@ -127,9 +159,18 @@ if [ ${#wslcmd[@]} -gt 0 ]; then
   "${wslcmd[@]}" -c 'exit 0' >/dev/null 2>&1 || wslcmd=()     # installed but no distro configured
 fi
 wsl="${wslcmd[*]}"
+[ ${#wslcmd[@]} -gt 0 ] || echo "compare3: NOTE: no WSL bash: its column is left out" >&2
+if [ -z "$gitbash" ] && [ ${#wslcmd[@]} -eq 0 ]; then
+  echo "compare3: !!! BYPASSED: neither Git Bash ($GITBASH) nor WSL's bash is here, so C#Bash has nothing to be compared with; nothing timed, nothing appended to results.md" >&2
+  exit 0
+fi
 
-# /f/x/y  ->  /mnt/f/x/y
-to_wsl() { printf '/mnt%s' "$1"; }
+# /f/x/y (Git Bash's form) or F:/x/y (C#Bash's)  ->  /mnt/f/x/y
+to_wsl() { case $1 in [A-Za-z]:/*) local d=${1:0:1}; printf '/mnt/%s%s' "${d,,}" "${1:2}" ;; *) printf '/mnt%s' "$1" ;; esac; }
+# and the path must be there for WSL, before any timing: a wrong one fails every WSL row (2026-11-07)
+if [ ${#wslcmd[@]} -gt 0 ] && ! MSYS2_ARG_CONV_EXCL='*' "${wslcmd[@]}" -c "test -f $(to_wsl "$here")/compare3.sh" >/dev/null 2>&1; then
+  echo "compare3: FATAL: WSL cannot see this folder as $(to_wsl "$here")" >&2; exit 2
+fi
 
 export BENCH_DIR="$here"      # see find.sh: $0 is unusable in a sourced script
 
@@ -193,8 +234,26 @@ startup() {
   printf '%s' "$samples" | sort -n | awk '{v[NR]=$1} END{printf "%.4f", v[int((NR+1)/2)]}'
 }
 
+# the machine's baseline, one line: the sieve (best of SIEVE_ROUNDS, and their mean) and the launch (as startup()
+# times a shell), each against its quiet reference when one is set. $1 names the moment (before / after).
+baseline() {
+  local out k samples="" sv="FAIL" mean="" ln="FAIL"
+  if out=$("$TIMER" --sieve "$SIEVE_ROUNDS"); then
+    sv=$(awk '{printf "%.4f", $1}' <<< "$out"); mean=$(awk '{printf "%.4f", $2/$3}' <<< "$out")
+  fi
+  for ((k = 0; k < STARTUP_SAMPLES; k++)); do
+    out=$("$TIMER" "$STARTUP_N" "$LAUNCH_EXE") || { samples=""; break; }
+    samples+=$(awk '{printf "%.6f\n", $2/$3}' <<< "$out")$'\n'
+  done
+  [ -n "$samples" ] && ln=$(printf '%s' "$samples" | sort -n | awk '{v[NR]=$1} END{printf "%.4f", v[int((NR+1)/2)]}')
+  printf 'baseline : %-6s sieve %s s (mean %s)%s   launch %s s%s\n' "$1" "$sv" "${mean:--}" "$(against "$sv" "$SIEVE_REF")" \
+    "$ln" "$(against "$ln" "$LAUNCH_REF")"
+}
+against() { [ -n "$2" ] && printf ' %s vs quiet %s' "$(change "$1" "$2")" "$2"; }
+
 report() {
   echo "date     : $(date '+%Y-%m-%d %H:%M:%S')"
+  echo "host     : bash $host   (the shell running this script)"
   echo "C#Bash   : $cs   [$cs_from]"
   "$cs" --version 2>/dev/null | tail -1 | sed 's/^/           /'
   if [ -n "$deployed" ]; then
@@ -208,13 +267,18 @@ report() {
   echo "method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)"
   echo "           rows = best of $CS_ROUNDS (C#Bash) / best of $OTHER_ROUNDS (Git Bash, WSL); startup = median of $STARTUP_SAMPLES samples, each total of $STARTUP_N launches / $STARTUP_N"
   echo "           no LANG or LC_* passed to any shell (Git Bash as Claude Code runs it: C locale)"
+  echo "           baseline = benchtimer --sieve (primes below 10,000,000, one thread), best of $SIEVE_ROUNDS (mean too);"
+  echo "           launch = $LAUNCH_EXE ($(wc -c < "$LAUNCH_EXE" | tr -d ' ') bytes) timed as startup is"
+  baseline before
   echo
 
   if [ -n "$deployed" ]; then
     printf '%-11s %10s %10s %8s %10s %10s   %8s %8s\n' benchmark 'build' 'deployed' 'change' 'Git Bash' 'WSL' 'vs Git' 'vs WSL'
+    printf '%-11s %10s %10s %8s %10s\n' '' '' '' '' "${gitver:+${gitver%-release}}"   # the Git Bash version, under its title
     printf -- '----------------------------------------------------------------------------------------\n'
   else
     printf '%-11s %10s %10s %10s   %8s %8s\n' benchmark 'C#Bash' 'Git Bash' 'WSL' 'vs Git' 'vs WSL'
+    printf '%-11s %10s %10s\n' '' '' "${gitver:+${gitver%-release}}"   # the Git Bash version, under its title
     printf -- '----------------------------------------------------------------------\n'
   fi
 
@@ -253,6 +317,7 @@ report() {
   fi
   echo "  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost."
   echo "  startup = bash -c 'exit 0', median of $STARTUP_SAMPLES samples, each the total of $STARTUP_N consecutive launches / $STARTUP_N."
+  baseline after
 
   # ── the outputs must agree, or a time means nothing ──────────────────────────
   echo

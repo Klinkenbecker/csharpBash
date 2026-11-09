@@ -1013,9 +1013,6 @@ public sealed partial class Builtins
 					_p++;
 					if (t.Text is "system" or "systime" or "strftime" or "gensub" or "asort" or "asorti")
 						throw new AwkUnsupportedException($"{t.Text}()");
-					// rand() and srand(): not yet gawk's sequence (2026-11-05: a port of BSD random() from memory did not
-					// reproduce gawk 5.1's values; to be taken from its source): handed to the PATH awk
-					if (t.Text is "rand" or "srand") throw new AwkUnsupportedException($"{t.Text}()");
 					if (!IsOp("("))
 						{
 						if (t.Text == "length") return new ACall("length", []);
@@ -1085,6 +1082,27 @@ public sealed partial class Builtins
 		private string _rt = "";   // RT (gawk): the text that ended the last record read
 		private bool _crlf;        // a CRLF ends a record under the default RS (not for a program that names the CR)
 		private bool _inMain;      // the main rules run (not BEGIN or END): print's default ORS follows the record's end
+
+		// rand() and srand() (the architect, 2026-11-09: "nothing in gawk docs say srand() has to be implementation
+		// predictable, only that the sequence is the same"). gawk's documented behavior, measured (DECISIONS 2026-11-09
+		// "rand and srand"): the seed is 1 until srand() is called; srand(x) seeds with x's integer part and returns the
+		// previous seed; srand() seeds with the time in seconds; rand() is in [0, 1); one seed, one sequence. The generator
+		// is .NET's System.Random, seeded ("If the same seed is used for separate Random objects, they will generate the
+		// same series of random numbers", its documentation); the values themselves do not matter, only that a seed
+		// reproduces them. Its seed is 32-bit: an awk seed outside that range is folded in (srand() still returns the seed
+		// as given).
+		private double _seed = 1;
+		private Random _rng = new(1);
+
+		private double Srand(double? seed)
+			{
+			var previous = _seed;
+			_seed = seed is { } s ? Math.Truncate(s) : DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+			_rng = new Random(unchecked((int)(long)_seed));
+			return previous;
+			}
+
+		private double Rand() => _rng.NextDouble();
 
 		/// <summary>ORS as print writes THE RECORD (`print`, `print $0`, a rule with no action): the default "\n" ends a
 		/// CRLF record with CRLF while the main rules run, so a line passed through, or edited ($2 = …), keeps its line end
@@ -1828,6 +1846,8 @@ public sealed partial class Builtins
 				case "sin": return AwkVal.Num(Math.Sin(Eval(a[0]).Number));
 				case "cos": return AwkVal.Num(Math.Cos(Eval(a[0]).Number));
 				case "atan2": return AwkVal.Num(Math.Atan2(Eval(a[0]).Number, Eval(a[1]).Number));
+				case "rand": return AwkVal.Num(Rand());
+				case "srand": return AwkVal.Num(Srand(a.Count > 0 ? Eval(a[0]).Number : null));
 				}
 			throw new AwkUnsupportedException($"{c.Name}()");
 			}

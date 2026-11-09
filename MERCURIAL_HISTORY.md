@@ -12,11 +12,52 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 687 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 728 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 727 | 2026-11-09 | The 726 publish's doc review: README table and startup line from compare3 on 726 (window held, baselines within 1.3%), 279 cases; PERFORMANCE measured-on and figures; KNOWN_ISSUES for the 726 release (716 no Git search, 725 awk rand/srand); RESUME anchor |
+| 726 | 2026-11-09 | Tests' MSYS pinned to PortableGit 2.28.0's usr/bin (the architect: pin against PortableGit); all nine MSYS cases pass; the MSYS2 quoting failure flagged as an open bug (KNOWN_ISSUES, DECISIONS) |
+| 725 | 2026-11-09 | awk rand() and srand() (git-b3's request; the architect's go): gawk's documented behavior, measured; .NET's System.Random as the generator (only reproducibility matters, not the values); case awk_rand_gnu (properties, expected = gawk 5.1 via WSL), red on 716, mutation red |
+| 724 | 2026-11-09 | compare3 runs any Git Bash, its version under the column title (the architect's ruling, superseding the missing-if-wrong default); PERFORMANCE: every benchmark before 2026-11-09 ran with Git Bash 4.4.23(1)-release |
+| 723 | 2026-11-09 | compare3 compares against whatever is installed (the architect's ruling): a missing or wrong-version Git Bash, or a missing WSL, leaves its column out with a note; with neither it is bypassed (loud line, exit 0, nothing timed or appended); docs/DEVELOPING.md: Running the benchmark (what it uses, the pinned PortableGit's SHA-256, how to run it) |
+| 722 | 2026-11-09 | Tests' MSYS pinned (F:/Tools/msys64/usr/bin), else found on PATH by msys-2.0.dll, else the case prints BYPASSED: a loud complaint in the runner and deploy.sh, never a failure (the architect's ruling); nine cases use tests/cases/msys_pin.inc; found: msys_arguments fails on the pinned MSYS2 (a quoted non-ASCII word keeps its quotes), open |
+| 721 | 2026-11-09 | Found: the MSYS test cases run only in a hand-made third run against an unpinned MSYS (msys_redirects silently skipping since PortableGit 5.3.15, 2026-11-07); open for the architect with Claude's position (pin MSYS2, run in every suite run, fail when missing) |
+| 720 | 2026-11-09 | No Git and no history in current-state docs (the architect: a contract does not care what went before, and it is in the file history): module-contract section 5 and header, ARCHITECTURE's PATH bullet, IMPLEMENTATION's run-time paragraph, PROJECT_CONTEXT's PATH line |
+| 719 | 2026-11-09 | American spelling in docs/module-contract.md section 5 (global rule): recognized |
+| 718 | 2026-11-09 | docs/module-contract.md unfrozen (the architect: "unfreeze it and change it in both places"): the MSYS bridge as it works without the Git search, in this copy and PortableBash's (its hg 58); IMPLEMENTATION's run-time paragraph corrected |
+| 717 | 2026-11-09 | Deployed 716 (no Git search; start-up 10.7 ms against 704's 12.5 from a C#Bash host); the architect's rule, every project: no tool's source, ever ("we don't translate any tools source"): the rand()/srand() plan and Builtins.Awk.cs's comment corrected, the question how to build them put to him; RESUME anchor |
+| 716 | 2026-11-09 | No Git search at start-up (the architect: "remove the git search entirely"): AugmentPathWithGitTools removed; a start touches no PATH folder (~2 ms saved, 48 entries, Git off PATH); startup_env checks every PATH comes back as given (red on 704); suite 264/0 console and detached, 273/0 with Git's usr/bin, mingw64/bin and cmd on PATH; docs (USING startup steps renumbered, DEVELOPING, ARCHITECTURE, PROJECT_CONTEXT); no KNOWN_ISSUES line (ruled: not a known issue) |
+| 715 | 2026-11-09 | RESUME anchor: compare3 WSL fix (713) and the probe finding (714); awaiting the architect: the publish, env name case, the probe's fix |
+| 714 | 2026-11-09 | Found: the C#Bash-hosted startup difference is the Git-tools probe (File.Exists git.exe on all 48 PATH entries when Git is off PATH, ~2 ms every start; a Git Bash host puts Git first so the probe stops at entry 1); measured, interleaved, with controls; fix awaits the architect |
+| 713 | 2026-11-09 | compare3 finds WSL under either host: reads SYSTEMROOT or SystemRoot, Windows-rooted fallback C:/WINDOWS (the C#Bash-hosted calibration run's WSL rows failed on /c/WINDOWS); Git Bash host's command unchanged |
+| 712 | 2026-11-08 | Calibration done (window 07:24-07:50, 12 sessions held): no host effect beyond noise on the script rows; C#Bash startup ~1.5 ms slower under a C#Bash host; B's WSL rows failed (env name case: SystemRoot vs Git Bash's SYSTEMROOT, and compare3's /c/WINDOWS fallback); three tables in results.md; the publish from A2 awaits the architect |
+| 711 | 2026-11-08 | Benchmark baselines: quiet references set (sieve 0.0310 s, launch 0.0076 s) from the window of 2026-11-08, all 12 sessions holding; both baselines shown to fail under load (20 sieves: 13-16x and 25x; 4 sieves: +60-80% and 2.4-2.6x); git-b3's awk rand need counted |
+| 710 | 2026-11-08 | Benchmark baselines (the architect's go): benchtimer --sieve (primes below 10,000,000, checked) and a fixed HOSTNAME.EXE launch, timed by compare3 before and after the rows; quiet reference, fails-under-load check and the calibration await the benchmark window |
+| 709 | 2026-11-08 | RESUME rewritten for compaction: waiting for the architect's go on the benchmark calibration (A B A, exact commands), then the 704 publish, then the queue (koliada-net-b9's arithmetic bug; the cygpath hint, realpath, lantern-5f) |
+| 708 | 2026-11-08 | Benchmark pinned to PortableGit 2.28.0 (bash 4.4.23(1), verified download) and runnable from either host, named in its tables; calibration (A B A) awaits the architect's go |
+| 707 | 2026-11-08 | Request-log spec: redact a config write's extraheader value too (git-b3; the architect: "close it") |
+| 706 | 2026-11-08 | Publish paused: the benchmark's Git Bash is now 5.3.15 (WSL column broken, ratios shift), run stopped, fork to the architect; extglob need (git-b3) recorded, KNOWN_ISSUES lists extglob |
+| 705 | 2026-11-07 | Before the 704 publish: KNOWN_ISSUES for the 704 release (no cygpath line), deploy 704 recorded, the cygpath ruling, koliada-net-b9's arithmetic report raised; RESUME rewritten (the publish in flight, the queue after it) |
+| 704 | 2026-11-07 | A Windows device name with a folder part (d/nul, ./aux.txt) is the file, a bare one (nul, > nul, 2>nul) the device (the architect's ruling); case device_names; docs/unserviced-log.md, the request log's spec agreed with Wombat (git-b3), secrets redacted; suite 264/0 both modes, 273/0 with Git on PATH |
+| 703 | 2026-11-07 | Deployed 702 (array assignments beside others); git-b3 told; anchor |
+| 702 | 2026-11-07 | An array assignment beside other assignments in one statement, as bash (git-b3: a=() b=() was a syntax error, x= y=1 z=() assigned nothing): kept in order, made left to right; before a command word an array assignment does nothing (bash); declare -f prints it as written; case assign_array_list; suite 264/0 both modes, 272/0 with Git on PATH |
+| 701 | 2026-11-07 | Raised: git-b3's array assignment beside other assignments |
+| 700 | 2026-11-07 | Anchor: git-b3 wants the unserviced.jsonl spec path once ratified |
+| 699 | 2026-11-07 | Raised: unserviced.jsonl as a shared format (Wombat), a spec for the architect; git-b3 answered |
+| 698 | 2026-11-07 | Fork measured: no bash-level >nul in 65 transcripts; Claude now recommends Git Bash's rule (the file everywhere); awaiting the architect |
+| 697 | 2026-11-07 | Deployed 696 (=~ escapes); fork raised: device names outside rm (file or device), awaiting the architect; anchor |
+| 696 | 2026-11-07 | In [[ =~ ]] every backslash-escaped character is literal, as bash (^a\+b$ matched aab, not a+b): Token.EscapedAt, read only for =~'s operand; case regex_escapes; suite 263/0 both modes, 271/0 with Git on PATH |
+| 695 | 2026-11-07 | Deployed 694 (rm and device-named files); guy-bf told; anchor |
+| 694 | 2026-11-07 | rm removes files named with a device name (nul, con, aux.txt, com1) or ending in a dot through an extended path, and goes on past a failure naming the entry, exit 1, as MSYS rm (guy-bf: rm -rf of an old PortableGit exited 0 and left 8,577 entries); case rm_reserved_names; found: other commands read a device-named file as the device; suite 262/0 both modes, 270/0 with Git on PATH |
+| 693 | 2026-11-07 | Deployed 692; raised: guy-bf's rm -rf on reserved names; anchor |
+| 692 | 2026-11-07 | A quoted character is plain in brace and pathname expansion ({x\,y,z}, "{"a,b}, "a[1]"*) and an expansion's result is no brace expansion (x='{a,b}'; echo $x), as bash; an escaped dot is quoted ({1\..3}, =~ a\.b); case brace_glob_quoting; raised: escaped regex characters in =~; suite 262/0 both modes, 270/0 with Git on PATH (a one-off MSYS echo miss before) |
+| 691 | 2026-11-07 | Deployed 690 (the POSIX classes); anchor |
+| 690 | 2026-11-07 | The POSIX classes as GNU in a UTF-8 locale ([[:alpha:]] matches é in =~, globs, grep, sed, awk; tr stays ASCII as GNU's), checked on every BMP character; case posix_classes_unicode; KNOWN_ISSUES moves it to fixed; suite 261/0 both modes, 269/0 with Git on PATH |
+| 689 | 2026-11-07 | E:/BashRequest.md and its reply removed (the architect); the RESUME no longer points at them |
+| 688 | 2026-11-07 | guy-windows11 on 681 (guy-e3 via guy-bf) recorded; USING: cmd /c under MSYS_NO_PATHCONV or MSYS2_ARG_CONV_EXCL=* (guy-e3's note) |
+| 687 | 2026-11-07 | Published hg 686 (release hg-686: the installer only, build 681); anchor: nothing deployed is unpublished |
 | 686 | 2026-11-07 | Doc review for the publish of 681: README table and startup line from compare3 on deployed 681 (a busy machine, said in PERFORMANCE); KNOWN_ISSUES.md names this release's fixes; a release carries only the installer (the architect: "drop bash.exe from the github release"): release.sh, publish.sh, README, USING, IMPLEMENTATION |
 | 685 | 2026-11-07 | The start procedure recorded (the home-folder session's b60267f and 285c529; claude.bat hands off to the installed claude.cmd); release.sh checks the installed claude.cmd; USING shows the hand-off; RESUME corrected |
 | 684 | 2026-11-07 | KNOWN_ISSUES.md (DRAFT for the architect): the known issues of a build, installed beside ~/.bash/unserviced.jsonl with every publish (the architect's ruling); the installer stages it with the build stamped and checks the sandboxed install; release.sh checks this machine's copy; README, USING, IMPLEMENTATION, PROJECT_CONTEXT |

@@ -152,8 +152,8 @@ public sealed class ShellEnvironment
 			if (handed.Value is { Length: > 0 } list) Set("PATH", list);
 			}
 
-		AugmentPathWithGitTools();
-		Timing.Mark("env.git");
+		// No Git search (the architect, 2026-11-09: "remove the git search entirely"): a Git on PATH is not extended
+		// with its usr/bin and mingw64/bin, so a start touches no PATH folder (it cost ~2 ms, 48 entries, Git off PATH).
 		PrependOwnDirectoryToPath();
 		Timing.Mark("env.own");
 
@@ -256,7 +256,21 @@ public sealed class ShellEnvironment
 	/// backslash form. `/dev/...` is left alone (the redirect layer interprets it). The general
 	/// Unix root mapping (`/usr`, `/etc`) is deferred — see DECISIONS.md.
 	/// </summary>
-	public static string TranslatePath(string path) => AgainstActiveCwd(TranslateForm(path));
+	public static string TranslatePath(string path) => FileByDeviceName(AgainstActiveCwd(TranslateForm(path)));
+
+	/// <summary>A path whose final name is a Windows device name (nul, con, aux.txt, com1) and which has a folder part
+	/// (`d/nul`, `./nul`, `C:/x/aux.txt`) is that FILE, by its extended path, as under Git Bash: MSYS trees hold such files
+	/// (Git for Windows' dev/nul). A bare name (`nul`, `> nul`, `2>nul`) stays the device, as Windows means it, so it never
+	/// leaves a file Windows' own tools cannot delete (the architect's ruling, 2026-11-07, on Claude's recommendation).
+	/// Until then every such path was the device: `cat d/nul` printed nothing, `cp x d/nul` wrote nowhere.</summary>
+	private static string FileByDeviceName(string p)
+		{
+		int cut = Math.Max(p.LastIndexOf('/'), p.LastIndexOf('\\'));
+		if (cut < 0 && !(p.Length > 2 && p[1] == ':')) return p;   // no folder part: the device
+		var name = cut >= 0 ? p[(cut + 1)..] : p[2..];
+		return name.Length > 0 && ShellFile.IsDeviceName(name) && !p.StartsWith("/dev/", StringComparison.Ordinal)
+			? ShellFile.Extended(p) : p;
+		}
 
 	/// <summary>A relative path, resolved against the running shell's OWN cwd when that is not the
 	/// process cwd -- i.e. in a pipeline stage that has changed directory (DECISIONS 2026-10-03).
@@ -1067,51 +1081,6 @@ public sealed class ShellEnvironment
 
 	/// <summary>MSYS-style uid: 0x30000 + the account's RID (so `id -u` agrees with Git Bash).</summary>
 	/// <summary>
-	/// Git for Windows' bash puts its own `usr/bin` and `mingw64/bin` ahead of the inherited
-	/// PATH (awk, tar, xxd, nohup, perl, curl, ssh… live there). Mirror that when a Git
-	/// installation is discoverable through `git.exe` on PATH, so a script that works under
-	/// Git Bash finds the same externals here; in-process coreutils shadow PATH regardless.
-	/// Portable installs are honored (the root is derived from git.exe, not Program Files).
-	/// </summary>
-	private void AugmentPathWithGitTools()
-		{
-		var path = Get("PATH");
-		if (path.Length == 0) return;
-		var entries = PathDirs(path).Select(TranslateForm).ToArray();   // `/c/x` as `C:/x`: the file system's form
-		string? root = null;
-		foreach (var dir in entries)
-			{
-			string? candidate = null;
-			try
-				{
-				if (!File.Exists(Path.Combine(dir, "git.exe"))) continue;
-				// compared ordinally, not ToLowerInvariant(): TextInfo loads ICU (~0.7 ms) on every start (2026-10-18)
-				var leaf = Path.GetFileName(dir.TrimEnd('\\', '/'));
-				var parent = Path.GetDirectoryName(dir.TrimEnd('\\', '/'));
-				if (parent is null) continue;
-				// <root>/mingw64/bin first: it came after the `bin` test and was never reached, so a PATH with only
-				// mingw64/bin got no usr/bin and the probe ran on through every later entry (2026-10-18)
-				if (Path.GetFileName(parent).Equals("mingw64", StringComparison.OrdinalIgnoreCase)) candidate = Path.GetDirectoryName(parent);
-				else if (leaf.Equals("cmd", StringComparison.OrdinalIgnoreCase) || leaf.Equals("bin", StringComparison.OrdinalIgnoreCase)) candidate = parent;
-				}
-			catch { continue; }
-			if (candidate is not null && Directory.Exists(Path.Combine(candidate, "usr", "bin"))) { root = candidate; break; }
-			}
-		if (root is null) return;
-		var extra = new List<string>();
-		// either slash: Path.Combine writes `\`, an entry exported from the shell may say `/` (it was added twice)
-		static string Plain(string p) => p.Replace('/', '\\').TrimEnd('\\');
-		foreach (var sub in new[] { Path.Combine(root, "usr", "bin"), Path.Combine(root, "mingw64", "bin") })
-			{
-			if (!Directory.Exists(sub)) continue;
-			if (entries.Any(e => string.Equals(Plain(e), Plain(sub), StringComparison.OrdinalIgnoreCase))) continue;
-			extra.Add(sub);
-			}
-		if (extra.Count == 0) return;
-		Set("PATH", string.Join(";", extra) + ";" + path.TrimStart(':'));   // NormalizePath reads the mix; a leading `:` made a `::`
-		}
-
-	/// <summary>
 	/// This executable's own directory FIRST on the shell's own PATH, so a nested `bash -c …`, `bash script.sh`, `sh`
 	/// (and the `sh` a program it starts, make, looks up) is this shell: never WSL's launcher, which a default Windows
 	/// PATH puts first (System32), nor a Git bash ahead of it. Only this process's PATH and its children's change; the
@@ -1130,7 +1099,7 @@ public sealed class ShellEnvironment
 		var raw = PathDirs(path, keepEmpty: true);
 		bool Mine(string e) => string.Equals(Key(TranslateForm(e)), Key(dir), StringComparison.OrdinalIgnoreCase);   // `/c/x` as `C:/x`
 		if (raw.Count > 0 && Mine(raw[0])) return;
-		// the rest keeps its own form and its empty entries; NormalizePath reads the `;` mix (as the Git prepend's)
+		// the rest keeps its own form and its empty entries; NormalizePath reads the `;` mix
 		var rest = string.Join(":", raw.Where(e => !Mine(e))).TrimEnd(':');   // a trailing empty entry dropped, as before
 		Set("PATH", rest.Length == 0 ? dir : dir + ";" + rest);
 		}

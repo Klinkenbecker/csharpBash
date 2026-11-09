@@ -71,7 +71,21 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		bool curGlob  = false;   // current field has an unquoted metachar
 
 		bool wsEnded = false;    // the last delimiter was IFS white space that ended a field
-		void Flush() { fields.Add(current.ToString()); fieldGlob.Add(curGlob); current.Clear(); open = false; curGlob = false; }
+		// where the current field holds characters brace/glob expansion must take as plain (Glob.Markable): a quoted span
+		// (all of them) or an unquoted expansion's brace character (bash brace-expands only literal text). Marked only if
+		// the field goes on to brace/glob expansion, at Flush (2026-11-07: `{x\,y,z}` gave x y z; bash x,y z)
+		List<(int Start, int Length, bool All)>? inert = null;
+		int opWordDepth = 0;     // inside ${x:-word}: its literal text is no brace expansion either
+		void Flush()
+			{
+			var text = current.ToString();
+			if (curGlob && inert is { Count: > 0 }) text = MarkInert(text, inert);
+			fields.Add(text); fieldGlob.Add(curGlob); current.Clear(); open = false; curGlob = false; inert?.Clear();
+			}
+		void NoteQuoted(string text)
+			{
+			if (text.AsSpan().IndexOfAny(Glob.MarkableChars) >= 0) (inert ??= []).Add((current.Length, text.Length, true));
+			}
 
 		// split: false for LITERAL text, which bash never field-splits (only expansion results);
 		// it stays glob/brace-eligible. Until 2026-10-08 literal text was split like an expansion
@@ -80,10 +94,11 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		// runs together and is dropped at the ends; any other IFS character ends a field, an empty one
 		// too, taking adjacent IFS white space with it: IFS=, makes `a,,b` three fields and `,a,` two
 		// (`` and `a`). Until 2026-10-12 every IFS character acted as white space, losing those.
-		void AppendText(string text, bool quoted, bool split = true)
+		// expansion: the text is an expansion's result, not the word's literal text: its { } , . are no brace expansion
+		void AppendText(string text, bool quoted, bool split = true, bool expansion = true)
 			{
 			if (quoted)
-				{ current.Append(text); open = true; wsEnded = false; }   // quoted: never glob/brace-eligible
+				{ NoteQuoted(text); current.Append(text); open = true; wsEnded = false; }   // quoted: never glob/brace-eligible
 			else
 				{
 				foreach (char c in text)
@@ -96,8 +111,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 						}
 					else
 						{
+						if (expansion && c is '{' or '}' or ',' or '.') (inert ??= []).Add((current.Length, 1, false));
+						else if (c is '{' or '}' or '*' or '?' or '[') curGlob = true;
 						current.Append(c); open = true; wsEnded = false;
-						if (c is '{' or '}' or '*' or '?' or '[') curGlob = true;
 						}
 					}
 				}
@@ -124,11 +140,11 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 					}
 				return;
 				}
-			current.Append(elems[0]); open = true; wsEnded = false;
+			NoteQuoted(elems[0]); current.Append(elems[0]); open = true; wsEnded = false;
 			for (int i = 1; i < elems.Count; i++)
 				{
 				Flush();
-				current.Append(elems[i]); open = true;
+				NoteQuoted(elems[i]); current.Append(elems[i]); open = true;
 				}
 			}
 
@@ -158,13 +174,13 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 					else AppendText(opValue!, quoted);
 					break;
 				case LiteralPart l:
-					AppendText(l.Value, quoted, split: false);
+					AppendText(l.Value, quoted, split: false, expansion: opWordDepth > 0);
 					break;
 				case TildePart t:
 					// POSIX: the home directory is not split or globbed (a home with a space);
 					// the rest of the word is literal text
 					AppendText(TildeHome(), true);
-					AppendText(t.Suffix, quoted, split: false);
+					AppendText(t.Suffix, quoted, split: false, expansion: opWordDepth > 0);
 					break;
 				default:
 					// Single-quoted, ANSI-C, and heredoc parts are inherently quoted
@@ -201,8 +217,13 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				List<Word> segWords;
 				try { segWords = Parser.Parser.ParseWords(segment); }
 				catch (Exception ex) when (ex is Lexer.LexException or Parser.ParseException) { AppendText(segment, false); continue; }
-				foreach (var w in segWords)
-					foreach (var p in w.Parts) Process(p, false);
+				opWordDepth++;
+				try
+					{
+					foreach (var w in segWords)
+						foreach (var p in w.Parts) Process(p, false);
+					}
+				finally { opWordDepth--; }
 				}
 			}
 
@@ -237,7 +258,22 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			if (bracedGlob[k] && ContainsGlob(braced[k]) && !_eval.Options.NoGlob) result.AddRange(GlobExpand(braced[k]));
 			else result.Add(braced[k]);
 			}
+		for (int k = 0; k < result.Count; k++) result[k] = Glob.Unmark(result[k]);   // the marks Flush made, gone
 		return result;
+		}
+
+	/// <summary>The field with each inert character (a quoted span's <see cref="Glob.Markable"/> characters, an
+	/// expansion's brace characters) replaced by its mark, for brace and glob expansion to take as plain.</summary>
+	private static string MarkInert(string text, List<(int Start, int Length, bool All)> inert)
+		{
+		var chars = text.ToCharArray();
+		foreach (var (start, length, all) in inert)
+			for (int i = start; i < start + length && i < chars.Length; i++)
+				{
+				int m = Glob.Markable.IndexOf(chars[i]);
+				if (m >= 0 && (all || m < Glob.BraceMarkable)) chars[i] = (char)(Glob.FirstMark + m);
+				}
+		return new string(chars);
 		}
 
 	/// <summary>Expand a word into a shell *pattern* for `case` / `[[ == ]]` / `${x#pat}`:
@@ -1111,7 +1147,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		try { matches = Glob.Expand(field, o.DotGlob, o.NoCaseGlob, o.GlobStar); }
 		catch { matches = []; }
 		if (matches.Count > 0) return matches;
-		if (o.FailGlob) throw new EvalException($"no match: {field}");
+		if (o.FailGlob) throw new EvalException($"no match: {Glob.Unmark(field)}");
 		if (o.NullGlob) return [];
 		return [field];
 		}

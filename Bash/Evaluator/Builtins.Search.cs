@@ -180,14 +180,9 @@ public sealed partial class Builtins
 		return sb.ToString();
 		}
 
-	/// <summary>A POSIX class's members as the inside of a .NET character class (`digit` → `0-9`); null for a name that is
-	/// not a class. ASCII, as every C#Bash regex tool reads them.</summary>
-	internal static string? PosixClass(string name) => name switch
-		{
-		"alpha" => "a-zA-Z", "digit" => "0-9", "alnum" => "a-zA-Z0-9", "upper" => "A-Z", "lower" => "a-z",
-		"space" => "\\s", "blank" => " \\t", "punct" => "!-/:-@\\[-`{-~", "print" => "\\x20-\\x7e",
-		"graph" => "\\x21-\\x7e", "cntrl" => "\\x00-\\x1f\\x7f", "xdigit" => "0-9A-Fa-f", "word" => "\\w", _ => null,
-		};
+	/// <summary>A POSIX class's members as the inside of a .NET character class, as GNU reads them in a UTF-8 locale
+	/// (<see cref="PosixClasses"/>; ASCII until 2026-11-07); null for a name that is not a class.</summary>
+	internal static string? PosixClass(string name) => name == "word" ? "\\w" : PosixClasses.NetSet(name);
 
 	/// <summary>`[[ =~ ]]`'s pattern (bash hands it to glibc's ERE) made .NET's. Only its bracket expressions change:
 	/// a POSIX class becomes its members (<see cref="PosixClass"/>), `[=c=]` and `[.c.]` the character c, a `]` first in

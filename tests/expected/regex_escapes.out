@@ -1,0 +1,18 @@
+match    'a+b' =~ ^a\+b$
+no (1)   aab =~ ^a\+b$
+match    'a(b' =~ a\(b
+match    'a)b' =~ a\)b
+match    'a|b' =~ ^a\|b$
+no (1)   b =~ ^a\|b$
+match    'a^b' =~ a\^b
+match    '$' =~ ^\$$
+match    'a d' =~ ^a\ d$
+match    ab =~ ^a\b$
+match    'a.b' =~ ^a\.b$
+no (1)   axb =~ ^a\.b$
+match    'x{2}' =~ ^x\{2\}$
+REMATCH: a(b)c b
+match    through $re (the backslash is in the value)
++ ( ) | ^ $x
+case \+ matches +
+a-b

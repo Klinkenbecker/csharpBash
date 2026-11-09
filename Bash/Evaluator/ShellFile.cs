@@ -29,6 +29,43 @@ public static class ShellFile
 	[System.Runtime.InteropServices.DllImport("kernel32.dll")] private static extern IntPtr GetConsoleWindow();
 
 	/// <summary>
+	/// <paramref name="path"/> as an extended path (`\\?\C:\x`, `\\?\UNC\host\share\x`): Win32 then takes every name as
+	/// written, so a file named nul, con, aux.txt or com1, or ending in a dot or a space, is that file and not a device.
+	/// MSYS reaches such files this way (Git for Windows ships a dev/nul). The full path is the parent folder's, made full,
+	/// joined with the final name as written: making the whole path full maps a final `nul` to `\\.\nul`, the device
+	/// (guy-bf's `rm -rf`, 2026-11-07, "The parameter is incorrect. : '\\.\nul'").
+	/// </summary>
+	/// <summary>Whether Windows reads the name <paramref name="name"/> as a device: CON, PRN, AUX, NUL, COM1-9 and LPT1-9
+	/// (and their superscript ¹²³ forms), CONIN$, CONOUT$, in any case, with any extension (`nul.txt`) and trailing dots
+	/// or spaces.</summary>
+	public static bool IsDeviceName(string name)
+		{
+		var stem = name.TrimEnd(' ', '.');
+		int dot = stem.IndexOf('.');
+		if (dot >= 0) stem = stem[..dot];
+		stem = stem.TrimEnd(' ');
+		if (stem.Length == 3)
+			return stem.Equals("CON", StringComparison.OrdinalIgnoreCase) || stem.Equals("PRN", StringComparison.OrdinalIgnoreCase)
+			    || stem.Equals("AUX", StringComparison.OrdinalIgnoreCase) || stem.Equals("NUL", StringComparison.OrdinalIgnoreCase);
+		if (stem.Length == 4 && (stem.StartsWith("COM", StringComparison.OrdinalIgnoreCase) || stem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase)))
+			return stem[3] is >= '1' and <= '9' or '¹' or '²' or '³';
+		return stem.Equals("CONIN$", StringComparison.OrdinalIgnoreCase) || stem.Equals("CONOUT$", StringComparison.OrdinalIgnoreCase);
+		}
+
+	public static string Extended(string path)
+		{
+		var p = path.Replace('/', '\\');
+		if (p.StartsWith(@"\\?\", StringComparison.Ordinal) || p.StartsWith(@"\\.\", StringComparison.Ordinal)) return p;
+		int cut = p.LastIndexOf('\\');
+		bool driveRelative = cut < 0 && p.Length >= 2 && p[1] == ':';
+		string name = cut >= 0 ? p[(cut + 1)..] : driveRelative ? p[2..] : p;
+		string full = name is "" or "." or ".."
+			? Path.GetFullPath(p.Length == 0 ? "." : p)
+			: Path.Join(Path.GetFullPath(cut >= 0 ? p[..(cut + 1)] : driveRelative ? p[..2] : "."), name);
+		return full.StartsWith(@"\\", StringComparison.Ordinal) ? @"\\?\UNC\" + full[2..] : @"\\?\" + full;
+		}
+
+	/// <summary>
 	/// A file's identity as Windows keeps it (GetFileInformationByHandle): its volume's serial number (stat's device),
 	/// its file index on that volume (the inode msys and Git Bash report) and its hard-link count; null when it cannot be
 	/// opened. <paramref name="follow"/> false is lstat: a symbolic link is itself. Opened for attributes only, sharing

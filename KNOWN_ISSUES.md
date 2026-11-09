@@ -9,17 +9,16 @@ Report a new issue with the build: to the C#Bash session, or as a GitHub issue.
 
 ## Open: wrong answers, not fixed yet
 
-Each was measured against GNU bash 5.1 (and GNU grep) on 2026-11-07, build 681; every build so far has it.
+Each was measured against GNU bash 5.1 (and GNU grep) on 2026-11-07, on the build then current; every build so far has it.
 
-- **POSIX classes are ASCII only.** `[[:alpha:]]` and the other classes do not match a letter such as `é` in
-  `[[ =~ ]]`, in `case` and glob patterns, or in `grep`; GNU, in a UTF-8 locale, matches it. Workaround: name the
-  characters (`[a-zA-Zé]`).
-- **An escaped comma inside braces still splits them.** `echo {x\,y,z}` prints `x y z`; bash prints `x,y z`.
 - **An extglob pattern in `[[ ]]` does not match.** `[[ a == @(a|b) ]]` is false; bash takes `@( )` there even with
   `extglob` off. Workaround: `[[ $x == a || $x == b ]]`, or `case`.
 - **Arithmetic error messages are worded differently** from bash's (`((: 1 + : Expected number in arithmetic
   expression`, where bash says `syntax error: operand expected (error token is "+ ")`). The status and where the
   message goes match.
+- **A word with a non-ASCII character reaches an MSYS2 program with its quotes on.** `printf '[%s]\n' 'é{x}'` run by
+  MSYS2's own `printf.exe` prints `["é{x}"]`, where bash prints `[é{x}]` (MSYS2 runtime 3.1.7, measured 2026-11-09).
+  Git for Windows' MSYS programs receive it correctly.
 
 ## Limits: by design, or Windows'
 
@@ -27,26 +26,45 @@ Each was measured against GNU bash 5.1 (and GNU grep) on 2026-11-07, build 681; 
 - After installing a tool, run `hash -r`: a lookup is remembered across shells, and a remembered program hides one of
   the same name installed later in a folder earlier on PATH.
 - `df -i` is not available (Windows keeps no inode counts); it goes to a PATH `df` when there is one.
+- There is no `cygpath`, and none is needed: C#Bash's paths are already Windows-rooted with forward slashes (`$PWD` is
+  `C:/x`), which every .NET tool reads. For an absolute path write `"$PWD/x"`; a relative one works as it is (a program
+  starts in the shell's folder), and a Windows program handed `/c/x` gets `C:/x`. (Git Bash's cygpath is Git's own, in
+  its usr/bin, which is on no PATH here.)
 - There is no terminal: `/dev/tty` reports "No such device or address", so a program that would prompt there fails
   instead of hanging.
-- Not available, and each says so: restricted mode, POSIX mode, programmable completion (`complete`), `>( )`, and
-  jq's `def` (the in-process jq is a jq 1.6 subset; deferred until a second request, 2026-11-07).
+- Not available, and each says so: restricted mode, POSIX mode, programmable completion (`complete`), `>( )`, extglob
+  (`shopt -s extglob` is refused, so `@( )`, `*( )`, `+( )`, `?( )`, `!( )` patterns are not available), and jq's
+  `def` (the in-process jq is a jq 1.6 subset; deferred until a second request, 2026-11-07).
 - Windows starts no program whose path is over 260 characters, and a file name cannot end in a dot or a space.
+- A bare Windows device name is the device: `> nul`, `2>nul` and `cat nul` reach NUL, not a file named nul (write
+  `./nul` for that file). Git Bash makes a file named nul there, one Windows' own tools cannot delete.
+- A regex or a glob sees a character beyond U+FFFF (an emoji) as two: `^.$` and a lone `[[:punct:]]` do not match one,
+  `^[[:punct:]]+$` does. The POSIX classes follow .NET's Unicode version where glibc's differs (two characters in the
+  BMP, U+0CF3 and U+0ECE, are print here and unassigned in GNU).
 
-## Fixed in this release (build 681), since the release before it (hg-657, build 655)
+## Fixed in this release (build 726), since the release before it (hg-686, build 681)
 
 Each from the build named on.
 
-- **681:** `[[ … ]] 2>/dev/null` was a syntax error; a test inside `[[ ]]` that cannot be evaluated is false and the
-  rest goes on, as in bash. Quoted text inside an `=~` bracket expression is taken as written (`^["[:digit:]"]$`).
-  A nested C#Bash gets its arguments as typed (`bash -c 'echo $1' _ /c/x` printed `C:/x`). jq gained `match`,
-  `capture`, `scan` and `--rawfile`.
-- **677:** `[[ =~ ]]` read POSIX classes wrongly: `[[ 5 =~ [[:digit:]] ]]` failed and `[[ 'a]' =~ ^[[:alpha:]]$ ]]`
-  matched. A Windows program now gets `/c/x` converted after `=` and after `-X` (`--file=C:/x`, `-IC:/x`) and in its
-  environment, as under Git Bash; a word holding `;` is left whole (its first item was converted alone).
-- **671:** awk's `printf` refused `%e`, `%E`, `%g`, `%G`.
-- **669:** awk refused `sqrt`, `exp`, `log`, `sin`, `cos`, `atan2`.
-- **668:** a Windows program was handed `/dev/null` as written (`curl -o /dev/null` exited 23); it gets `nul`.
-- **665:** `iconv` runs in-process (UTF-8/16/32, ISO-8859-1, Windows-1252, ASCII).
-- **662:** `ls -l` showed every file's link count as 1.
-- **660:** a builtin that ran out of memory took the shell down; it ends `NAME: memory exhausted`, status 2.
+- **725:** awk's `rand()` and `srand()` were refused (handed to a PATH awk, or an error without one). They run
+  in-process now, as gawk documents them: the seed is 1 until `srand()`; `srand(x)` seeds with x's integer part and
+  returns the previous seed; `srand()` seeds with the time; one seed gives one sequence (its values are not gawk's).
+- **716:** every start looked in each PATH folder for `git.exe`, about 2 ms with a long PATH and no Git on it. A start
+  touches no PATH folder now.
+
+- **704:** a file named with a Windows device name (`nul`, `con`, `aux.txt`, `com1`, with any extension) was read and
+  written as the device: `cat d/nul` printed nothing, `cp x d/nul` wrote nowhere. With a folder part (`d/nul`, `./nul`)
+  it is the file now, as under Git Bash; a bare name (`nul`, `> nul`, `2>nul`) stays the device, so it never leaves a
+  file named nul that Windows' own tools cannot delete.
+- **702:** an array assignment beside other assignments in one statement: `a=() b=()` was a syntax error and
+  `x= y=1 z=()` assigned nothing (the variables stayed unset). They are made left to right now, as in bash.
+- **696:** an escaped regex character in `[[ =~ ]]` was live: `\+`, `\(`, `\|`, `\^`, `\$` reached the regex without
+  their backslash, so `[[ 'a+b' =~ ^a\+b$ ]]` was false and `[[ aab =~ ^a\+b$ ]]` true. Each is literal now, as in bash.
+- **694:** `rm` could not remove a file named with a device name (`nul`, `con`, `aux.txt`, `com1`) or ending in a dot,
+  and stopped a whole tree at the first failure: `rm -rf` of a tree holding an MSYS dev/nul exited 0, said nothing and
+  left almost all of it. Now each failure names its entry, the rest still goes, and the exit is 1.
+- **692:** a quoted or escaped character was live in brace and pathname expansion: `{x\,y,z}` gave `x y z` (bash
+  `x,y z`), `"{"a,b}` gave `a b`, `"a[1]"*` matched `a1b`. An expansion's result was brace-expanded (`x='{a,b}';
+  echo $x` gave `a b`). `{1\..3}` was a range, and `[[ axb =~ a\.b ]]` matched.
+- **690:** the POSIX classes were ASCII only: `[[:alpha:]]` did not match `é` in `[[ =~ ]]`, globs, `grep`, `sed` or
+  `awk`. They are GNU's in a UTF-8 locale now, checked on every BMP character (`tr` keeps ASCII classes, as GNU's does).

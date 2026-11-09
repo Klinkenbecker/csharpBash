@@ -413,10 +413,8 @@ Two model points:
   line like a shell, so for it `ChildLauncher` double-quotes any argument beyond letters, digits and
   `-_./:=@%+,`, doubling backslashes. *(DECISIONS: 2026-09-11, 2026-09-12, 2026-10-10, 2026-10-12,
   2026-10-14.)*
-- **PATH mirrors Git Bash.** When `git.exe` is discoverable on PATH the installation's
-  `usr/bin` and `mingw64/bin` are prepended (exactly what the MSYS runtime does), so externals
-  outside the in-process set resolve as they would under Git Bash; the shell's own directory is
-  appended so a nested `bash` resolves even on a Git-less machine. Command lookup follows the
+- **PATH is the one inherited, with the shell's own directory first**, so a nested `bash` or
+  `sh` is this shell. Command lookup follows the
   shell's own `$PATH` (since 2026-10-11: assigning it resets the hash, a temporary `PATH=… cmd` is
   searched for that command only, a subshell's stays in it), and assignments are mirrored into the
   process environment so child programs see them.

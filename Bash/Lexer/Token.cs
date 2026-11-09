@@ -14,5 +14,11 @@ public sealed record Token(TokenType Type, string Value, int Line, int Column, b
 	public int Start { get; init; } = -1;
 	public int End { get; init; } = -1;
 
+	/// <summary>Where in <see cref="Value"/> a backslash-escaped character stands that the lexer passed as itself (one
+	/// outside its marked set, `\+`, `\(`); null when none. Only `[[ =~ ]]`'s operand reads it: there an escaped
+	/// character is literal, so `^a\+b$` matches `a+b` (2026-11-07; it was `a+b`, one or more a's). Everything else reads
+	/// <see cref="Value"/> as before.</summary>
+	public int[]? EscapedAt { get; init; }
+
 	public override string ToString() => $"[{Type} {Value.Replace("\n", "\\n")!} @{Line}:{Column}]";
 	}

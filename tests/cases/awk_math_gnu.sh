@@ -1,6 +1,6 @@
 # 2026-11-05 (the open list's small gaps): awk's math built-ins sqrt, exp, log, sin, cos, atan2 (they were refused:
-# "awk: unsupported: sqrt()", handed to a PATH awk, none here). rand() and srand() stay refused until gawk's own
-# generator is matched value for value. Expected: gawk 5.1 via WSL.
+# "awk: unsupported: sqrt()", handed to a PATH awk, none here). rand() and srand(): awk_rand_gnu. Expected: gawk 5.1
+# via WSL.
 awk 'BEGIN { print sqrt(2), sqrt(16), exp(1), exp(0), log(10), log(1), sin(0), cos(0), atan2(0, -1), atan2(1, 1) * 4 }'
 awk 'BEGIN { print int(sqrt(17)), exp(log(5)), sin(atan2(1, 1)) ^ 2, cos(3.14159265358979) }'
 awk 'BEGIN { OFMT = "%.12g"; x = sqrt(2); print x, x * x; printf "%.4f %.10f\n", exp(2), atan2(1, 0) }'
