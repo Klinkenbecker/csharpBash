@@ -149,13 +149,13 @@ public sealed partial class Builtins
 
 	private static string ShowNonprinting(string s, bool tabs)
 		{
+		// byte by byte, as GNU's cat -v: a byte 0x80-0xFF in M- notation (M-^? for 0xFF), so a UTF-8 é is "M-CM-)"
+		// (git-b3, 2026-11-10: the high bytes passed through raw); the line's bytes as the shell holds them
 		var sb = new StringBuilder();
-		foreach (var ch in s)
+		foreach (var b in ShellEncoding.Utf8.GetBytes(s))
 			{
-			if (ch == '\t') { sb.Append(tabs ? "^I" : "\t"); continue; }
-			if (ch < ' ') { sb.Append('^').Append((char)(ch + 64)); continue; }
-			if (ch == '\x7f') { sb.Append("^?"); continue; }
-			sb.Append(ch);
+			if (b == '\t') { sb.Append(tabs ? "^I" : "\t"); continue; }
+			sb.Append(CatV(b));
 			}
 		return sb.ToString();
 		}
@@ -687,7 +687,8 @@ public sealed partial class Builtins
 		{
 		var sb = new StringBuilder();
 		int i = 0;
-		while (i < s.Length)
+		// one character of the set, an escape read as the character it names (\001, \n, \\)
+		static char ReadChar(string s, ref int i)
 			{
 			if (s[i] == '\\' && i + 1 < s.Length)
 				{
@@ -695,12 +696,18 @@ public sealed partial class Builtins
 					{
 					int k = i + 1, v = 0, n = 0;
 					while (k < s.Length && n < 3 && s[k] >= '0' && s[k] <= '7') { v = v * 8 + (s[k] - '0'); k++; n++; }
-					sb.Append((char)v); i = k; continue;
+					i = k;
+					return (char)v;
 					}
-				sb.Append(s[i + 1] switch { 'n' => '\n', 't' => '\t', 'r' => '\r', '\\' => '\\', 'a' => '\a', 'b' => '\b', 'f' => '\f', 'v' => '\v', var x => x });
+				var c = s[i + 1] switch { 'n' => '\n', 't' => '\t', 'r' => '\r', '\\' => '\\', 'a' => '\a', 'b' => '\b', 'f' => '\f', 'v' => '\v', var x => x };
 				i += 2;
+				return c;
 				}
-			else if (s[i] == '[' && i + 1 < s.Length && s[i + 1] == ':')
+			return s[i++];
+			}
+		while (i < s.Length)
+			{
+			if (s[i] == '[' && i + 1 < s.Length && s[i + 1] == ':')
 				{
 				int end = s.IndexOf(":]", i, StringComparison.Ordinal);
 				if (end > 0) { sb.Append(TrClass(s[(i + 2)..end])); i = end + 2; }
@@ -719,9 +726,19 @@ public sealed partial class Builtins
 					}
 				else sb.Append(s[i++]);
 				}
-			else if (i + 2 < s.Length && s[i + 1] == '-')
-				{ for (char c = s[i]; c <= s[i + 2]; c++) sb.Append(c); i += 3; }
-			else sb.Append(s[i++]);
+			else
+				{
+				// a range's endpoints may be escapes, as GNU reads them (lantern-92, 2026-11-10: '\001-\037' deleted only
+				// the two endpoints); a `-` first or last is itself
+				char lo = ReadChar(s, ref i);
+				if (i + 1 < s.Length && s[i] == '-')
+					{
+					i++;
+					char hi = ReadChar(s, ref i);
+					for (int c = lo; c <= hi; c++) sb.Append((char)c);
+					}
+				else sb.Append(lo);
+				}
 			}
 		return sb.ToString();
 		}

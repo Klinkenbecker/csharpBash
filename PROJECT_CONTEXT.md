@@ -1,16 +1,33 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-08 (bash-81 wrote it at hg 709; bash-1b, the next session, carries it). SUPERSEDES every block below.
-> **NOW (bash-1b, 2026-11-09): DEPLOYED 726 and PUBLISHING it (the architect: "commit, deploy and publish"). 726 =
-> no Git search at start-up (716), awk rand()/srand() on System.Random (725), the tests' MSYS pinned to
-> PortableGit-2.28.0/usr/bin (726; else a PATH search for msys-2.0.dll, else BYPASSED, loud, never a failure).
-> compare3 on 726 (05:28, window held, baselines -1.0..+1.3%) is the README's table. compare3: Git Bash and WSL
-> optional (both missing: bypassed), any Git Bash version, shown under its title. DECISIONS 2026-11-09 has each.**
+> ## RESUME HERE — 2026-11-09 (bash-1b; session ended on the architect's "finish up"). SUPERSEDES every block below.
+> **TRUE STATE: DEPLOYED 754** (`1.0.0+hg.477562b19803 754`, rollback dist/*.rev753). **PUBLISHED: GitHub main = git
+> eb16a78 = hg 727; release hg-727 = csharpBash-setup.exe with build 726** (this machine's ~/.bash runs 726; new
+> sessions start on it). Deployed, NOT published: 729 (touch -d / date -d fraction; RANDOM= seeds), 731 ("${@:N}" one
+> field per parameter), 733 (a heredoc body inside "$( )" is literal), 739 (awk ENVIRON), 741 (tr escaped ranges; jq
+> control chars, NaN/Infinity), 743 (awk ARGV/ARGC), 745 (quoted subscripts; cat -v high bytes; printf %b \NNN), 748 (NTFS change time), 751 (six Windows names
+> upper-cased as Git Bash), 753 (ls -u; jq exit 4), 754 (a negative list length, a bad substitution: line abandoned).
+> The next publish needs his word, a benchmark window (12 sessions asked) and the doc review (KNOWN_ISSUES's release
+> section for 729-754). WAITING (RULED 2026-11-10): after Wombat's Plan 4 (git-b3 says when), the installer adds
+> Wombat's git.exe to ~/.bash/bin from its deploy folder (path to change). A direct run of a case: `< /dev/null`. 726 = no Git search at start-up (716), awk rand()/srand() on System.Random (725), the tests'
+> MSYS pinned to PortableGit-2.28.0/usr/bin (else a PATH search for msys-2.0.dll, else BYPASSED, loud, never a
+> failure). compare3: baselines (sieve + HOSTNAME.EXE launch), Git Bash and WSL optional, any Git Bash version shown
+> under its title. Startup moved from ~9 to ~10.7 ms on 2026-11-06/07 for EVERY build and for Git Bash: the machine,
+> not C#Bash (old builds measured alike; cause unmeasured, memory pressure suspected). DECISIONS 2026-11-09 has each.
 > RULED 2026-11-09 (every project): NO TOOL'S SOURCE, ever, nor recall of it ("we don't translate any tools source").
 > RULED: contracts and current-state docs state only what is (history is in the file history).
-> **AWAITING THE ARCHITECT: (1) env name case: Claude: upper-case as Git Bash (verify MSYS's rule from its
-> documentation). OPEN BUG (KNOWN_ISSUES): a quoted non-ASCII word reaches an MSYS2 (msys64, runtime 3.1.7) program
-> with its quotes on; cause not found. TBD list (e): the build's and deploy's outside dependencies.**
+> **THE PROCESS (RULED 2026-11-11, the architect): TWO LISTS, BUGS and FEATURES, the same process for both (verify
+> against GNU, test red-then-green, suite both modes, deploy, one message to the reporter); BUGS FIRST; features
+> ordered by speed (read as: quickest first; put to him); a feature that would SLOW THE BENCHMARK needs a separate
+> consult first. A bug is verified, its position stated, and its fix started in the same turn (no "10 minutes": there
+> is no clock between turns).**
+> **BUGS:** none open (1-3 fixed in 753/754; 4, the MSYS2 quoting, is MSYS2's own parser: DECISIONS 2026-11-11
+> "FOUND"; whether KNOWN_ISSUES keeps a line for it is HIS call, Claude: drop it).
+> **FEATURES (approved, quickest first):** (1) the jq batch (paths, leaf_paths, path(), getpath, delpaths, tostream,
+> walk, recurse(f), limit, indices, splits, inside, label/break, input_filename, -S; the architect: "add them"); (2) jq
+> --rawfile, find -anewer/-cnewer (the open list's small gaps); (3) WSL as the default fallback for external Linux tools,
+> overridable or "none" (ruled 2026-11-09; how the override is set is HIS: bring a proposal); its fallback chain stated in
+> the published docs. NEEDS counted, not approved: column, extglob. TBD list (e): build and deploy dependencies.
 > (History, done: the calibration's go and window.) Do NOT run compare3 without his go and a window.
 > - What happened: the 704 publish's compare3 (2026-11-07 16:48) was STOPPED before it appended to results.md (checked:
 >   no 704 table, results.md unchanged, no benchtimer left): F:/Tools/PortableGit had become bash 5.3.15 (installed

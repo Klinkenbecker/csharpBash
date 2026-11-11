@@ -1,0 +1,7 @@
+stat %Z as MSYS stat: yes
+stat %z as MSYS stat: yes
+%Z is not %Y after touch -m: yes
+ls -lc shows %Z: yes
+ls -l shows %Y: yes
+find -cmin -5: ./f  find -mmin -5: 0
+find -newerct yesterday: ./f

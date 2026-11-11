@@ -179,7 +179,9 @@ public sealed partial class Builtins
 				while (true)
 					{
 					try { if (!values.MoveNext()) break; }
-					catch (Json.ParseException e) { Console.Error.WriteLine($"parse error: {e.Message}"); rc = 2; failed = true; break; }
+					// invalid input exits 4, as jq 1.6 (measured 2026-11-11: truncated, slurped, after a valid value, a bad file
+					// before a good one); it was 2 here
+					catch (Json.ParseException e) { Console.Error.WriteLine($"parse error: {e.Message}"); rc = 4; failed = true; break; }
 					var (value, line) = values.Current;
 					lastWhere = $"{name}:{line}";
 					if (slurped is not null) slurped.Add(value);
@@ -187,7 +189,7 @@ public sealed partial class Builtins
 					}
 				if (failed) break;   // jq stops at a parse error
 				}
-			if (slurped is not null && rc != 2) Run(slurped, lastWhere);
+			if (slurped is not null && rc is not (2 or 4)) Run(slurped, lastWhere);   // not after a parse error (4) or an unreadable file (2)
 			}
 		Console.Out.Write(outBuf.ToString());
 		Console.Out.Flush();

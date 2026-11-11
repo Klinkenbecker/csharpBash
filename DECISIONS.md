@@ -12647,3 +12647,249 @@ arith 0.254 / func 0.222 / loop_big 1.508 / coreutils 0.060 / pipeline 0.093 / f
 0.0265, WSL 0.1388); 8.3-13.1x Git Bash, 2.4-2.8x WSL on the interpreter rows; outputs agree; baselines -1.0%/+1.3%
 before, -1.0%/-2.6% after. Doc review: README table, startup line, 279 cases; PERFORMANCE measured-on and figures;
 DEVELOPING count; KNOWN_ISSUES "Fixed in this release (build 726)" (716, 725 added to 690-704). Then tools/publish.sh.
+
+## 2026-11-09 -- PUBLISHED: GitHub main = git eb16a78 = hg rev 727; release hg-727 (csharpBash-setup.exe, build 726)
+**Status:** Record. tools/publish.sh: console suite on the deployed 726 277/0; pushed 14a6f22..eb16a78; release hg-727
+created (not draft, not prerelease), the installer downloaded back, SHA-256 2244dcb1...0c71 matches; this machine's
+~/.bash upgraded to 726 (sh.exe hard link confirmed; ~/.bash/KNOWN_ISSUES.md names 726). GitHub's releases/latest still
+answered hg-686 minutes after (the edge's cache, as after hg-600 and hg-686): re-check it later. lantern-92 reported
+afterwards that during the benchmark window it ran ~6 short shell calls and 3 hg runs (no builds or tests); the table
+stands: the baselines read -1.0%/+1.3% before and -1.0%/-2.6% after, every C#Bash row within the calibration's noise,
+Git Bash's loop_big (19.74 s) as in 681's table (19.88).
+
+## 2026-11-09 -- FIXED (git-b3's two reports; the architect: "go"): a clock time's fraction in touch -d / date -d; RANDOM= seeds
+**Status:** Active, deploying. (1) GnuDate dropped the fraction of `HH:MM:SS.frac` and the ISO `T` form (`touch -d
+'2026-01-01 01:02:03.123456789'` stored .000000000; date -d printed .000000000; GNU keeps it; `@secs.frac` already kept
+it). Now added in 100 ns ticks (FracTicks, shared with @secs): .123456700 (KNOWN_ISSUES Limits: 7 digits on Windows,
+GNU 9). Case date_fraction_gnu (7-digit fractions, UTC; expected = GNU via WSL), red on 726. (2) `RANDOM=42` did not
+reseed (different numbers every run; bash's manual: an assignment seeds it). Now an assignment seeds RANDOM's own
+System.Random with the value evaluated as arithmetic, modulo 2^32 (GNU measured black-box: abc as 0, 4294967298 as 2,
+12xy an arithmetic error); SRANDOM keeps its own generator (GNU: not seeded by RANDOM). Values are C#Bash's own, not
+bash's (the no-source rule; the architect: only reproducibility matters). Case random_seed_gnu (properties only;
+expected = GNU via WSL), red on 726.
+
+## 2026-11-09 -- DEPLOYED 729 (touch -d / date -d fraction; RANDOM= seeds): suite (-Detached, AOT) 279/0, battery 217
+**Status:** Record. `1.0.0+hg.3ca1e88620ee 729`; sh.exe a hard link; rollback dist/*.rev726. Checked live: RANDOM=42 gives
+21892 every run; date -d keeps .25. git-b3 told (one message). Not published: the next publish carries 729.
+
+## 2026-11-09 -- FIXED (git-b3's report; the architect: "go"): "${@:N[:M]}" is one field per parameter
+**Status:** Active, deploying. A quoted slice of the positional parameters was ONE word: `f a b c` with
+`printf "[%s]" "${@:2}"` gave [b c] (bash [b][c]); `local x=("${@:2}")` had one element. "$@" and array slices were
+right. Now WordExpander.SliceElements gives the slice as a list for `${@:..}`, `${*:..}` (from $0, as bash) and
+`${name[@]:..}`, and AppendArray makes one field per element when quoted, as for "$@"; it leaves the `:` operators
+alone (`${@:-x}`; `${@: -1}` is a slice). The offset/length rules moved into one Slice helper used by both paths
+(behavior unchanged). Array slices had gone through a join-and-split on spaces; now an element holding a space stays
+whole. Case positional_slice_gnu (expected = GNU via WSL), red on 729.
+**Found, not chased:** `${a[@]:0:-1}` (a negative length on an array) counts back from the end here; GNU bash 5.1
+refuses it ("substring expression < 0"). Older behavior, not part of this fix.
+
+## 2026-11-09 -- DEPLOYED 731 ("${@:N}" one field per parameter): suite (-Detached, AOT) 280/0, battery 217
+**Status:** Record. `1.0.0+hg.c0288ab4ff0d 731`; sh.exe a hard link; rollback dist/*.rev729. git-b3 told. Not published (the next publish carries 729-731).
+
+## 2026-11-09 -- FIXED (installer-a4's report; the architect: "go"): a here-document body inside "$( )" is literal
+**Status:** Active, deploying. `x="$(cat <<'EOF'` with `it's a b` in the body failed: "unexpected EOF while looking
+for matching `\"'" and a syntax error, exit 2 (quoted or unquoted delimiter); GNU prints [it's a b]. Unquoted
+`x=$(...)` was fine. Cause: inside "...", the end of a `$( )` is found by Lexer.ConstructEnd, which scanned the body as
+shell text, so an apostrophe opened a quote. Now ConstructEnd, in a `$( )` (not `$(( ))`, where << is a shift), notes
+each <</<<- and its delimiter word (quotes and backslashes removed) and, at the end of that line, passes over each body
+up to its delimiter line (tabs stripped for <<-). Case heredoc_in_quoted_comsub_gnu (both delimiter kinds, a body with
+' " ) $( and a backquote, <<- with tabs, two heredocs on one line, $(( 1 << 2 )), an hg commit -m style message;
+expected = GNU via WSL), red on 731. **Found:** GNU bash 5.1 itself stops silently on two heredocs on one line inside
+"$( )" when the second body has an apostrophe (with "second" it works); not matched or tested.
+
+## 2026-11-09 -- DEPLOYED 733 (a heredoc body inside "$( )" is literal): suite (-Detached, AOT) 281/0, battery 217
+**Status:** Record. `1.0.0+hg.68e96d3daaff 733`; sh.exe a hard link; rollback dist/*.rev731. installer-a4 told. Not published (the next publish carries 729-733).
+
+## 2026-11-09 -- RAISED (the architect): WSL as the default fallback for external Linux tools, overridable or "none"
+**Status:** OPEN, to design with the architect; nothing built. His words: "ok, so I want WSL to be the default fallback
+for 'external' linux tools which can be overridden (or also be 'none')? this to be added to the list after
+'variable-name spelling'?" Context: a tool or option C#Bash does not provide in-process falls to a PATH program of that
+name, else fails ("not implemented in-process and no external 'awk' on PATH"); WSL's programs are not on the Windows
+PATH (measured 2026-11-09: WSL has gawk, perl, xxd; no bison). Questions for the design, not answered here: where the
+fallback sits (after PATH, or for some tools before it); how arguments and paths cross (Windows `F:/x` against WSL's
+`/mnt/f/x`); streams and exit status through wsl.exe; the cost of each wsl.exe start (WSL startup measured ~0.14 s in
+compare3); how the override and "none" are set; how it sits beside the 2.0 module/provider design (PortableBash).
+
+## 2026-11-09 -- NEED (git-b3, one request): awk's ENVIRON
+**Status:** Counted; a feature, so it waits for the architect's word. On 726 and 733 `X=hello awk 'BEGIN { print
+ENVIRON["X"] }'` gives "awk: unsupported: ENVIRON" (handed to a PATH awk, none here); POSIX awk has ENVIRON, gawk
+prints hello. Wombat's Phase 2 agent wanted exact text in awk without -v's escape processing; worked around with files
+and getline. Claude's position: build it (a POSIX awk variable: an array of the environment the awk command receives,
+the exported variables and the command's own assignments, read once at start). What would change it: none seen.
+
+## 2026-11-09 -- BUILT (git-b3's request; the architect: "go"): awk's ENVIRON
+**Status:** Active, deploying. awk refused ENVIRON at parse time. Now AwkInterp.SetEnviron fills it at start from the
+shell's exported variables (ShellEnvironment.GetExportedVars), which include the command's own `X=v awk` assignments;
+each value a numeric string when it looks like a number (`ENVIRON["N"]+1`), as a field is. Values are the exact text
+(no -v escape processing: git-b3's reason). Case awk_environ_gnu (expected = gawk 5.1 via WSL), red on 733.
+
+## 2026-11-10 -- RAISED (lantern-92, three findings and one need, measured against GNU here): jq input edges, tr octal ranges; jq gaps
+**Status:** Bugs awaiting the architect's go (the bug rule); features counted. Measured on 733 against WSL's jq 1.6 and
+GNU tr. **jq input:** jq 1.6 accepts a BOM, non-UTF-8 bytes, `{}{}`, a raw NUL in a string, 01 .5 +1, as C#Bash does
+(Lantern's "lax" was against Python's json, not jq). Two differences: a raw control character 0x01-0x1F in a string,
+jq 1.6 refuses (exit 4), C#Bash accepts; NaN and Infinity, jq 1.6 accepts (null, 1.797e308), C#Bash refuses (exit 2).
+Claude: match jq 1.6 on both. **tr:** `tr -d '\001-\037'` deleted only the two endpoints (\n kept); `'\000-\037'` only
+the NUL; GNU reads both as ranges; a lone octal escape works. Claude: fix. **NEED (one request, Lantern):** jq builtins
+paths, recurse(f), walk, getpath, delpaths, path(), leaf_paths, tostream, limit, indices, splits, inside, label,
+input_filename, and the -S option (refused loudly: "invalid option -- 'S'", exit 2; Lantern's script read only stdout).
+Claude: build as one batch on the architect's word.
+
+## 2026-11-10 -- DEPLOYED 739 (awk ENVIRON): suite (-Detached, AOT) 282/0, battery 217
+**Status:** Record. `1.0.0+hg.d3664800e481 739`; sh.exe a hard link; rollback dist/*.rev733. git-b3 told. Not published
+(the next publish carries 729-739). The suite rerun of 2026-11-09 hung ~19 h: Claude ran cases/awk.sh directly in a
+background task without `< /dev/null`, and the case reads stdin (getline); the architect stopped it. Every direct run of
+a case gets `< /dev/null` (the 2026-10-28 trap, met again).
+
+## 2026-11-10 -- RULED (relayed by git-b3): C#Bash puts Wombat's git.exe into ~/.bash/bin, after Wombat's Plan 4
+**Status:** Active, waiting. The architect: "wait for plan 4, bash process should be responsible for including wombat as
+git.exe in .bash/bin from your 'release/deploy' folder." C#Bash's installer (installer/csharpBash.json) gains Wombat's
+git.exe as an artifact, from Wombat's deploy folder (today F:/Koliada/Tools/git/deploy/git.exe; the project folder is to
+be renamed, git-b3 sends the new path). WHEN: only after Plan 4 (local hub transport: clone, fetch, pull, push); git-b3
+says when. Until then nothing of Wombat's goes into ~/.bash/bin, and PortableGit stays.
+
+## 2026-11-10 -- FIXED (lantern-92's three; the architect: "bugs; go"): tr escaped range ends; jq control characters, NaN/Infinity
+**Status:** Active, deploying. (1) tr: a range's endpoints may be escapes (ExpandTrSet reads each through ReadChar):
+'\001-\037' and '\000-\037' are ranges, as GNU's. (2) jq input (JqJson), as jq 1.6 measured black-box: a raw control
+character U+0001-U+001E in a string is refused ("Invalid string: control characters from U+0000 through U+001F must be
+escaped", checked when the string is finished, so an unfinished one at EOF is "Unfinished string" first); U+0000 and U+001F
+are taken, as 1.6 takes them. (3) NaN and infinity, any case with an optional sign
+(nan/inf/infinity), are numbers (null and +-1.7976931348623157e+308 on output); a word starting with t, f or n stays a
+literal, so `nan` alone is refused, as in 1.6. Case jq_tr_edges_gnu (expected = GNU via WSL), red on 739.
+**Found, not changed:** jq 1.6 exits 4 on an input parse error; C#Bash exits 2 (the suite may rely on 2; not reported).
+
+## 2026-11-10 -- RULED (the architect): Wombat's git.exe in two steps: ~/.bash/bin after Plan 4; the installer after its repo is pushed
+**Status:** Active, waiting. Two separate instructions (the architect: "one instruction to accept git.exe for your bin/
+folder and a second to begin including git in the installer"). STEP 1, after Wombat's Plan 4 (git-b3 says when): C#Bash
+accepts Wombat's git.exe into its bin folder, ~/.bash/bin, from Wombat's deploy folder ("bash process should be
+responsible for including wombat as git.exe in .bash/bin from your 'release/deploy' folder", relayed by git-b3). STEP 2,
+after Wombat's repository is pushed to GitHub next to C#Bash's: the published installer (installer/csharpBash.json)
+begins including git.exe ("git should only be included in the installer after wombat's repo has been pushed next to
+c#bash's").
+
+## 2026-11-10 -- DEPLOYED 741 (tr escaped range ends; jq control characters, NaN/Infinity): suite (-Detached, AOT) 283/0, battery 217
+**Status:** Record. `1.0.0+hg.1958f89871f0 741`; sh.exe a hard link; rollback dist/*.rev739. lantern-92 told. Not published (the next publish carries 729-741).
+
+## 2026-11-10 -- FIXED (c-parser-92's report; raised, no objection in 10 minutes): awk's ARGV and ARGC
+**Status:** Active, deploying. Both were empty: `FILENAME==ARGV[1]` never matched (a two-file compare read file 1 as
+empty and reported every file changed), `print ARGC` printed nothing. Now Run fills ARGV before BEGIN (ARGV[0] "awk",
+then each operand in order, assignments included, numeric strings where they look numeric) and ARGC; NextMainLine reads
+its files from ARGV[1..ARGC-1] as they stand when reached, passing over a deleted or empty element, so a BEGIN that
+empties, deletes or adds (`ARGV[ARGC++]="f"`) changes what is read (POSIX). Case awk_argv_gnu (expected = gawk 5.1 via
+WSL), red on 741.
+
+## 2026-11-10 -- DEPLOYED 743 (awk ARGV/ARGC): suite (-Detached, AOT) 284/0, battery 217
+**Status:** Record. `1.0.0+hg.0437bab71a55 743`; rollback dist/*.rev741. c-parser-92 told. Not published (729-743).
+
+## 2026-11-10 -- RAISED (git-b3's three bugs, measured on 743 against GNU) and one NEED: column
+**Status:** Bugs, Claude's positions, fixing after ~10 minutes (the bug rule). (1) A quoted subscript in an expansion
+reads empty: `${P["a b"]}` `${P["$k"]}` `${P["c"]}` `${P['c']}` and `x=${P["c"]}` give "" (GNU the value); on an indexed
+array `${A["1"]}` is an error "Unexpected '\"' in arithmetic expression" (GNU y). Unquoted subscripts and quoted ones
+in assignments work. Position: remove the subscript's quotes and expand it as bash does, both array kinds. (2) `cat -A`
+/ `-v` pass bytes 0x80-0xFF raw; GNU shows M- notation (M-^? for 0xFF, M-^@ for 0x80). Position: M- notation as GNU.
+(3) `printf %b` decodes `\0nnn` but not `\nnn` (1-3 digits): `\101` stays literal (GNU A), `\12` (GNU newline).
+`echo -e '\101'` is literal in both (correct). Position: accept `\nnn` in %b. **NEED (one request):** `column`
+(util-linux), "command not found"; Wombat wanted `column -t -s$'\t'`; worked around with awk.
+
+## 2026-11-10 -- FIXED (git-b3's three, raised with positions, no objection in 10 minutes): quoted subscripts; cat -v high bytes; printf %b \NNN
+**Status:** Active, deploying. (1) WordExpander.ExpandSubscript reads a subscript as a word: '...' literal, "..."
+expanded inside, \ takes the next character (${P["a b"]} ${P["$k"]} ${P['c']} x=${P["c"]} [[ -v P["c"] ]] read the
+value; they looked up a key WITH its quotes). An indexed subscript with double quotes has them removed before its
+arithmetic (${A["1"]} was an error); single quotes stay an error, as bash's "bad array subscript". (2) cat -A/-v work
+byte by byte, 0x80-0xFF in M- notation (the CatV helper cmp -b used), so UTF-8 é is M-CM-) as GNU. (3) printf %b decodes
+\NNN (1-3 digits) beside \0NNN; echo -e keeps \0NNN only (AppendEscape's echoOctal; echo -e '\101' stays literal, as
+GNU); a value past 255 keeps its low byte (\400 NUL). Cases subscript_quotes_gnu, cat_v_high_bytes_gnu,
+printf_b_octal_gnu (expected = GNU via WSL), each red on 743.
+
+## 2026-11-10 -- DEPLOYED 745 (quoted subscripts; cat -v high bytes; printf %b \\NNN): suite (-Detached, AOT) 287/0, battery 217
+**Status:** Record. `1.0.0+hg.445d9c9a470a 745`; rollback dist/*.rev743. git-b3 told. Not published (729-745).
+
+## 2026-11-11 -- FIXED (git-b3's report; the architect: "go"): the change time is NTFS's, in stat, ls -c and find
+**Status:** Active, deploying. stat %Z/%z (and its Change: line), ls -c and find -ctime/-cmin/-newerct all used the
+modification time (`touch -m -d @1767225600 f; stat -c '%Y %Z'` gave 1767225600 twice; MSYS's stat gives the NTFS
+ChangeTime, which touch moves to now). Now ShellFile.ChangeTime reads FILE_BASIC_INFO.ChangeTime
+(GetFileInformationByHandleEx on an attributes-only handle, sharing everything); find's FileTimeOf picks access, change
+or modification by kind (find -newerat was reading the modification time too: fixed with it); ls -c (and
+--time=ctime|status) shows the change time with -l, sorts by it with -t, and alone sorts by it, newest first, as GNU.
+Case stat_ctime (reference: MSYS's stat through msys_pin.inc; authored), red on 745. **Found, not done:** ls -u (access
+time) is accepted and ignored the same way.
+**The bug rule's wording (the architect, 2026-11-11):** "your 'per bug rule' is not working; the timer is started once and
+never resets, if the shell it runs in quits, no more timed waits to fix?" Claude has no clock between turns: "I'll start
+in 10 minutes unless you say otherwise" only ever ended on his next message. Claude's position: verify, state the
+position as a notice and start the fix in the same turn; the deploy still waits for the full suite. AWAITING his word.
+
+## 2026-11-11 -- DEPLOYED 748 (NTFS change time in stat, ls -c, find): suite (-Detached, AOT) 288/0, battery 217
+**Status:** Record. `1.0.0+hg.8d45cb048521 748`; rollback dist/*.rev745. git-b3 told. Not published (729-748).
+
+## 2026-11-11 -- BUILT (the architect's yes of 2026-11-09, read too narrowly until now): six Windows names upper-cased on import, as Git Bash
+**Status:** Active, deploying. The architect, 2026-11-11: "I said yes two days ago, why is this still current". His
+2026-11-09 words were "fix the compare3 name spelling and find the c#Bash startup difference?"; Claude read them as
+compare3 alone and kept the C#Bash-wide change listed as his to decide: wrong, it was the yes. The rule, measured
+black-box against PortableGit 2.28.0's bash on every mixed-case name on this machine: Git Bash upper-cases exactly
+SystemRoot, windir, ComSpec, ProgramFiles, CommonProgramFiles, SystemDrive (and Path, already PATH here); every other
+name keeps its spelling (ProgramFiles(x86), CommonProgramW6432, ProgramData, PSModulePath, a user's MyVar, lowervar).
+Built: ShellEnvironment's import maps those six (UpperOnImport). Windows programs still see them (case-insensitive).
+Nothing in C#Bash looked them up by the Windows spelling (checked). Case env_names_upper (authored), red on 748.
+**Correction, same day:** the first build of this failed the deploy's AOT suite on icu_lazy: `key.ToUpperInvariant()` loads
+ICU on every start (~0.7 ms, a benchmark slowdown). Now the six names are matched ASCII-only and replaced by fixed
+upper-case spellings (UpperOnImportName): no culture code at start.
+
+## 2026-11-11 -- DEPLOYED 751 (six Windows names upper-cased as Git Bash): suite (-Detached, AOT) 289/0, battery 217
+**Status:** Record. `1.0.0+hg.45732fc6c1d4 751`; rollback dist/*.rev748. Not published (729-751).
+
+## 2026-11-11 -- RULED (the architect): two lists, bugs and features; one process; bugs first; features by speed; a benchmark slowdown is a consult
+**Status:** Active. "add them, bugs take precidence over features, same process as for bugs. make sure the specified
+fallbacks are published; go", then "I meant, we need two lists, bugs and features. Same process rules for bugs and
+features. bugs take precidence over features. features should be ordered by speed, if any feature would slow the
+benckmark it requires a separat consult with architect." Lists kept in PROJECT_CONTEXT's resume note. Readings put to
+him: "ordered by speed" as quickest to deliver first (not by the speed they give); "the specified fallbacks are
+published" as the fallback chain (in-process, a PATH program, WSL, overridable or none) stated in the published docs
+(not "shipped in the next publish"). The bug rule's wording (2026-11-11 entry above) folds in: a bug is verified, its
+position stated, and its fix started in the same turn.
+
+## 2026-11-11 -- FIXED (bugs list 1): ls -u shows and sorts by the access time
+**Status:** Active, deploying. ls -u / --time=atime|access|use was accepted and ignored (as -c was until 748): now the
+access time is shown with -l, sorts with -t, and alone sorts, newest first (GNU). Case ls_time_kinds_gnu (expected =
+GNU via WSL), red on 751. **Found, Windows' and not C#Bash's:** on this NTFS volume, opening a file's handle to read or
+set its details moves its access time, so `touch -m` and even `stat` move it; MSYS's touch and stat do the same
+(measured: C#Bash 745, the new build and MSYS stat alike). Matching Git Bash, so not a bug by the references rule;
+Windows documents a way to hold the access time while setting another (SetFileTime with 0xFFFFFFFF), the architect's
+call if wanted. Two GNU-compared readings of one access time cannot be stable here; the case compares orders only.
+
+## 2026-11-11 -- FIXED (bugs list 2): jq exits 4 on invalid input, as jq 1.6
+**Status:** Active, deploying with list 1 (ls -u). jq 1.6 exits 4 for invalid input in every form measured (truncated,
+slurped, after a valid value, a bad file before a good one); C#Bash exited 2. Now 4; the slurp result is still withheld
+after a parse error (its guard tested `rc != 2`: it now tests 2 or 4, an unreadable file staying 2). A runtime error
+(5) and -e with null (1) already matched. Case jq_exit_gnu (expected = GNU jq 1.6 via WSL), red on 751.
+
+## 2026-11-11 -- DEPLOYED 753 (ls -u; jq exit 4): suite (-Detached, AOT) 291/0, battery 217
+**Status:** Record. `1.0.0+hg.30e8d91f8971 753`; rollback dist/*.rev751. Not published (729-753).
+
+## 2026-11-11 -- FIXED (bugs list 3, and one found beside it): a negative list length and a bad substitution abandon the line
+**Status:** Active, deploying. GNU 5.1, measured: `${a[@]:0:-1}`, `${a[*]:1:-2}`, `${@:1:-1}` print "-1: substring
+expression < 0" and abandon the top-level command line (inside a function too: the caller's whole line), status 1; the
+script goes on with the next line; a negative length in a STRING slice counts back, valid. C#Bash counted back from the
+end for an array and gave nothing for the positionals, status 0. Found beside it: `${x!y}` printed "bad substitution"
+and went on with the line, status 0 (GNU abandons it, status 1). Both now go through WordExpander.Abandon (the message,
+then CommandAbortException, which RunString's loop already handles for a bad `$( )`); Slice lost its
+negative-length mode. Case abandon_line_gnu (expected = GNU via WSL, stdout), red on 753.
+
+## 2026-11-11 -- DEPLOYED 754 (a negative list length, a bad substitution: the line abandoned): suite (-Detached, AOT) 292/0, battery 217
+**Status:** Record. `1.0.0+hg.477562b19803 754`; rollback dist/*.rev753. Not published (729-754).
+
+## 2026-11-11 -- FOUND (bugs list 4): the MSYS2 quoting failure is MSYS2's, not C#Bash's
+**Status:** Closed on C#Bash's list; KNOWN_ISSUES line put to the architect. Measured: cmd.exe passing the same raw
+command line ("é{x}" "a{b}", a CRLF batch file, code page 65001) to F:/Tools/msys64's echo.exe and printf.exe (MSYS2
+runtime 3.1.7) delivers `"é{x}"` WITH its quotes, as C#Bash's launch did; Git for Windows' MSYS (3.1.6, 3.6.10)
+delivers é{x}. LANG=C.UTF-8 changes nothing. So MSYS2's own parsing keeps the quotes of a quoted word holding a
+non-ASCII character, whoever starts the program (Claude's stated test of 2026-11-09: "if MSYS2 mangles the same quoted
+word when another Windows program sends it, the fault is MSYS2's"). C#Bash cannot avoid it cleanly: such a word needs
+the quotes for its { * ? characters. Claude's position: drop the KNOWN_ISSUES "Open" line (it names MSYS2's bug as
+C#Bash's); what would change it: wanting users of MSYS2 warned anyway, as a Limits line instead.
+
+## 2026-11-11 -- PUBLISHING 754 (the architect: "publish first?"): benchmarked, doc review done
+**Status:** Record. Window held by all 12 local sessions (git-b3 after its agent's mutant run stopped). compare3 on 754
+under Git Bash 4.4.23(1): loop 0.172 / arith 0.258 / func 0.222 / loop_big 1.537 / coreutils 0.057 / pipeline 0.100 /
+find 0.018 / startup 0.0104 (Git Bash 0.0252, WSL 0.1340); 8.5-12.9x Git Bash, 2.4-2.8x WSL; outputs agree. Baselines:
+sieve +1.0% before / -3.9% after; launch +11.8% before (loop, the first row, may carry a few per cent: 0.172 against
+726's 0.163), 0.0% after. Doc review: README table, startup line, 294 cases; PERFORMANCE measured-on and figures;
+DEVELOPING count; KNOWN_ISSUES "Fixed in this release (build 754)" (729-754). Then tools/publish.sh.

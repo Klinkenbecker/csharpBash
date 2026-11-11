@@ -1,0 +1,7 @@
+reseeded, same sequence: yes
+another shell, same sequence: yes
+another seed, another sequence: yes
+abc seeds as 0: yes
+modulo 2^32: yes
+2000 values in 0..32767: yes
+SRANDOM not seeded by RANDOM: yes

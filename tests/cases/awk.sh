@@ -86,6 +86,6 @@ awk 'BEGIN{"date" | getline d; print d}' 2>&1 | head -1
 awk 'BEGIN{getline; print}' 2>&1 | head -1
 awk 'BEGIN{print "z" | "sort"}' 2>&1 | head -1
 awk 'BEGIN{printf "%a\n", 1}' 2>&1 | head -1   # %e was refused until 2026-11-05; %a (gawk's hex float) still is
-out=$(awk 'BEGIN{print ENVIRON["HOME"]}' 2>&1); echo "rc=$?"; echo "$out" | head -1
+out=$(E=v awk 'BEGIN{print ENVIRON["E"]}' 2>&1); echo "rc=$?"; echo "$out" | head -1   # ENVIRON: in-process since 2026-11-09
 # not a subset gap but the interpreter's limit (it recurses on the .NET stack): fatal, never a crash
 awk 'function d(n){return n==0?0:1+d(n-1)} BEGIN{print d(1000000)}' 2>&1; echo "rc=$?"

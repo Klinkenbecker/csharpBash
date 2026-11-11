@@ -49,7 +49,7 @@ public sealed partial class Builtins
 			{
 			if (s[i] == '\\' && i + 1 < s.Length)
 				{
-				i = PrintfFormatter.AppendEscape(s, i + 1, sb, out halt, inArg: true);
+				i = PrintfFormatter.AppendEscape(s, i + 1, sb, out halt, inArg: true, echoOctal: true);
 				if (halt) break;
 				}
 			else sb.Append(s[i++]);

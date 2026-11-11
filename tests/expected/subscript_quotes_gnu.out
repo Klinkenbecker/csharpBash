@@ -1,0 +1,7 @@
+[one] [one] [one] [two] [two] [two]
+assigned: [two]
+quote inside: [three] [three] dollar literal: [four]
+-v quoted: yes
+-v missing: no
+default: [dflt] length: 3
+indexed: [y] [w] [y]

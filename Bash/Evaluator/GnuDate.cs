@@ -35,6 +35,7 @@ public static class GnuDate
 		TimeSpan? zone = null;
 		int? weekday = null; int ordinal = 0;
 		long? epochTicks = null;   // @seconds[.fraction], in 100 ns ticks from the Unix epoch
+		long fracTicks = 0;        // a clock time's fraction of a second (HH:MM:SS.frac), in 100 ns ticks
 		var rel = new List<(char unit, int n)>();
 
 		var toks = Regex.Split(text, @"[\s,]+").Where(t => t.Length > 0).ToList();
@@ -46,8 +47,7 @@ public static class GnuDate
 			// Only whole seconds until 2026-10-08. .NET keeps 100 ns: digits past the 7th are dropped.
 			if (t[0] == '@' && (m = Regex.Match(t, @"^@(-?)(\d+)(?:\.(\d+))?$")).Success && long.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var ep))
 				{
-				var frac = m.Groups[3].Success ? m.Groups[3].Value : "";
-				long ticks = ep * TimeSpan.TicksPerSecond + (frac.Length == 0 ? 0 : long.Parse(frac.Length >= 7 ? frac[..7] : frac.PadRight(7, '0'), System.Globalization.CultureInfo.InvariantCulture));
+				long ticks = ep * TimeSpan.TicksPerSecond + FracTicks(m.Groups[3].Value);
 				epochTicks = m.Groups[1].Value == "-" ? -ticks : ticks;
 				continue;
 				}
@@ -57,13 +57,14 @@ public static class GnuDate
 			if (t is "utc" or "gmt" or "z" or "ut") { zone = TimeSpan.Zero; continue; }
 			if (t == "ago") { if (rel.Count == 0) return false; rel[^1] = (rel[^1].unit, -rel[^1].n); continue; }
 			// ISO date, optionally joined to a time with 't'
-			if ((m = Regex.Match(t, @"^(\d{4})-(\d{1,2})-(\d{1,2})(?:t(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(z|[+-]\d{2}:?\d{2})?)?$")).Success)
+			if ((m = Regex.Match(t, @"^(\d{4})-(\d{1,2})-(\d{1,2})(?:t(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(z|[+-]\d{2}:?\d{2})?)?$")).Success)
 				{
 				year = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture); month = int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); day = int.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
 				if (m.Groups[4].Success)
 					{
 					hour = int.Parse(m.Groups[4].Value, System.Globalization.CultureInfo.InvariantCulture); minute = int.Parse(m.Groups[5].Value, System.Globalization.CultureInfo.InvariantCulture); second = m.Groups[6].Success ? int.Parse(m.Groups[6].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
-					if (m.Groups[7].Success) zone = ParseZone(m.Groups[7].Value);
+					fracTicks = FracTicks(m.Groups[7].Value);
+					if (m.Groups[8].Success) zone = ParseZone(m.Groups[8].Value);
 					}
 				continue;
 				}
@@ -76,12 +77,13 @@ public static class GnuDate
 				continue;
 				}
 			// time: HH:MM[:SS[.frac]][am|pm][z|+hhmm]
-			if ((m = Regex.Match(t, @"^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(am|pm)?(z|[+-]\d{2}:?\d{2})?$")).Success)
+			if ((m = Regex.Match(t, @"^(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(am|pm)?(z|[+-]\d{2}:?\d{2})?$")).Success)
 				{
 				hour = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture); minute = int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture); second = m.Groups[3].Success ? int.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture) : 0;
-				if (m.Groups[4].Success) hour = Meridian(hour.Value, m.Groups[4].Value);
+				fracTicks = FracTicks(m.Groups[4].Value);
+				if (m.Groups[5].Success) hour = Meridian(hour.Value, m.Groups[5].Value);
 				else if (i + 1 < toks.Count && toks[i + 1] is "am" or "pm" or "a.m." or "p.m.") { hour = Meridian(hour.Value, toks[++i][..2].Replace(".", "")); }
-				if (m.Groups[5].Success) zone = ParseZone(m.Groups[5].Value);
+				if (m.Groups[6].Success) zone = ParseZone(m.Groups[6].Value);
 				continue;
 				}
 			if ((m = Regex.Match(t, @"^(\d{1,2})(am|pm)$")).Success)
@@ -145,6 +147,9 @@ public static class GnuDate
 			else { h = now.Hour; mi = now.Minute; s = now.Second; }
 			try { dt = new DateTime(y, mo, d, h, mi, s, utc ? DateTimeKind.Utc : ShellClock.IsMachineZone ? DateTimeKind.Local : DateTimeKind.Unspecified); }
 			catch (ArgumentOutOfRangeException) { return false; }
+			// the fraction of a clock time (git-b3, 2026-11-09: `touch -d '... 01:02:03.123456789'` stored .000000000;
+			// GNU keeps it). .NET and NTFS keep 100 ns: digits past the 7th are dropped, as for @seconds.
+			if (hour is not null) dt = dt.AddTicks(fracTicks);
 			if (zone is TimeSpan z)
 				{
 				var dto = new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Unspecified), z);
@@ -171,6 +176,10 @@ public static class GnuDate
 		}
 
 	private static int Meridian(int h, string ap) => ap == "pm" ? (h % 12) + 12 : h % 12;
+
+	/// <summary>A fraction's digits as 100 ns ticks (the 8th digit on is dropped); none is 0.</summary>
+	private static long FracTicks(string digits) => digits.Length == 0 ? 0
+		: long.Parse(digits.Length >= 7 ? digits[..7] : digits.PadRight(7, '0'), System.Globalization.CultureInfo.InvariantCulture);
 
 	private static TimeSpan ParseZone(string z)
 		{

@@ -166,6 +166,10 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				case BraceExpansionPart { Raw: "@" or "*" } bp:
 					AppendArray(_env.GetPositionals(), bp.Raw == "*", quoted);
 					break;
+				// "${@:2}" / "${a[@]:1:2}": one field per element, as "$@" (git-b3, 2026-11-09: "${@:2}" was ONE word)
+				case BraceExpansionPart b when SliceElements(b.Raw, out bool sliceStar) is { } slice:
+					AppendArray(slice, sliceStar, quoted);
+					break;
 				case BraceExpansionPart b when TryArrayExpansion(b.Raw, out var elems, out bool star):
 					AppendArray(elems, star, quoted);
 					break;
@@ -354,6 +358,64 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	/// ${!arr[*]} for both indexed and associative arrays. Returns the element
 	/// (or key) list so the caller can produce one field per element.
 	/// </summary>
+	/// <summary>The elements a slice selects, `${@:off[:len]}` / `${*:...}` (from $0, as bash) or `${name[@]:off[:len]}` /
+	/// `${name[*]:...}` of an array, as a list, so a quoted `@` slice is one field per element; null when raw is no such
+	/// slice. After the colon, `-` `=` `?` `+` are the `:` operators (${@:-x}), not an offset (`${@: -1}` is).</summary>
+	private List<string>? SliceElements(string raw, out bool star)
+		{
+		star = false;
+		string spec;
+		List<string> list;
+		bool positional;
+		if (raw.Length > 2 && raw[0] is '@' or '*' && raw[1] == ':')
+			{
+			star = raw[0] == '*';
+			spec = raw[2..];
+			list = new List<string> { _env.Get("0") };
+			list.AddRange(_env.GetPositionals());
+			positional = true;
+			}
+		else
+			{
+			var m = System.Text.RegularExpressions.Regex.Match(raw, @"^([A-Za-z_][A-Za-z0-9_]*)\[([@*])\]:(.*)$", System.Text.RegularExpressions.RegexOptions.Singleline);
+			if (!m.Success) return null;
+			var name = m.Groups[1].Value;
+			if (_env.IsArray(name)) list = _env.GetArrayValues(name);
+			else if (_env.IsAssoc(name)) list = _env.GetAssocValues(name);
+			else return null;
+			star = m.Groups[2].Value == "*";
+			spec = m.Groups[3].Value;
+			positional = false;
+			}
+		if (spec.Length == 0 || spec[0] is '-' or '=' or '?' or '+') return null;
+		int colon = FindTopLevelColon(spec);
+		var offStr = colon < 0 ? spec : spec[..colon];
+		var lenStr = colon < 0 ? null : spec[(colon + 1)..];
+		long off = offStr.Trim().Length == 0 ? 0 : EvalArithmetic(offStr);
+		long? len = lenStr is null || lenStr.Trim().Length == 0 ? null : EvalArithmetic(lenStr);
+		return Slice(list, off, len);
+		}
+
+	/// <summary>A slice of a list by bash's rules: a negative offset counts from the end; a negative length is an error
+	/// for a list (an array or the positional parameters, unlike a string): "-1: substring expression &lt; 0", and the
+	/// top-level command line is abandoned, status 1 (GNU 5.1, measured 2026-11-11; C#Bash counted back from the end
+	/// for an array and gave nothing for the positionals).</summary>
+	private List<string> Slice(List<string> list, long off, long? len)
+		{
+		if (len < 0) Abandon($"{len}: substring expression < 0");
+		int start = off < 0 ? Math.Max(0, list.Count + (int)off) : (int)Math.Min(off, list.Count);
+		int count = len is null ? list.Count - start : (int)Math.Min(len.Value, list.Count - start);
+		return list.Skip(start).Take(Math.Max(0, count)).ToList();
+		}
+
+	/// <summary>An expansion error that abandons the top-level command line, as bash's do (bad substitution, a negative
+	/// list length): the message, then CommandAbortException, status 1; the script goes on with the next line.</summary>
+	private void Abandon(string message)
+		{
+		Console.Error.WriteLine($"{_eval.ErrorPrefix}{message}");
+		throw new CommandAbortException();
+		}
+
 	private bool TryArrayExpansion(string raw, out List<string> elems, out bool star)
 		{
 		elems = [];
@@ -647,17 +709,12 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				{
 				var list = elems;
 				if (name == "@" ) list = _env.GetPositionals();
-				int start = off < 0 ? Math.Max(0, list.Count + (int)off) : (int)Math.Min(off, list.Count);
-				int count = len is null ? list.Count - start : len < 0 ? Math.Max(0, list.Count + (int)len - start) : (int)Math.Min(len.Value, list.Count - start);
-				return string.Join(sub == "*" ? StarJoin : " ", list.Skip(start).Take(Math.Max(0, count)));   // ${a[*]:1} joins as ${a[*]}
+				return string.Join(sub == "*" ? StarJoin : " ", Slice(list, off, len));   // ${a[*]:1} joins as ${a[*]}
 				}
 			if (name is "@" or "*")
 				{
-				var pos = _env.GetPositionals();
-				var list = new List<string> { _env.Get("0") }; list.AddRange(pos);
-				int start = off < 0 ? Math.Max(0, list.Count + (int)off) : (int)Math.Min(off, list.Count);
-				int count = len is null ? list.Count - start : (int)Math.Min(len.Value, list.Count - start);
-				return string.Join(name == "*" ? StarJoin : " ", list.Skip(start).Take(Math.Max(0, count)));   // ${*:2} joins as $*
+				var list = new List<string> { _env.Get("0") }; list.AddRange(_env.GetPositionals());
+				return string.Join(name == "*" ? StarJoin : " ", Slice(list, off, len));   // ${*:2} joins as $*
 				}
 			var s = ValueOf();
 			int n = CharCount(s);   // offsets count characters, not UTF-16 units (an emoji is one)
@@ -731,7 +788,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			return elems is not null ? string.Join(" ", elems.Select(Apply)) : Apply(ValueOf());
 			}
 
-		throw new EvalException($"${{{raw}}}: bad substitution");
+		// abandons the line, status 1, as bash (it printed the message and went on with the line, status 0, until 2026-11-11)
+		Abandon($"${{{raw}}}: bad substitution");
+		return "";
 		}
 
 	private string QuoteForQ(string s) => s.Length == 0 ? "''" : "'" + s.Replace("'", "'\\''") + "'";
@@ -860,6 +919,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	private string ElementValue(string name, string sub)
 		{
 		if (_env.IsAssoc(name)) return _env.GetAssocElement(name, ExpandSubscript(sub));
+		// an indexed subscript in double quotes (${A["1"]}): the quotes go before the arithmetic, as bash; it was an
+		// error. Single quotes stay an error, as in bash ("bad array subscript").
+		if (sub.Contains('"')) sub = ExpandSubscript(sub);
 		if (_env.IsArray(name)) return _env.GetArrayElement(name, (int)EvalArithmetic(sub));
 		// a scalar used with a subscript: index 0 is the scalar itself
 		return EvalArithmetic(sub) == 0 ? _env.Get(name) : "";
@@ -1484,6 +1546,13 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		int i = 0;
 		while (i < s.Length)
 			{
+			// quotes as in a word (git-b3, 2026-11-10: ${P["a b"]} and ${P['c']} looked up a key WITH the quotes, so
+			// read empty): '...' is literal, "..." is expanded inside, a backslash takes the next character
+			if (s[i] == '\'' && s.IndexOf('\'', i + 1) is int q1 and > 0)
+				{ sb.Append(s, i + 1, q1 - i - 1); i = q1 + 1; continue; }
+			if (s[i] == '"' && Lexer.Lexer.ConstructEnd(s, i) is int q2 and > 0)
+				{ sb.Append(ExpandSubscript(s[(i + 1)..(q2 - 1)])); i = q2; continue; }
+			if (s[i] == '\\' && i + 1 < s.Length) { sb.Append(s[i + 1]); i += 2; continue; }
 			if (s[i] == '$' && i + 1 < s.Length && s[i + 1] == '{')
 				{
 				int end = Lexer.Lexer.ConstructEnd(s, i);   // the one matcher; unclosed: to the end

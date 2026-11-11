@@ -48,6 +48,7 @@ public sealed partial class Builtins
 		try
 			{
 			interp = new AwkInterp { Source = source };
+			interp.SetEnviron(_env.GetExportedVars());
 			foreach (var a in o.All('v'))
 				{
 				if (!interp.AssignOperand(a)) { Console.Error.WriteLine($"awk: invalid -v argument '{a}'"); return 2; }
@@ -1031,7 +1032,6 @@ public sealed partial class Builtins
 				case AT.Name:
 					{
 					_p++;
-					if (t.Text == "ENVIRON") throw new AwkUnsupportedException("ENVIRON");
 					_names.Add(t.Text);
 					if (IsOp("["))
 						{
@@ -1165,6 +1165,16 @@ public sealed partial class Builtins
 			}
 
 		public void SetVar(string name, AwkVal v) => _vars[name] = v;
+
+		/// <summary>ENVIRON (POSIX awk; git-b3, 2026-11-09): the environment the awk command receives, the shell's exported
+		/// variables and the command's own assignments (`X=v awk ...`), read once at start; each value a numeric string
+		/// when it looks like a number, as an input field is.</summary>
+		public void SetEnviron(IReadOnlyDictionary<string, string> env)
+			{
+			var a = new Dictionary<string, AwkVal>(StringComparer.Ordinal);
+			foreach (var (k, v) in env) a[k] = AwkVal.StrNum(v);
+			_arrays["ENVIRON"] = a;
+			}
 		private string Convfmt => _vars["CONVFMT"].Text("%.6g");
 		private string S(AwkVal v) => v.Text(Convfmt);
 
@@ -1568,10 +1578,21 @@ public sealed partial class Builtins
 					if (NextRecord(_mainLines, out line)) return true;
 					_mainReader?.Dispose(); _mainLines = null; _mainReader = null;
 					}
-				string op;
-				if (_mainNext < _mainOps.Count) op = _mainOps[_mainNext++];
-				else if (!_mainAnyFile && !_mainStdinDone) { _mainStdinDone = true; op = "-"; }   // no file operand: stdin
-				else { line = ""; return false; }
+				// the operands are read from ARGV[1..ARGC-1] as they stand when each is reached, so a program that changes
+				// ARGV or ARGC (in BEGIN) changes what is read; a deleted or empty element is passed over (POSIX)
+				string? op = null;
+				int argc = (int)_vars["ARGC"].Number;
+				var argv = _arrays.TryGetValue("ARGV", out var av) ? av : null;
+				while (op is null && _mainNext + 1 < argc)
+					{
+					_mainNext++;
+					if (argv is not null && argv.TryGetValue(_mainNext.ToString(System.Globalization.CultureInfo.InvariantCulture), out var v) && S(v).Length > 0) op = S(v);
+					}
+				if (op is null)
+					{
+					if (!_mainAnyFile && !_mainStdinDone) { _mainStdinDone = true; op = "-"; }   // no file operand: stdin
+					else { line = ""; return false; }
+					}
 				// an identifier then `=` is an assignment whatever the value holds (`v='\303\251'`, `out=C:\x`)
 				if (op != "-" && !op.StartsWith('/') && Regex.IsMatch(op, @"^[A-Za-z_][A-Za-z0-9_]*=") && AssignOperand(op)) continue;
 				_mainAnyFile = true;
@@ -1975,6 +1996,13 @@ public sealed partial class Builtins
 			Running = true;   // from here a refusal is not handed to the PATH awk (see Awk)
 			_funcs = prog.Funcs;
 			_mainOps = operands;   // BEGIN's `getline` reads it too
+			// ARGV and ARGC (POSIX; c-parser-92, 2026-11-10: both were empty, so FILENAME==ARGV[1] never matched): ARGV[0]
+			// is "awk", then every operand in order, assignments included, each a numeric string where it looks like one
+			var argvInit = new Dictionary<string, AwkVal>(StringComparer.Ordinal) { ["0"] = AwkVal.Str("awk") };
+			for (int k = 0; k < operands.Count; k++)
+				argvInit[(k + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)] = AwkVal.StrNum(operands[k]);
+			_arrays["ARGV"] = argvInit;
+			_vars["ARGC"] = AwkVal.Num(operands.Count + 1);
 			var rangeActive = new bool[prog.Rules.Count];
 			try
 				{

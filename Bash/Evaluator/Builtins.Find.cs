@@ -214,17 +214,18 @@ public sealed partial class Builtins
 				var spec = FindArg(a, ref i, t);
 				if (!TryParseDate(spec, out var when)) throw new Exception($"I cannot figure out how to interpret '{spec}' as a date or time");
 				var whenUtc = ShellClock.ToUtc(when);   // a time in the shell's zone (TZ, 2026-10-30)
-				return new FindPred((e, s, b) => e.Info.LastWriteTimeUtc > whenUtc);
+				char kind = t[6];   // -newer[m|c|a]t: each its own time (all three read the modification time until 2026-11-10)
+				return new FindPred((e, s, b) => FileTimeOf(e.Info, kind).ToUniversalTime() > whenUtc);
 				}
 			case "-mtime": case "-ctime": case "-atime":
 				{
 				var (cmp, n) = FindNumArg(FindArg(a, ref i, t));
-				return new FindPred((e, s, b) => FindCompare((long)Math.Floor((s.Now - (t == "-atime" ? e.Info.LastAccessTime : e.Info.LastWriteTime)).TotalDays), cmp, n));
+				return new FindPred((e, s, b) => FindCompare((long)Math.Floor((s.Now - FileTimeOf(e.Info, t[1])).TotalDays), cmp, n));
 				}
 			case "-mmin": case "-cmin": case "-amin":
 				{
 				var (cmp, n) = FindNumArg(FindArg(a, ref i, t));
-				return new FindPred((e, s, b) => FindCompare((long)Math.Floor((s.Now - (t == "-amin" ? e.Info.LastAccessTime : e.Info.LastWriteTime)).TotalMinutes), cmp, n));
+				return new FindPred((e, s, b) => FindCompare((long)Math.Floor((s.Now - FileTimeOf(e.Info, t[1])).TotalMinutes), cmp, n));
 				}
 			case "-size":
 				{
@@ -400,6 +401,15 @@ public sealed partial class Builtins
 		}
 
 	private static bool FindCompare(long value, char cmp, long n) => cmp switch { '+' => value > n, '-' => value < n, _ => value == n };
+
+	/// <summary>A file's time by kind, in local time: 'a' access, 'c' change (NTFS's, ShellFile.ChangeTime; it was the
+	/// modification time until 2026-11-10), else modification. find's -Xtime, -Xmin, -newerXt and ls -c use it.</summary>
+	internal static DateTime FileTimeOf(FileSystemInfo info, char kind) => kind switch
+		{
+		'a' => info.LastAccessTime,
+		'c' => ShellFile.ChangeTime(info.FullName) ?? info.LastWriteTime,
+		_ => info.LastWriteTime,
+		};
 
 	/// <summary>Emacs regex (find -regex default) → .NET: `\|` `\(` `\)` `\{` `\}` are operators; bare are literals.</summary>
 	private static string EmacsToNet(string re) => BreToNet(re);

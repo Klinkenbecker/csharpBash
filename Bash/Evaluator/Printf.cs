@@ -284,7 +284,7 @@ public static class PrintfFormatter
 
 	/// <summary>Decode one backslash escape starting at <paramref name="i"/> (the char after
 	/// the backslash). Returns the index after the escape. `\c` sets <paramref name="halt"/>.</summary>
-	public static int AppendEscape(string s, int i, StringBuilder sb, out bool halt, bool inArg = false)
+	public static int AppendEscape(string s, int i, StringBuilder sb, out bool halt, bool inArg = false, bool echoOctal = false)
 		{
 		halt = false;
 		char e = s[i];
@@ -322,11 +322,14 @@ public static class PrintfFormatter
 			default:
 				if (e >= '0' && e <= '7')
 					{
-					// \NNN in the format (up to 3 digits); \0NNN in %b arguments (0 then up to 3)
+					// \NNN in the format (up to 3 digits); in %b arguments \0NNN (0 then up to 3) and \NNN too, as bash
+					// (git-b3, 2026-11-10: '\101' stayed literal, GNU A); echo -e takes \0NNN only (`\101` stays itself);
+					// a value past 255 keeps its low byte (\400 is NUL)
 					int k = i, v = 0, n = 0, max = 3;
-					if (inArg) { if (e != '0') { sb.Append('\\').Append(e); return i + 1; } k++; }
+					if (inArg && e == '0') k++;
+					else if (echoOctal) { sb.Append('\\').Append(e); return i + 1; }
 					while (k < s.Length && n < max && s[k] >= '0' && s[k] <= '7') { v = v * 8 + (s[k] - '0'); k++; n++; }
-					sb.Append(ShellEncoding.ByteChar(v)); return k;   // \NNN is a byte escape too
+					sb.Append(ShellEncoding.ByteChar(v & 0xFF)); return k;   // \NNN is a byte escape too
 					}
 				sb.Append('\\').Append(e); return i + 1;
 			}

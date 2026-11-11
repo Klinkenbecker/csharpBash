@@ -1,0 +1,33 @@
+0000000   a   b   c   d
+0000000   a   b   c   d
+xyz
+HELLO
+b
+control bytes refused: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30
+NaN: [null]
+
+-NaN: [null]
+
++NaN: [null]
+
+NAN: [null]
+
+Nan: [null]
+
+-nan: [null]
+
+Infinity: [1.7976931348623157e+308]
+
+-Infinity: [-1.7976931348623157e+308]
+
+INFINITY: [1.7976931348623157e+308]
+
+infinity: [1.7976931348623157e+308]
+
+Inf: [1.7976931348623157e+308]
+
+inf: [1.7976931348623157e+308]
+
+nan: refused
+nAn: refused
+[null,-1.7976931348623157e+308,true]

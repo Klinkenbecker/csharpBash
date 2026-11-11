@@ -12,7 +12,7 @@ The pipeline and the four design documents: [the README's Architecture section](
 ```sh
 dotnet build -c Release            # builds Bash.sln (.NET 8 SDK)
 Bash/bin/Release/net8.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/run-tests.ps1           # 279 self-checking cases (four need the Native AOT build: -Interpreter <exe>)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/run-tests.ps1           # 294 self-checking cases (four need the Native AOT build: -Interpreter <exe>)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/compat/run-compat.ps1   # 237-probe differential battery against WSL's GNU bash
 ```
 
@@ -28,12 +28,11 @@ The development tooling is another matter. Each outside system has one job, and 
 |---|---|---|
 | **WSL** (`wsl.exe -e bash`, Ubuntu: GNU bash 5.1, coreutils, gawk, jq) | the battery (`tests/compat/run-compat.ps1`), the `bash -n` corpus (`tests/corpus/run-n.sh`), the `df` check (`tests/df/compare-wsl.sh`), the benchmark's third column; and by hand, to produce a test case's expected output | **The reference.** Every behavior is matched against GNU bash on Linux. The corpus and `df` scripts run *in* WSL's bash and start C#Bash through WSL's interop. |
 | **Git for Windows** (PortableGit, configured at the top of each script: the benchmark pins 2.28.0 at `F:/Tools/PortableGit-2.28.0`, `publish.sh` uses `F:/Tools/PortableGit`) | the benchmark (`tests/bench/compare3.sh`, and the older `compare.sh`), `tools/publish.sh` | **Git Bash** is one of the shells the benchmark times; either Git Bash or C#Bash may run it, and its table names which (Git Bash is the reference way). **`git.exe`** is how `publish.sh` pushes to GitHub (the project's VCS is Mercurial). Nothing else reaches Git; the development machine keeps it off PATH. |
-| **Git for Windows on PATH** (`git.exe`, and the MSYS tools in its `usr/bin`; for the suite's third run put its `usr/bin`, `mingw64/bin` and `cmd` first on PATH, in that order: C#Bash adds none of them itself) | seven suite cases: `msys_redirects`, `msys_arguments`, `msys_inherited_append`, `native_args_msys`, `native_args_git`, `dev_tty_git_prompt`, `coreutils_external` | They test how C#Bash runs MSYS programs and git. **Without them, the case prints `SKIP: <reason>`** and the runner names it in its summary: a skip, never a pass. |
-| **MSYS2** (`F:/Tools/msys64`) | one suite case, `msys_append_shared` (its `ls.exe`) | Same; SKIP without it. |
-| **A PATH `awk`** | one suite case, `awk_fallthrough` | What the in-process awk hands to an external awk; SKIP without one. |
+| **MSYS**, optional (`tests/cases/msys_pin.inc`: pinned to `F:/Tools/PortableGit-2.28.0/usr/bin`; else the first PATH folder holding `msys-2.0.dll`) | nine suite cases: `coreutils_external`, `device_names`, `msys_arguments`, `msys_append_shared`, `msys_inherited_append`, `msys_redirects`, `native_args_msys`, `rm_reserved_names`, `awk_fallthrough` | They test how C#Bash runs MSYS programs. **Without an MSYS, the case prints `BYPASSED: <reason>`**: shown in red, named on its own summary line (`!!! N BYPASSED, NOT TESTED`), repeated by `deploy.sh`, never a failure. |
+| **git on PATH**, optional | two suite cases: `native_args_git`, `dev_tty_git_prompt` | How C#Bash runs git. Without it, the case prints `SKIP: <reason>`: a skip, never a pass. |
 | **Visual Studio 2022 C++ tools** (`vcvars64.bat`, `vswhere.exe`) | `tools/publish-aot.cmd` (and so `tools/deploy.sh` and `compare3.sh --build`) | The Native AOT link step. |
 
-So a machine with the .NET 8 SDK and WSL runs the whole suite (with those nine skipped) and the battery. The push also needs Git for Windows; the benchmark uses Git Bash and WSL when they are there ([below](#running-the-benchmark)); the shipped build also needs the VS C++ tools. `tests/bench/claudecall.sh` (what a Claude Code call costs) still converts paths with `cygpath`, which comes with Git, so for now it runs only from Git Bash.
+So a machine with the .NET 8 SDK and WSL runs the whole suite (the MSYS cases bypassed and the git cases skipped when those are absent) and the battery. The push also needs Git for Windows; the benchmark uses Git Bash and WSL when they are there ([below](#running-the-benchmark)); the shipped build also needs the VS C++ tools. `tests/bench/claudecall.sh` (what a Claude Code call costs) still converts paths with `cygpath`, which comes with Git, so for now it runs only from Git Bash.
 
 ## Running the benchmark
 

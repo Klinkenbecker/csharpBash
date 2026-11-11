@@ -36,15 +36,36 @@ Each was measured against GNU bash 5.1 (and GNU grep) on 2026-11-07, on the buil
   (`shopt -s extglob` is refused, so `@( )`, `*( )`, `+( )`, `?( )`, `!( )` patterns are not available), and jq's
   `def` (the in-process jq is a jq 1.6 subset; deferred until a second request, 2026-11-07).
 - Windows starts no program whose path is over 260 characters, and a file name cannot end in a dot or a space.
+- A time keeps its fraction of a second to 100 ns (Windows' and .NET's precision): `touch -d '01:02:03.123456789'`
+  stores `.123456700`, where GNU on Linux keeps all nine digits.
 - A bare Windows device name is the device: `> nul`, `2>nul` and `cat nul` reach NUL, not a file named nul (write
   `./nul` for that file). Git Bash makes a file named nul there, one Windows' own tools cannot delete.
 - A regex or a glob sees a character beyond U+FFFF (an emoji) as two: `^.$` and a lone `[[:punct:]]` do not match one,
   `^[[:punct:]]+$` does. The POSIX classes follow .NET's Unicode version where glibc's differs (two characters in the
   BMP, U+0CF3 and U+0ECE, are print here and unassigned in GNU).
 
-## Fixed in this release (build 726), since the release before it (hg-686, build 681)
+## Fixed in this release (build 754), since the release before it (hg-686, build 681)
 
 Each from the build named on.
+
+- **754:** a negative length in a slice of an array or the positional parameters (`${a[@]:0:-1}`) counted back from the
+  end; it is bash's error now ("substring expression < 0"), which abandons the command line, status 1. A bad
+  substitution (`${x!y}`) abandons it too (the line went on, status 0).
+- **753:** `ls -u` (access time) was ignored; it shows and sorts by the access time now. jq exits 4 on invalid input, as
+  jq 1.6 (it exited 2).
+- **751:** `SystemRoot`, `windir`, `ComSpec`, `ProgramFiles`, `CommonProgramFiles` and `SystemDrive` arrive upper-cased,
+  as Git Bash imports them, so `$SYSTEMROOT`, `$WINDIR` and `$COMSPEC` are set.
+- **748:** the change time (`stat %Z`/`%z`, `ls -c`, `find -ctime`/`-cmin`/`-newerct`) was the modification time; it is
+  NTFS's change time now. `ls -c` was ignored.
+- **745:** a quoted subscript in an expansion (`${P["a b"]}`, `${P['c']}`, `${A["1"]}`) read empty or failed; `cat -A`
+  and `cat -v` passed bytes 0x80-0xFF raw (M- notation now); `printf %b` left `\NNN` undecoded.
+- **743:** awk's `ARGV` and `ARGC` were empty, so `FILENAME==ARGV[1]` never matched.
+- **741:** `tr '\001-\037'` (a range with escaped ends) deleted only the ends; jq took a raw control character in a
+  string and refused `NaN` and `Infinity`, both unlike jq 1.6.
+- **739:** awk's `ENVIRON` was refused.
+- **733:** a here-document whose body held an apostrophe, inside `"$( )"`, failed to parse.
+- **731:** `"${@:2}"` was one word instead of one per parameter.
+- **729:** `touch -d` and `date -d` dropped a clock time's fraction of a second; assigning `RANDOM` did not seed it.
 
 - **725:** awk's `rand()` and `srand()` were refused (handed to a PATH awk, or an error without one). They run
   in-process now, as gawk documents them: the seed is 1 until `srand()`; `srand(x)` seeds with x's integer part and

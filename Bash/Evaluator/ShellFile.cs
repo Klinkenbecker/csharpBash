@@ -126,6 +126,29 @@ public static class ShellFile
 	[System.Runtime.InteropServices.DllImport("ntdll.dll")]
 	private static extern int NtQueryInformationByName(ref ObjectAttributes attributes, out IoStatusBlock io, out FileStatInformation info, uint length, int infoClass);
 
+	/// <summary>A file's change time as NTFS keeps it (FILE_BASIC_INFO.ChangeTime: it moves on any change to the file's
+	/// data or metadata, `touch` included), in local time, as FileSystemInfo's times are; null when it cannot be read.
+	/// stat %z/%Z, ls -c and find -ctime/-cmin/-newerct read it (git-b3, 2026-11-10: they all gave the modification
+	/// time; MSYS's stat gives this one). <paramref name="follow"/> false is lstat.</summary>
+	public static DateTime? ChangeTime(string path, bool follow = true)
+		{
+		using var h = CreateFileW(path, FileReadAttributes, 7 /* read, write, delete */, IntPtr.Zero, 3 /* OPEN_EXISTING */,
+		                          BackupSemantics | (follow ? 0u : OpenReparsePoint), IntPtr.Zero);
+		if (h.IsInvalid || !GetFileInformationByHandleEx(h, 0 /* FileBasicInfo */, out var b,
+		                                                 (uint)System.Runtime.InteropServices.Marshal.SizeOf<FileBasicInfo>())) return null;
+		return DateTime.FromFileTime(b.ChangeTime);
+		}
+
+	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+	private struct FileBasicInfo
+		{
+		public long CreationTime, LastAccessTime, LastWriteTime, ChangeTime;
+		public uint FileAttributes;
+		}
+
+	[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool GetFileInformationByHandleEx(Microsoft.Win32.SafeHandles.SafeFileHandle file, int infoClass, out FileBasicInfo info, uint size);
+
 	private const uint FileReadAttributes = 0x80, BackupSemantics = 0x02000000, OpenReparsePoint = 0x00200000;
 
 	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]

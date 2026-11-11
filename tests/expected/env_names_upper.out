@@ -1,0 +1,10 @@
+SYSTEMROOT: set
+WINDIR: set
+COMSPEC: set
+PROGRAMFILES: set
+COMMONPROGRAMFILES: set
+SYSTEMDRIVE: set
+SystemRoot: unset  windir: unset
+ProgramFiles(x86) keeps its spelling: 1
+ProgramData keeps its spelling: 1
+a Windows program sees SystemRoot: yes

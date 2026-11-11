@@ -103,7 +103,30 @@ public sealed class ShellEnvironment
 		}
 
 	[DllImport("kernel32.dll")] private static extern IntPtr GetCommandLineW();
-	private readonly Random _random = new();
+	private readonly Random _random = new();   // SRANDOM: never seeded by an assignment to RANDOM (bash)
+
+	/// <summary>Windows names Git Bash upper-cases on import (measured 2026-11-11), each as it becomes. Matched by an
+	/// ASCII-only comparison, never ToUpperInvariant or a culture comparer: those load ICU, ~0.7 ms on every start
+	/// (icu_lazy, AOT; it caught the first build of this, 2026-11-11).</summary>
+	private static readonly string[] UpperOnImport =
+		["SYSTEMROOT", "WINDIR", "COMSPEC", "PROGRAMFILES", "COMMONPROGRAMFILES", "SYSTEMDRIVE"];
+
+	/// <summary>The upper-case spelling of <paramref name="key"/> when it is one of <see cref="UpperOnImport"/> in any
+	/// ASCII case, else null.</summary>
+	private static string? UpperOnImportName(string key)
+		{
+		foreach (var u in UpperOnImport)
+			{
+			if (u.Length != key.Length) continue;
+			int k = 0;
+			while (k < u.Length && (key[k] == u[k] || (key[k] is >= 'a' and <= 'z' && key[k] - 32 == u[k]))) k++;
+			if (k == u.Length) return u;
+			}
+		return null;
+		}
+	// RANDOM's sequence: an assignment seeds it (bash's manual), its value evaluated as arithmetic and taken modulo 2^32
+	// (GNU, measured 2026-11-09: abc is 0, 4294967298 is 2, 12xy an error). One seed, one sequence; not GNU's values.
+	private Random _randomSeq = new();
 	private readonly DateTime _start = DateTime.UtcNow;
 
 	public int LastExitCode { get; set; } = 0;
@@ -135,6 +158,10 @@ public sealed class ShellEnvironment
 			// Windows spells it "Path"; bash scripts (and Claude Code's snapshot) say PATH.
 			// MSYS does the same upper-casing on import.
 			if (key.Equals("PATH", StringComparison.OrdinalIgnoreCase)) key = "PATH";
+			// and these, which Git Bash upper-cases on import (measured 2026-11-11 against every mixed-case name on this
+			// machine: only these six change; ProgramFiles(x86), ProgramData, a user's MyVar keep their spelling), so a
+			// script written for Git Bash finds $SYSTEMROOT, $WINDIR, $COMSPEC (the architect's yes, 2026-11-09)
+			else if (UpperOnImportName(key) is { } upper) key = upper;
 			if (key.Length > 0)
 				{
 				// PATH in the shell's own form, `/c/x:/f/y` (NormalizePath; 2026-10-31)
@@ -547,7 +574,7 @@ public sealed class ShellEnvironment
 			case "@":  return string.Join(" ", _positionals.TryPeek(out var pa) ? pa : []);
 			case "*":  return string.Join(StarSeparator, _positionals.TryPeek(out var ps) ? ps : []);
 			case "0":  return _arg0;
-			case "RANDOM":  return _random.Next(0, 32768).ToString();
+			case "RANDOM":  return _randomSeq.Next(0, 32768).ToString();
 			case "SRANDOM": return ((uint)_random.NextInt64()).ToString();
 			case "SECONDS": return ((long)(DateTime.UtcNow - _start).TotalSeconds).ToString();
 			case "LINENO":  return CurrentLine.ToString();
@@ -725,6 +752,11 @@ public sealed class ShellEnvironment
 			try { value = ArithEval(value).ToString(); } catch (EvalException) { value = "0"; }
 			}
 		if (name == "PATH") value = NormalizePath(value);
+		if (name == "RANDOM")
+			{
+			long seed = ArithEval is not null ? ArithEval(value) : long.TryParse(value, out var n) ? n : 0;
+			_randomSeq = new Random(unchecked((int)(uint)seed));
+			}
 		if (v.Indexed is not null) v.Indexed[0] = value;
 		else if (v.Assoc is not null) v.Assoc["0"] = value;
 		else v.Value = value;

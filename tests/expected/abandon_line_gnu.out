@@ -1,0 +1,7 @@
+after array: status 1
+after array star: status 1
+after positional: status 1
+after function line: status 1
+after bad substitution: status 1
+string: [abcde] [bcd] [de]
+array, no length: [r s] [r s] length 0: []

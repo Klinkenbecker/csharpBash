@@ -1,0 +1,5 @@
+ls -tu: a c b 
+ls -u:  a c b 
+ls -t:  b c a 
+ls -l shows %Y:  yes
+--time=atime is -u: yes

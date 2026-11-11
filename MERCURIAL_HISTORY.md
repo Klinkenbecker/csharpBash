@@ -12,11 +12,40 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 728 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 757 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 756 | 2026-11-11 | The 754 publish's doc review: README table and startup line from compare3 on 754 (window held), 294 cases; PERFORMANCE; KNOWN_ISSUES for the 754 release (729-754) |
+| 755 | 2026-11-11 | Deployed 754; the MSYS2 quoting failure is MSYS2's own (cmd delivers the quotes too); bugs list empty; RESUME anchor |
+| 754 | 2026-11-11 | Bugs list 3: a negative length in a list slice (${a[@]:0:-1}, ${@:1:-1}) and a bad substitution abandon the top-level line, status 1, as GNU (they counted back, gave nothing, or went on); case abandon_line_gnu, red on 753; suite 288/0 console and detached |
+| 753 | 2026-11-11 | Bugs list 1 and 2: ls -u / --time=atime show and sort by the access time (it was ignored); jq exits 4 on invalid input, as jq 1.6 (it was 2); cases ls_time_kinds_gnu, jq_exit_gnu, red on 751; suite 287/0 console and detached |
+| 752 | 2026-11-11 | Deployed 751; ruled: two lists (bugs, features), one process, bugs first, features by speed, a benchmark slowdown is a consult; the lists in the RESUME anchor |
+| 751 | 2026-11-11 | Upper-cased env names matched ASCII-only (ToUpperInvariant loaded ICU at every start: icu_lazy failed the deploy's AOT suite) |
+| 750 | 2026-11-11 | SystemRoot, windir, ComSpec, ProgramFiles, CommonProgramFiles, SystemDrive arrive upper-cased, as Git Bash imports them (measured; the architect's yes of 2026-11-09); case env_names_upper, red on 748; suite 285/0 console and detached |
+| 749 | 2026-11-11 | Deployed 748; recorded |
+| 748 | 2026-11-11 | The change time is NTFS's in stat %Z/%z, ls -c and find -ctime/-cmin/-newerct (git-b3: it was the modification time); find -newerat reads the access time; case stat_ctime (reference MSYS stat), red on 745; suite 284/0 console and detached |
+| 747 | 2026-11-10 | RESUME anchor: deployed list 729-745; lantern-92's bugs done; open: the jq batch, column |
+| 746 | 2026-11-10 | Deployed 745; recorded |
+| 745 | 2026-11-10 | Quoted subscripts in expansions read as words; cat -A/-v M- notation for high bytes; printf %b decodes \NNN (echo -e keeps \0NNN) (git-b3's three); cases red on 743; suite 283/0 console and detached |
+| 744 | 2026-11-10 | Deployed 743 (awk ARGV); raised git-b3's three bugs (quoted subscripts, cat -A high bytes, printf %b \nnn) with positions; column counted |
+| 743 | 2026-11-10 | awk's ARGV and ARGC (c-parser-92: both were empty, so FILENAME==ARGV[1] never matched); files read from ARGV as it stands; case awk_argv_gnu (expected = gawk 5.1), red on 741; suite 280/0 console and detached |
+| 742 | 2026-11-10 | Deployed 741; recorded |
+| 741 | 2026-11-10 | tr: a range's endpoints may be escapes ('\001-\037'); jq input as jq 1.6: a raw control character U+0001-U+001E in a finished string refused, NaN/Infinity read (lantern-92's three; the architect: bugs; go); case jq_tr_edges_gnu, red on 739; suite 279/0 console and detached; Wombat's git.exe ruling in its two steps |
+| 740 | 2026-11-10 | Deployed 739 (awk ENVIRON); recorded: the 19-hour hung rerun (a direct case run without </dev/null), the architect's ruling relayed by git-b3 (Wombat's git.exe into ~/.bash/bin after its Plan 4); RESUME anchor |
+| 739 | 2026-11-10 | awk's ENVIRON (git-b3's request; the architect: go): the exported variables and the command's assignments, exact text; case awk_environ_gnu (expected = gawk 5.1), red on 733; the awk case's refused-ENVIRON line now checks the value; suite 278/0 console and detached |
+| 738 | 2026-11-10 | Raised (lantern-92): jq control characters and NaN/Infinity against jq 1.6, tr octal ranges (bugs, awaiting go); 14 jq builtins and jq -S counted as one need |
+| 737 | 2026-11-09 | Counted (git-b3): awk's ENVIRON, refused; a feature, awaiting the architect |
+| 736 | 2026-11-09 | Raised (the architect): WSL as the default fallback for external Linux tools, overridable or none; open, after the variable-name spelling item |
+| 735 | 2026-11-09 | Session close: RESUME anchor (deployed 733, published hg-727 with 726, 729-733 awaiting a publish; open items); DEVELOPING's MSYS rows as the pin works (bypass, not skip) |
+| 734 | 2026-11-09 | Deployed 733; recorded |
+| 733 | 2026-11-09 | A here-document body inside "$( )" is literal (installer-a4: an apostrophe in it broke the parse); Lexer.ConstructEnd passes over each body; case heredoc_in_quoted_comsub_gnu, red on 731; suite 277/0 console and detached |
+| 732 | 2026-11-09 | Deployed 731; recorded |
+| 731 | 2026-11-09 | "${@:N[:M]}" is one field per parameter (git-b3: it was one word), as "$@" and array slices; one Slice helper for both paths; case positional_slice_gnu, red on 729; suite 276/0 console and detached |
+| 730 | 2026-11-09 | Deployed 729 (git-b3's two fixes); recorded |
+| 729 | 2026-11-09 | touch -d / date -d keep a clock time's fraction of a second (to 100 ns); an assignment to RANDOM seeds it (value arithmetic, modulo 2^32; SRANDOM apart) (git-b3's two reports); cases date_fraction_gnu and random_seed_gnu, red on 726; suite 275/0 console and detached |
+| 728 | 2026-11-09 | Published hg 727 (GitHub main eb16a78, release hg-727 with build 726); recorded, with lantern-92's note on the window (the table stands: baselines within 2.6%) |
 | 727 | 2026-11-09 | The 726 publish's doc review: README table and startup line from compare3 on 726 (window held, baselines within 1.3%), 279 cases; PERFORMANCE measured-on and figures; KNOWN_ISSUES for the 726 release (716 no Git search, 725 awk rand/srand); RESUME anchor |
 | 726 | 2026-11-09 | Tests' MSYS pinned to PortableGit 2.28.0's usr/bin (the architect: pin against PortableGit); all nine MSYS cases pass; the MSYS2 quoting failure flagged as an open bug (KNOWN_ISSUES, DECISIONS) |
 | 725 | 2026-11-09 | awk rand() and srand() (git-b3's request; the architect's go): gawk's documented behavior, measured; .NET's System.Random as the generator (only reproducibility matters, not the values); case awk_rand_gnu (properties, expected = gawk 5.1 via WSL), red on 716, mutation red |

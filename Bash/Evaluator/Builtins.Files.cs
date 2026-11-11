@@ -506,6 +506,12 @@ public sealed partial class Builtins
 		     dirSelf = o.Has('d'), reverse = o.Has('r'), byTime = o.Has('t'), bySize = o.Has('S'), recursive = o.Has('R'),
 		     classify = o.Has('F'), slashDirs = o.Has('p'), dirsFirst = o.HasLong("group-directories-first"), noGroup = o.Has('G') || o.Has('o'),
 		     inode = o.Has('i'), blocks = o.Has('s'), byExt = o.Has('X'), byVersion = o.Has('v'), noSort = o.Has('U') || o.GetLong("sort") == "none";
+		// -c / --time=ctime|status: the change time (NTFS's); -u / --time=atime|access|use: the access time. Either is shown
+		// with -l and sorts with -t; without -l it alone sorts by it, newest first (GNU). Both were accepted and ignored
+		// (-c until 2026-11-10, git-b3; -u until 2026-11-11).
+		char timeKind = o.Has('c') || o.GetLong("time") is "ctime" or "status" ? 'c'
+			: o.Has('u') || o.GetLong("time") is "atime" or "access" or "use" ? 'a' : 'm';
+		if (timeKind != 'm' && !longFmt) byTime = true;
 		if (o.GetLong("sort") is string sk) { if (sk == "time") byTime = true; else if (sk == "size") bySize = true; else if (sk == "extension") byExt = true; else if (sk == "version") byVersion = true; }
 		if (o.Has('m') || o.Has('x') || o.Has('C')) throw new UnsupportedOptionException("ls", o.Has('m') ? "-m" : o.Has('x') ? "-x" : "-C", "column output is not implemented (output is one entry per line)");
 		// --time-style as GNU's: full-iso, long-iso, iso, locale, +FORMAT (with a newline: old files' format, then recent
@@ -553,7 +559,7 @@ public sealed partial class Builtins
 				}
 			int c;
 			if (noSort) c = 0;
-			else if (byTime) c = b.info.LastWriteTimeUtc.CompareTo(a.info.LastWriteTimeUtc);
+			else if (byTime) c = FileTimeOf(b.info, timeKind).CompareTo(FileTimeOf(a.info, timeKind));
 			else if (bySize) c = (b.info as FileInfo)?.Length.CompareTo((a.info as FileInfo)?.Length ?? 0) ?? 0;
 			else if (byExt) c = string.CompareOrdinal(Path.GetExtension(a.display), Path.GetExtension(b.display));
 			else if (byVersion) c = VersionCompare(a.display, b.display);
@@ -591,7 +597,7 @@ public sealed partial class Builtins
 				var id = inode ? ShellFile.Identity(info.FullName, follow: o.Has('L')) : null;
 				if (inode) sb.Append(id?.Index ?? 0).Append(' ');
 				if (blocks) sb.Append(((info is FileInfo f0 ? (f0.Length + 1023) / 1024 : 0)).ToString().PadLeft(4)).Append(' ');
-				if (longFmt) sb.Append(LongLine(info, human, noGroup, timeStyle, id?.Links ?? ShellFile.LinkCount(info.FullName))).Append(' ');
+				if (longFmt) sb.Append(LongLine(info, human, noGroup, timeStyle, id?.Links ?? ShellFile.LinkCount(info.FullName), timeKind)).Append(' ');
 				sb.Append(Name(display, info));
 				if (longFmt && info.LinkTarget is string lt) sb.Append(" -> ").Append(lt);
 				Console.WriteLine(sb.ToString());
@@ -663,16 +669,17 @@ public sealed partial class Builtins
 		}
 
 	/// <param name="timeStyle">null: the default; "full-iso", "long-iso", "iso", or "+FORMAT" (see Ls).</param>
-	private static string LongLine(FileSystemInfo info, bool human, bool noGroup, string? timeStyle, uint links = 1)
+	private static string LongLine(FileSystemInfo info, bool human, bool noGroup, string? timeStyle, uint links = 1, char timeKind = 'm')
 		{
 		long size = info is FileInfo fi ? fi.Length : 0;
-		var mtime = ShellClock.ToShell(info.LastWriteTimeUtc);   // in the shell's zone (TZ, 2026-10-30)
+		var shownUtc = FileTimeOf(info, timeKind).ToUniversalTime();   // ls -c shows the change time
+		var mtime = ShellClock.ToShell(shownUtc);   // in the shell's zone (TZ, 2026-10-30)
 		var now = ShellClock.Now;
 		bool recent = (now - mtime).TotalDays < 183 && mtime <= now.AddHours(1);
 		var inv = System.Globalization.CultureInfo.InvariantCulture;
 		string when = timeStyle switch
 			{
-			"full-iso" => ShellClock.FullIso(info.LastWriteTimeUtc),
+			"full-iso" => ShellClock.FullIso(shownUtc),
 			"long-iso" => mtime.ToString("yyyy-MM-dd HH:mm", inv),
 			"iso"      => recent ? mtime.ToString("MM-dd HH:mm", inv) : mtime.ToString("yyyy-MM-dd ", inv),
 			['+', ..]  => Strftime(timeStyle.IndexOf('\n') is int nl and >= 0 ? (recent ? timeStyle[(nl + 1)..] : timeStyle[1..nl]) : timeStyle[1..], mtime, false),
@@ -882,6 +889,7 @@ public sealed partial class Builtins
 			string type = device ? "character special file" : info!.LinkTarget is not null ? "symbolic link" : dir ? "directory" : size == 0 ? "regular empty file" : "regular file";
 			var boot = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);   // a device's times: boot, as on Linux
 			var mt = info?.LastWriteTime ?? boot; var at = info?.LastAccessTime ?? boot; var ct = info?.CreationTime ?? boot;
+			var cht = info is null ? boot : ShellFile.ChangeTime(info.FullName) ?? mt;   // %z/%Z: NTFS's change time (was mt)
 			string Iso(DateTime d) => ShellClock.FullIso(d);   // in the shell's zone (TZ, 2026-10-30)
 			if (o.Has('t')) fmt ??= "%n %s %b %f %u %g %D %i %h %t %T %X %Y %Z %W %o %C";
 			if (fmt is null)
@@ -892,7 +900,7 @@ public sealed partial class Builtins
 				Console.WriteLine($"Access: (0{octal}/{mode})  Uid: (    0/{Environment.UserName})   Gid: (    0/None)");
 				Console.WriteLine($"Access: {Iso(at)}");
 				Console.WriteLine($"Modify: {Iso(mt)}");
-				Console.WriteLine($"Change: {Iso(mt)}");
+				Console.WriteLine($"Change: {Iso(cht)}");
 				Console.WriteLine($" Birth: {Iso(ct)}");
 				continue;
 				}
@@ -912,7 +920,7 @@ public sealed partial class Builtins
 					'u' => "0", 'U' => Environment.UserName, 'g' => "0", 'G' => "None",
 					'x' => Iso(at), 'X' => ((DateTimeOffset)at).ToUnixTimeSeconds().ToString(),
 					'y' => Iso(mt), 'Y' => ((DateTimeOffset)mt).ToUnixTimeSeconds().ToString(),
-					'z' => Iso(mt), 'Z' => ((DateTimeOffset)mt).ToUnixTimeSeconds().ToString(),
+					'z' => Iso(cht), 'Z' => ((DateTimeOffset)cht).ToUnixTimeSeconds().ToString(),
 					'w' => Iso(ct), 'W' => ((DateTimeOffset)ct).ToUnixTimeSeconds().ToString(),
 					'o' => "4096", 'm' => Path.GetPathRoot(Path.GetFullPath(p)) ?? "", 'C' => "?", 't' => "0", 'T' => "0",
 					'%' => "%",

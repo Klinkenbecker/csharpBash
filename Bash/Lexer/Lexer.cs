@@ -584,10 +584,56 @@ public sealed class Lexer
 			char close = n == '{' ? '}' : ')';
 			int depth = 1;
 			var cases = n == '(' ? new CaseTracker() : null;
+			// a here-document in `$( )` (not `$(( ))`, where `<<` is a shift): its body is literal text, passed over
+			// whole at the end of the line that named it (installer-a4, 2026-11-09: `x="$(cat <<'EOF'` with `it's` in
+			// the body failed, the apostrophe read as an opening quote)
+			bool heredocs = n == '(' && !(i + 2 < s.Length && s[i + 2] == '(');
+			List<(string Delim, bool StripTabs)>? pending = null;
 			for (int j = i + 2; j < s.Length; )
 				{
 				char ch = s[j];
 				if (ch == '\\') { j += 2; continue; }
+				if (heredocs && ch == '<' && j + 1 < s.Length && s[j + 1] == '<' && !(j + 2 < s.Length && s[j + 2] == '<'))
+					{
+					j += 2;
+					bool strip = j < s.Length && s[j] == '-';
+					if (strip) j++;
+					while (j < s.Length && s[j] is ' ' or '\t') j++;
+					var delim = new System.Text.StringBuilder();
+					while (j < s.Length && !IsWordBreak(s[j]))
+						{
+						if (s[j] is '\'' or '"')
+							{
+							int q = s.IndexOf(s[j], j + 1);
+							if (q < 0) return -1;
+							delim.Append(s, j + 1, q - j - 1);
+							j = q + 1;
+							}
+						else if (s[j] == '\\' && j + 1 < s.Length) { delim.Append(s[j + 1]); j += 2; }
+						else delim.Append(s[j++]);
+						}
+					(pending ??= []).Add((delim.ToString(), strip));
+					cases?.OtherWord();
+					continue;
+					}
+				if (ch == '\n' && pending is { Count: > 0 })
+					{
+					cases?.Separator();
+					j++;
+					foreach (var (delim, strip) in pending)
+						{
+						while (true)
+							{
+							if (j >= s.Length) return -1;
+							int eol = s.IndexOf('\n', j);
+							var line = eol < 0 ? s[j..] : s[j..eol];
+							j = eol < 0 ? s.Length : eol + 1;
+							if ((strip ? line.TrimStart('\t') : line).TrimEnd('\r') == delim) break;
+							}
+						}
+					pending.Clear();
+					continue;
+					}
 				if (ch is '\'' or '"' or '`' || (ch == '$' && j + 1 < s.Length && s[j + 1] is '{' or '(' or '\''))
 					{
 					j = ConstructEnd(s, j);

@@ -1,0 +1,7 @@
+truncated                 exit 4  []
+slurp truncated           exit 4  []
+valid then bad            exit 4  [1]
+bad file                  exit 4  []
+bad then good file        exit 4  []
+runtime error             exit 5  []
+-e with null              exit 1  [null]

@@ -1,0 +1,13 @@
+[b c][d]
+[a][b c]
+[d]
+[b c d]
+[b][c][d]
+array of 2
+set -- gives 2: [b c]
+past the end: 0
+[default]
+[r][s]
+[p q][r]
+[s]
+[r s]

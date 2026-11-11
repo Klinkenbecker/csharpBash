@@ -278,6 +278,11 @@ internal static class Json
 					if (_escape) { _str.Append(ch); _escape = false; continue; }
 					if (ch == '\\') { _str.Append(ch); _escape = true; continue; }
 					if (ch != '"') { _str.Append(ch); continue; }
+					// a raw control character in a finished string: jq 1.6 refuses U+0001-U+001E and takes U+0000 and
+					// U+001F; an unfinished one at EOF is "Unfinished string" first (measured, lantern-92's report, 2026-11-10)
+					for (int k = 0; k < _str.Length; k++)
+						if (_str[k] is >= '\u0001' and <= '\u001e')
+							throw Error("Invalid string: control characters from U+0000 through U+001F must be escaped");
 					_inString = false;
 					Value(Unescape());
 					if (Done(out var v)) yield return (v, LinesRead(i));
@@ -344,6 +349,12 @@ internal static class Json
 				Value(pattern == "null" ? null : pattern == "true");
 				return;
 				}
+			// NaN and infinity, as jq 1.6 reads them (measured, lantern-92's report, 2026-11-10): any case, an optional sign,
+			// nan / inf / infinity; a word starting with t, f or n is a literal above, so `nan` alone is refused there
+			var body = t[0] is '-' or '+' ? t[1..] : t;
+			if (body.Equals("nan", StringComparison.OrdinalIgnoreCase)) { Value(double.NaN); return; }
+			if (body.Equals("inf", StringComparison.OrdinalIgnoreCase) || body.Equals("infinity", StringComparison.OrdinalIgnoreCase))
+				{ Value(t[0] == '-' ? double.NegativeInfinity : double.PositiveInfinity); return; }
 			bool numeric = t.All(c => char.IsAsciiDigit(c) || c is '-' or '+' or '.' or 'e' or 'E');
 			if (!numeric || !double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
 				throw Error("Invalid numeric literal");

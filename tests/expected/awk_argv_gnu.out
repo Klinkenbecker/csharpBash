@@ -1,0 +1,13 @@
+fa.txt | fa.txt | 1
+fb.txt | fa.txt | 0
+3
+0 awk
+1 fa.txt
+2 fb.txt
+3 v=set fa.txt
+set x
+empty skipped: fb.txt
+deleted skipped: fb.txt
+added: fa.txt x
+added: fb.txt y
+only in 2: y
