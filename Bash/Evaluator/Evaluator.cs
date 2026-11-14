@@ -1397,7 +1397,7 @@ public sealed class Evaluator
 			int c;
 			if (p.Negated) { _errexitSuppress++; try { c = Execute(p.Commands[0].Command); } finally { _errexitSuppress--; } }
 			else c = Execute(p.Commands[0].Command);
-			_env.SetArrayFromList("PIPESTATUS", [c.ToString()]);
+			_env.SetPipeStatus(c);
 			return p.Negated ? (c == 0 ? 1 : 0) : c;
 			}
 		_errexitSuppress++;
@@ -1498,7 +1498,7 @@ public sealed class Evaluator
 		foreach (var t in threads) t.Start();
 		foreach (var t in threads) t.Join();
 
-		_env.SetArrayFromList("PIPESTATUS", exitCodes.Select(c => c.ToString()).ToList());
+		_env.SetPipeStatusList(exitCodes.Select(c => c.ToString()).ToList());
 		int worstCode = exitCodes.Max();
 		int lastCode  = exitCodes[n - 1];
 		int result    = Options.PipeFail ? worstCode : lastCode;

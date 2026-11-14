@@ -1,13 +1,13 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-12 (bash-1b). SUPERSEDES every block below. DEPLOYED 798 (785: the fallback chain, daq-a1's two fixes, facts-8a's PIPESTATUS, the cygpath hint; 787: git-9d's nullglob leak; 789: facts-8a's mv fix; 798: help fallback + the no-topic hint; reporters told). Not published (765-798 wait for the next publish; AT THAT PUBLISH the global CLAUDE.md line on ~/.bash/KNOWN_ISSUES.md also names KNOWN_LIMITATIONS.md, the new second file: DECISIONS 2026-11-12 "KNOWN_ISSUES.md for bugs"). Bugs list empty. The benchmark is PUBLISH's, never deploy's.
+> ## RESUME HERE — 2026-11-12 (bash-1b). SUPERSEDES every block below. DEPLOYED 798 (785: the fallback chain, daq-a1's two fixes, facts-8a's PIPESTATUS, the cygpath hint; 787: git-9d's nullglob leak; 789: facts-8a's mv fix; 798: help fallback + the no-topic hint; reporters told). PUBLISHED 2026-11-14: hg-801 with build 798 (DECISIONS "PUBLISHED: hg rev 801"); ~/.bash runs 798. DEPLOYED 806 (not published): PIPESTATUS written only when read (func/loop/arith 6-8 % faster than 798) + the awk parameter pass-through bug. NEXT: benchtimer per-launch bound (agreed in principle: must not touch row times). AT EACH PUBLISH (ruled 2026-11-14): `tools/perf-history.sh --add` in the doc review (publish.sh refuses without it). Bugs list empty. The benchmark is PUBLISH's, never deploy's.
 > **NEXT (GREENLIT, the features list in order): (1) find -anewer/-cnewer DEPLOYED 768 (no
 > benchmark: it cannot slow it; the architect, 2026-11-11, "why do I want a window for 766?"). (2) the jq batch DEPLOYED 770 (with the contains bug fix). (3) the fallback chain BUILT 778 (DECISIONS "FEATURE BUILT (features list 3)"; %USERPROFILE%/.bash/etc/csharpBash.config, `unix-tools = folder;PATH;WSL`, default PATH;WSL; installer writes none: InstallGen cannot keep a user file)
 > Features list now EMPTY. Bugs first whenever one is reported. UNCONFIRMED reading: "make sure the specified
 > fallbacks are published" = the fallback chain stated in the
 > published docs: DONE (USING.md "The fallback chain"). Stated, not yet ruled: SetFileTime holding the access time
 > (Windows moves it on any handle open; Git Bash does too).**
-> **TRUE STATE: DEPLOYED 798** (`1.0.0+hg.725a429a63ef 798`, rollback dist/*.rev789). **PUBLISHED: GitHub main = git
+> **TRUE STATE: DEPLOYED 806** (`1.0.0+hg.a68989361d0e 806`, rollback dist/*.rev798). **PUBLISHED (2026-11-14): GitHub main = git 9b8b6d5 = hg 801; release hg-801 = build 798. Before that: GitHub main = git
 > 273943b = hg 756; release hg-756 = csharpBash-setup.exe with build 754** (this machine's ~/.bash runs 754; new
 > sessions start on it). PUBLISHED 2026-11-11: 729-754 (DECISIONS "PUBLISHED: ... hg rev 756"; KNOWN_ISSUES lists
 > each). Deployed beyond the release: 765-798. The next publish needs his word, a benchmark window (12 sessions asked)

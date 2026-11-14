@@ -32,6 +32,10 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
   `pdfinfo f.pdf` (pages, title); `pdftotext -f 20 -l 25 f.pdf -` (those pages' text; `-layout` keeps columns);
   `pdftoppm -png -r 80 -f 20 -l 20 f.pdf "$(mktemp -d)/p"` (page images, which Read opens). Each WSL start costs about
   0.15 s: take a range per call.
+- **A tool the chain runs in WSL is the Linux one.** With no Windows `git` on PATH, a bare `git` is WSL's Linux git:
+  it reads an `E:/repo.git` remote as an ssh host, and treats line ends and file modes as Linux does. Put the folder
+  of the Windows tool first in the chain: `unix-tools = F:/Tools/PortableGit/cmd;PATH;WSL` in
+  `%USERPROFILE%/.bash/etc/csharpBash.config` (Windows' PATH stays as it is).
 
 - **`$( )` drops a trailing CRLF** as it drops a trailing newline, where bash keeps the CR: `v=$(windows-program)` gets
   a clean value, and text captured from a CRLF file loses its last CR (an inner CRLF stays). Better: write files with

@@ -12,11 +12,21 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 802 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 812 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 811 | 2026-11-14 | The 806 publish's doc review: README table and startup line from compare3 on 806 (C#Bash host, quiet), 306 cases; PERFORMANCE; KNOWN_ISSUES for the 806 release; the advantage graph with build 806 |
+| 810 | 2026-11-14 | PERFORMANCE.md: the advantage section's paragraphs reflowed for reading (the architect's edit, Typora) |
+| 809 | 2026-11-14 | Advantage graph: each point's hover names its hg revision; PERFORMANCE.md links the graph on its own (raw, interactive) in place of an artifact |
+| 808 | 2026-11-14 | The advantage graph (the architect): docs/perf-history.tsv + tools/perf-history.sh draw docs/perf-history.svg, atop PERFORMANCE.md with a brief note; publish.sh refuses without the deployed build in it |
+| 807 | 2026-11-14 | Deployed 806 (PIPESTATUS on read, awk pass-through fix) |
+| 806 | 2026-11-14 | RESUME anchor: 806 deploying (PIPESTATUS on read, awk pass-through fix) |
+| 805 | 2026-11-14 | Speed: PIPESTATUS written only when read (func/loop/arith 6-8 % faster than 798); bugs list: awk passed a function's own parameter or local empty to another function (since 2026-10-10); case awk_param_passthrough_gnu, red on 798 |
+| 804 | 2026-11-14 | Recorded: the unasked config change, its revert, and the architect's choice (A): this machine's chain puts PortableGit's cmd first |
+| 803 | 2026-11-14 | Fixed (the architect): a bare git ran WSL's Linux git through the chain; this machine's csharpBash.config puts PortableGit's cmd first; KNOWN_LIMITATIONS: a WSL-run tool is the Linux one |
+| 802 | 2026-11-14 | Published hg 801 (release hg-801, build 798); recorded |
 | 801 | 2026-11-14 | Doc review for the 798 publish: ARCHITECTURE's lookup paragraph and IMPLEMENTATION's file table carry the fallback chain (Fallbacks.cs) |
 | 800 | 2026-11-14 | The 798 publish's doc review: README table and startup line from compare3 on 798 (hosted by C#Bash, quiet), 305 cases; PERFORMANCE; DEVELOPING: C#Bash hosts the benchmark (the architect); KNOWN_ISSUES for the 798 release (765-798) |
 | 799 | 2026-11-13 | Deployed 798 (help fallback, the no-topic hint); c-parser-92 told |

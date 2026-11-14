@@ -60,6 +60,11 @@ stamp=$("$root/dist/Bash.exe" --version 2>/dev/null | tail -1 | sed 's/^ *//')
 bench=$(awk '/^C#Bash +: .*\[dist \(deployed\)\]/{want=1} want && /C#Bash build/{print; want=0}' tests/bench/results.md | tail -1 | sed 's/^ *//')
 [ "$bench" = "$stamp" ] || die "the newest compare3 run on the deployed build is for '$bench', but dist/Bash.exe is '$stamp': run tests/bench/compare3.sh first"
 echo "publish: hg rev $tip ($node); benchmark of the deployed build ($stamp) found"
+# and the advantage graph redrawn with that build (the architect, 2026-11-14: "We should generate this graph each
+# publish"): the doc review runs `tools/perf-history.sh --add` after updating README's table
+built=${stamp##* }
+cut -f1 docs/perf-history.tsv | grep -qx "$built" || die "docs/perf-history.tsv has no rows for build $built: run tools/perf-history.sh --add in the doc review"
+echo "publish: the advantage graph carries build $built"
 res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" -Interpreter "$root/dist/Bash.exe" 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
 echo "publish: suite (console) on the deployed build: $res"
 [[ "$res" == *" 0 failed" ]] || die "the suite failed on dist/Bash.exe with a console; nothing published"

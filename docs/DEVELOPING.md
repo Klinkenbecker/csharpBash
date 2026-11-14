@@ -12,7 +12,7 @@ The pipeline and the four design documents: [the README's Architecture section](
 ```sh
 dotnet build -c Release            # builds Bash.sln (.NET 8 SDK)
 Bash/bin/Release/net8.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/run-tests.ps1           # 305 self-checking cases (four need the Native AOT build: -Interpreter <exe>)
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/run-tests.ps1           # 306 self-checking cases (four need the Native AOT build: -Interpreter <exe>)
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/compat/run-compat.ps1   # 237-probe differential battery against WSL's GNU bash
 ```
 
@@ -58,7 +58,9 @@ dist/Bash.exe tests/bench/compare3.sh                              # C#Bash runs
 F:/Tools/PortableGit-2.28.0/bin/bash.exe tests/bench/compare3.sh   # Git Bash runs it too (rows agree within a few per cent)
 ```
 
-Each run appends its table, with the host that ran it, to `tests/bench/results.md`. `SIEVE_REF` and `LAUNCH_REF` at the
+At a publish, once README's table is updated from the run, `bash tools/perf-history.sh --add` appends the deployed
+build's rows to `docs/perf-history.tsv` and redraws `docs/perf-history.svg`, the advantage graph at the top of
+[Performance](PERFORMANCE.md); `tools/publish.sh` refuses to publish without it. Each run appends its table, with the host that ran it, to `tests/bench/results.md`. `SIEVE_REF` and `LAUNCH_REF` at the
 top of compare3.sh are this machine's quiet references; on another machine set your own from a few quiet runs of
 `tools/benchtimer/bin/benchtimer.exe --sieve 9` and `benchtimer.exe 100 C:/Windows/System32/HOSTNAME.EXE`, or leave them
 empty (the baseline lines then show no comparison).

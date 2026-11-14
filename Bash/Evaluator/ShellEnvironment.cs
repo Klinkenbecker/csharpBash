@@ -45,6 +45,7 @@ public sealed class ShellEnvironment
 	private Var? Find(string name)
 		{
 		if (CallStackStale && name is "FUNCNAME" or "BASH_SOURCE" or "BASH_LINENO") RefreshCallStackNow();
+		if (_pipePending && name == "PIPESTATUS") MaterializePipeStatus();
 		for (int i = _frames.Count - 1; i >= 0; i--)
 			if (_frames[i].TryGetValue(name, out var v)) return v;
 		return null;
@@ -241,6 +242,7 @@ public sealed class ShellEnvironment
 	private ShellEnvironment(ShellEnvironment src)
 		{
 		if (src.CallStackStale) src.RefreshCallStackNow();   // the copy gets the call stack as it stands
+		_pipePending = src._pipePending; _pipeCode = src._pipeCode;   // and PIPESTATUS as it stands, still pending
 		_frames.Clear();
 		_frames.AddRange(CopyFrames(src._frames));
 		foreach (var p in src._positionals.Reverse()) _positionals.Push(p);   // enumerates top first
@@ -842,6 +844,7 @@ public sealed class ShellEnvironment
 	private List<(string Name, Var V)> Visible()
 		{
 		if (CallStackStale) RefreshCallStackNow();
+		if (_pipePending) MaterializePipeStatus();
 		var seen = new HashSet<string>(StringComparer.Ordinal);
 		var list = new List<(string, Var)>();
 		for (int i = _frames.Count - 1; i >= 0; i--)
@@ -966,17 +969,26 @@ public sealed class ShellEnvironment
 		v.Indexed = arr; v.Value = null; v.Assoc = null;
 		}
 
-	private static readonly string[] SmallStatus = Enumerable.Range(0, 256).Select(i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+	// PIPESTATUS after a one-command pipeline, kept as a number until something reads the variable (Find, Visible, a
+	// subshell's copy), as FUNCNAME is (CallStackStale). Setting the array after every simple command (785, facts-8a's
+	// fix) cost ~5 % of the func benchmark (500 k commands: the variable looked up through every function frame);
+	// measured 2026-11-14 with and without the call.
+	private bool _pipePending;
+	private int _pipeCode;
 
-	/// <summary>PIPESTATUS after a one-command pipeline: ( <paramref name="code"/> ). Run after every simple command
-	/// (facts-8a, 2026-11-12), so the usual case reuses the one-element array in place: no allocation.</summary>
-	public void SetPipeStatus(int code)
+	/// <summary>PIPESTATUS after a one-command pipeline: ( <paramref name="code"/> ), written when next read.</summary>
+	public void SetPipeStatus(int code) { _pipeCode = code; _pipePending = true; }
+
+	/// <summary>PIPESTATUS after a multi-command pipeline: its statuses, now (a pending single status is dropped).</summary>
+	public void SetPipeStatusList(List<string> values) { _pipePending = false; SetArrayFromList("PIPESTATUS", values); }
+
+	private void MaterializePipeStatus()
 		{
-		var s = code is >= 0 and < 256 ? SmallStatus[code] : code.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		_pipePending = false;
 		var v = Target("PIPESTATUS");
-		CheckWritable(v, "PIPESTATUS");
-		if (v.Indexed is { Count: 1 } arr && v.Value is null && v.Assoc is null && arr.ContainsKey(0)) { arr[0] = s; return; }
-		v.Indexed = new SortedDictionary<int, string> { [0] = s }; v.Value = null; v.Assoc = null;
+		if (v.Readonly) return;
+		v.Indexed = new SortedDictionary<int, string> { [0] = _pipeCode.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+		v.Value = null; v.Assoc = null;
 		}
 
 	/// <summary>arr+=(x y): append after the highest index (a scalar's value becomes element 0 first).</summary>
@@ -1064,6 +1076,7 @@ public sealed class ShellEnvironment
 		internal string Arg0 = "";
 		internal string Cwd = "";
 		internal int Umask;
+		internal bool PipePending; internal int PipeCode;   // PIPESTATUS as it stood, still pending (2026-11-14)
 		}
 
 	/// <summary>A deep copy of the scopes: every variable cloned, arrays and attributes with it.</summary>
@@ -1090,6 +1103,7 @@ public sealed class ShellEnvironment
 			Arg0      = _arg0,
 			Cwd       = this.Cwd,
 			Umask     = this.Umask,
+			PipePending = _pipePending, PipeCode = _pipeCode,
 			};
 		return s;
 		}
@@ -1104,6 +1118,7 @@ public sealed class ShellEnvironment
 		foreach (var p in s.Positionals.Reverse()) _positionals.Push(p);
 		_arg0 = s.Arg0;
 		Umask = s.Umask;        // `( umask 077 )` leaves the parent's mask alone
+		_pipePending = s.PipePending; _pipeCode = s.PipeCode;   // `$(false)` leaves the caller's PIPESTATUS alone
 		Cwd = s.Cwd;            // `( cd x )` / `$( cd x )` end where they started
 		ReassertProcessCwd();   // the process cwd too, for the shell that owns it
 		}

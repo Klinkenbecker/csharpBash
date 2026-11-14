@@ -1540,7 +1540,7 @@ public sealed partial class Builtins
 						cell.BindCaller = arr => { lc.Array = arr; lc.BindCaller?.Invoke(arr); };
 						return cell;
 						}
-					cell.Value = lc.Value;
+					cell.Value = lc.Value; cell.IsScalar = true;
 					return cell;
 					}
 				if (_arrays.TryGetValue(v.Name, out var ga)) { cell.Array = ga; return cell; }
@@ -1551,7 +1551,9 @@ public sealed partial class Builtins
 					return cell;
 					}
 				}
-			cell.Value = Eval(arg);
+			// a value makes the parameter a SCALAR: unmarked, a function passing it on again handed an untyped cell with no
+			// value, so `function f(x) { return g(x) }` gave g an empty x (since 2026-10-10; found in a chart, 2026-11-14)
+			cell.Value = Eval(arg); cell.IsScalar = true;
 			return cell;
 			}
 
