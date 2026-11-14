@@ -239,7 +239,7 @@ public sealed partial class Builtins
 				var name = a[..lb];
 				var key  = a[(lb + 1)..rb];
 				if (_env.IsReadonly(name)) { Console.Error.WriteLine($"{Err}unset: {name}: cannot unset: readonly variable"); rc = 1; continue; }
-				if (_env.IsAssoc(name)) _env.UnsetAssocElement(name, key);
+				if (_env.IsAssoc(name)) _env.UnsetAssocElement(name, _eval.Expander.ExpandSubscript(key));   // expanded, as bash: unset 'M[$k]' (2026-11-12)
 				else if (key is "@" or "*") _env.Unset(name);
 				else _env.UnsetArrayElement(name, (int)_eval.Expander.EvalArithmetic(key));
 				continue;

@@ -126,6 +126,13 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 				Unserviced.Log(ex.Tool, ex.Option, ex.Message, args, $"fell through to {ShellEnvironment.ToShellPath(fallback)}, exit {exitCode}");
 				return true;
 				}
+			// the last step: the tool in WSL (Fallbacks, 2026-11-11), when no configured folder or PATH has one
+			if (policy != "builtin" && Fallbacks.Wsl is { } wsl)
+				{
+				exitCode = _eval.RunInWsl(wsl, name, args, [], []);
+				Unserviced.Log(ex.Tool, ex.Option, ex.Message, args, $"fell through to WSL, exit {exitCode}");
+				return true;
+				}
 			Console.Error.WriteLine(ex.Message);
 			Console.Error.WriteLine(policy == "builtin"
 				? $"{ex.Tool}: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)"

@@ -608,6 +608,11 @@ public sealed class Evaluator
 			}
 
 		_env.LastExitCode = code;
+		// a one-command pipeline sets PIPESTATUS, as bash: a simple command (an assignment, a function call), (( )),
+		// [[ ]], a subshell. A compound command (if, for, { }) leaves what its last pipeline set. Only multi-command
+		// and `!` pipelines set it until 2026-11-12, so `true | false; false; echo ${PIPESTATUS[*]}` gave 0 1 (facts-8a)
+		if (node is SimpleCommand or ArithmeticCommand or ConditionalExpression or Subshell or ArrayElementAssign or ArrayCompoundAssign)
+			_env.SetPipeStatus(code);
 
 		// trap ERR: after a failing command/pipeline, under the same exemptions as errexit
 		// (not inside && / || / ! / if-while conditions), never re-entrantly
@@ -1829,7 +1834,7 @@ public sealed class Evaluator
 		{
 		_pathHits.Remove(name);
 		_rememberedMisses.Remove(name);
-		bool remembered = CommandMap.Forget(_env.Get("PATH"), PathExt, name);
+		bool remembered = CommandMap.Forget(Fallbacks.SearchPath(_env.Get("PATH")), PathExt, name);
 		_pinned.Remove(name);
 		return _pathHash.Remove(name) | remembered;
 		}
@@ -1838,7 +1843,7 @@ public sealed class Evaluator
 		{
 		HashClear();
 		_rememberedMisses.Clear();
-		CommandMap.Clear(_env.Get("PATH"), PathExt);
+		CommandMap.Clear(Fallbacks.SearchPath(_env.Get("PATH")), PathExt);
 		}
 
 	// names whose lookup in this shell was answered by a remembered miss: their "not found" says so
@@ -1929,6 +1934,34 @@ public sealed class Evaluator
 	private static bool IsPathName(string name) =>
 		name.AsSpan().IndexOfAny('/', '\\') >= 0 || (name.Length >= 2 && name[1] == ':' && char.IsAsciiLetter(name[0]));
 
+	/// <summary>The WSL step (Fallbacks, 2026-11-11): <paramref name="name"/> run in WSL, through its sh, which runs the
+	/// program only when it is a FILE there (`command -v` gives a path), else prints this shell's own "command not
+	/// found" and exits 127: WSL's own miss is exit 1, like any failure (measured). wsl.exe gets PATH cut to System32 (a
+	/// start was 579 ms with this machine's PATH, 149 ms without, and quiet) and arguments as given but Windows-rooted
+	/// paths as /mnt/x/... (no MSYS conversion). WSL reads stdin even for a tool that does not (measured): documented.</summary>
+	internal int RunInWsl(string wsl, string name, List<string> args, List<(string, string)> tempAssign,
+		List<Redirect> redirects, bool clearEnv = false, IReadOnlyCollection<string>? unsetEnv = null)
+		{
+		// WSL starts in `/` and goes to the shell's folder only to run a tool it has: started there, WSL held the folder
+		// for a moment after a miss, so the script's next `rm -rf` of it failed ("being used by another process")
+		const string Script = "p=$(command -v \"$1\" 2>/dev/null); case $p in /*) cd \"$2\" || exit 126; shift 2; exec \"$p\" \"$@\";; esac; printf '%s\\n' \"$0\" >&2; exit 127";
+		var spawn = new List<string> { "--cd", "/", "-e", "sh", "-c", Script, $"{ErrorPrefix}{name}: command not found", name, Fallbacks.ToWslArgument(_env.Cwd) };
+		spawn.AddRange(args.Select(Fallbacks.ToWslArgument));
+		// WSLENV cleared (the architect, 2026-11-12, "yes; go"): a fallback tool is a generic Linux tool, and a WSLENV naming a
+		// path WSL cannot translate (this machine's ESDK variables on X:) printed "wsl: Failed to translate ..." first on
+		// every start, so every name found nowhere did; the user's own wsl calls keep it
+		var env = new List<(string, string)>(tempAssign) { ("PATH", Environment.SystemDirectory.Replace('\\', '/')), ("MSYS_NO_PATHCONV", "1"), ("WSLENV", "") };
+		// wsl.exe itself starts in System32: a WSL helper it leaves running a moment kept the shell's folder open
+		// (measured: the next `rm -rf` of it failed even after a miss); the sh above goes to the folder itself
+		_launchDir = Environment.SystemDirectory;
+		try { return ExecExternal(wsl, spawn, env, redirects, clearEnv, unsetEnv); }
+		finally { _launchDir = null; }
+		}
+
+	/// <summary>A working folder for the next launch in place of the shell's (RunInWsl only); per thread, as pipeline
+	/// stages launch on their own.</summary>
+	[ThreadStatic] private static string? _launchDir;
+
 	/// <summary>"command not found" (127) for a name that never reaches the launcher, its redirects made first, as
 	/// bash's child makes them before it reports (`nope > f` creates f).</summary>
 	private int NotFound(string name, List<Redirect> redirects, string what = "command not found", int status = 127)
@@ -2005,6 +2038,9 @@ public sealed class Evaluator
 			}
 		else pathValue = pathOverride;
 		var pathExtValue = PathExt;
+		// the configured folders of Unix tools and PATH, in the configured order (Fallbacks, 2026-11-11); PATH itself
+		// when no folder is configured. Read here, at the first lookup, never at startup.
+		pathValue = Fallbacks.SearchPath(pathValue);
 		// remembered answers (CommandMap): every lookup uses a hit after one existence probe; only `hash name`
 		// obeys a miss, and only one an earlier process recorded (DECISIONS 2026-10-16 "only `hash` records and
 		// obeys misses"): anything else searches, as bash
@@ -2074,7 +2110,7 @@ public sealed class Evaluator
 		if (name.Length == 0 || IsPathName(name) || name.Contains(':')) return found;
 		var pathExt = PathExt.Split(';', StringSplitOptions.RemoveEmptyEntries).Where(FileTests.IsProgramExtension).ToArray();
 		bool hasExt = Path.HasExtension(name);
-		foreach (var d in ShellEnvironment.PathDirs(_env.Get("PATH")))
+		foreach (var d in ShellEnvironment.PathDirs(Fallbacks.SearchPath(_env.Get("PATH"))))   // the configured folders too (Fallbacks)
 			{
 			try
 				{
@@ -2304,7 +2340,26 @@ public sealed class Evaluator
 		// a bare name not on PATH: C#Bash's own folder, System32 and the Windows folder only (so `cmd` runs on an
 		// empty PATH), else not found. Windows' launcher searched for it, the current directory included in an
 		// ordinary terminal (and under Claude Code through an empty PATH entry): a planted `.exe` ran (2026-10-17)
-		if (bare && found is null && (found = FallbackProgram(name)) is null) return NotFound(name, redirects);
+		if (bare && found is null && (found = FallbackProgram(name)) is null)
+			{
+			// cygpath: not needed here, and said so (RULED 2026-11-07, "get over it, you don't need cygpath"; the hint was
+			// never built until daq-a1's report, 2026-11-12); never to WSL, which has none
+			if (name == "cygpath")
+				{
+				using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;   // once: `2>f` keeps both lines
+				Console.Error.WriteLine($"{ErrorPrefix}{name}: command not found");
+				Console.Error.WriteLine("cygpath: (C#Bash: none, and none needed: its paths are already Windows-rooted with forward slashes, C:/x; use the path as it is, \"$PWD/x\" for an absolute one, or realpath -m x)");
+				return 127;
+				}
+			// the last step: the tool in WSL (Fallbacks; not a bash builtin C#Bash lacks, which WSL's sh would answer)
+			if (!Builtins.NotImplemented(name) && Fallbacks.Wsl is { } wsl)
+				{
+				int rc = RunInWsl(wsl, name, args, tempAssign, redirects, clearEnv, unsetEnv);
+				Unserviced.Log(name, "(not found)", $"{name}: not found, run in WSL", args, rc == 127 ? "not in WSL either, exit 127" : $"ran in WSL, exit {rc}");
+				return rc;
+				}
+			return NotFound(name, redirects);
+			}
 
 		// Shebang dispatch: Windows cannot exec a #! script directly. When the command
 		// names an actual script file, read its interpreter line and run it ourselves —
@@ -2387,7 +2442,7 @@ public sealed class Evaluator
 			{
 			FileName         = fileName,
 			UseShellExecute  = false,
-			WorkingDirectory = _env.Cwd,   // this shell's own cwd (a pipeline stage's may differ from the process's)
+			WorkingDirectory = _launchDir ?? _env.Cwd,   // this shell's own cwd (a pipeline stage's may differ from the process's); RunInWsl's System32
 			};
 
 		// a Windows program gets MSYS-form paths at the start of an argument in Windows form, as under
@@ -2426,11 +2481,13 @@ public sealed class Evaluator
 			}
 		if (!clearEnv)
 			foreach (var (k, v) in ExportedFunctionVars()) psi.Environment[k] = v;
+		// env -u NAME (2026-10-08), before env's assignments, as GNU env: `env -u X X=1 prog` gives prog X=1 (the
+		// removal came last until 2026-11-11, so X arrived unset; git-b3's report)
+		if (unsetEnv is not null)
+			foreach (var u in unsetEnv) psi.Environment.Remove(u);
 		// `PATH=... cmd` too: a Windows-form PATH given for a child reaches it entry for entry, slashes forward
 		foreach (var (k, v) in tempAssign)
 			psi.Environment[k] = k == "PATH" ? ShellEnvironment.ToWindowsPathList(v) : v;
-		if (unsetEnv is not null)
-			foreach (var u in unsetEnv) psi.Environment.Remove(u);   // env -u NAME (2026-10-08)
 		// nor in a child's: a program C#Bash starts would take an empty PATH entry as its cwd too (2026-10-17)
 		if (psi.Environment.TryGetValue("PATH", out var childPath) && childPath is not null)
 			psi.Environment["PATH"] = ShellEnvironment.WithoutEmptyPathEntries(childPath);

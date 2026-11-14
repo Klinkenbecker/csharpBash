@@ -450,12 +450,15 @@ VARIABLE SCOPE.)*
 For a command that is neither builtin nor function, `ExecExternal` launches a child process.
 Two pieces of machinery sit in front of `Process.Start`:
 
-- **PATH resolution + hash cache.** `ResolveOnPath` scans `PATH` (with `PATHEXT` on Windows)
-  and memoises hits; this cache is what the `hash` builtin inspects/clears. C#Bash's lookup is
-  the only authority: a bare name it does not find is looked for in its own folder, System32 and
-  the Windows folder (`FallbackProgram`), else "command not found", and is never handed to
-  Windows' launcher to search (it searched the cwd and the process PATH). *(DECISIONS: 2026-06-14
-  — hash + PATH cache; 2026-10-17 — the launcher never searches.)*
+- **PATH resolution + hash cache.** `ResolveOnPath` scans the search list (with `PATHEXT` on
+  Windows) and memoizes hits; this cache is what the `hash` builtin inspects/clears. The search
+  list is the fallback chain's folders and PATH in the configured order (`Fallbacks`, read once
+  at the first lookup from `%USERPROFILE%/.bash/etc/csharpBash.config`; PATH alone by default).
+  C#Bash's lookup is the only authority: a bare name it does not find is looked for in its own
+  folder, System32 and the Windows folder (`FallbackProgram`), then run in WSL when the chain
+  has it (`RunInWsl`), else "command not found", and is never handed to Windows' launcher to
+  search (it searched the cwd and the process PATH). *(DECISIONS: 2026-06-14 — hash + PATH
+  cache; 2026-10-17 — the launcher never searches; 2026-11-11 — the fallback chain.)*
   Behind it, `CommandMap` keeps the shell's own lookups across processes: one file per PATH value
   (with PATHEXT) under `~/.bash/commands`, read on the first lookup. Every lookup
   remembers hits (one existence probe before use; gone: searched again). Misses are `hash name`'s

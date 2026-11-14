@@ -1,0 +1,8 @@
+1 anewer ref: ./new 
+2 anewer fut: []
+3 not anewer ref: ./fut ./old ./ref 
+4 cnewer ref: ./fut ./new ./old ./ref 
+5 cnewer fut: []
+6 find: 'nope': No such file or directory rc=1
+7 find: 'nope': No such file or directory rc=1
+8 find: missing argument to `-anewer' rc=1

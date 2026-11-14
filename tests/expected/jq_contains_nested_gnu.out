@@ -1,0 +1,22 @@
+true
+  rc 0
+false
+  rc 0
+true
+  rc 0
+false
+  rc 0
+false
+  rc 0
+true
+  rc 0
+jq: error (at <stdin>:1): array ([1]) and number (1) cannot have their containment checked
+  rc 5
+jq: error (at <stdin>:1): string ("a") and array (["a"]) cannot have their containment checked
+  rc 5
+jq: error (at <stdin>:1): object ({"a":1}) and string ("a") cannot have their containment checked
+  rc 5
+true
+  rc 0
+jq: error (at <stdin>:1): array (["bar"]) and string ("bar") cannot have their containment checked
+  rc 5

@@ -44,6 +44,11 @@ sed 's/$/\r/' "$root/installer/claude.cmd" > "$payload/claude.cmd" || die "canno
 sed "s|^\*\*This copy:\*\*.*|**This copy:** installed with $stamp.|" "$root/KNOWN_ISSUES.md" > "$payload/KNOWN_ISSUES.md" ||
 	die "cannot stage KNOWN_ISSUES.md"
 grep -qxF "**This copy:** installed with $stamp." "$payload/KNOWN_ISSUES.md" || die "KNOWN_ISSUES.md has no '**This copy:**' line to name the build"
+# KNOWN_LIMITATIONS.md beside it, stamped the same way (the architect, 2026-11-12: issues, being worked on, and limitations,
+# each with its better way, in two files)
+sed "s|^\*\*This copy:\*\*.*|**This copy:** installed with $stamp.|" "$root/KNOWN_LIMITATIONS.md" > "$payload/KNOWN_LIMITATIONS.md" ||
+	die "cannot stage KNOWN_LIMITATIONS.md"
+grep -qxF "**This copy:** installed with $stamp." "$payload/KNOWN_LIMITATIONS.md" || die "KNOWN_LIMITATIONS.md has no '**This copy:**' line to name the build"
 sed "s/@VERSION@/$ver (hg $rev)/" "$root/installer/csharpBash.json" > "$out/csharpBash.json" || die "cannot write the manifest"
 echo "installer: payload from $stamp; product version $ver (hg $rev)"
 
@@ -65,7 +70,8 @@ got=$("$bin/Bash.exe" --version 2>/dev/null | tail -1)
 grep -q "sh.exe: hard link to Bash.exe (confirmed)" "$out/sandbox-report.txt" || die "the report does not confirm sh.exe's hard link"
 cmp -s "$bin/claude.cmd" "$payload/claude.cmd" || die "the installed claude.cmd differs from the payload's"
 cmp -s "$sandbox/home/KNOWN_ISSUES.md" "$payload/KNOWN_ISSUES.md" || die "the installed KNOWN_ISSUES.md differs from the payload's"
-echo "installer: sandboxed install checked: Bash.exe $rev, sh.exe a hard link (confirmed), claude.cmd, KNOWN_ISSUES.md (report: $out/sandbox-report.txt)"
+cmp -s "$sandbox/home/KNOWN_LIMITATIONS.md" "$payload/KNOWN_LIMITATIONS.md" || die "the installed KNOWN_LIMITATIONS.md differs from the payload's"
+echo "installer: sandboxed install checked: Bash.exe $rev, sh.exe a hard link (confirmed), claude.cmd, KNOWN_ISSUES.md, KNOWN_LIMITATIONS.md (report: $out/sandbox-report.txt)"
 
 # 4. beside it, the script for a REAL install from a Command Prompt (the architect, 2026-11-01: "give me a script I can
 #    run from cmd line"): runs the installer, then checks what it installed

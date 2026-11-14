@@ -71,6 +71,9 @@ public sealed partial class Builtins
 		if (found) return 0;
 		var message = $"help: no help topics match `{pattern}'.  Try `help help' or `man -k {pattern}' or `info {pattern}'.";
 		Console.Error.WriteLine($"{Err}{message}");
+		// where a session gave up (c-parser-92, 2026-11-13: no topic for pdf, so "PDFs cannot be read"): a command C#Bash
+		// lacks may still run through the fallback chain, which compgen and type cannot see (the architect: "1 & 2; go")
+		Console.Error.WriteLine("help: a command C#Bash does not provide may still run through the fallback chain (a tools folder, PATH, WSL): run it. See `help fallback' and %USERPROFILE%/.bash/KNOWN_LIMITATIONS.md.");
 		Unserviced.Log("help", pattern, message, args, "no help topic, exit 1");
 		return 1;
 		}

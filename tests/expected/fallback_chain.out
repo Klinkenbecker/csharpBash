@@ -1,0 +1,30 @@
+== a folder ahead of PATH
+folder mytool: a b
+mytool is P/tools/mytool
+P/tools/mytool
+folder cmd
+== the folder after PATH
+real cmd
+folder mytool: c
+== PATH only: the folder is gone (nothing remembered runs), and no WSL
+bash: mytool: command not found
+rc=127
+bash: nosuchtool_fc: command not found
+rc=127
+== a bad file: nothing read for a builtin; one warning each, once, at the first lookup
+builtin only
+C#Bash: P/.bash/etc/csharpBash.config: unix-tools: no folder 'P/no-such-folder' (skipped)
+C#Bash: P/.bash/etc/csharpBash.config: unknown line 'bogus line' (ignored)
+first
+second
+== WSL
+a b c rc=0
+some text
+rc=0
+bash: nosuchtool_fc_wsl: command not found
+rc=127
+bash: type: nosuchtool_fc_wsl: not found
+bash: type: tsort: not found
+bash: tsort: command not found
+rc=127
+removed

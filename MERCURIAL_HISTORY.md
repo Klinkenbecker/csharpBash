@@ -12,11 +12,56 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 757 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 802 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 801 | 2026-11-14 | Doc review for the 798 publish: ARCHITECTURE's lookup paragraph and IMPLEMENTATION's file table carry the fallback chain (Fallbacks.cs) |
+| 800 | 2026-11-14 | The 798 publish's doc review: README table and startup line from compare3 on 798 (hosted by C#Bash, quiet), 305 cases; PERFORMANCE; DEVELOPING: C#Bash hosts the benchmark (the architect); KNOWN_ISSUES for the 798 release (765-798) |
+| 799 | 2026-11-13 | Deployed 798 (help fallback, the no-topic hint); c-parser-92 told |
+| 798 | 2026-11-13 | The fallback chain discoverable (the architect: 1 & 2; go): help fallback/wsl topics, the no-topic hint, KNOWN_LIMITATIONS' not-listed-is-not-absent entry with the PDF recipe |
+| 797 | 2026-11-13 | Answered c-parser-92: PDF text and page images through the fallback chain (WSL's poppler), checked on C99.pdf |
+| 796 | 2026-11-12 | RESUME anchor: bugs line and deployed-beyond-release refreshed; the two KNOWN_ISSUES bugs put to the architect |
+| 795 | 2026-11-12 | RESUME anchor refreshed: deployed 789, the two KNOWN_ISSUES bugs put to the architect |
+| 794 | 2026-11-12 | Ruled (the architect): $TEMP/$TMP left as Windows and Claude Code set them; KNOWN_LIMITATIONS: use mktemp for a temporary path (glassmirror-4e's need) |
+| 793 | 2026-11-12 | Ruled (the architect): KNOWN_ISSUES.md for bugs being worked on, KNOWN_LIMITATIONS.md (new) for limitations, by-design differences and features not available, each with the way that works; the installer installs both |
+| 792 | 2026-11-12 | Ruled (the architect): keep the $( ) CRLF trim, a limitation easily overcome; KNOWN_ISSUES in real terms; USING.md: write files with LF |
+| 791 | 2026-11-12 | KNOWN_ISSUES Limits: $( ) drops trailing CRLFs (the 2026-11-05 ruling), with a byte-exact idiom; glassmirror-4e's report recorded |
+| 790 | 2026-11-12 | Deployed 789 (facts-8a's mv fix); facts-8a told |
+| 789 | 2026-11-12 | RESUME anchor: 787 deployed, 789 (the mv fix) deploying |
+| 788 | 2026-11-12 | Bugs list (facts-8a): a refused same-volume folder rename moves nothing (it copied every entry, then failed); copy-then-delete only across drives; case mv_held_dir, red on 787. Deployed 787 recorded |
+| 787 | 2026-11-12 | Bugs list (git-9d, a leak): under nullglob a declaration builtin's array literal with a glob listed every variable; the folded literal is quoted; case nullglob_decl_array_gnu (counts, never prints, the dump), red on 785 |
+| 786 | 2026-11-12 | Deployed 785 (the fallback chain, three bug fixes, the cygpath hint); facts-8a and daq-a4 told |
+| 785 | 2026-11-12 | Ruled (the architect): the fallback's wsl.exe starts with WSLENV cleared (no translate noise before a fallback tool or a miss); USING.md; build 785 carries the fallback chain, three bug fixes and the cygpath hint |
+| 784 | 2026-11-12 | Need counted (facts-8a): PDF text with a page range; WSL's pdftotext reaches it through the fallback chain once deployed |
+| 783 | 2026-11-12 | Bugs list (facts-8a): every one-command pipeline sets PIPESTATUS, as bash; compound commands leave their last pipeline's; case pipestatus_simple_gnu, red on 770 |
+| 782 | 2026-11-12 | Bugs list (daq-a1): after // a leading # or % is the pattern's own character, not an anchor, as GNU; case subst_global_literal_anchor_gnu, red on 770 |
+| 781 | 2026-11-12 | KNOWN_ISSUES: the undeployed fixes listed under the next build; RESUME anchor: deploy waits on the WSLENV answer |
+| 780 | 2026-11-12 | The cygpath hint (RULED 2026-11-07, never built; found on daq-a1's need): not found, 127, then what to use; never to WSL; case cygpath_hint, red on 770 |
+| 779 | 2026-11-12 | Bugs list (daq-a1): an associative subscript expands `cmd`, $( ), $(( )) and special parameters; unset 'M[$k]' expands it; case assoc_subscript_subst_gnu, red on 770. Raised: WSLENV and the fallback's WSL start (the 778 deploy stopped on the battery) |
+| 778 | 2026-11-11 | Fallback chain: strings' not-available options reach WSL; strings_local and fallback_not_windows test the dead end under a chain without WSL; fallback_chain covers an option handed to WSL (the 777 deploy stopped on them) |
+| 777 | 2026-11-11 | Features list 3: the fallback chain (folders of Unix tools, PATH, WSL, in the order of %USERPROFILE%/.bash/etc/csharpBash.config; read once at the first lookup, never at startup); WSL runs from System32 so the shell's folder is never held; case fallback_chain, red on 770; runner clears WSLENV |
+| 776 | 2026-11-11 | Ruled (the architect): fallbacks configured in ~/.bash/etc/, read once at the first fallback, the order on one line |
+| 775 | 2026-11-11 | Ruled (the architect): the first fallback's setting is not an environment variable |
+| 774 | 2026-11-11 | Ruled (the architect): first fallback = a folder of Unix tools (unset: PATH), then WSL; none is a state, not a switch |
+| 773 | 2026-11-11 | Ruled (the architect): fallback order in-process, a configured first fallback, PATH, WSL; supersedes Claude's proposal |
+| 772 | 2026-11-11 | Proposed: the WSL fallback chain and BASH_FALLBACK (features list 3), measured; awaiting the architect |
+| 771 | 2026-11-11 | Deployed 770 (the jq batch, jq contains fix); lantern-7f told |
+| 770 | 2026-11-11 | Features list 2: the jq batch (paths, leaf_paths, path, getpath, delpaths, tostream, walk, recurse/1-2, limit, indices, index, rindex, splits, inside, label/break, input_filename, -S), as jq 1.6; bugs list: contains/inside refuse mismatched types only at the top (jq 1.6); cases jq_batch_gnu and jq_contains_nested_gnu, red on 768 |
+| 769 | 2026-11-11 | Deployed 768 (find -anewer/-cnewer); restated: the benchmark is publish's, never deploy's (the architect) |
+| 768 | 2026-11-11 | KNOWN_ISSUES: find -anewer/-cnewer in-process (deployed as 768) |
+| 767 | 2026-11-11 | Corrected: no benchmark run per feature (Claude's widening); a feature that would slow the benchmark is a consult, one that cannot deploys normally (the architect: why do I want a window for 766?) |
+| 766 | 2026-11-11 | Features list 1: find -anewer/-cnewer (access/change time against the reference's modification time, as GNU find); case find_anewer_cnewer_gnu, red on 765; not deployed (benchmark first). jq --rawfile was already in (2026-11-07); FEATURES.md's stale awk rand/srand line corrected |
+| 765 | 2026-11-11 | Bugs list 1 (git-b3): env -u NAME NAME=value removes first, then assigns, so a started program gets NAME, as GNU env (the removal came last); case env_unset_assign_gnu, red on 754 |
+| 764 | 2026-11-11 | Recorded: Wombat's system files (gitconfig symlinks=false, empty gitattributes) go with its git.exe (relayed by git-b3) |
+| 763 | 2026-11-11 | Features list: jq index/rindex join the jq batch (lantern-54's need) |
+| 762 | 2026-11-11 | Bugs list: env -u NAME NAME=value leaves NAME unset in a Windows program (git-b3; verified); for the next session |
+| 761 | 2026-11-11 | RESUME anchor saved for a fresh session (the architect: save everything, context full): state 754 published as hg-756, the two lists, next: features (1) jq --rawfile, find -anewer/-cnewer |
+| 760 | 2026-11-11 | Ruled: features ordered by least hit on performance; the list reordered |
+| 759 | 2026-11-11 | KNOWN_ISSUES: one list, no stray blank line |
+| 758 | 2026-11-11 | KNOWN_ISSUES: the MSYS2 quoting failure documented as MSYS2's (Limits) and dropped from the open bugs (the architect) |
+| 757 | 2026-11-11 | Published hg 756 (GitHub main 273943b, release hg-756 with build 754); recorded; RESUME anchor |
 | 756 | 2026-11-11 | The 754 publish's doc review: README table and startup line from compare3 on 754 (window held), 294 cases; PERFORMANCE; KNOWN_ISSUES for the 754 release (729-754) |
 | 755 | 2026-11-11 | Deployed 754; the MSYS2 quoting failure is MSYS2's own (cmd delivers the quotes too); bugs list empty; RESUME anchor |
 | 754 | 2026-11-11 | Bugs list 3: a negative length in a list slice (${a[@]:0:-1}, ${@:1:-1}) and a bad substitution abandon the top-level line, status 1, as GNU (they counted back, gave nothing, or went on); case abandon_line_gnu, red on 753; suite 288/0 console and detached |

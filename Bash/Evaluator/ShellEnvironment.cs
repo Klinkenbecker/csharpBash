@@ -966,6 +966,19 @@ public sealed class ShellEnvironment
 		v.Indexed = arr; v.Value = null; v.Assoc = null;
 		}
 
+	private static readonly string[] SmallStatus = Enumerable.Range(0, 256).Select(i => i.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+
+	/// <summary>PIPESTATUS after a one-command pipeline: ( <paramref name="code"/> ). Run after every simple command
+	/// (facts-8a, 2026-11-12), so the usual case reuses the one-element array in place: no allocation.</summary>
+	public void SetPipeStatus(int code)
+		{
+		var s = code is >= 0 and < 256 ? SmallStatus[code] : code.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		var v = Target("PIPESTATUS");
+		CheckWritable(v, "PIPESTATUS");
+		if (v.Indexed is { Count: 1 } arr && v.Value is null && v.Assoc is null && arr.ContainsKey(0)) { arr[0] = s; return; }
+		v.Indexed = new SortedDictionary<int, string> { [0] = s }; v.Value = null; v.Assoc = null;
+		}
+
 	/// <summary>arr+=(x y): append after the highest index (a scalar's value becomes element 0 first).</summary>
 	public void AppendArrayFromList(string name, List<string> values)
 		{

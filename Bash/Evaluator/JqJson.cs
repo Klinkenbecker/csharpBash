@@ -43,6 +43,9 @@ internal sealed class JObj
 		}
 	}
 
+/// <summary>`break $name`: carries the label run it ends (never a JqError, so `try` lets it through).</summary>
+internal sealed class JqBreak(object? token) : Exception("break") { public object? Token { get; } = token; }
+
 /// <summary>A jq runtime error. It carries a VALUE (usually a message string), as `error(v)` does.</summary>
 internal sealed class JqError(object? value) : Exception(value as string ?? Json.Dump(value, compact: true))
 	{

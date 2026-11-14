@@ -153,5 +153,7 @@
   "setsid": ["https://man7.org/linux/man-pages/man1/setsid.1.html"],
   "pkill": ["https://man7.org/linux/man-pages/man1/pgrep.1.html"],
   "unzip": ["https://manpages.debian.org/bookworm/unzip/unzip.1.en.html"],
-  "iconv": ["https://man7.org/linux/man-pages/man1/iconv.1.html"]
+  "iconv": ["https://man7.org/linux/man-pages/man1/iconv.1.html"],
+  "fallback": ["https://github.com/Klinkenbecker/csharpBash/blob/main/docs/USING.md#the-fallback-chain", "https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md"],
+  "wsl": ["https://github.com/Klinkenbecker/csharpBash/blob/main/docs/USING.md#the-fallback-chain", "https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md"]
 }

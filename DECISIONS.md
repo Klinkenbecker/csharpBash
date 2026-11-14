@@ -12893,3 +12893,356 @@ find 0.018 / startup 0.0104 (Git Bash 0.0252, WSL 0.1340); 8.5-12.9x Git Bash, 2
 sieve +1.0% before / -3.9% after; launch +11.8% before (loop, the first row, may carry a few per cent: 0.172 against
 726's 0.163), 0.0% after. Doc review: README table, startup line, 294 cases; PERFORMANCE measured-on and figures;
 DEVELOPING count; KNOWN_ISSUES "Fixed in this release (build 754)" (729-754). Then tools/publish.sh.
+
+## 2026-11-11 -- PUBLISHED: GitHub main = git 273943b = hg rev 756; release hg-756 (csharpBash-setup.exe, build 754)
+**Status:** Record. publish.sh: console suite on deployed 754 292/0; release hg-756 created, the installer downloaded back,
+SHA-256 cb057ec8...c061 matches; this machine's ~/.bash upgraded to 754 (sh.exe hard link confirmed). New sessions start
+on 754. guy-bf confirmed the 694 rm fix on 726 (its report closed).
+
+## 2026-11-11 -- RULED: the MSYS2 quoting failure documented as MSYS2's and dropped from C#Bash's bugs
+**Status:** Active. The architect: "MYS Bug; should be documented and and dropped." KNOWN_ISSUES.md: its "Open" line
+removed; a Limits line names it as MSYS2's own parsing (runtime 3.1.7: from C#Bash or cmd alike, whatever LANG; Git for
+Windows' MSYS correct). Reaches users with the next publish.
+
+## 2026-11-11 -- RULED: features are ordered by least hit on performance
+**Status:** Active. The architect: "order speed by 'least hit on performance'" (Claude had read "ordered by speed" as
+quickest to deliver). Order now: (1) jq --rawfile and find -anewer/-cnewer, (2) the jq batch, (3) the WSL fallback
+(PROJECT_CONTEXT's resume note). Each is measured against the benchmark before its deploy; a slowdown is a consult.
+
+## 2026-11-11 -- RAISED (git-b3's report, verified): env -u NAME NAME=value leaves NAME unset in a Windows program
+**Status:** Bugs list 1, for the next session (context full here). `env -u X X=set cmd.exe //d //c "echo [%X%]"` prints
+[%X%] (unset) on 754; without -u, [set]; the builtin printenv gets set; GNU env applies -u first, then the
+assignments, so X arrives set. Position: fix the order in the native launch path (remove, then assign), as GNU.
+
+## 2026-11-11 -- NEED (lantern-54, one request): jq's index/1 (with rindex) joins the jq batch
+**Status:** Features list 2. `echo '["a","b"]' | jq -e 'index("b")'` is refused ("index/1: not supported by C#Bash's
+in-process jq", no PATH jq); GNU jq 1.6 has index/rindex (array: the position; string: the offset; null if absent:
+lantern-54's account, to be measured when the batch is built). Worked around with select(...)|length.
+
+## 2026-11-11 -- RECORDED (relayed by git-b3, the architect's decision): Wombat's system files go with its git.exe
+**Status:** Waiting with the Wombat steps (2026-11-10: ~/.bash/bin after Plan 4; the installer after the repo push).
+With git.exe the installer also installs `~/.bash/etc/gitconfig` = `[core]` `symlinks = false` (PortableGit's system
+value, a Windows capability; deliberately WITHOUT autocrlf) and an EMPTY `~/.bash/etc/gitattributes` (PortableGit's
+astextplain lines left out). Wombat reads them as git's system scope (skipped under GIT_CONFIG_NOSYSTEM /
+GIT_ATTR_NOSYSTEM). git-b3 sends the exact bytes with the Plan 4 notice and the deploy folder's new path.
+
+## 2026-11-11 -- BUG FIXED (bugs list 1, git-b3's report): env -u NAME NAME=value gives a started program NAME
+**Status:** Active (build 765). `ExecExternal` built a child's environment, applied env's assignments, then removed
+env's `-u` names, so `env -u X X=set prog` started prog without X; the builtins (printenv) were right, through
+RunCommand's unexport-then-assign. GNU env removes first, then assigns. Fix: the removal moved before the assignments.
+Case env_unset_assign_gnu (7 lines: -u with and without a reassignment, two names, `env -i`, a shell `X=pre` prefix;
+expected = GNU env via WSL, stdout), red on 754 at lines 1, 5 and 6.
+
+## 2026-11-11 -- FEATURE BUILT (features list 1): find -anewer and -cnewer; jq --rawfile was already in
+**Status:** Active, committed, NOT deployed: the ruling measures each feature against the benchmark before its deploy,
+and the benchmark needs the architect's go and a quiet window. `-anewer REF` / `-cnewer REF`: the entry's access /
+change time (FileTimeOf, NTFS's change time) later than REF's modification time, as GNU find documents; a missing
+reference is -newer's error, exit 1. They went to a PATH find (UnixUtils' answered every file for a future REF).
+Case find_anewer_cnewer_gnu (expected = GNU findutils via WSL, LC_ALL=C), red on 765, green five runs in a row.
+Cost: one more case in find's predicate switch, reached only when find parses; nothing at startup.
+Found while starting: `jq --rawfile` was built 2026-11-07 (DECISIONS "BUILT: the jq pass") and is in 754; the features
+list carried it in error (the list entry of 2026-11-11 above). Also corrected: FEATURES.md still said awk's rand/srand
+went to a PATH awk (in-process since 725).
+
+## 2026-11-11 -- CORRECTED: no benchmark run per feature; the rule is a consult for a feature that would slow it
+**Status:** Active. Supersedes the line "Each is measured against the benchmark before its deploy" in the 2026-11-11
+features-ordering entry above, which was Claude's widening, not the ruling. The architect's rule: "if any feature
+would slow the benchmark it requires a separate consult with architect." Asked to hold 766 (find -anewer/-cnewer) for a
+benchmark window, he answered: "why do I want a window for 766?" A feature whose code is not on the benchmark's path
+(766: one case in find's predicate switch, nothing at startup) takes the normal process: suite, deploy, message. One
+that would put code on that path (startup, the parser, the evaluator's hot loop, a larger binary where that matters)
+is put to him before it is built.
+
+## 2026-11-11 -- RESTATED: the benchmark is publish's, never deploy's; 768 deployed
+**Status:** Active. The architect: "deployment should not be runnign benchmarks, only publish runs benchmarks?" Already
+ruled (deploy.sh runs the suite and the battery; publish.sh refuses without a compare3 run on the deployed build); the
+"measured before its deploy" line of the features entry contradicted it and is withdrawn (with the entry above). A
+feature known to slow the benchmark is a consult before it is built; a slowdown not foreseen shows in the publish run.
+DEPLOYED 768 (`1.0.0+hg.ba1217dfb037 768`, rollback dist/*.rev765): find -anewer/-cnewer; suite -Detached 294/0,
+battery 217 (baseline 216); find_anewer_cnewer_gnu green on the deployed build.
+
+## 2026-11-11 -- BUG FIXED (found building the jq batch): jq contains/inside refused mismatched types at every depth
+**Status:** Active (build 770). `[1,"a"] | contains(["a"])` failed ("number (1) and string ("a") cannot have their
+containment checked"); jq 1.6 answers true: two values of different types are an error only at the top, deeper they
+do not match (measured: `{"a":1} | contains({"a":"x"})` false, `[1] | contains(1)` the error). Contains takes `top`.
+Case jq_contains_nested_gnu (expected = jq 1.6 via WSL), red on 768.
+
+## 2026-11-11 -- FEATURE BUILT (features list 2): the jq batch
+**Status:** Active (build 770). paths/0-1, leaf_paths, path, getpath, delpaths, tostream, walk, recurse/1-2, limit,
+indices, index, rindex, splits/1-2, inside, label/break, input_filename, -S/--sort-keys; each was refused (exit 2,
+"not supported by C#Bash's in-process jq"). Every answer measured against jq 1.6 via WSL (case jq_batch_gnu,
+errors included, red on 768), jq 1.6's own edges KEPT as the reference: string indices are UTF-8 BYTE offsets
+and do not overlap ("aaaa" | indices("aa") is [0,2]; array indices overlap); limit(0; f) passes one output, a negative
+limit all; recurse(f) does not stop at null; an object member whose walk gives nothing empties the object built so far,
+several outputs keep the last; input_filename on stdin is "<stdin>", null with -n, the last file after -s; -S sorts
+printed objects, not tojson; getpath, recurse, limit and label are path expressions (path(getpath(["x","y"]))).
+label is a term whose body runs right as far as a pipe (`1 + label $x | 2` is 3); its name is jq's hidden
+`$*label-name` (the message for a break with no label). A break is its own exception, not a JqError: try lets it by.
+delpaths' errors in jq's words (DeletePath's message was C#Bash's own). The end-of-filter caret after `$x` points at
+the name, as jq lexes `$` and the name apart.
+**ASSUMED (no reference):** `indices("")` and an empty array needle give [] (jq 1.6 never returns). **Differs:** `break x`
+(no `$`) gives jq's first error only; jq 1.6 adds "break requires a label to break to" (2 compile errors).
+Cost: code reached only inside a jq call; the binary grows by the new methods (the publish benchmark shows any effect).
+
+## 2026-11-11 -- DEPLOYED 770 (the jq batch, jq contains fix): suite (-Detached) 296/0, battery 217
+**Status:** Record. `1.0.0+hg.901e2add9357 770`, rollback dist/*.rev768; both new cases green on the deployed build.
+Told lantern-7f (Lantern's live session; lantern-54 and lantern-92, who asked, have ended). Not published (the next
+publish carries 765-770, with its benchmark run).
+
+## 2026-11-11 -- PROPOSED (features list 3, awaiting the architect): the WSL fallback and its override
+**Status:** AWAITING THE ARCHITECT; nothing built. Measured today: `wsl.exe -e true` 579 ms with this machine's PATH
+(48 entries; WSL translates each and prints "wsl: Failed to translate 'X:\...'" for the unreachable ones), 149 ms with
+PATH cut to System32; the exit status passes (`exit 7` gives 7); a missing tool is exit 1 with WSL's own message;
+wsl.exe READS STDIN even for `true`: in `printf 'a\nb\nc\n' | while read l; do ...; wsl.exe -e true; done` the loop saw
+only "a". Proposal: (1) the chain: in-process, then a PATH program, then WSL, then the error; WSL is tried both for a
+builtin's unsupported option with no PATH program and for a name found nowhere (bison, xxd, perl); a miss costs one WSL
+start on what is already an error path. (2) The override, one variable beside BASH_COREUTILS: BASH_FALLBACK unset or
+`wsl` = `wsl.exe -e`; `none` = today's error; any other value = the command prefix to use (`wsl.exe -d Debian -e`).
+(3) wsl.exe starts with PATH cut to System32 (speed, no translate noise); argument paths `F:/x` become `/mnt/f/x`; WSL's
+"not found" becomes C#Bash's 127 "command not found"; each fallback goes to unserviced.jsonl. (4) The stdin read is
+WSL's and cannot be stopped from outside: documented, with `< /dev/null` as the remedy inside read loops. (5) The chain
+and BASH_FALLBACK go in USING.md ("make sure the specified fallbacks are published").
+
+## 2026-11-11 -- RULED (the architect): the fallback order is in-process, a configured first fallback, PATH, then WSL
+**Status:** Active. Supersedes the order in the "PROPOSED (features list 3" entry above (Claude's: in-process, PATH, WSL,
+with a BASH_FALLBACK variable replacing only WSL), which re-derived an order instead of grounding in his. His words:
+"somewhere I said that the first alternative (first fallback) should be a config parameter, then PATH, then WSL."
+(Claude searched DECISIONS, the project's five transcripts, the memories and the module documents and found no earlier
+statement; the nearest is PortableBash's 2.0 provider order, `docs/module-spec.md` 7.1-7.2, whose override form, a file
+plus a variable with the variable winning, is RULED there.) Order: (1) C#Bash's in-process tool; (2) the first
+fallback, named by a configuration parameter; (3) a program on PATH; (4) WSL, overridable or "none" (2026-11-09).
+OPEN, his: what the parameter names and where it is set; what "none" turns off. Nothing built.
+
+## 2026-11-11 -- RULED (the architect): the first fallback is a folder of Unix tools; unset, PATH; then WSL
+**Status:** Active; answers the entry above's OPEN points. His words: "a) first fallback holds a path to unix tools. if
+it is not set, then the second fallback is used... b) none is not a verb it is a state (no PATH falls back to WSL). WSL
+is only last because it is slow." He weighed WSL as the default (an empty PATH search is wasted); Claude's measured
+point (a PATH miss ~2 ms over 48 entries, a WSL start ~150 ms; UnixUtils on this machine's PATH served find today)
+kept the order: "there no harm in scanning a parth before falling back to WSL". So: in-process; the configured folder
+(skipped when unset); PATH; WSL. No "none" switch: none is the state in which WSL is reached. OPEN, his (a user-facing
+name): what the setting is called and where it is set.
+
+## 2026-11-11 -- RULED (the architect): the first fallback's setting is not an environment variable
+**Status:** Active. Claude proposed a variable (BASH_UNIX_TOOLS); his answer: "I don't like environment vars - on windows
+they suck as they get locked into the executable and can't easily be updated." (A process keeps the environment it
+started with: a running session never sees a change; measured here before, a session keeps its start PATH.) Claude's
+next proposal, put to him: a file under ~/.bash, read only when a fallback is needed.
+
+## 2026-11-11 -- RULED (the architect): the fallbacks are configured in ~/.bash/etc/, read once at the first fallback
+**Status:** Active; supersedes Claude's file and startup-file proposals of today (each read as startup load). His words:
+"c#bash configuration should live in etc/, next to bin/ and it is only consulted once on first need for a fallback. it
+should be .bash/c#bash.config (or similar) and convay the three fallbacks unit-tools=path;PATH;WSL then the user can
+fully configure the fallbacks?" So: one configuration file in ~/.bash/etc/ (beside bin/; Wombat's gitconfig and
+gitattributes are to go there too); read at most once per process, when a command first needs a fallback, never at
+startup; its fallback entry lists the steps in order, a folder of Unix tools, PATH, WSL, each the user's to reorder or
+leave out. Put to him: the file's exact name and the line's exact form ("or similar"). Nothing built.
+
+## 2026-11-11 -- GO (the architect: "Yes, very good, go"): the fallback chain as agreed
+**Status:** Building. File `~/.bash/etc/csharpBash.config` (`$HOME/.bash/etc`), line `unix-tools = <folder>;...;PATH;WSL`
+(steps: folders, PATH, WSL, in the user's order; one left out is not used; no file or no line: `PATH;WSL`), read at most
+once per process at the first need, never at startup; the installer writes it only when absent. Claude's seven points,
+agreed: (1) a remembered resolution from a configured folder carries the config's time and is re-looked-up when it
+changed; (2) WSL runs `sh -c 'command -v "$0" >/dev/null || exit 127; exec "$0" "$@"'` with PATH cut to System32 and
+F:/x arguments as /mnt/f/x, 127 for a tool WSL lacks; (3) command -v / type / hash see folders as files, never WSL;
+(4) a malformed config warns once and skips the step, never fatal; (5) `$HOME/.bash/etc`; (6) a case proves startup
+does not read it; (7) USING.md documents WSL's stdin read. A builtin's unsupported option takes the same chain.
+
+## 2026-11-11 -- FEATURE BUILT (features list 3): the fallback chain
+**Status:** Active (build 777). `Fallbacks` (Bash/Evaluator/Fallbacks.cs) reads `%USERPROFILE%/.bash/etc/csharpBash.config`
+once per process at the first lookup (ResolveOnPath, AllOnPath, hash -d/-r), never at startup: case fallback_chain
+proves a builtin-only command reads nothing (a bad file warns only at the first external). Grounded, not re-derived:
+the folder is `Unserviced.Folder` (%USERPROFILE%/.bash, RULED 2026-10-27 for C#Bash's files), not `$HOME` as Claude's
+point 5 said; installed they are the same place. Point 1 is done by keying, not a timestamp: the folders and PATH make
+one search string, which keys CommandMap, so a changed folder list is a fresh map (case: a folder dropped, its
+remembered tool is not found). No folder configured: the string is PATH itself, so the existing maps and lookups are
+unchanged. WSL (RunInWsl): `wsl.exe --cd / -e sh -c '<script>' "<this shell's not-found message>" name <cwd> args`,
+the sh running only a FILE (`command -v` gives a /path), cd-ing to the shell's folder first, else printing the message,
+127; wsl.exe started in System32 with PATH = System32 and MSYS_NO_PATHCONV (no MSYS conversion), Windows-rooted
+arguments as /mnt/x/... (not /x/...: a sed address). MEASURED, fixed: started in the shell's folder, WSL held it a
+moment after exiting, even after a miss, so a script's next `rm -rf` of it failed (4 suite cases); wsl.exe now starts
+in System32 and sh does the cd. A bash builtin C#Bash lacks (Builtins.NotImplemented) never goes to WSL (WSL's sh
+would answer it). Each WSL run is logged to unserviced.jsonl. The runner clears WSLENV (this machine's names an
+unreachable X: drive; wsl.exe printed "Failed to translate" into the cases). NOT as agreed: InstallGen has no
+"only if absent" for an artifact (CONTRACT.md "artifacts": always deployed), so the installer writes no config; with
+no file the chain is the default PATH;WSL, so nothing is lost, and a user's file is never touched. Docs: USING.md "The
+fallback chain" (with WSL's stdin read), KNOWN_ISSUES. Cost at first lookup: one File.Exists of the config (not measured
+alone; the publish benchmark shows any effect).
+
+## 2026-11-11 -- The fallback chain's deploy of 777 stopped (suite 295/2); fixed in 778
+**Status:** Record. The two failures were the ruled change, not regressions: strings_local and fallback_not_windows
+checked the dead end (a builtin's option with no PATH program: the notice, exit 2), which the default chain now sends
+to WSL (WSL's strings and find answered). Both cases now run themselves again in a shell whose profile has
+`unix-tools = PATH`, the chain where that dead end still exists. Found doing so: strings' not-available options (-d,
+-T, -U, @file) handed over only when a PATH strings existed, so they never reached WSL; they hand over when WSL is in
+the chain too. fallback_chain gained that route (`strings -d` through WSL's GNU strings). Suite (Release, -Detached)
+293/0 before the redeploy.
+
+## 2026-11-12 -- BUG FIXED (daq-a1's report): an associative subscript did not expand `cmd`, $( ) or $(( ))
+**Status:** Active (build 779; deploy waits with the fallback chain's, see the WSLENV entry below). Verified against GNU:
+`${M[$(lower "$k")]+x}` was empty with the key set; so were a plain read, ${#...}, backquotes and "$( )"; an
+assignment M[$(cmd)]=v wrote the literal key; indexed arrays were right. WordExpander.ExpandSubscript handled only
+quotes, ${...} and $name; it now runs `cmd`, $( ) and $(( )) as the arithmetic expander already did, and takes the
+special parameters ($#, $?...). Found extending the probe: `unset 'M[$k]'` used the subscript unexpanded (GNU expands
+it); it goes through ExpandSubscript too. Case assoc_subscript_subst_gnu (expected = GNU bash via WSL), red on 770.
+
+## 2026-11-12 -- RAISED (awaiting the architect): the 778 deploy stopped on the battery; WSLENV and the WSL step
+**Status:** AWAITING THE ARCHITECT. Suite 297/0; battery probe 187 (`python --version 2>&1 | cut -d' ' -f1`) regressed:
+this machine's WSLENV forwards the ESDK variables as paths (/p) on X:, which WSL cannot translate (X: exists on Windows),
+so every wsl.exe start prints "wsl: Failed to translate ..." first, and under the default chain every name found nowhere
+starts WSL. Claude's recommendation: the fallback's wsl.exe starts with WSLENV cleared (a fallback tool is a generic Linux
+tool; the user's own wsl calls keep WSLENV); would change it: he wants WSLENV honored for fallback tools too (then the
+battery clears WSLENV for its run, as run-tests.ps1 does). Nothing deployed beyond 770 until he answers.
+
+## 2026-11-12 -- BUILT (a ruled item found undone): the cygpath hint; daq-a1's need counted
+**Status:** Active (build 780). daq-a1 (2026-11-12): `cygpath` missing; DAQ's make-installers.sh runs
+`WSTAGE=$(cygpath -m "$(mktemp -d)")`; asked for a built-in -m/-w/-u. Already RULED 2026-11-07: no cygpath built-in
+("get over it, you don't need cygpath"), with (1) a KNOWN_ISSUES Limits line (shipped in 704) and (2) a hint on
+cygpath's "command not found". Claude found (2) never built (no "cygpath" anywhere in the source; 770 printed a bare
+"command not found"). Built now: `cygpath` found nowhere gives "command not found", 127, then "cygpath: (C#Bash: none,
+and none needed: ... use the path as it is, "$PWD/x" for an absolute one, or realpath -m x)"; never handed to WSL (it has
+none). Case cygpath_hint (authored), red on 770. daq-a1's need recorded as one more request; the ruling stands.
+
+## 2026-11-12 -- BUG FIXED (daq-a1's report): after // a leading # or % was taken as an anchor
+**Status:** Active (in the build that deploys with the fallback chain). `${p//%LOCALAPPDATA%/R}` replaced nothing; GNU
+replaces every %LOCALAPPDATA%. Verified, wider than reported: `${q//#/-}`, `${q//#a/Y}`, `${r//%/+}`, and over array
+elements; after a single / both build and GNU anchor (`${p/%x/END}`, `${p/#%LOC/S}`). The anchor test ran after // too;
+it runs after one / only. Case subst_global_literal_anchor_gnu (expected = GNU bash via WSL), red on 770.
+
+## 2026-11-12 -- BUG FIXED (facts-8a's report): a one-command pipeline did not set PIPESTATUS
+**Status:** Active (in the build that deploys with the fallback chain). Verified against GNU, 23 probe lines: only
+multi-command and `!` pipelines set it (ExecPipeline), and the parser wraps a lone command in no Pipeline node, so a
+plain command, an assignment, a function call, (( )), [[ ]] and a subshell left the last pipeline's statuses. GNU's
+rule, measured: every one-command pipeline sets it; a compound command (if, for, while, case, { }) leaves what its
+last pipeline set (`if false; then :; fi` gives 1, not the if's 0). ExecuteCore sets it after those node kinds,
+through ShellEnvironment.SetPipeStatus, which reuses the one-element array (no allocation per command; cost per
+command not measured alone: the publish benchmark shows it). Case pipestatus_simple_gnu (expected = GNU bash via WSL),
+red on 770; suite (Release, -Detached) 297/0.
+
+## 2026-11-12 -- NEED (facts-8a, one request): text out of a PDF from bash, with a page range
+**Status:** Counted; a feature, so it waits for the architect's word. facts-8a: Claude Code's Read loads a PDF whole (a
+3.3 MB spec overflowed a subagent) and its page mode needs poppler; on guy-windows8 `command -v pdftotext pdftoppm mutool
+qpdf gs magick` finds none; a subagent hand-inflated PDF streams. Wanted: `pdftotext -f N -l M file.pdf -` semantics.
+Measured here: WSL has /usr/bin/pdftotext, so the fallback chain (committed, not deployed: the WSLENV question) runs
+`pdftotext -f 1 -l 3 F:/x.pdf -` through WSL as soon as it deploys, with no in-process tool. Claude's position: that meets
+it on machines with WSL and poppler; an in-process PDF reader is a large feature, weighed only if asked for again.
+
+## 2026-11-12 -- RULED (the architect: "yes; go"): the fallback's wsl.exe starts with WSLENV cleared; deploy
+**Status:** Active. Answers the "RAISED (awaiting the architect): the 778 deploy" entry above, on Claude's
+recommendation. RunInWsl passes WSLENV empty: no "wsl: Failed to translate" lines before a fallback tool's output or a
+miss's "command not found" (checked with this machine's WSLENV still set); a fallback tool gets none of the user's
+Windows variables; the user's own wsl calls are untouched. USING.md says so. The build carrying the fallback chain, the
+three bug fixes (daq-a1's two, facts-8a's PIPESTATUS) and the cygpath hint deploys as 785.
+
+## 2026-11-12 -- DEPLOYED 785: the fallback chain, three bug fixes, the cygpath hint
+**Status:** Record. `1.0.0+hg.c256c63e7bf9 785`, rollback dist/*.rev770. Suite (-Detached, AOT) 301/0; battery 219
+(baseline 216, no regression). Live: fallback_chain, pipestatus_simple_gnu, assoc_subscript_subst_gnu,
+subst_global_literal_anchor_gnu and cygpath_hint green on the deployed build; `pdftotext -f 1 -l 1 <local pdf> -`
+through the chain (WSL's poppler) rc 0. Told: facts-8a (PIPESTATUS, and pdftotext through the chain, at the
+architect's word); daq-a4 for daq-a1, which has ended (both bugs, the cygpath ruling). Not published: the next publish
+carries 765-785 (his word, a benchmark window, the doc review).
+
+## 2026-11-12 -- BUG FIXED (git-9d's report, a leak): under nullglob `local a=( * )` listed every variable
+**Status:** Active (build 787). Verified (counting, never printing, the dump): on 785, under nullglob, `local`, `declare`
+and `export` with an array literal holding a glob printed the whole environment as declare lines (591 in the probe;
+an API key among them, in git-9d's transcript) and got no elements; GNU prints nothing and fills the array. Cause,
+confirmed in the code: the parser folds `name=(…)` after a declaration builtin into ONE literal word for the builtin
+to expand; as a bare literal the word was pathname-expanded, `a=(*)` matched no file, nullglob removed it, and the
+builtin ran with no operand, which lists variables. The folded word is a SingleQuotedPart now (no globbing, no
+splitting; the builtin expands it, as before). Checked beside it: braces, $( ), quotes, +=, -A, two literals.
+Case nullglob_decl_array_gnu runs the body in a child and shows a COUNT of declare lines, so a regression cannot put
+the environment into a test log (on 785: "declare lines: 719"). Suite (Release, -Detached) 298/0.
+
+## 2026-11-12 -- DEPLOYED 787 (git-9d's leak fix); BUG FIXED (facts-8a's report): a refused folder rename moved the contents
+**Status:** 787 deployed (`1.0.0+hg.673fc22d6b96 787`, rollback dist/*.rev785; suite 302/0, battery 219, live case
+green; git-9d told). The mv fix is build 789. Verified: with cmd holding src as its cwd, C#Bash's `mv src dst` printed
+"cannot move", rc 1, and had moved every entry (src empty, dst full); Git Bash 2.28's mv: "Device or resource busy",
+rc 1, nothing moved. Cause (Builtins.Files.cs Mv): any IOException from Directory.Move fell back to CopyDir + Delete
+("cross-volume", but taken for every refusal). Now copy-then-delete only when the roots differ; on one volume the
+rename stands alone. Checked: a cross-drive folder move still copies and deletes (F: to C:, rc 0). Message kept as
+Windows' text (Git Bash says "Device or resource busy"; a wording change for every tool is a separate question). Case
+mv_held_dir (authored), red on 787, green 3 runs; suite (Release, -Detached) 299/0.
+
+## 2026-11-12 -- DEPLOYED 789 (facts-8a's mv fix): suite 303/0, battery 219
+**Status:** Record. `1.0.0+hg.38fb4f3ead17 789`, rollback dist/*.rev787; mv_held_dir green on the deployed build;
+facts-8a told. Not published: the next publish carries 765-789.
+
+## 2026-11-12 -- REPORTED (glassmirror-4e via guy-bf): $( ) drops a trailing \r; AS RULED, now documented
+**Status:** Active. `x=$(printf 'a\r\n')` is `a` (GNU: `a\r`); `$(printf 'a\r\nb\r\n')` keeps the inner CRLF; measured on
+789. This is the 2026-11-05 RULING ("$( ) strips trailing CRLFs as it strips newlines"; WordExpander.TrimLineEnds), not
+a bug: guy-bf's two counter-points (printf is a builtin; the inner CRLF stays) are both within it, as the ruling covers
+any captured text and keeps inner CRLFs by design. Their cost: a captured CRLF log printed back lost its last CR (27 of
+28 lines). Done: KNOWN_ISSUES Limits states the difference with a byte-exact idiom, `x=$(cmd; echo .); x=${x%.}`
+(checked, the same in GNU and C#Bash); the reporter told. Put to the architect, not changed: keep the ruling (Claude's
+position: yes; it is what gives `v=$(nativecmd)` a clean value, the common case) or keep a builtin's trailing CR.
+
+## 2026-11-12 -- RULED (the architect): keep the $( ) CRLF trim; a limitation easily overcome; encourage LF
+**Status:** Active. Answers the question in "REPORTED (glassmirror-4e via guy-bf)" above. His words: "it sounds like a
+limitation that is easily overcome, and, nothing is to stop GlassMirror from using LF instead of CRLF. In fact this
+should be encouraged as much as possible?" So the 2026-11-05 trim stays. KNOWN_ISSUES states it in real terms
+(`v=$(windows-program)`, text from a CRLF file) with "better: write files with LF line ends" and the byte-exact idiom;
+USING.md "Getting the best out of it" gains "Write files with LF line ends". glassmirror-4e told to prefer LF.
+Still OPEN, his: the KNOWN_ISSUES restructure into open issues / limitations / differences by design / not available
+(Claude's proposal, 2026-11-12; he distinguished issues "being worked on" from limitations that "can't (easily) be
+avoided").
+
+## 2026-11-12 -- RULED + DONE (the architect): KNOWN_ISSUES.md for bugs, KNOWN_LIMITATIONS.md for limitations
+**Status:** Active. His words: "it is better 'optics' to have them split as suggested and further split into
+KNOWN_ISSUES (possible bugs - actively neing worked on) and KNOWN_LIMITATIONS (known limitations with known
+alternatives that are better, faster, cheaper)". Done: KNOWN_ISSUES.md keeps the open bugs ("being worked on") and
+the fixed-since-release lists; KNOWN_LIMITATIONS.md (new) holds three sections, each entry with the way that works:
+Windows'/.NET's/MSYS2's (260-char paths, 100 ns times, beyond-U+FFFF characters, df -i, MSYS2 quoting), By design
+($( ) CRLF trim, no cygpath, device names, no terminal, remembered lookups), Not available (extglob, >( ), jq def,
+restricted/POSIX mode, complete). Dropped: "a bare name never runs a script from the current folder" (bash's own
+behavior; USING.md already says it). Checked while writing: jq `def` and `df -i` reach WSL through the fallback chain
+(df -i / there is WSL's Linux disk: said so). The installer stages, stamps and installs KNOWN_LIMITATIONS.md beside
+KNOWN_ISSUES.md (manifest, installer.sh's sandbox check, release.sh's after-install check); USING.md and README name
+both. AT THE NEXT PUBLISH: the global CLAUDE.md line "C#Bash's bugs and limits live in ~/.bash/KNOWN_ISSUES.md" names
+both files (true for the installed 754 until then).
+
+## 2026-11-12 -- RULED (the architect: "c/ go"): $TEMP/$TMP left as set; mktemp documented as the better way
+**Status:** Active. glassmirror-4e's need (via guy-bf): $TEMP and $TMP arrive as F:\TEMP while $HOME is C:/...; a JSON
+config built from "$TEMP/x" was rejected ("'U' is an invalid escapable character"). Measured: Git Bash converts TEMP/TMP
+on import (/tmp) but keeps an exported backslash value; Claude Code's wrapper runs `export TEMP='F:\TEMP' TMP='F:\TEMP'`
+before every command (this shell's command line, read with wmic), so an import conversion would not reach a Claude
+session, under Git Bash either. Options put: (a) convert on import (Git Bash's half); (b) convert on every assignment,
+as PATH, children given the Windows form; (c) leave the variables, document mktemp. Ruled (c): KNOWN_LIMITATIONS.md "By
+design" says $TEMP/$TMP keep their backslashes, `mktemp -d` / `-u` / `--tmpdir x.XXXX` give F:/TEMP/... (checked), and
+`${TEMP//\\//}` gives the folder. The need is counted; glassmirror-4e told.
+
+## 2026-11-13 -- ANSWERED (c-parser-92): reading a PDF goes through the fallback chain to WSL's poppler
+**Status:** Record. c-parser-92 needed C99.pdf's text by page and page images ("the architect says C#Bash knows how").
+Checked on 789 against that file: `pdfinfo` (552 pages), `pdftotext -f 20 -l 20 [-layout] f -` (rc 0), and
+`pdftoppm -png -r 80 -f 20 -l 20 f "$(mktemp -d)/p"` writing a real PNG (89 PNG header, 60 KB), all through WSL with
+F:/ paths converted. Told: the commands, ~0.15 s a WSL start (take ranges), compgen/type do not list them, Claude Code's
+Read still wants pdftoppm on the Windows PATH (read the PNGs/text instead), `< /dev/null` in read loops. Second request
+for PDF text (facts-8a's first); both met by the chain, no in-process tool.
+
+## 2026-11-13 -- DONE (the architect: "1 & 2; go"): the fallback chain made discoverable
+**Status:** Active (build 798). From c-parser-92's docs-gap note (sent at the architect's word; he called the outcome
+"not good enough"): a session concluded a PDF could not be read because compgen, type, help and the installed docs
+never mention the chain. Ask 3 (installed docs matching the running build) withdrawn by c-parser-92 on his
+explanation (~/.bash holds 754 and its own docs; the fallback is not installed yet); ask 4 (command -v reporting WSL)
+declined in Claude's proposal (a WSL start per miss, and Claude Code's snapshot probes every call). Built: (1)
+KNOWN_LIMITATIONS "By design" first entry: not listed does not mean not available, run the command, with the PDF
+recipe (pdfinfo, pdftotext -f/-l, pdftoppm -png into mktemp -d); (2) help topics `fallback` and `wsl` in the built-in
+table (Bash/help.json: USING.md#the-fallback-chain and KNOWN_LIMITATIONS.md; answered by the running build even with
+an older installed help.json), and a `help` with no matching topic adds one line naming the chain, `help fallback`
+and %USERPROFILE%/.bash/KNOWN_LIMITATIONS.md. help_builtin's expected gains that line (authored); suite 299/0.
+
+## 2026-11-13 -- DEPLOYED 798 (the fallback chain discoverable): suite 303/0, battery 219
+**Status:** Record. `1.0.0+hg.725a429a63ef 798`, rollback dist/*.rev789; `help fallback` and `help pdf`'s hint live on
+the deployed build; c-parser-92 told. Not published: the next publish carries 765-798.
+
+## 2026-11-14 -- BENCHMARK for the 798 publish; RULED (the architect): compare3 is hosted by C#Bash
+**Status:** Active. The architect, 2026-11-13: "why is this hosted by git bash - we changed to run the perf test by
+c#bash?" (no earlier entry recorded the change; DEVELOPING.md still called Git Bash "the reference way": corrected,
+and the benchmark memory). Runs on 798: (1) 2026-11-13 17:15, C#Bash host, a noisy start (launch +38 %): every row
+10-30 % slower than 754's table, Git Bash and WSL ~10 % too; put to him as a consult, he: "run it again, everyone is
+quiet". (2) The rerun HUNG 10 h: Git Bash's inner bash.exe on the coreutils row, stuck in a `$( )` fork with no child
+(MSYS's fork deadlock under memory churn, Claude's reading; the same row passed at 17:15); killed, rerun. (3)
+2026-11-14 C#Bash host (README's table) and Git Bash host straight after: they agree within a few per cent on every row.
+Like for like (Git Bash host) against 754: C#Bash lost 5-9 % relative to Git Bash on command-heavy rows (func +7 %
+while Git Bash -2 %; arith, coreutils); under the ~10 % line Claude set for a consult, so published. Suspect:
+PIPESTATUS set after every simple command (785), cost not measured alone: next, an in-process measurement and a
+cheaper path. Proposed (the architect: the limit must not touch the row time): benchtimer's wait bounded per launch
+(300 s), TIMEOUT in the cell, nothing added to the timed path.

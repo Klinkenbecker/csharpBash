@@ -4,6 +4,13 @@
 # tools' policy (DECISIONS 2026-09-04 #2); -d, -T, -U / --unicode and @file need object formats or UTF-8 display:
 # the not-available notice (a PATH `strings` would take them; Git for Windows ships none). The rest is in
 # strings_gnu.sh, against GNU.
+# Since 2026-11-11 the default fallback chain ends in WSL, whose strings took those options; the notices checked here
+# are a chain without WSL, so the case runs itself again in a shell whose profile has `unix-tools = PATH`.
+if [ -z "${NO_WSL_PROFILE-}" ]; then
+	NO_WSL_PROFILE=$(mktemp -d) && mkdir -p "$NO_WSL_PROFILE/.bash/etc" && printf 'unix-tools = PATH\n' > "$NO_WSL_PROFILE/.bash/etc/csharpBash.config" || exit 1
+	NO_WSL_PROFILE="$NO_WSL_PROFILE" USERPROFILE="$NO_WSL_PROFILE" "$BASH" "$0"; rc=$?
+	rm -r "$NO_WSL_PROFILE"; exit $rc
+fi
 d=$(mktemp -d) && cd "$d" || exit 1
 printf 'some text\0' > f
 v=$(strings --version); case $v in "strings (C#Bash in-process, GNU strings 2.38 compatible) "*) echo "version ok";; *) echo "version BAD [$v]";; esac

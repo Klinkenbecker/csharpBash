@@ -37,6 +37,8 @@ internal sealed record JReduce(JqNode Source, JqPattern Pattern, JqNode Init, Jq
 internal sealed record JBind(JqNode Source, JqPattern Pattern, JqNode Body) : JqNode;   // Term as $x | body
 internal sealed record JVar(string Name) : JqNode;
 internal sealed record JCall(string Name, List<JqNode> Args) : JqNode;
+internal sealed record JLabel(string Name, JqNode Body) : JqNode;                  // label $name | body
+internal sealed record JBreak(string Name) : JqNode;                                // break $name
 
 internal abstract record JqPattern;
 internal sealed record JPVar(string Name) : JqPattern;
@@ -79,7 +81,7 @@ internal static class JqLexer
 				}
 			if (i >= s.Length)
 				{
-				toks.Add(new(JqTok.End, "$end", toks.Count > 0 ? toks[^1].Start : 0));   // jq points at the last token
+				toks.Add(new(JqTok.End, "$end", toks.Count == 0 ? 0 : toks[^1].Kind == JqTok.Var ? toks[^1].Start + 1 : toks[^1].Start));   // jq points at the last token (`$x` is two to jq: `$`, then the name)
 				return toks;
 				}
 			char c = s[i];
@@ -243,8 +245,31 @@ internal sealed class JqParser
 		_ => t.Text,
 		};
 
-	private JqSyntaxException Unexpected(bool expectingEnd = false) =>
-		new($"syntax error, unexpected {BisonName(Peek)}{(expectingEnd ? ", expecting $end" : "")} (Unix shell quoting issues?)", Peek.Start);
+	private JqSyntaxException Unexpected(bool expectingEnd = false, string? expecting = null) =>
+		new($"syntax error, unexpected {BisonName(Peek)}{(expectingEnd ? ", expecting $end" : expecting is null ? "" : $", expecting {expecting}")} (Unix shell quoting issues?)", Peek.Start);
+
+	/// <summary>`label $name | body`, a term whose body runs as far right as a pipe does (jq 1.6: `1 + label $x | 2` is
+	/// 3). The label is in scope in its body as jq's hidden `$*label-name`, which `break $name` must find.</summary>
+	private JLabel ParseLabel()
+		{
+		ExpectWord("label");
+		if (Peek.Kind != JqTok.Var) throw Unexpected(expecting: "'$'");
+		var name = Next().Text;
+		if (!IsOp("|")) throw Unexpected(expecting: "'|'");
+		_p++;
+		_scope.Add("*label-" + name);
+		try { return new JLabel(name, ParsePipe()); }
+		finally { _scope.RemoveAt(_scope.LastIndexOf("*label-" + name)); }
+		}
+
+	private JBreak ParseBreak()
+		{
+		var at = Next().Start;   // break: jq points its "not defined" there
+		if (Peek.Kind != JqTok.Var) throw Unexpected(expecting: "'$'");
+		var tok = Next();
+		if (!_scope.Contains("*label-" + tok.Text)) throw new JqSyntaxException($"$*label-{tok.Text} is not defined", at);
+		return new JBreak(tok.Text);
+		}
 
 	private bool StartsTerm() => Peek.Kind switch
 		{
@@ -258,7 +283,6 @@ internal sealed class JqParser
 	private JqNode ParsePipe()
 		{
 		if (IsWord("def")) throw new JqUnsupportedException("def (function definitions)");
-		if (IsWord("label")) throw new JqUnsupportedException("label/break");
 		int save = _p;
 		if (StartsTerm() && !IsOp("-"))
 			{
@@ -458,7 +482,8 @@ internal sealed class JqParser
 						}
 					case "foreach": throw new JqUnsupportedException("foreach");
 					case "def": throw new JqUnsupportedException("def (function definitions)");
-					case "label": throw new JqUnsupportedException("label/break");
+					case "label": return ParseLabel();
+					case "break": return ParseBreak();
 					case "import" or "include": throw new JqUnsupportedException("modules (import/include)");
 					}
 				if (Keywords.Contains(t.Text)) throw Unexpected();

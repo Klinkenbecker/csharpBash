@@ -1,0 +1,5 @@
+bash: cygpath: command not found
+cygpath: (C#Bash: none, and none needed: its paths are already Windows-rooted with forward slashes, C:/x; use the path as it is, "$PWD/x" for an absolute one, or realpath -m x)
+rc=127
+rc=127 lines=2
+a Windows-rooted path already: yes

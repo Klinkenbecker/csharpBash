@@ -1,0 +1,6 @@
+control rc=0 ctl2 src 
+held rc=1
+message: 1
+src: a.txt sub 
+dst exists: no
+released rc=0 dst: a.txt sub b

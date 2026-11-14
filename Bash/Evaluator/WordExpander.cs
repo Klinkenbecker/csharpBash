@@ -780,7 +780,9 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			bool all = op.Length > 1 && op[1] == '/';
 			var rest = op[(all ? 2 : 1)..];
 			char anchor = '\0';
-			if (rest.Length > 0 && rest[0] is '#' or '%') { anchor = rest[0]; rest = rest[1..]; }
+			// an anchor only after ONE /: after // a # or % is the pattern's own (daq-a1, 2026-11-12: ${p//%X%/R} was read as
+			// the end anchor and replaced nothing; GNU replaces every %X%)
+			if (!all && rest.Length > 0 && rest[0] is '#' or '%') { anchor = rest[0]; rest = rest[1..]; }
 			int sep = FindPatternSlash(rest);
 			var pat = ExpandOperand(sep < 0 ? rest : rest[..sep], pattern: true);
 			var rep = sep < 0 ? "" : ExpandOperand(rest[(sep + 1)..], pattern: false);
@@ -1540,7 +1542,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	/// expansion; everything else is kept literal (a bare word is a literal key,
 	/// unlike an arithmetic indexed subscript).
 	/// </summary>
-	private string ExpandSubscript(string s)
+	internal string ExpandSubscript(string s)
 		{
 		var sb = new System.Text.StringBuilder();
 		int i = 0;
@@ -1553,6 +1555,28 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			if (s[i] == '"' && Lexer.Lexer.ConstructEnd(s, i) is int q2 and > 0)
 				{ sb.Append(ExpandSubscript(s[(i + 1)..(q2 - 1)])); i = q2; continue; }
 			if (s[i] == '\\' && i + 1 < s.Length) { sb.Append(s[i + 1]); i += 2; continue; }
+			// `cmd`, $(( )) and $( ), as in a word (daq-a1, 2026-11-12: `${M[$(lower "$k")]+x}` read a set element as unset,
+			// the key being the literal text "(lower ...)"; every form, for an associative array only)
+			if (s[i] == '`')
+				{
+				int end = Lexer.Lexer.ConstructEnd(s, i);
+				var body = BacktickBody(end < 0 ? s[(i + 1)..] : s[(i + 1)..(end - 1)]);
+				i = end < 0 ? s.Length : end;
+				sb.Append(RunSubstitution(new Parser.Parser(new Lexer.Lexer(body).Tokenize(), body).Parse()));
+				continue;
+				}
+			if (s[i] == '$' && i + 1 < s.Length && s[i + 1] == '(')
+				{
+				int end = Lexer.Lexer.ConstructEnd(s, i);
+				bool closed = end >= 0;
+				if (!closed) end = s.Length;
+				bool arith = i + 2 < s.Length && s[i + 2] == '(';
+				int from = Math.Min(i + (arith ? 3 : 2), end);
+				var inner = s[from..Math.Max(from, closed ? end - (arith ? 2 : 1) : end)];
+				i = end;
+				sb.Append(arith ? EvalArithmetic(inner) : RunSubstitution(new Parser.Parser(new Lexer.Lexer(inner).Tokenize(), inner).Parse()));
+				continue;
+				}
 			if (s[i] == '$' && i + 1 < s.Length && s[i + 1] == '{')
 				{
 				int end = Lexer.Lexer.ConstructEnd(s, i);   // the one matcher; unclosed: to the end
@@ -1566,6 +1590,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				i++;
 				int start = i;
 				while (i < s.Length && (char.IsLetterOrDigit(s[i]) || s[i] == '_')) i++;
+				if (i == start && "#?$!@*-".IndexOf(s[i]) >= 0) i++;   // a special parameter ($#, $?, ...)
 				sb.Append(GetChecked(s[start..i], dollarForm: true));
 				}
 			else

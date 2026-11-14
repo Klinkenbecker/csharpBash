@@ -24,6 +24,9 @@ internal sealed class JqInterp(JObj env)
 		"startswith/1", "endswith/1", "ltrimstr/1", "rtrimstr/1", "ascii_downcase/0", "ascii_upcase/0",
 		"contains/1", "error/0", "error/1", "env/0", "del/1", "floor/0", "ceil/0", "round/0", "sqrt/0", "fabs/0",
 		"arrays/0", "objects/0", "iterables/0", "booleans/0", "numbers/0", "strings/0", "nulls/0", "scalars/0",
+		// the jq batch (features list 2, 2026-11-11; each measured against jq 1.6)
+		"paths/0", "paths/1", "leaf_paths/0", "path/1", "getpath/1", "delpaths/1", "tostream/0", "walk/1", "recurse/1", "recurse/2",
+		"limit/2", "indices/1", "index/1", "rindex/1", "splits/1", "splits/2", "inside/1", "input_filename/0",
 		];
 
 	public static bool IsSupported(string name, int arity) => Supported.Contains($"{name}/{arity}");
@@ -74,8 +77,40 @@ internal sealed class JqInterp(JObj env)
 			case JBind b: return EvalBind(b, input, vars);
 			case JVar v: return [Lookup(v.Name, vars)];
 			case JCall c: return Call(c, input, vars);
+			case JLabel l: return EvalLabel(l, vars, (body, inner) => Eval(body, input, inner));
+			case JBreak b: return Break(Lookup("*label-" + b.Name, vars));
 			}
 		throw new JqError($"internal: unhandled {n.GetType().Name}");
+		}
+
+	/// <summary>`label $name | body`: the body's outputs until a `break $name` of THIS label (each label run is its own
+	/// token, so an inner label of the same name shadows an outer one); then the label's output ends, quietly. A break
+	/// is no error: `try` does not catch it.</summary>
+	private static IEnumerable<T> EvalLabel<T>(JLabel l, Vars? vars, Func<JqNode, Vars, IEnumerable<T>> body)
+		{
+		var token = new object();
+		var inner = new Vars("*label-" + l.Name, token, vars);
+		IEnumerator<T>? it = null;
+		try
+			{
+			while (true)
+				{
+				bool more;
+				try { it ??= body(l.Body, inner).GetEnumerator(); more = it.MoveNext(); }
+				catch (JqBreak b) when (ReferenceEquals(b.Token, token)) { yield break; }
+				if (!more) yield break;
+				yield return it.Current;
+				}
+			}
+		finally { it?.Dispose(); }
+		}
+
+	private static IEnumerable<object?> Break(object? token)
+		{
+		throw new JqBreak(token);
+#pragma warning disable CS0162   // the yield makes this an iterator: the break is thrown when the stream is read
+		yield break;
+#pragma warning restore CS0162
 		}
 
 	private object? Lookup(string name, Vars? vars)
@@ -540,6 +575,22 @@ internal sealed class JqInterp(JObj env)
 			case JCall { Name: "error" }:
 				foreach (var _ in Eval(n, input, vars)) { }
 				break;
+			case JLabel l:
+				foreach (var x in EvalLabel(l, vars, (body, inner) => Paths(body, input, inner))) yield return x;
+				break;
+			case JBreak b: throw new JqBreak(Lookup("*label-" + b.Name, vars));
+			case JCall { Name: "getpath", Args.Count: 1 } gp:
+				// a path expression in jq: `path(getpath(["a","b"]))` is ["a","b"], a missing one too
+				foreach (var p in Eval(gp.Args[0], input, vars))
+					yield return (PathArg(p), GetPath(input, PathArg(p)));
+				break;
+			case JCall { Name: "recurse", Args.Count: 1 or 2 } rc:
+				foreach (var x in RecursePathsBy(rc, input, vars)) yield return x;
+				break;
+			case JCall { Name: "limit", Args.Count: 2 } lim:
+				foreach (var nv in Eval(lim.Args[0], input, vars))
+					foreach (var x in Limit(nv, Paths(lim.Args[1], input, vars))) yield return x;
+				break;
 			default:
 				{
 				var v = Eval(n, input, vars).FirstOrDefault();
@@ -554,6 +605,41 @@ internal sealed class JqInterp(JObj env)
 		if (v is List<object?> a) { for (int i = 0; i < a.Count; i++) foreach (var x in RecursePaths([.. at, (double)i], a[i])) yield return x; }
 		else if (v is JObj o) { foreach (var kv in o.Pairs()) foreach (var x in RecursePaths([.. at, kv.Key], kv.Value)) yield return x; }
 		}
+
+	/// <summary>recurse(f) and recurse(f; cond) as paths: `.`, then f's paths from it (those whose value passes cond, as
+	/// select), each recursed in turn. jq 1.6's recurse(f) does not stop at null (measured).</summary>
+	private IEnumerable<(List<object?> Path, object? Value)> RecursePathsBy(JCall rc, object? input, Vars? vars)
+		{
+		yield return ([], input);
+		foreach (var (p, v) in Paths(rc.Args[0], input, vars))
+			{
+			if (rc.Args.Count == 2)
+				{
+				int pass = 0;
+				foreach (var c in Eval(rc.Args[1], v, vars)) if (Json.Truthy(c)) pass++;
+				for (int i = 0; i < pass; i++)
+					foreach (var (q, w) in RecursePathsBy(rc, v, vars)) yield return ([.. p, .. q], w);
+				}
+			else foreach (var (q, w) in RecursePathsBy(rc, v, vars)) yield return ([.. p, .. q], w);
+			}
+		}
+
+	/// <summary>limit(n; f) as jq 1.6 (measured): a negative n passes every output; otherwise each output is passed and
+	/// the stream ends once n have been (so 0 passes one, 0.5 one, 1.5 two); n not a number fails as `n - 1`.</summary>
+	private static IEnumerable<T> Limit<T>(object? n, IEnumerable<T> source)
+		{
+		if (n is not double max) { Binary("-", n, 1.0); yield break; }
+		int count = 0;
+		foreach (var x in source)
+			{
+			yield return x;
+			if (max >= 0 && ++count >= max) yield break;
+			}
+		}
+
+	/// <summary>A path argument (getpath, delpaths' items): an array, else jq 1.6's error.</summary>
+	private static List<object?> PathArg(object? p, string error = "Path must be specified as an array") =>
+		p as List<object?> ?? throw new JqError(error);
 
 	private static object? GetPath(object? root, List<object?> path)
 		{
@@ -636,7 +722,10 @@ internal sealed class JqInterp(JObj env)
 				var inner = DeletePath(a.GetRange(s, e - s), path, i + 1) as List<object?> ?? [];
 				return a.Take(s).Concat(inner).Concat(a.Skip(e)).ToList();
 				}
-			default: throw new JqError($"Cannot delete field at index {Json.Brief(k)} of {Json.TypeName(root)}");
+			// jq 1.6's words (measured through delpaths; del's paths fail earlier, as they are evaluated)
+			case (JObj, _): throw new JqError($"Cannot delete {Json.TypeName(k)} field of object");
+			case (List<object?>, _): throw new JqError($"Cannot delete {Json.TypeName(k)} element of array");
+			default: throw new JqError($"Cannot delete fields from {Json.TypeName(root)}");
 			}
 		}
 
@@ -784,8 +873,138 @@ internal sealed class JqInterp(JObj env)
 			case ("strings", 0): return input is string ? [input] : [];
 			case ("nulls", 0): return input is null ? [input] : [];
 			case ("scalars", 0): return input is List<object?> or JObj ? [] : [input];
+			// the jq batch (features list 2, 2026-11-11), each as jq 1.6 answers it (measured)
+			case ("paths", 0): return RecursePaths([], input).Skip(1).Select(x => (object?)x.Item1);
+			case ("paths", 1): return PathsWhere(input, v => Eval(a[0], v, vars));
+			case ("leaf_paths", 0): return PathsWhere(input, v => v is List<object?> or JObj ? [] : [v]);   // paths(scalars): a null leaf is not one
+			case ("path", 1): return Paths(a[0], input, vars).Select(x => (object?)x.Path);
+			case ("getpath", 1): return Eval(a[0], input, vars).Select(p => GetPath(input, PathArg(p)));
+			case ("delpaths", 1): return Eval(a[0], input, vars).Select(ps => DeletePaths(input,
+				PathArg(ps, "Paths must be specified as an array").Select(p => p as List<object?>
+					?? throw new JqError($"Path must be specified as array, not {Json.TypeName(p)}")).ToList()));
+			case ("tostream", 0): return ToStream([], input);
+			case ("walk", 1): return Walk(a[0], input, vars);
+			case ("recurse", 1 or 2): return RecurseBy(c, input, vars);
+			case ("limit", 2): return Eval(a[0], input, vars).SelectMany(n => Limit(n, Eval(a[1], input, vars)));
+			case ("indices", 1): return Eval(a[0], input, vars).Select(i => Indices(input, i));
+			case ("index", 1): return Eval(a[0], input, vars).Select(i => Index(Indices(input, i), 0.0));
+			case ("rindex", 1): return Eval(a[0], input, vars).Select(i => Index(Slice(Indices(input, i), -1.0, null), 0.0));
+			case ("splits", _): return ArgValues(a, input, vars).SelectMany(s => Splits(input, s[0], s.Length > 1 ? s[1] : null));
+			case ("inside", 1): return Eval(a[0], input, vars).Select(b => (object?)Contains(b, input));
+			case ("input_filename", 0): return [InputFilename];
 			}
 		throw new JqError($"{c.Name}/{a.Count} is not defined");
+		}
+
+	/// <summary>The input's name for `input_filename`: the file being read, "&lt;stdin&gt;" for standard input (jq 1.6,
+	/// measured), null with -n.</summary>
+	public string? InputFilename { get; set; }
+
+	/// <summary>paths(f): every path but the root's whose value gives f a true output (once per true output).</summary>
+	private static IEnumerable<object?> PathsWhere(object? input, Func<object?, IEnumerable<object?>> f)
+		{
+		foreach (var (p, v) in RecursePaths([], input).Skip(1))
+			foreach (var r in f(v)) if (Json.Truthy(r)) yield return p;
+		}
+
+	/// <summary>tostream: [path, leaf] for each scalar or empty container, and after the last child of each non-empty
+	/// container the closing event [path-to-that-child], the top level's included.</summary>
+	private static IEnumerable<object?> ToStream(List<object?> at, object? v)
+		{
+		if (v is List<object?> { Count: > 0 } a)
+			{
+			for (int i = 0; i < a.Count; i++) foreach (var e in ToStream([.. at, (double)i], a[i])) yield return e;
+			yield return new List<object?> { new List<object?>([.. at, (double)(a.Count - 1)]) };
+			}
+		else if (v is JObj o && o.Pairs().Any())
+			{
+			string? last = null;
+			foreach (var kv in o.Pairs()) { last = kv.Key; foreach (var e in ToStream([.. at, kv.Key], kv.Value)) yield return e; }
+			yield return new List<object?> { new List<object?>([.. at, last]) };
+			}
+		else yield return new List<object?> { at, v };
+		}
+
+	/// <summary>walk(f), bottom up, as jq 1.6 (measured): an array's element becomes each output of its walk (none drops
+	/// it); an object's member takes the LAST output of its walk, and one with no output empties the object built so far
+	/// (`{"a":1,"b":2,"c":3} | walk(if . == 2 then empty else . end)` is {"c":3}); then f runs on the result.</summary>
+	private IEnumerable<object?> Walk(JqNode f, object? v, Vars? vars)
+		{
+		object? rebuilt = v;
+		if (v is List<object?> a) rebuilt = a.SelectMany(x => Walk(f, x, vars)).ToList();
+		else if (v is JObj o)
+			{
+			object? acc = new JObj();
+			foreach (var kv in o.Pairs())
+				{
+				object? next = null;
+				foreach (var w in Walk(f, kv.Value, vars)) { var one = new JObj(); one.Set(kv.Key, w); next = Binary("+", acc, one); }
+				acc = next;
+				}
+			rebuilt = acc;
+			}
+		return Eval(f, rebuilt, vars);
+		}
+
+	/// <summary>recurse(f): `.`, then recurse on each output of f (jq 1.6 does not stop at null, measured);
+	/// recurse(f; cond) keeps only the outputs that pass cond, as select.</summary>
+	private IEnumerable<object?> RecurseBy(JCall rc, object? v, Vars? vars)
+		{
+		yield return v;
+		foreach (var x in Eval(rc.Args[0], v, vars))
+			{
+			int pass = 1;
+			if (rc.Args.Count == 2) { pass = 0; foreach (var c in Eval(rc.Args[1], x, vars)) if (Json.Truthy(c)) pass++; }
+			for (int i = 0; i < pass; i++) foreach (var y in RecurseBy(rc, x, vars)) yield return y;
+			}
+		}
+
+	/// <summary>indices(i), as jq 1.6 (measured): in a string, the BYTE offsets (UTF-8) of i, matches not overlapping
+	/// ("aaaa" gives [0,2]); in an array, where the array i starts, overlapping, or where the value i is; null for null;
+	/// anything else is `.[i]` ({"a":1} | indices("a") is 1). An empty string never matches (jq 1.6 does not return).</summary>
+	private static object? Indices(object? input, object? i)
+		{
+		switch (input, i)
+			{
+			case (string s, string needle):
+				{
+				var list = new List<object?>();
+				if (needle.Length == 0) return list;
+				var hay = ShellEncoding.Utf8.GetBytes(s);
+				var pin = ShellEncoding.Utf8.GetBytes(needle);
+				for (int k = 0; k + pin.Length <= hay.Length; )
+					{
+					if (hay.AsSpan(k, pin.Length).SequenceEqual(pin)) { list.Add((double)k); k += pin.Length; }
+					else k++;
+					}
+				return list;
+				}
+			case (List<object?> arr, _):
+				{
+				var seq = i as List<object?> ?? [i];
+				var list = new List<object?>();
+				if (seq.Count == 0) return list;
+				for (int k = 0; k + seq.Count <= arr.Count; k++)
+					{
+					bool all = true;
+					for (int m = 0; m < seq.Count && all; m++) all = Json.Equal(arr[k + m], seq[m]);
+					if (all) list.Add((double)k);
+					}
+				return list;
+				}
+			default: return Index(input, i);
+			}
+		}
+
+	/// <summary>splits(re; flags): the text between the matches of re (global, plus the flags), as jq 1.6: "abc" split by
+	/// "" is "", "a", "b", "c".</summary>
+	private static IEnumerable<object?> Splits(object? input, object? re, object? flags)
+		{
+		var all = "g" + (flags as string ?? "");
+		var (s, found) = RawMatches(input, re, all);
+		int prev = 0;
+		foreach (var m in found) { yield return s[prev..m.Index]; prev = m.Index + m.Length; }
+		yield return s[prev..];
 		}
 
 	private IEnumerable<object?> ErrorWith(JqNode msg, object? input, Vars? vars)
@@ -984,16 +1203,19 @@ internal sealed class JqInterp(JObj env)
 		return new string(cs);
 		}
 
-	private static bool Contains(object? a, object? b)
+	/// <summary>contains/inside. Two values of different types are an error only at the top: inside an array or an
+	/// object they simply do not contain each other (jq 1.6, measured 2026-11-11: `[1,"a"] | contains(["a"])` is true,
+	/// `{"a":1} | contains({"a":"x"})` false; every level was an error here).</summary>
+	private static bool Contains(object? a, object? b, bool top = true)
 		{
 		switch (a, b)
 			{
-			case (JObj x, JObj y): return y.Pairs().All(kv => x.TryGet(kv.Key, out var v) && Contains(v, kv.Value));
-			case (List<object?> x, List<object?> y): return y.All(yb => x.Any(xa => Contains(xa, yb)));
+			case (JObj x, JObj y): return y.Pairs().All(kv => x.TryGet(kv.Key, out var v) && Contains(v, kv.Value, top: false));
+			case (List<object?> x, List<object?> y): return y.All(yb => x.Any(xa => Contains(xa, yb, top: false)));
 			case (string x, string y): return x.Contains(y, StringComparison.Ordinal);
 			}
 		if (Json.TypeName(a) != Json.TypeName(b))
-			throw new JqError($"{Json.TypeName(a)} ({Json.Brief(a)}) and {Json.TypeName(b)} ({Json.Brief(b)}) cannot have their containment checked");
+			return top ? throw new JqError($"{Json.TypeName(a)} ({Json.Brief(a)}) and {Json.TypeName(b)} ({Json.Brief(b)}) cannot have their containment checked") : false;
 		return Json.Equal(a, b);
 		}
 
@@ -1048,12 +1270,23 @@ internal sealed class JqInterp(JObj env)
 	/// 1.6 steps a zero-width match by a BYTE and crashed on "aéb" (`match(""; "g")`): here it steps a code point.</summary>
 	private static List<object?> Matches(object? input, object? re, object? flags)
 		{
-		var rx = CompileRegex(input, re, flags);
+		var (s, found) = RawMatches(input, re, flags, out var rx);
+		var groups = CaptureGroups(rx, (string)re!);
+		return found.Select(m => (object?)MatchObject(s, m, groups)).ToList();
+		}
+
+	private static (string Text, List<Match> Found) RawMatches(object? input, object? re, object? flags) =>
+		RawMatches(input, re, flags, out _);
+
+	/// <summary>The matches jq's match(re; flags) finds, in order: with "g" each after the last (a zero-width one moves
+	/// the start on by one code point), with "n" no empty ones.</summary>
+	private static (string Text, List<Match> Found) RawMatches(object? input, object? re, object? flags, out Regex rx)
+		{
+		rx = CompileRegex(input, re, flags);
 		var f = flags as string ?? "";
 		bool global = f.Contains('g'), notEmpty = f.Contains('n');
 		var s = (string)input!;
-		var groups = CaptureGroups(rx, (string)re!);
-		var list = new List<object?>();
+		var list = new List<Match>();
 		int start = 0;
 		do
 			{
@@ -1061,11 +1294,11 @@ internal sealed class JqInterp(JObj env)
 			while (notEmpty && m.Success && m.Length == 0)
 				m = m.Index < s.Length ? rx.Match(s, NextCodePoint(s, m.Index)) : Match.Empty;
 			if (!m.Success) break;
-			list.Add(MatchObject(s, m, groups));
+			list.Add(m);
 			start = m.Length == 0 ? NextCodePoint(s, start) : m.Index + m.Length;
 			}
 		while (global && start < s.Length);
-		return list;
+		return (s, list);
 		}
 
 	private static int NextCodePoint(string s, int i) => i + (i + 1 < s.Length && char.IsHighSurrogate(s[i]) && char.IsLowSurrogate(s[i + 1]) ? 2 : 1);

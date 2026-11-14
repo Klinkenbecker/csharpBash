@@ -16,6 +16,7 @@ coproc (not implemented in C#Bash): https://www.gnu.org/software/bash/manual/htm
 select (not implemented in C#Bash): https://www.gnu.org/software/bash/manual/html_node/Conditional-Constructs.html
 --- no topic, bad option, no pattern
 help: no help topics match `zzzz'.  Try `help help' or `man -k zzzz' or `info zzzz'.
+help: a command C#Bash does not provide may still run through the fallback chain (a tools folder, PATH, WSL): run it. See `help fallback' and %USERPROFILE%/.bash/KNOWN_LIMITATIONS.md.
 rc=1
 help: -x: invalid option
 help: usage: help [-dms] [pattern ...]

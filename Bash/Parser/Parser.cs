@@ -464,7 +464,10 @@ public sealed class Parser
 				    && word.Parts is [LiteralPart wl] && wl.Value.EndsWith('=')
 				    && Peek().Type == TokenType.LParen && !Peek().HasLeadingSpace)
 					{
-					args.Add(Word.Literal(wl.Value + Lexer.Lexer.ArrayLiteralMark + CollectParenText()));
+					// quoted, so the word itself is never a glob pattern nor split: as a bare literal its `*` made the whole
+					// `a=(*)` a pattern that matched no file, and under nullglob it was removed, so `local` ran with no
+					// argument and listed every variable, secrets included (git-9d, 2026-11-12); the builtin expands it
+					args.Add(new Word([new SingleQuotedPart(wl.Value + Lexer.Lexer.ArrayLiteralMark + CollectParenText())]));
 					continue;
 					}
 

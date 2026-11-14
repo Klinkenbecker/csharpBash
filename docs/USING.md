@@ -67,6 +67,10 @@ Each install rewrites `claude.cmd`, so the hand-off always starts the installed 
 ### Getting the best out of it
 
 - **Write paths with forward slashes** (`C:/x/y` or `/c/x/y`). A backslash is the shell's escape character, and a Windows program handed `/c/x` gets `C:/x`, as under Git Bash (a colon list, `/c/x:/f/y`, gets `C:/x;F:/y`; any other argument with a colon is passed as typed); pass a switch to `cmd` as `cmd //c …`, except under `MSYS_NO_PATHCONV=1` or `MSYS2_ARG_CONV_EXCL='*'`, which turn the `//` escape off with the rest: write `cmd /c` there (as in Git Bash). The same goes inside an argument after the first `=` and after `-` and one letter (`--file=/c/x` → `--file=C:/x`, `-I/c/x` → `-IC:/x`), and for the program's environment (`X=/c/x prog`, or an exported `X`, reaches it as `C:/x`); a word holding `;` is passed whole, a bare `/c` or `/` as typed. `MSYS_NO_PATHCONV=1` turns all of it off, `MSYS2_ARG_CONV_EXCL` (`*` or `;`-separated prefixes) the arguments, `MSYS2_ENV_CONV_EXCL` (prefixes of `NAME=value`) the environment, as in Git Bash. A nested `bash` (this shell) and an MSYS program get the environment as typed.
+- **Write files with LF line ends**, not CRLF. Every tool C#Bash provides writes LF, and every bash tool expects it.
+  C#Bash copes with a Windows program's CRLF (a line tool reads it as the line end, `$( )` drops a trailing one),
+  but text that keeps its CRs is text every later step has to cope with. A log, a script, a data file you write
+  yourself: LF.
 - **There is no terminal.** `/dev/tty` reports "No such device or address" and a program that would prompt on one fails instead of hanging; give tools their input on stdin or their non-interactive flags.
 - **After installing a tool**, run `hash -r`.
 - **Reproduce from a script file, not through PowerShell.** Windows PowerShell 5.1 strips the inner double quotes when it hands `-c 'echo "x (y) z"'` to a native executable, so the shell receives `echo x (y) z` — and then correctly reports a syntax error. A report observed only through `& Bash.exe -c "..."` from PowerShell measures PowerShell's quoting, not the shell (2026-09-05, one full false report).
@@ -87,13 +91,41 @@ Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracki
 4. `HOME` (forward-slash form; the Windows profile when unset), `BASH`, `SHELL`, `SHLVL`, `UID`, `OSTYPE=msys` and the other bash variables are set; `PYTHONIOENCODING=utf-8` is exported when unset, so a piped Python prints UTF-8 instead of crashing on `✓`. Output is UTF-8, with or without a console.
 5. Startup files: a login shell (`-l`) reads `/etc/profile`, then the first of `~/.bash_profile`, `~/.bash_login`, `~/.profile`; an interactive shell reads `~/.bashrc` (or `--rcfile`); a non-interactive one (`-c`, a script, every Claude Code call) reads only `$BASH_ENV`.
 
-**Finding a command**, in this order: an alias, a keyword, a function, a builtin or embedded tool; a name with a slash (or a drive, `F:x`) is that path, from the shell's own directory and never searched for; anything else is searched on PATH, trying each entry as named and then with every `PATHEXT` extension (`.COM`, `.EXE`, `.BAT`, `.CMD`, …), and taking the first match that can run (a program Windows starts, `.com` `.exe` `.bat` `.cmd`, a `.sh` file, or a `#!` line: what `[ -x ]` says). A `.js`, `.vbs` or other `PATHEXT` file that runs only through a file association is passed over, as Git Bash does. A `#!` script runs by its interpreter line (bash and sh scripts in-process), found on PATH or by its path; a `.sh` file without one runs in-process too, and so does any other text file with no `#!` named by its path (`./build`), as bash and msys run one (binary content is refused: "cannot execute binary file: Exec format error"); found on PATH by a bare name, such a file is not run. `/bin/NAME` and `/usr/bin/NAME`, when the drive has no such folder, run `NAME` (a builtin first, then PATH), as a `#!` line does. A bare name never runs a script from the current directory: write `./script`, as in bash.
+**Finding a command**, in this order: an alias, a keyword, a function, a builtin or embedded tool; a name with a slash (or a drive, `F:x`) is that path, from the shell's own directory and never searched for; anything else is searched along [the fallback chain](#the-fallback-chain) (by default PATH, then WSL), trying each folder as named and then with every `PATHEXT` extension (`.COM`, `.EXE`, `.BAT`, `.CMD`, …), and taking the first match that can run (a program Windows starts, `.com` `.exe` `.bat` `.cmd`, a `.sh` file, or a `#!` line: what `[ -x ]` says). A `.js`, `.vbs` or other `PATHEXT` file that runs only through a file association is passed over, as Git Bash does. A `#!` script runs by its interpreter line (bash and sh scripts in-process), found on PATH or by its path; a `.sh` file without one runs in-process too, and so does any other text file with no `#!` named by its path (`./build`), as bash and msys run one (binary content is refused: "cannot execute binary file: Exec format error"); found on PATH by a bare name, such a file is not run. `/bin/NAME` and `/usr/bin/NAME`, when the drive has no such folder, run `NAME` (a builtin first, then PATH), as a `#!` line does. A bare name never runs a script from the current directory: write `./script`, as in bash.
 
 - **`sh` is the shell under the name `sh.exe`**, beside `Bash.exe` (the installer and deploy make it a hard link; by hand a copy works), as Git for Windows and MSYS2 ship theirs (each one's `sh.exe` is byte-for-byte its `bash.exe`). Step 4 above puts that folder on PATH, so `sh -c`, `sh script`, `… | sh`, `xargs sh -c` and `find -exec sh -c` find it, and so do the programs the shell starts (`make`, say); something started outside C#Bash needs the folder on its own PATH. Started as `sh`, it runs bash's default mode, as a `#!/bin/sh` script does: POSIX mode is not available, and nothing is printed about it. Its messages name it by its path (`$0` is the path it was started by). `tools/deploy.sh` makes `dist/sh.exe` a hard link to `dist/Bash.exe` (since 2026-11-01; one file on disk, re-made at every deploy so it never keeps an old build). With only `Bash.exe` downloaded, make it yourself: a copy, or a hard link (`ln Bash.exe sh.exe` in C#Bash), made again after each new `Bash.exe`, since a link keeps the build it was made to.
 - **Lookups are remembered across shells**, in `~/.bash/commands`, one small file per PATH value. A remembered program is used after one existence check, so a moved or deleted one is simply searched for again. A program installed later in a folder earlier on PATH stays hidden behind the remembered one until `hash -r`.
 - **`hash name` also remembers a miss.** In a later shell it answers `hash: x: not found (remembered miss: hash -r searches again)` without searching. Running a program, `command -v` and `type` always search, as bash does. After installing a tool you had probed with `hash`, run `hash -r` (or `hash -d name`).
 - **Windows limits that remain:** a program whose own path is over 260 characters, or one started from a directory over 258 characters, cannot be started (cmd cannot either; C#Bash says so, 126), though the shell itself can `cd` there and work with its files. A file name ending in a dot or a space cannot exist through Windows' file API, which drops it: a command name `s1.` finds nothing, but `cat s1.` reads `s1`.
-- **When the shell's own search finds nothing, C#Bash looks in three folders only**: its own, System32 and the Windows folder (`.exe` appended, as Windows' launcher would). So `cmd` runs even on an empty PATH, while `command -v cmd` reports nothing. Never the current directory: Windows' own launcher searched it (in an ordinary terminal, or through an empty PATH entry), so a `.exe` planted there could answer a command that is not installed.
+- **When the shell's own search finds nothing, C#Bash looks in three folders only**, then WSL if the chain has it: its own, System32 and the Windows folder (`.exe` appended, as Windows' launcher would). So `cmd` runs even on an empty PATH, while `command -v cmd` reports nothing. Never the current directory: Windows' own launcher searched it (in an ordinary terminal, or through an empty PATH entry), so a `.exe` planted there could answer a command that is not installed.
+
+### The fallback chain
+
+A command C#Bash does not provide itself, or a C#Bash tool given an option it does not have, is looked for in these
+steps, in the order `%USERPROFILE%/.bash/etc/csharpBash.config` gives:
+
+```
+# %USERPROFILE%/.bash/etc/csharpBash.config
+unix-tools = F:/Tools/UnixUtils/usr/local/wbin;PATH;WSL
+```
+
+- **A folder** of Unix tools: searched like a PATH entry, so a tools folder can come first for the shell without
+  touching the Windows PATH. Any number, each an absolute path.
+- **`PATH`**: the shell's PATH.
+- **`WSL`**: the tool run in WSL (`wsl.exe`), when nothing earlier has it. Windows-rooted arguments (`F:/x`) arrive
+  as `/mnt/f/x`; a tool WSL does not have either is "command not found", 127. A start costs about 0.15 s. It starts
+  with `WSLENV` empty: your Windows variables are not passed to a fallback tool (your own `wsl` commands keep them).
+
+The steps go in any order, separated by `;`; a step left out is not used (leave out `WSL` and a command found
+nowhere is simply not found). **With no file, or no `unix-tools` line, the chain is `PATH;WSL`.** The file is read once
+per shell, the first time a command needs looking up, never at startup: an edit applies from the next shell. A line
+it cannot use is reported once on stderr and skipped. `type`, `command -v` and `hash` see the folders, as they see
+PATH; they never report WSL, which has no file to name. Lookups are remembered per chain, so a changed folder list
+never runs a remembered program from a folder you removed. The installer does not write the file: create it when you
+want a different chain.
+
+**WSL reads standard input**, even for a tool that does not: inside `while read …; do …; done`, a command run in WSL
+takes the loop's remaining lines (measured). Give it `< /dev/null` there.
 
 ## Help points at the manuals
 
@@ -113,6 +145,7 @@ when parsed, a bash builtin C#Bash lacks, a help topic not implemented or not fo
 consider implementing. The full arguments are kept, in your profile, as `~/.bash_history` keeps commands; nothing is
 sent anywhere. `BASH_UNSERVICED_LOG` names another file; `/dev/null` turns the log off (the test runners do).
 
-Beside it, the installer puts `KNOWN_ISSUES.md`: the known issues of the build it installs (open wrong answers,
-limits, and what was fixed since the release before), its first lines naming that build. It is the repository's
-[`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) as of that release.
+Beside it, the installer puts `KNOWN_ISSUES.md`: the known issues of the build it installs (possible bugs, being
+worked on, and what was fixed since the release before), and `KNOWN_LIMITATIONS.md`: where C#Bash differs from bash by
+Windows' limits or by design, each with the way that works. Their first lines name that build; they are the repository's
+[`KNOWN_ISSUES.md`](../KNOWN_ISSUES.md) and [`KNOWN_LIMITATIONS.md`](../KNOWN_LIMITATIONS.md) as of that release.

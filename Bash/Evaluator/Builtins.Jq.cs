@@ -12,7 +12,7 @@ public sealed partial class Builtins
 	/// </summary>
 	private int Jq(List<string> args)
 		{
-		bool nullInput = false, slurp = false, raw = false, join = false, compact = false, exitStatus = false, rawInput = false;
+		bool nullInput = false, slurp = false, raw = false, join = false, compact = false, exitStatus = false, rawInput = false, sortKeys = false;
 		var named = new Dictionary<string, object?>(StringComparer.Ordinal);
 		string? filter = null;
 		var files = new List<string>();
@@ -31,6 +31,7 @@ public sealed partial class Builtins
 					case "--raw-output": raw = true; continue;
 					case "--join-output": raw = join = true; continue;
 					case "--compact-output": compact = true; continue;
+					case "--sort-keys": sortKeys = true; continue;   // objects printed with their keys sorted (not tojson; jq 1.6)
 					case "--exit-status": exitStatus = true; continue;
 					case "--monochrome-output": continue;   // never colored here
 					case "--version":
@@ -84,6 +85,7 @@ public sealed partial class Builtins
 						case 'r': raw = true; break;
 						case 'j': raw = join = true; break;
 						case 'c': compact = true; break;
+						case 'S': sortKeys = true; break;
 						case 'e': exitStatus = true; break;
 						case 'M': break;
 						default: throw new UnsupportedOptionException("jq", "-" + ch);
@@ -124,7 +126,7 @@ public sealed partial class Builtins
 		void Emit(object? v)
 			{
 			anyOutput = true; lastOutput = v;
-			if (raw && v is string s) outBuf.Append(s); else Json.Write(outBuf, v, compact, 2, 0, sortKeys: false, ascii: false);
+			if (raw && v is string s) outBuf.Append(s); else Json.Write(outBuf, v, compact, 2, 0, sortKeys, ascii: false);
 			if (!join) outBuf.Append('\n');
 			if (outBuf.Length >= StdioBuffer) { Console.Out.Write(outBuf.ToString()); outBuf.Clear(); }
 			}
@@ -152,6 +154,7 @@ public sealed partial class Builtins
 			string where = "<stdin>:0";
 			foreach (var (name, text) in JqInputs(files, ref rc))
 				{
+				interp.InputFilename = name;   // input_filename: this file, "<stdin>" for standard input, the last one after -s
 				int lineNo = 0, start = 0;
 				for (int nl; (nl = text.IndexOf('\n', start)) >= 0; start = nl + 1)
 					{
@@ -174,6 +177,7 @@ public sealed partial class Builtins
 			string lastWhere = "<stdin>:0";
 			foreach (var (name, text) in JqInputs(files, ref rc))
 				{
+				interp.InputFilename = name;
 				using var values = Json.Stream(text).GetEnumerator();
 				bool failed = false;
 				while (true)

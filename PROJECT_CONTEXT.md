@@ -1,15 +1,19 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-09 (bash-1b; session ended on the architect's "finish up"). SUPERSEDES every block below.
-> **TRUE STATE: DEPLOYED 754** (`1.0.0+hg.477562b19803 754`, rollback dist/*.rev753). **PUBLISHED: GitHub main = git
-> eb16a78 = hg 727; release hg-727 = csharpBash-setup.exe with build 726** (this machine's ~/.bash runs 726; new
-> sessions start on it). Deployed, NOT published: 729 (touch -d / date -d fraction; RANDOM= seeds), 731 ("${@:N}" one
-> field per parameter), 733 (a heredoc body inside "$( )" is literal), 739 (awk ENVIRON), 741 (tr escaped ranges; jq
-> control chars, NaN/Infinity), 743 (awk ARGV/ARGC), 745 (quoted subscripts; cat -v high bytes; printf %b \NNN), 748 (NTFS change time), 751 (six Windows names
-> upper-cased as Git Bash), 753 (ls -u; jq exit 4), 754 (a negative list length, a bad substitution: line abandoned).
-> The next publish needs his word, a benchmark window (12 sessions asked) and the doc review (KNOWN_ISSUES's release
-> section for 729-754). WAITING (RULED 2026-11-10): after Wombat's Plan 4 (git-b3 says when), the installer adds
-> Wombat's git.exe to ~/.bash/bin from its deploy folder (path to change). A direct run of a case: `< /dev/null`. 726 = no Git search at start-up (716), awk rand()/srand() on System.Random (725), the tests'
+> ## RESUME HERE — 2026-11-12 (bash-1b). SUPERSEDES every block below. DEPLOYED 798 (785: the fallback chain, daq-a1's two fixes, facts-8a's PIPESTATUS, the cygpath hint; 787: git-9d's nullglob leak; 789: facts-8a's mv fix; 798: help fallback + the no-topic hint; reporters told). Not published (765-798 wait for the next publish; AT THAT PUBLISH the global CLAUDE.md line on ~/.bash/KNOWN_ISSUES.md also names KNOWN_LIMITATIONS.md, the new second file: DECISIONS 2026-11-12 "KNOWN_ISSUES.md for bugs"). Bugs list empty. The benchmark is PUBLISH's, never deploy's.
+> **NEXT (GREENLIT, the features list in order): (1) find -anewer/-cnewer DEPLOYED 768 (no
+> benchmark: it cannot slow it; the architect, 2026-11-11, "why do I want a window for 766?"). (2) the jq batch DEPLOYED 770 (with the contains bug fix). (3) the fallback chain BUILT 778 (DECISIONS "FEATURE BUILT (features list 3)"; %USERPROFILE%/.bash/etc/csharpBash.config, `unix-tools = folder;PATH;WSL`, default PATH;WSL; installer writes none: InstallGen cannot keep a user file)
+> Features list now EMPTY. Bugs first whenever one is reported. UNCONFIRMED reading: "make sure the specified
+> fallbacks are published" = the fallback chain stated in the
+> published docs: DONE (USING.md "The fallback chain"). Stated, not yet ruled: SetFileTime holding the access time
+> (Windows moves it on any handle open; Git Bash does too).**
+> **TRUE STATE: DEPLOYED 798** (`1.0.0+hg.725a429a63ef 798`, rollback dist/*.rev789). **PUBLISHED: GitHub main = git
+> 273943b = hg 756; release hg-756 = csharpBash-setup.exe with build 754** (this machine's ~/.bash runs 754; new
+> sessions start on it). PUBLISHED 2026-11-11: 729-754 (DECISIONS "PUBLISHED: ... hg rev 756"; KNOWN_ISSUES lists
+> each). Deployed beyond the release: 765-798. The next publish needs his word, a benchmark window (12 sessions asked)
+> and the doc review (KNOWN_ISSUES's release section). WAITING (RULED 2026-11-10): after Wombat's Plan 4 (git-b3 says when), the installer adds
+> Wombat's git.exe to ~/.bash/bin from its deploy folder (path to change), with ~/.bash/etc/gitconfig (symlinks = false) and an
+> empty ~/.bash/etc/gitattributes (DECISIONS 2026-11-11; git-b3 sends the bytes). A direct run of a case: `< /dev/null`. 726 = no Git search at start-up (716), awk rand()/srand() on System.Random (725), the tests'
 > MSYS pinned to PortableGit-2.28.0/usr/bin (else a PATH search for msys-2.0.dll, else BYPASSED, loud, never a
 > failure). compare3: baselines (sieve + HOSTNAME.EXE launch), Git Bash and WSL optional, any Git Bash version shown
 > under its title. Startup moved from ~9 to ~10.7 ms on 2026-11-06/07 for EVERY build and for Git Bash: the machine,
@@ -18,16 +22,19 @@
 > RULED: contracts and current-state docs state only what is (history is in the file history).
 > **THE PROCESS (RULED 2026-11-11, the architect): TWO LISTS, BUGS and FEATURES, the same process for both (verify
 > against GNU, test red-then-green, suite both modes, deploy, one message to the reporter); BUGS FIRST; features
-> ordered by speed (read as: quickest first; put to him); a feature that would SLOW THE BENCHMARK needs a separate
-> consult first. A bug is verified, its position stated, and its fix started in the same turn (no "10 minutes": there
+> ordered by LEAST HIT ON PERFORMANCE first (the architect, 2026-11-11: "order speed by 'least hit on performance'");
+> a feature that would SLOW THE BENCHMARK needs a separate consult first. A bug is verified, its position stated, and its fix started in the same turn (no "10 minutes": there
 > is no clock between turns).**
-> **BUGS:** none open (1-3 fixed in 753/754; 4, the MSYS2 quoting, is MSYS2's own parser: DECISIONS 2026-11-11
-> "FOUND"; whether KNOWN_ISSUES keeps a line for it is HIS call, Claude: drop it).
-> **FEATURES (approved, quickest first):** (1) the jq batch (paths, leaf_paths, path(), getpath, delpaths, tostream,
-> walk, recurse(f), limit, indices, splits, inside, label/break, input_filename, -S; the architect: "add them"); (2) jq
-> --rawfile, find -anewer/-cnewer (the open list's small gaps); (3) WSL as the default fallback for external Linux tools,
-> overridable or "none" (ruled 2026-11-09; how the override is set is HIS: bring a proposal); its fallback chain stated in
-> the published docs. NEEDS counted, not approved: column, extglob. TBD list (e): build and deploy dependencies.
+> **BUGS:** none on the list (fixed 765-789: KNOWN_ISSUES "Fixed after this release"). AWAITING HIM: KNOWN_ISSUES "Open" holds two
+> bugs not on the list (`@( )` in `[[ ]]`; arithmetic error wording) while the file now means "being worked on"; Claude's
+> position: put both on the list, `@( )` first. KNOWN_LIMITATIONS.md (new, 2026-11-12): limitations / by design / not available.
+> **FEATURES (approved, least hit on performance first):** (1) find -anewer/-cnewer: DEPLOYED 768 (jq --rawfile was in since 2026-11-07; small additions inside
+> code that runs only when asked); (2) the jq batch DEPLOYED 770 (paths, leaf_paths, path(), getpath, delpaths, tostream, walk,
+> recurse(f), limit, indices, index, rindex, splits, inside, label/break, input_filename, -S; the architect: "add them"; nothing unless
+> used, but the binary grows); (3) WSL as the default fallback for external Linux tools, overridable or "none" (ruled
+> 2026-11-09; how the override is set is HIS: bring a proposal; a check on every command not found, ~0.14 s per WSL
+> start when used); its fallback chain stated in the published docs. A feature that WOULD slow the benchmark
+> (code on its path) is a consult first (his rule); one that cannot goes through the normal process, no window. NEEDS counted, not approved: column, extglob. TBD list (e): build and deploy dependencies.
 > (History, done: the calibration's go and window.) Do NOT run compare3 without his go and a window.
 > - What happened: the 704 publish's compare3 (2026-11-07 16:48) was STOPPED before it appended to results.md (checked:
 >   no 704 table, results.md unchanged, no benchtimer left): F:/Tools/PortableGit had become bash 5.3.15 (installed

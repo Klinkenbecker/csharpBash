@@ -209,6 +209,17 @@ public sealed partial class Builtins
 				var refTime = File.GetLastWriteTimeUtc(refPath);
 				return new FindPred((e, s, b) => e.Info.LastWriteTimeUtc > refTime);
 				}
+			case "-anewer": case "-cnewer":
+				{
+				// the entry's access (-anewer) or change (-cnewer) time later than the reference's MODIFICATION time (GNU
+				// find's documented reading); a missing reference is -newer's error (features list 1, 2026-11-11)
+				var name = FindArg(a, ref i, t);
+				var refPath = ShellEnvironment.TranslatePath(name);
+				if (!File.Exists(refPath) && !Directory.Exists(refPath)) throw new Exception($"'{name}': No such file or directory");
+				var refTime = File.GetLastWriteTimeUtc(refPath);
+				char kind = t[1];
+				return new FindPred((e, s, b) => FileTimeOf(e.Info, kind).ToUniversalTime() > refTime);
+				}
 			case "-newermt": case "-newerct": case "-newerat":
 				{
 				var spec = FindArg(a, ref i, t);

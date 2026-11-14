@@ -376,8 +376,13 @@ public sealed partial class Builtins
 				if (Directory.Exists(sp))
 					{
 					if (Directory.Exists(target)) { Console.Error.WriteLine($"mv: cannot overwrite directory '{shown}' with directory '{s}'"); rc = 1; continue; }
-					try { Directory.Move(sp, target); }
-					catch (IOException) { CopyDir(sp, target, true); Directory.Delete(sp, true); }   // cross-volume
+					// a rename on one volume, all or nothing, as GNU's and Git Bash's: refused (another process's cwd inside it,
+					// an open file), mv fails and NOTHING moves. Any refusal fell back to copy-then-delete until 2026-11-12, which
+					// moved every entry and then failed on the held folder itself: rc 1, "cannot move", the tree emptied
+					// (facts-8a). Copy-then-delete is for another volume only, where no rename can be made.
+					if (string.Equals(Path.GetPathRoot(Path.GetFullPath(sp)), Path.GetPathRoot(Path.GetFullPath(target)), StringComparison.OrdinalIgnoreCase))
+						Directory.Move(sp, target);
+					else { CopyDir(sp, target, true); Directory.Delete(sp, true); }
 					}
 				else if (File.Exists(sp))
 					{

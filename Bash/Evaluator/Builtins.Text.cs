@@ -1992,8 +1992,8 @@ public sealed partial class Builtins
 			: o.Has('U') ? "strings -U (--unicode)" : o.Operands.Any(a => a.Length > 1 && a[0] == '@') ? "strings @file" : null;
 		if (missing is not null)
 			{
-			if (_env.Get("BASH_COREUTILS") != "builtin" && _eval.ResolveOnPath("strings") is not null)
-				throw new UnsupportedOptionException("strings", missing, "not available in-process");   // the PATH strings runs it
+			if (_env.Get("BASH_COREUTILS") != "builtin" && (_eval.ResolveOnPath("strings") is not null || Fallbacks.Wsl is not null))   // or WSL, the chain's last step (2026-11-11)
+				throw new UnsupportedOptionException("strings", missing, "not available in-process");   // the fallback chain runs it
 			foreach (var line in NotAvailable.Lines("strings: ", missing)) Console.Error.WriteLine(line);
 			return 2;
 			}

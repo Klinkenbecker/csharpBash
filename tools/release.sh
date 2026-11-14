@@ -143,4 +143,7 @@ cmp -s "$bin/claude.cmd" "$root/dist.installer/payload/claude.cmd" ||
 # and the known issues of that build, beside unserviced.jsonl (2026-11-07)
 grep -qxF "**This copy:** installed with $stamp." "$HOME/.bash/KNOWN_ISSUES.md" 2>/dev/null ||
 	{ echo "release: $HOME/.bash/KNOWN_ISSUES.md does not name $stamp after the install" >&2; exit 1; }
+# and its known limitations, beside it (2026-11-12)
+grep -qxF "**This copy:** installed with $stamp." "$HOME/.bash/KNOWN_LIMITATIONS.md" 2>/dev/null ||
+	{ echo "release: $HOME/.bash/KNOWN_LIMITATIONS.md does not name $stamp after the install" >&2; exit 1; }
 echo "release: this machine's install upgraded by it: $bin/Bash.exe = $stamp; $(grep -o 'sh\.exe: \(hard link\|copy of\)[^\r]*' "$work/install.log" | head -1)"
