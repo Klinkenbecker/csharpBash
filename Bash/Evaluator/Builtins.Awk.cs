@@ -22,11 +22,14 @@ public sealed partial class Builtins
 			Console.WriteLine("awk (C#Bash in-process subset, gawk-5.1 compatible) " + BuildInfo.Stamp);
 			return 0;
 			}
-		var o = Opts.Parse("awk", args, "F:v:f:", ["field-separator=:F", "assign=:v", "file=:f"], stopAtFirstOperand: true);
+		var o = Opts.Parse("awk", args, "F:v:f:e:", ["field-separator=:F", "assign=:v", "file=:f", "source=:e"], stopAtFirstOperand: true);
 		var operands = new List<string>(o.Operands);
 		string program;
 		var progFiles = o.All('f').ToList();
-		if (progFiles.Count > 0)
+		// gawk's -e / --source: program text, repeatable, joined by newlines (facts-8a, 2026-11-14: it went to WSL's gawk,
+		// which cannot see F:/ paths); after any -f files (the order between the two is not kept)
+		var progTexts = o.All('e').ToList();
+		if (progFiles.Count > 0 || progTexts.Count > 0)
 			{
 			var sb = new StringBuilder();
 			foreach (var pf in progFiles)
@@ -34,6 +37,7 @@ public sealed partial class Builtins
 				try { sb.Append(pf is "-" or "/dev/stdin" ? Console.In.ReadToEnd() : ShellEncoding.ReadAllText(ShellEnvironment.TranslatePath(pf))).Append('\n'); }
 				catch (Exception ex) { Console.Error.WriteLine($"awk: {pf}: {IoError(ex)}"); return 2; }
 				}
+			foreach (var pt in progTexts) sb.Append(pt).Append('\n');
 			program = sb.ToString();
 			}
 		else
@@ -1252,6 +1256,14 @@ public sealed partial class Builtins
 			if (fs == " ")
 				return [.. s.Split([' ', '\t', '\n'], StringSplitOptions.RemoveEmptyEntries)];
 			if (s.Length == 0) return [];
+			// an empty separator: one element per character, as gawk (facts-8a, 2026-11-14: `split("abc",a,"")` and FS=""
+			// gave 5, an empty element at each end, the empty regex matching everywhere); a character beyond U+FFFF stays whole
+			if (fs.Length == 0)
+				{
+				var chars = new List<string>(s.Length);
+				foreach (var r in s.EnumerateRunes()) chars.Add(r.ToString());
+				return chars;
+				}
 			// a single character (other than space) is a literal separator, metacharacter or not:
 			// `-F.` and `-F'|'` split on the character itself (gawk-verified)
 			if (fs.Length == 1) return [.. s.Split(fs[0])];
@@ -1371,7 +1383,7 @@ public sealed partial class Builtins
 			{
 			if (_regexCache.TryGetValue(pattern, out var re)) return re;
 			// ExplicitCapture: awk has no back-references, and Regex.Split must not emit groups
-			try { re = new Regex(EreToNet(pattern), RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture); }
+			try { re = new Regex(EreToNet(pattern, awk: true), RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture); }
 			catch (ArgumentException ex) { throw new AwkSyntaxException($"invalid regular expression /{pattern}/: {ex.Message}"); }
 			_regexCache[pattern] = re;
 			return re;
@@ -1385,7 +1397,7 @@ public sealed partial class Builtins
 			{
 			var pattern = e is ARegex r ? r.Pattern : S(Eval(e));
 			if (_captureCache.TryGetValue(pattern, out var re)) return re;
-			try { re = new Regex(EreToNet(pattern), RegexOptions.CultureInvariant); }
+			try { re = new Regex(EreToNet(pattern, awk: true), RegexOptions.CultureInvariant); }
 			catch (ArgumentException ex) { throw new AwkSyntaxException($"invalid regular expression /{pattern}/: {ex.Message}"); }
 			_captureCache[pattern] = re;
 			return re;

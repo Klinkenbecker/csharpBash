@@ -185,7 +185,10 @@ best() {
     # BENCH_DIR is passed explicitly: in a SOURCED script $0 is the shell, not the file, so a
     # benchmark that located itself from $0 built its fixture in /bin and timed the failure.
     wsl)  out=$(MSYS2_ARG_CONV_EXCL='*' "$TIMER" "$rounds" "${wslcmd[@]}" -c "BENCH_DIR=$(to_wsl "$here") . $(to_wsl "$script")") ;;
-  esac || { printf 'FAIL'; return; }
+  esac
+  # benchtimer exits 3 when a launch ran past its limit (a hang, killed with its children): the cell says so and the
+  # run goes on to the next row (a Git Bash fork hang stalled the whole run 10 h, 2026-11-13)
+  case $? in 0) ;; 3) printf 'TIMEOUT'; return ;; *) printf 'FAIL'; return ;; esac
   awk -v t="${out%% *}" 'BEGIN{printf "%.3f", t}'
 }
 

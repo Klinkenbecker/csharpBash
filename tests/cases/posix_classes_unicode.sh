@@ -23,10 +23,14 @@ echo "sed:  $(printf 'aé5٣ß\n' | sed 's/[[:alpha:]]/X/g')"
 echo "awk:  $(printf 'aé5٣ß\n' | awk '{ gsub(/[[:alpha:]]/, "X"); print }')"
 echo "tr:   $(printf 'aé5ß\n' | tr -d '[:alpha:]')"
 echo "negated: $(printf 'aé-5 ²\n' | sed 's/[^[:alnum:]]/_/g')"
-# 3. every BMP character but CR, LF, NUL, the surrogates and two that Unicode 15 assigned and glibc's tables do not
-#    (U+0CF3, U+0ECE): per class, how many grep finds and a checksum of which
+# 3. every BMP character but CR, LF, NUL, the surrogates and those that Unicode 15, 15.1 and 16 assigned and glibc's
+#    tables (2.35) do not: U+0CF3, U+0ECE (15); 22 more that .NET 10's tables have (2026-11-15, moving from .NET 8):
+#    per class, how many grep finds and a checksum of which
 cd "$(mktemp -d)" || exit 1
 for ((cp = 1; cp < 0x10000; cp++)); do
+  case $cp in $((0x0897))|$((0x1B4E))|$((0x1B4F))|$((0x1B7F))|$((0x1C89))|$((0x1C8A))|$((0x2427))|$((0x2428))|$((0x2429))|\
+    $((0x2FFC))|$((0x2FFD))|$((0x2FFE))|$((0x2FFF))|$((0x31E4))|$((0x31E5))|$((0x31EF))|$((0xA7CB))|$((0xA7CC))|$((0xA7CD))|\
+    $((0xA7DA))|$((0xA7DB))|$((0xA7DC))) continue;; esac
   ((cp == 10 || cp == 13 || cp == 0x0CF3 || cp == 0x0ECE || (cp >= 0xD800 && cp <= 0xDFFF))) && continue
   printf -v hex %04X $cp
   printf '%s \u'"$hex"'\n' "$hex"

@@ -3,7 +3,7 @@
 // need to know WHERE. Same rules: Release dll, `dotnet script --no-cache tools/attrib.csx`.
 // To compare against another build, copy the file and point the #r at that build's Bash.dll
 // (a scratch `hg clone -u REV` built in Release is how the 2026-09-04 bisect was done).
-#r "F:/Koliada/Tools/bash/Bash/bin/Release/net8.0/Bash.dll"
+#r "F:/Koliada/Tools/bash/Bash/bin/Release/net10.0/Bash.dll"
 using System;
 using System.Diagnostics;
 using System.IO;

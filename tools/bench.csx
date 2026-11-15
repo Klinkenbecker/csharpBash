@@ -6,7 +6,7 @@
 // and reports time AND allocation per iteration (GC.GetTotalAllocatedBytes) plus
 // gen0/1/2 collection counts — so we can see whether the cost is CPU or allocation.
 
-#r "F:/Koliada/Tools/bash/Bash/bin/Release/net8.0/Bash.dll"
+#r "F:/Koliada/Tools/bash/Bash/bin/Release/net10.0/Bash.dll"
 
 using System;
 using System.Diagnostics;

@@ -121,11 +121,7 @@ public static class FileTests
 			if (IsProgramExtension(ext)) return true;
 			if (ext.Equals(".sh", StringComparison.OrdinalIgnoreCase)) return true;
 			}
-		try
-			{
-			using var fs = ShellFile.OpenRead(path);
-			return fs.Length >= 2 && fs.ReadByte() == '#' && fs.ReadByte() == '!';
-			}
+		try { return ShellFile.StartsWithShebang(path); }
 		catch { return false; }
 		}
 	}

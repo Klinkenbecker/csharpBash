@@ -13332,3 +13332,286 @@ on 806 hosted by C#Bash: loop 0.157 (9.7x Git Bash), arith 0.243 (8.7x), func 0.
 0.057 (270x), pipeline 0.094, find 0.016, startup 10.3 ms (2.6x); all outputs agree. The PIPESTATUS step is gone (func
 was 0.246 on 798). Doc review: README table and startup line, 306 cases, PERFORMANCE's figures, KNOWN_ISSUES' release
 section (806), and the first `tools/perf-history.sh --add` (build 806; drawing identical to gawk's).
+
+## 2026-11-14 -- PUBLISHED: hg rev 811 (GitHub main git 8583518; release hg-811 = csharpBash-setup.exe with build 806)
+**Status:** Record. publish.sh: benchmark of 806 found, the advantage graph carries 806 (its new check), console suite
+306/0, history and bundle verified, push, release, download back (SHA-256 5781aa09...4c12 matches), this machine's
+~/.bash upgraded to 806 (KNOWN_LIMITATIONS.md stamped 806). GitHub's latest = hg-811; the raw perf-history.svg is
+served as image/svg+xml (the interactive link works as served).
+
+## 2026-11-14 -- BUILT (the architect: "yes on the benchtimer limit"): a per-launch bound that does not touch row times
+**Status:** Active. After Git Bash hung 10 h in a `$( )` fork on the coreutils row and stalled the benchmark overnight
+(2026-11-13). His condition: "time limit mechanism should not affect the row time itself". benchtimer's wait is the
+same WaitForSingleObject with a bound (300 s; `--limit <s>` first on the command line) in place of INFINITE: nothing
+added between the two clock reads. Only on WAIT_TIMEOUT: Process.Kill(entireProcessTree) (the hung one was a
+grandchild), "benchtimer: TIMEOUT: ...", exit 3; compare3's best() prints TIMEOUT in the cell and goes on (other exits
+FAIL as before). Checked: positive control, `--limit 3` on cmd running a 60 s ping: TIMEOUT after 3 s, exit 3, no
+ping left; under both hosts the cell reads TIMEOUT. Times unchanged: the previous benchtimer built from the committed
+source and the new one, alternated four rounds on HOSTNAME.EXE x100 (7.9-8.6 ms old, 7.6-8.8 ms new) and C#Bash
+startup x100 (10.5-11.7 ms old, 10.9-12.1 ms new): overlapping, no direction. DEVELOPING says it.
+
+## 2026-11-14 -- RULED + BUILT (the architect): `access-time = default | preserve` in csharpBash.config
+**Status:** Active (build 816). Settles the access-time question raised 2026-11-11. He: "could make it a new option?",
+then "`access-time = [default, ??]`?" (Claude: `preserve`, GNU's word as in `cp --preserve`), "works for me - add a 1 or
+2 line comment on usage to the config also". Measured on 806 first (access time set to 2020 before each): stat (every
+form), ls -l and cat moved it; find's time tests, touch -m, test -nt and wc -c did not (the 2026-11-11 note's touch -m
+no longer holds). The cause for stat and ls -l, found by elimination (`stat -c %n` alone moved it): FileTests.IsExecutable
+reads a file's first two bytes for `#!` (Windows has no execute bit; MSYS does the same). Under preserve both that read
+(ShellFile.StartsWithShebang) and the detail handles (ShellFile.OpenForDetails: Identity, ChangeTime) open with
+FILE_WRITE_ATTRIBUTES and call SetFileTime(lastAccess = 0xFFFFFFFF), Windows' documented hold; a file refusing that
+open is read as before. cat still moves it (a real read). Default unchanged. Read by Fallbacks with unix-tools, at the
+first need; a bad value warns once, default kept. Case access_time_preserve (authored; SKIP on a volume that keeps no
+access times), red on 806. This machine's config gained the two-line usage comment only (behavior default here).
+USING.md and KNOWN_LIMITATIONS say it.
+
+## 2026-11-14 -- RULED (the architect): WSL is a permitted outside dependency, beside .NET
+**Status:** Active. His words: "WSL is another permited exception to TBD." The TBD list (e) of the build's and
+deploy's outside dependencies (2026-11-09) loses WSL (the battery's GNU reference; the fallback chain's last step);
+it keeps the Visual Studio C++ tools (the AOT link), the PowerShell runners (grandfathered) and git.exe for publish.
+
+## 2026-11-14 -- DEPLOYED 816 (access-time, benchtimer limit): suite 307/0, battery 220; two questions put
+**Status:** Record, then AWAITING THE ARCHITECT. `1.0.0+hg.8ff96ca73470 816`, rollback dist/*.rev806;
+access_time_preserve green on the deployed build. Not published.
+**Put to him:** (1) "POWESHELL - should be removed everywhere before the next publish?": found in the two runners
+(run-tests.ps1 475 lines, run-compat.ps1 204; deploy.sh and publish.sh call them) and two helpers (tests/detach/
+consoleless.ps1, tests/fixtures/console-kind.ps1: embedded C# to start a console-less or chosen-console process, used by
+three cases); installer/claude.cmd only turns Claude Code's PowerShell tool OFF; time_keyword names it in a comment.
+Claude's plan: a small C# launcher in tools/ (as benchtimer), the runners in bash (case list as data), proven
+equivalent (old and new runners agree case for case on one build; a planted failure fails in both) before the .ps1
+files go; position: yes, before the next publish (806 just shipped). (2) "Can we use zig instead of Visual Studio for
+the AOT header?": measured in their repos, Lantern uses zig for its APPHOST (the native front of a framework-dependent
+app) and Installer for its native STUB; InstallGen is framework-dependent; neither links .NET Native AOT output with
+zig. Claude's expectation, unmeasured: the obstacle is the libraries (the AOT runtime's .libs are MSVC-built and want
+MSVC's CRT and the Windows SDK), not the linker; recommendation: a time-boxed spike linking a hello-world AOT with zig,
+then decide (else VS Build Tools alone, or VS C++ a permitted exception like WSL).
+
+## 2026-11-14 -- SPIKE (the architect: "2/ yes"): zig in place of Visual Studio for the AOT link: not without VS's CRT
+**Status:** Record; the decision is his. A hello-world .NET 8 Native AOT app (F:/Koliada/Tools/zigspike, outside the
+repo), published with -p:IlcUseEnvironmentalTools=true and -p:CppLinker=zlink.cmd (`zig lld-link %*`, zig 0.17.0, LLD
+22.1.8), LIB empty: zig's linker runs on ILC's output and asked for 15 Windows import libraries plus LIBCMT, OLDNAMES
+and libcpmt. All 15 import libraries were generated from zig's own mingw definition files (`zig cc -E` on
+lib/libc/mingw/lib-common/<n>.def.in, then `zig dlltool -m i386:x86-64`); relinked with only those, still missing:
+LIBCMT.lib (MSVC static C runtime), OLDNAMES.lib (MSVC's POSIX-name aliases), libcpmt.lib (MSVC static C++ library),
+uuid.lib (GUID data, likely makeable). The blocker is the first three: the AOT runtime's .libs are MSVC-built and
+expect MSVC's C and C++ runtimes, which ship only with Visual Studio's build tools; zig carries mingw's, a different
+ABI (not tried: substituting them would mean rebuilding or ABI-faking .NET's runtime libraries, deep and fragile).
+Claude's position: zig cannot replace VS here on its own; the choices left are the VS Build Tools alone (no IDE: the
+compiler, linker and CRT) or the VS C++ tools as a permitted exception, as WSL now is. Lantern and Installer do not
+contradict it: their zig builds native programs (an apphost, a stub), not .NET AOT output.
+
+## 2026-11-14 -- IN PROGRESS (greenlit): PowerShell removal: what the runners do, measured from their source
+**Status:** Building; nothing replaced yet. run-tests.ps1: options -NoBuild, -Detached, -Interpreter <exe> (implies
+-NoBuild); env BASH_UNSERVICED_LOG=/dev/null and WSLENV= ; builds `dotnet build -c Release Bash` unless -NoBuild (after
+stopping Bash.exe processes under Bash/); AOT = no Bash.dll beside the exe (4 AotOnly cases SKIP otherwise); runs each
+case from tests/ (cwd) as `exe <Script> <Args>` with Script exactly as listed (e.g. `cases\andor.sh`: $0 shows in
+some expected files); console mode: stdin an empty pipe, stderr dropped, NO time limit; detached: DETACHED_PROCESS,
+stdin NUL, stdout a file, stderr NUL, 120 s limit (TIMEOUT line), UTF-8, final newline dropped, split on \r?\n;
+expected read UTF-8 (Get-Content); a single actual line "SKIP: why" = skip, "BYPASSED: why" = bypass (loud); compare
+by Compare-Object -SyncWindow 0, which is CASE-INSENSITIVE (a bash runner comparing exactly is stricter: any new
+failure must be explained before the .ps1 goes); output lines PASS/FAIL/SKIP/MISS/BYPASSED, then "N passed, N
+failed", "N skipped: ...", "!!! N BYPASSED, NOT TESTED (why): names", "Failed: ..." (deploy.sh and publish.sh grep
+these). Case list: 307 entries, one with args (args.sh A B C), four AotOnly, a comment each. Helpers: console-kind.ps1
+(-Kind windowless = CREATE_NO_WINDOW, window = CREATE_NEW_CONSOLE + SW_HIDE; stdin NUL, stdout+stderr to a file;
+15 s limit, TIMEOUT; used by dev_tty_git_prompt, dev_tty_windowless), consoleless.ps1 (DETACHED_PROCESS outer shell,
+30 s, then reads a log). Plan: tools/launch (C#, built like benchtimer) with those modes; tests/cases.tsv from the list
+(comments kept); tests/run-tests.sh with the same options, lines and summary; then run-compat.ps1 the same way; prove
+old and new agree case for case on one build (and a planted failure fails in both); then switch deploy.sh,
+publish.sh, the three cases, DEVELOPING, and remove the .ps1 files.
+
+## 2026-11-14 -- DONE (the architect: "1/ yes"): PowerShell removed from the project
+**Status:** Active (hg 826; the deploy that follows is its end-to-end test). tools/launch (C#, built like benchtimer;
+deploy.sh builds it when missing): --detached / --windowless / --window, stdin NUL, --out or --print, --stderr out,
+--timeout (the tree killed, exit 124). tests/cases.tsv (the 307 cases, their comments kept); tests/run-tests.sh (same
+options and lines; lines compared EXACTLY where Compare-Object ignored case; console cases get pipes for stdin and
+stdout as PowerShell gave them; a 120 s bound in both modes); tests/compat/run-compat.sh (same lines); the two
+console-kind cases use `tools/launch --print`; tests/detach/consoleless.sh (hand-run). deploy.sh and publish.sh call
+them; the four .ps1 files are gone; DEVELOPING, IMPLEMENTATION, MANUAL and comments updated. PROVEN before the switch,
+on 816: old and new runners agreed case for case in both modes (after one fix: `read` collapsed an empty tab column,
+so args.sh got no arguments and aot-only cases their comment; dd_gnu "memory exhausted" once, transient); a planted
+extra line in args.out failed both ("306 passed, 1 failed, Failed: args"); the batteries reported the same 220/17 and
+the same probes. A slip, undone: the planted line was taken into hg 824 by a commit with no file list (825 restores
+it); commits during a test run now name their files. Left as they are: README's two lines telling USERS how to do
+something from their own PowerShell (put to him). The TBD list (e) loses the PowerShell runners.
+
+## 2026-11-14 -- DEPLOYED 827: the first deploy through the bash runners (no PowerShell): suite 307/0, battery 220
+**Status:** Record. `1.0.0+hg.677486cf396e 827`, rollback dist/*.rev816. deploy.sh ran tests/run-tests.sh --detached
+(through tools/launch) and tests/compat/run-compat.sh: the same numbers as the PowerShell runners gave on 816. Not
+published. Open for him: README's two lines on users' own PowerShell; the zig spike's outcome (VS Build Tools, or VS C++
+a permitted exception).
+
+## 2026-11-14 -- BUGS LIST (facts-8a, three awk reports, all verified against GNU awk on 827)
+**Status:** Bugs list 1-3, fixes to start (bugs first). (1) `\]` inside a bracket expression does not match `]`:
+`gsub(/[\]]/,"_")` on `a]b[c` gives `a]b[c` (GNU `a_b[c`), `[\[\]]` gives `a]b[c` (GNU `a_b_c`); `[]a]` is right.
+Position: the awk regex translation must read `\]` (and `\[`) inside [...] as a literal bracket. (2) `awk -e PROG` is
+not handled in-process: it falls through the chain to WSL's gawk, which cannot see F:/ paths (`print > "F:/x"`:
+"cannot redirect"); measured. Position: take gawk's `-e`/`--source` (program text, repeatable, joined by newlines) in
+the builtin. (3) an empty separator splits wrongly: `split("abc",a,"")` gives 5 ([][a][b][c][]), GNU 3 ([a][b][c]);
+`FS=""` gives NF 5, GNU 3 (one field per character). Position: an empty separator means one element per character,
+as gawk documents. Each with a GNU-compared case (gawk via WSL), red on 827; one message to facts-8a when deployed.
+
+## 2026-11-14 -- BUGS FIXED (facts-8a's three awk reports): build 833
+**Status:** Active. (1) EreToNet/AppendBracket take `awk: true` from awk's GetRegex: the scan for a set's closing `]`
+steps over an escaped character and `\[` is `[` (grep and sed keep POSIX's literal backslash in a set). (2) awk takes
+`-e`/`--source` (Opts "e:", "source=:e"): program text joined by newlines, after any -f files. (3) SplitFields: an empty
+separator gives one element per character (code points: an emoji stays whole). Case awk_brackets_e_split_gnu (gawk via
+WSL), red on 827; suite (Release, console, the bash runner) 304/0, 308 cases.
+
+## 2026-11-14 -- DEPLOYED 833 (facts-8a's awk fixes): suite 308/0, battery 220; facts-8a told
+**Status:** Record. `1.0.0+hg.86358a95e18c 833`, rollback dist/*.rev827. Not published (~/.bash runs 806).
+
+## 2026-11-14 -- BUGS FIXED (git-9d's `mkdir dir/`), DEPLOYED 835: suite 309/0, battery 220; git-9d told
+**Status:** Active. `mkdir mk1/` (no -p) said "No such file or directory" and made nothing: the parent check took
+`GetDirectoryName("…/mk1/")`, which is mk1 itself. Mkdir now checks existence and the parent on the full path with its
+trailing separator trimmed (`Path.TrimEndingDirectorySeparator`, which keeps a root's): `mkdir f/` over a file is "File
+exists" (was "No such file"), `mkdir -v e//` creates e; a missing parent stays an error. rmdir `d/` was already right.
+Case mkdir_trailing_slash_gnu (GNU coreutils 8.32 via WSL), red on 833. `1.0.0+hg.6c2293392b36 835`, rollback
+dist/*.rev833. Not published (~/.bash runs 806).
+
+## 2026-11-14 -- BUGS FIXED (git-9d's `grep --line-buffered`), DEPLOYED 837: suite 310/0, battery 220; git-9d told
+**Status:** Active. The option was parsed and ignored: output into a pipe waited for EOF (a `tail -f | grep
+--line-buffered` watch delivered nothing in 30 min). grep now flushes Console.Out after each printed match and after-context
+line under it. Case grep_line_buffered_gnu is a handshake, not a timing (the producer writes its next line only after
+the consumer saw the last, else "late" after 10 s), red on 835 for a match and a context line. `1.0.0+hg.1e8dc13249f0
+837`, rollback dist/*.rev835. Found alongside, NOT fixed (awaiting the architect): `sed -u` holds lines the same way
+(GNU streams; measured by the same handshake on 835); awk's fflush() streams.
+
+## 2026-11-15 -- BUGS FIXED (KNOWN_ISSUES since 2026-11-07): `[[ == ]]` takes extended groups; DEPLOYED 841
+**Status:** Active. The architect (2026-11-15): "how is the bugs list empty if you have two open known issues?" -- the
+open KNOWN_ISSUES entries are bugs-list items; they had been parked as "awaiting his word". Measured: on 837 a literal
+`[[ a == @(a|b) ]]` was a syntax error and a group from a variable was false; GNU bash 5.1 with extglob off takes all
+five groups in the PATTERN operand of `==`/`=`/`!=` (not the left operand, not `case`, not a quoted `"@"(`). Fix:
+Parser.CondPatternOperand reads a group as one word (its `( | )` and inner spaces are text; escaped characters are
+quoted via Token.EscapedAt, as `=~`); ExpandToPattern(extglob: true) also backslashes a quoted `( ) | @ + !`;
+Glob.Match(extglob: true) sends a pattern holding a group to ExtMatch, a backtracking matcher written from bash's
+documented semantics (a .NET regex has no "anything except" for a substring); patterns without one keep the regex
+path; a backslashed literal takes TryLiteral's string compare. The 2026-09-04 refusal of `shopt -s extglob` stands
+(KNOWN_LIMITATIONS amended: `[[ ]]` takes the groups). Not matched: an unclosed group's message names `]]` (bash `)`):
+wording, bug 3's class. Case cond_extglob_gnu (24 checks, GNU via WSL), red on 837. `1.0.0+hg.53fd0d07bf85 841`
+(hg 840 the fix, 841 the KNOWN_ISSUES build number), rollback dist/*.rev837.
+
+## 2026-11-15 -- BUGS FIXED (found by Claude beside git-9d's grep report): `sed -u`; DEPLOYED 844
+**Status:** Active. `-u` was parsed and ignored: output into a pipe waited for EOF. SedOut.Unbuffered (set on stdout
+only) flushes after each Line/Text write, as GNU's flush_output does under -u. Case sed_unbuffered_gnu (handshake: s,
+-n p, `a` text), red on 841. `1.0.0+hg.543a76a2e259 844`, suite 312/0, battery 220, rollback dist/*.rev841.
+
+## 2026-11-15 -- RESEARCH (the architect: "bash is a public repo. it has to depend _only_ on publicly available, free, third patry products"): the AOT toolchain on a clean machine
+**Status:** Record; AWAITING THE ARCHITECT. His "VS Build tools are a permitted exception" (same morning) was withdrawn
+("unruled"). A research agent (read-only) found, each marked verified/inferred in its report: the minimum is the .NET
+SDK (MIT, but coreclr and the runtimes bundled in single-file builds are under the .NET Library License) plus Build
+Tools for Visual Studio with two components, Microsoft.VisualStudio.Component.VC.Tools.x86.x64 and
+...Windows11SDK.26100 (inferred from ILCompiler 8.0.25's findvcvarsall.bat, which asks vswhere for VC.Tools.x86.x64;
+untested on a clean machine). Trap: `--add ...Workload.VCTools` alone installs no linker (both are Recommended, not
+Required). Unattended: `vs_buildtools.exe --quiet --wait --norestart --nocache --add <the two>` (admin). LICENSE: Build
+Tools "is licensed as a supplement to Visual Studio Community, ... Professional, and ... Enterprise ... Use of the
+software requires a valid license to one of the Visual Studio Products"; the 2022 open-source clause covers compiling
+third-party OSI C++ dependencies, not our own code; Community: "Any number of your users may use the software to develop
+and test applications released under ... (OSI) approved open source software licenses" -- C#Bash is MIT, so covered;
+unresolved: an individual contributing to another's project under Community's individual clause. Static CRT in
+Bash.exe: supported practice, no explicit license sentence found. Alternatives (xwin, portable-msvc) download the same
+Microsoft files under the same license; MinGW/zig CRTs cannot link the MSVC-built AOT runtime (DECISIONS "SPIKE").
+FOUND: tools/publish-aot.cmd hard-codes `C:\Program Files\Microsoft Visual Studio\2022\Professional` (verified), so it
+fails on a Build Tools machine (bugs list). .NET 8 support ended 2026-11-10; .NET 10 LTS runs to 2028-11-14.
+Claude's position: "free" = free of charge holds (no open-source route exists); document the two downloads and the
+Community condition in DEVELOPING.md; a .NET 10 move is a runtime change, benchmarked before it is ruled.
+
+## 2026-11-15 -- RULED (the architect: "'AOT toolchain' - we should specify, use and allow this as our supported toolchain. We should also update to .NET10"): the supported toolchain; .NET 10
+**Status:** Active. Settles the RESEARCH entry above ("free" = free of charge; Microsoft-licensed tools allowed under
+Community's OSI clause). The supported toolchain: the .NET 10 SDK and Build Tools for Visual Studio 2022 with
+Microsoft.VisualStudio.Component.VC.Tools.x86.x64 and ...Windows11SDK.26100 (2022 because its license text is the one
+read; any later or larger VS with the two components serves). Specified in docs/DEVELOPING.md "The supported
+toolchain" (install command, license condition, the VCTools-workload trap). Used: Bash, benchtimer and launch target
+net10.0; global.json asks for SDK 10.0.100, rollForward latestFeature; publish-aot.cmd (hg 846) finds the newest
+RELEASED install with the C++ tools through vswhere (was VS 2022 Professional's hard-coded path) and now passes
+-p:IlcUseEnvironmentalTools=true, so the link uses that install: without it the ILCompiler's findvcvarsall.bat runs
+vswhere -prerelease and on this machine picked VS Professional 2026 (18.5, prerelease channel) -- so earlier builds
+were linked with it (inferred from the targets and the .bat; not checked in a build log). Test scripts' default
+interpreter path moved to Bash/bin/Release/net10.0. .NET 10 brought two differences, both found by the suite:
+(1) base64 -d: .NET 10's Base64.DecodeFromUtf8 refuses a padded group whose left-over bits are not zero (`aR==`,
+`aGVsbG9=`, a cut group `aG` padded to `aG==`), .NET 8 and GNU take them: Decode clears those bits first (same bytes);
+base64_gnu gained the full-group inputs (GNU via WSL); (2) .NET 10's Unicode tables (16.0) class 22 BMP code points
+glibc 2.35 does not (U+1C89/8A, U+A7CB-CD, U+A7DA-DC letters; U+0897, U+1B4E/4F/7F, U+2427-29, U+2FFC-FF, U+31E4/E5/EF):
+posix_classes_unicode excludes them as it already excluded Unicode 15's U+0CF3/U+0ECE (newer data, not a defect).
+Suite 308/0 on the .NET 10 JIT build. Alternatives: stay on .NET 8 (out of support since 2026-11-10); .NET 9 (STS).
+Not done: a clean-machine proof (needs e.g. Windows Sandbox, a machine-wide change: asked); the benchmark of .NET 10
+(at the next publish, the rule).
+
+## 2026-11-15 -- DEPLOYED 847 (.NET 10, the supported toolchain): suite 312/0, battery 220; NU1903 found
+**Status:** Record; one item AWAITING THE ARCHITECT. `1.0.0+hg.217a9ccf3191 847`, Bash.exe 7,212,032 bytes (844 on
+.NET 8: 8,086,016), rollback dist/*.rev844. The AOT build warns NU1903: Microsoft.DotNet.ILCompiler 10.0.5 (from SDK
+10.0.201) is in GHSA-p3jp-9v83-76w9 / CVE-2026-111497, an out-of-bounds write in .NET's Brotli decoder (High, 8.1),
+reachable only by decompressing attacker-controlled Brotli data (BrotliStream/BrotliDecoder, HttpClient or ASP.NET
+decompression). Affected ILCompiler: 8.0.0-8.0.32, 9.0.0-9.0.21, 10.0.0-10.0.13; patched 10.0.14 (SDKs 10.0.114,
+10.0.403). C#Bash names no Brotli or decompression-method API (grep of Bash/ and tools/), so it is not exploitable
+through C#Bash; builds 806-844 (ILCompiler 8.0.25) were in the range too. Claude's position: install SDK 10.0.403
+(machine-wide: asked) and raise global.json's minimum to 10.0.403 so no supported build uses an affected compiler.
+
+## 2026-11-15 -- BUGS FIXED (KNOWN_ISSUES "arithmetic error messages": what the error DOES); DEPLOYED 849
+**Status:** Active. Measured against bash 5.1: the entry's "the status and where the message goes match" was wrong.
+In an expansion or an assignment (`$(( ))`, a substring offset, an array subscript, an integer variable's value) an
+arithmetic error abandons the rest of the line, as bad substitution already did here; C#Bash went on with status 2,
+and `declare -i n=1+` / `n=1+` / `n+=1+` stored 0 silently (ShellEnvironment's catch). `let`, `(( ))`, `for (( ))`,
+`[[ -eq ]]` report and return 1 (let and for gave 2). Fix: ArithParser throws ArithException; WordExpander.
+EvalArithmetic/EvalExpandedArithmetic abandon (WordExpander.Abandon -> CommandAbortException) at the outermost depth
+unless `command: true` (the four commands pass it; nested evaluations pass the error up); for (( )) ends with 1
+(ArithForFailed). `**` was (long)Math.Pow through a double (3**39 off by 11): integer power, wrapping; a negative
+exponent is "exponent less than 0" even in a branch not taken (bash, measured; division by 0 there is not).
+redirect.out's hand-written "div-continued" was the bug: now GNU's output. Case arith_errors_flow_gnu (stdout only),
+red on 847. Still open: the WORDING (bash's "EXPR : MESSAGE (error token is "...")"). `1.0.0+hg.de506a15b4cf 849`,
+suite 313/0, battery 220, rollback dist/*.rev847.
+
+## 2026-11-15 -- BUGS FIXED (facts-8a): a glob rooted at /tmp; build 850
+**Status:** Active. `echo /tmp/x*` stayed literal: Glob.Expand rooted a `/...` pattern (not `/c/`) at the drive's root
+and looked for a folder named tmp, while TranslatePath maps a plain /tmp path to the temporary folder. Expand now
+roots `/tmp/` there (display kept as typed). `/usr/...` and other POSIX roots map nowhere in C#Bash, glob or not.
+Case glob_tmp_root_gnu (own unique files; GNU via WSL), red on 849.
+
+## 2026-11-15 -- BUGS FIXED (found by Claude checking a workaround it sent facts-8a): a quoted backslash in a glob path; build 851
+**Status:** Active. Claude sent facts-8a `"$TMP"/x*` as a workaround without running it (memory "verify before sending
+workarounds"); run afterwards on 806 it gave `F:/\TEMP/x-1.txt`, and a correction followed. Cause: a QUOTED backslash
+reaches Glob.Expand as a mark (U+FDE0 range), so it was not a separator: `\TEMP` was one segment, joined after `F:/`.
+Fix: Expand turns the backslash mark back into `\` (a path separator, as an unquoted one already was), and moves the
+literal folders before the first pattern segment into the root, as typed (Unmark'd for the file system): the walk had
+re-joined every segment with one separator. MSYS (Git Bash 2.28, measured) gives `F:\TEMP/x-1.txt` for `"$p"/x*`; a
+pattern all in backslashes (`"F:\TEMP\x"*`) expands here (MSYS leaves it literal), as an unquoted one already did.
+Case glob_quoted_backslash (authored from MSYS), red on 850; glob_tmp_root_gnu still green (the root move covers /tmp).
+
+## 2026-11-15 -- DEPLOYED 851; Wombat ready for adoption (AWAITING THE ARCHITECT)
+**Status:** Record. `1.0.0+hg.e60d0bdb9aab 851`, suite 315/0, battery 220, rollback dist/*.rev850. git-9d reports Wombat
+(git.exe replacement) Plan 4 complete, build 92: adoption = deploy/git.exe as ~/.bash/bin/git.exe, ~/.bash/etc/gitconfig
+("[core]" + "\tsymlinks = false"), an empty ~/.bash/etc/gitattributes; folder rename to F:/Koliada/Tools/wombat pending.
+Machine-wide: put to the architect, nothing installed. Claude's position: install after the rename, both machines; then
+csharpBash.config's unix-tools back to the default PATH;WSL (PortableGit/cmd was there only for a bare `git`), and
+publish.sh off PortableGit once Wombat has made a real push.
+
+## 2026-11-15 -- BUGS FIXED (KNOWN_ISSUES' last open entry): arithmetic error messages in bash's words; build 853
+**Status:** Active. Measured (48 expressions and contexts, GNU bash 5.1): `EXPR: MESSAGE (error token is "TOKEN")`, EXPR
+the text front-trimmed with its end kept, TOKEN from the start of the last token read to the end (the end of the text
+never moves it; a parenthesized group is one token: `5 / (2 - 2)` names "(2 - 2) "); a bad number names itself
+(`2#102: value too great for base (error token is "2#102")`); prefixes `let: `, `((: ` (a for's failing part), `[[: `,
+a substring's `NAME: `; a variable holding an expression gives its own text. Messages: syntax error: operand expected;
+syntax error in expression; division by 0; value too great for base (`08`, `0xg`, `12a`); invalid arithmetic base;
+invalid integer constant (`2#`); `:' expected for conditional expression; expression expected; exponent less than 0;
+attempted assignment to non-variable; bad array subscript; missing `)'. ArithParser: SkipWs records the token start
+(_tok); Error()/NumberError() build the text (the raw string front-trimmed only when an error is built: no added
+allocation per evaluation; the per-token store is the only hot-path cost, unmeasured -- the next publish's benchmark
+shows it); ParseNumber rewritten (base 64's `@`=62 `_`=63 were refused; `0x` alone is 0, as bash). Callers pass the
+untrimmed text and add only the prefix. NOT matched (recorded, not fixed): `$(( (1+2 ))` (bash refuses it reading the
+script), `x++ ++` (bash: `+` then unary `+`), a lone `$` (bash: operand expected). Case arith_error_messages_gnu (45
+lines), red on 851. KNOWN_ISSUES has no open entry.
+
+## 2026-11-15 -- RULED (the architect: "ratified"): the refusal protocol for programs in ~/.bash/bin, and C#Bash's fallback on it
+**Status:** Active; to build (after the publish benchmark's comparison run). The architect: "now is the time to decide
+this, it will apply to all commands placed in the ~/.bash folder, including the users. If they don't conform to the
+protocol, it is the users problem"; "our programs should all know quickly if they can't handle a request". THE PROGRAM:
+decides from its arguments alone, before reading stdin, writing stdout or touching a file, whether it serves the
+request; if not it exits 127 with NOTHING on stdout or stderr (it may append its reason to ~/.bash/unserviced.jsonl);
+any other exit status is a real answer, errors included, never rerun. C#BASH: on 127 from a program in ~/.bash/bin it
+reruns the SAME command from scratch (arguments, redirections, the unread stdin) with the next program of that name in
+the unix-tools chain, ~/.bash/bin excluded; with none, one line `<name>: <program> does not serve this request, and
+unix-tools has no other`, status 127. Restart from scratch (his question, left to Claude): yes -- a refusal that did
+nothing leaves nothing to resume or undo. 127 because it is the shell's "not found", and "not found for this request"
+continues the same search; the cost (a script in ~/.bash/bin that exits 127 on a missing inner command is rerun) is
+its owner's, by his rule. No cost on the normal path: one comparison after a program ends. Alternatives: no retry
+(Claude's earlier position: refusal vs error indistinguishable, stdin consumed -- both answered by the protocol);
+recognizing Wombat's stderr text (needs stderr capture of every program); a fresh code no tool uses. Supersedes nothing;
+Wombat (exit 128 + a stderr line today) moves to the protocol (git-9d told).

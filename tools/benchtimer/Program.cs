@@ -1,6 +1,6 @@
 // benchtimer: the benchmark's launcher and clock (tests/bench/compare3.sh).
 //
-//   benchtimer <n> <exe> [args...]
+//   benchtimer [--limit <seconds>] <n> <exe> [args...]
 //
 // Launches <exe> [args...] n times in a row, each straight from CreateProcessW, the way Claude
 // Code launches a shell, and prints "<min> <total> <n>" in seconds. The interval is CreateProcessW
@@ -12,7 +12,9 @@
 // landed on C#Bash and WSL but not on Git Bash launching itself.
 //
 // The child gets NUL as stdin, stdout and stderr, inherits only that handle, inherits this
-// process's console (none created per launch), and must exit 0 every time or the run fails.
+// process's console (none created per launch), and must exit 0 every time or the run fails. A launch past the
+// limit (300 s, or --limit) is killed with every process under it and the run ends "TIMEOUT", exit 3; the limit is
+// the same wait's bound, so a launch that ends in time is timed exactly as before.
 //
 //   benchtimer --sieve <n>
 //
@@ -30,8 +32,18 @@ using System.Text;
 
 static class BenchTimer
 	{
+	/// <summary>The bound on one launch: 300 s (the slowest normal launch, Git Bash's loop_big, takes about 20 s).
+	/// `--limit <seconds>` sets another, first on the command line.</summary>
+	static uint LimitMs = 300_000;
+
 	static int Main(string[] args)
 		{
+		if (args.Length >= 2 && args[0] == "--limit")
+			{
+			if (!uint.TryParse(args[1], out uint s) || s == 0 || s > 86_400) { Console.Error.WriteLine("benchtimer: --limit takes seconds, 1 to 86400"); return 2; }
+			LimitMs = s * 1000;
+			args = args[2..];
+			}
 		if (args.Length == 2 && args[0] == "--sieve") return Sieve(args[1]);
 		if (args.Length < 2 || !int.TryParse(args[0], out int n) || n < 1)
 			{
@@ -67,6 +79,11 @@ static class BenchTimer
 			Console.WriteLine($"{min:F6} {total:F6} {n}");
 			return 0;
 			}
+		catch (TimeoutException e)
+			{
+			Console.Error.WriteLine("benchtimer: TIMEOUT: " + e.Message + " [" + line + "]");
+			return 3;   // compare3 prints TIMEOUT in the cell and goes on
+			}
 		catch (Exception e)
 			{
 			Console.Error.WriteLine("benchtimer: FATAL: " + e.Message + " [" + line + "]");
@@ -88,8 +105,20 @@ static class BenchTimer
 		if (!CreateProcessW(null, buf, IntPtr.Zero, IntPtr.Zero, true, EXTENDED_STARTUPINFO_PRESENT,
 				IntPtr.Zero, null, ref si, out PROCESS_INFORMATION pi))
 			throw new Win32Exception(Marshal.GetLastWin32Error());
-		WaitForSingleObject(pi.hProcess, INFINITE);
+		// the same wait as ever, given a bound: nothing is added between the two clock reads (the architect, 2026-11-14:
+		// the limit must not touch the row times). A launch past it is a hang, not a time: Git Bash once hung 10 h in a
+		// `$( )` fork and stalled the whole benchmark overnight.
+		uint w = WaitForSingleObject(pi.hProcess, LimitMs);
 		long end = Stopwatch.GetTimestamp();
+		if (w == WAIT_TIMEOUT)
+			{
+			// only now: the process and every one under it (the hung one was a grandchild), found from the process tree
+			try { using var p = Process.GetProcessById(pi.dwProcessId); p.Kill(entireProcessTree: true); } catch (Exception) { }
+			WaitForSingleObject(pi.hProcess, 10_000);
+			CloseHandle(pi.hThread);
+			CloseHandle(pi.hProcess);
+			throw new TimeoutException($"a launch ran past {LimitMs / 1000} s: killed with its children");
+			}
 
 		GetExitCodeProcess(pi.hProcess, out uint code);
 		CloseHandle(pi.hThread);
@@ -187,7 +216,7 @@ static class BenchTimer
 	const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000;
 	const uint FILE_SHARE_READ = 1, FILE_SHARE_WRITE = 2, OPEN_EXISTING = 3;
 	const uint HANDLE_FLAG_INHERIT = 1, STARTF_USESTDHANDLES = 0x100;
-	const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000, INFINITE = 0xFFFFFFFF;
+	const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000, INFINITE = 0xFFFFFFFF, WAIT_TIMEOUT = 0x00000102;
 	const int PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002;
 	static readonly IntPtr INVALID_HANDLE = new IntPtr(-1);
 

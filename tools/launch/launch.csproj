@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The test runners' launcher (tests/run-tests.sh, the console-kind cases): starts a process with no console or a
+       console of a chosen kind, as Claude Code does, in place of the C# the PowerShell helpers embedded. Build:
+       dotnet build tools/launch -c Release -o tools/launch/bin -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>annotations</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

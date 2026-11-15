@@ -1,6 +1,6 @@
 # MANUAL CHECK (not in the suite). Usage: <a C#Bash> tests/detach/nested.sh <new build> <old build>
 # <old build> must predate BREAKAWAY_OK (e.g. dist/Bash.exe.rev121), or the control and the
-# fallback cases D/E test nothing. The console-less variant: tests/detach/consoleless.ps1.
+# fallback cases D/E test nothing. The console-less variant: tests/detach/consoleless.sh.
 # ~1 min. DECISIONS 2026-10-05 (nested shells: CREATE_BREAKAWAY_FROM_JOB).
 # Q3 spike: can a nested shell's detached child leave the OUTER shell's kill-on-close job?
 # $1 = spike build (BREAKAWAY_OK on its job; detached children start with CREATE_BREAKAWAY_FROM_JOB)

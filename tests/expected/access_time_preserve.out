@@ -1,0 +1,19 @@
+== no line
+stat f: 2026
+stat -c %n f: 2026
+ls -l f: 2026
+cat f: 2026
+== access-time = default
+stat f: 2026
+stat -c %n f: 2026
+ls -l f: 2026
+cat f: 2026
+== access-time = preserve
+stat f: 2020
+stat -c %n f: 2020
+ls -l f: 2020
+cat f: 2026
+== a bad value: warned, default kept
+C#Bash: P/.bash/etc/csharpBash.config: access-time: 'sometimes' is not default or preserve (default kept)
+stat f: 2026
+removed

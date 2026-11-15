@@ -55,6 +55,11 @@ public sealed class ExitException(int code) : Exception
 /// (DECISIONS 2026-10-11, item 6 phase 3).</summary>
 public sealed class CommandAbortException() : Exception("command abandoned");
 
+/// <summary>An arithmetic error (ArithParser). In an expansion or an assignment it abandons the line, as bash's
+/// (WordExpander.EvalArithmetic); the arithmetic commands (`let`, `(( ))`, `for (( ))`, `[[ -eq ]]`) report it and
+/// return 1 (2026-11-15: it was status 2 and the line went on; an integer variable's took 0 silently).</summary>
+public sealed class ArithException(string message) : EvalException(message);
+
 /// <summary>Thrown when execution is interrupted by SIGINT (Ctrl+C). Exit code 130.</summary>
 public sealed class InterruptException() : Exception("Interrupted");
 

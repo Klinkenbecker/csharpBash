@@ -1,0 +1,27 @@
+y: [[ "a b" == @(a b) ]]
+y: [[ a == @("a"|b) ]]
+y: x=a; [[ a == @($x|b) ]]
+y: [[ abab == *(ab) ]]
+n: [[ "" == +(a) ]]
+y: [[ foo.txt == !(*.c) ]]
+n: [[ foo.c == !(*.c) ]]
+n: [[ abc == a!(b)c ]]
+y: [[ ac == a!(b)c ]]
+y: [[ abbc == a!(b)c ]]
+y: [[ a == @(a|) ]]
+y: [[ "" == @(a|) ]]
+y: [[ aab == @(a|+(a)b) ]]
+y: [[ "a|b" == @(a\|b) ]]
+y: [[ "a|b" == @(a"|"b) ]]
+y: [[ x != !(x) ]]
+y: [[ "(" == @(\() ]]
+y: [[ a == @([ab]|c) ]]
+y: [[ ab == @(a)@(b) ]]
+y: [[ abc == @(a)* ]]
+y: [[ a.b == *.@(b|c) ]]
+y: p="!(x)"; [[ y == $p ]]
+y: nocase A @(a|b)
+n: case A @(a|b)
+n: quoted
+y: quoted parens value
+y: +ab

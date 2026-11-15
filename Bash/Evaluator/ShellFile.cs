@@ -74,8 +74,7 @@ public static class ShellFile
 	/// </summary>
 	public static (uint Volume, ulong Index, uint Links)? Identity(string path, bool follow = true)
 		{
-		using var h = CreateFileW(path, FileReadAttributes, 7 /* read, write, delete */, IntPtr.Zero, 3 /* OPEN_EXISTING */,
-		                          BackupSemantics | (follow ? 0u : OpenReparsePoint), IntPtr.Zero);
+		using var h = OpenForDetails(path, follow);
 		if (h.IsInvalid || !GetFileInformationByHandle(h, out var i)) return null;
 		return (i.VolumeSerialNumber, ((ulong)i.FileIndexHigh << 32) | i.FileIndexLow, i.NumberOfLinks);
 		}
@@ -132,8 +131,7 @@ public static class ShellFile
 	/// time; MSYS's stat gives this one). <paramref name="follow"/> false is lstat.</summary>
 	public static DateTime? ChangeTime(string path, bool follow = true)
 		{
-		using var h = CreateFileW(path, FileReadAttributes, 7 /* read, write, delete */, IntPtr.Zero, 3 /* OPEN_EXISTING */,
-		                          BackupSemantics | (follow ? 0u : OpenReparsePoint), IntPtr.Zero);
+		using var h = OpenForDetails(path, follow);
 		if (h.IsInvalid || !GetFileInformationByHandleEx(h, 0 /* FileBasicInfo */, out var b,
 		                                                 (uint)System.Runtime.InteropServices.Marshal.SizeOf<FileBasicInfo>())) return null;
 		return DateTime.FromFileTime(b.ChangeTime);
@@ -149,7 +147,55 @@ public static class ShellFile
 	[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
 	private static extern bool GetFileInformationByHandleEx(Microsoft.Win32.SafeHandles.SafeFileHandle file, int infoClass, out FileBasicInfo info, uint size);
 
-	private const uint FileReadAttributes = 0x80, BackupSemantics = 0x02000000, OpenReparsePoint = 0x00200000;
+	private const uint FileReadAttributes = 0x80, FileWriteAttributes = 0x100, BackupSemantics = 0x02000000, OpenReparsePoint = 0x00200000;
+
+	/// <summary>A handle to read a file's details (stat, ls -l: its identity, link count, change time), sharing
+	/// everything. On NTFS such a handle moves the file's access time when it closes, as under Git Bash (measured
+	/// 2026-11-14: stat and ls -l did; find's time tests, touch -m, test -nt did not). With `access-time = preserve` in
+	/// C#Bash's configuration (the architect, 2026-11-14) the handle also asks Windows to leave the access time alone
+	/// (SetFileTime with 0xFFFFFFFF, Windows' documented way); a file that refuses the attribute-writing open is read
+	/// as before, its access time moving.</summary>
+	private static Microsoft.Win32.SafeHandles.SafeFileHandle OpenForDetails(string path, bool follow)
+		{
+		uint flags = BackupSemantics | (follow ? 0u : OpenReparsePoint);
+		if (Fallbacks.PreserveAccessTime)
+			{
+			var w = CreateFileW(path, FileReadAttributes | FileWriteAttributes, 7, IntPtr.Zero, 3, flags, IntPtr.Zero);
+			if (!w.IsInvalid)
+				{
+				long keep = -1;   // 0xFFFFFFFF in both halves: "do not change the last access time" through this handle
+				SetFileTime(w, IntPtr.Zero, ref keep, IntPtr.Zero);
+				return w;
+				}
+			w.Dispose();
+			}
+		return CreateFileW(path, FileReadAttributes, 7 /* read, write, delete */, IntPtr.Zero, 3 /* OPEN_EXISTING */, flags, IntPtr.Zero);
+		}
+
+	/// <summary>Whether a file begins `#!` (FileTests.IsExecutable: Windows has no execute bit, so stat, ls -l and the
+	/// command lookup read a file's first two bytes, as MSYS does). That read moves the access time; under
+	/// `access-time = preserve` it is made through a handle that leaves it alone (the read was what moved it for stat and
+	/// ls -l, measured 2026-11-14: `stat -c %n` alone did).</summary>
+	public static bool StartsWithShebang(string path)
+		{
+		if (Fallbacks.PreserveAccessTime && !Directory.Exists(path))
+			{
+			var h = CreateFileW(path, 0x80000000 /* GENERIC_READ */ | FileWriteAttributes, 7, IntPtr.Zero, 3, 0, IntPtr.Zero);
+			if (!h.IsInvalid)
+				{
+				long keep = -1;
+				SetFileTime(h, IntPtr.Zero, ref keep, IntPtr.Zero);
+				using var kept = new FileStream(h, FileAccess.Read);
+				return kept.Length >= 2 && kept.ReadByte() == '#' && kept.ReadByte() == '!';
+				}
+			h.Dispose();
+			}
+		using var fs = OpenRead(path);
+		return fs.Length >= 2 && fs.ReadByte() == '#' && fs.ReadByte() == '!';
+		}
+
+	[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+	private static extern bool SetFileTime(Microsoft.Win32.SafeHandles.SafeFileHandle file, IntPtr creation, ref long lastAccess, IntPtr lastWrite);
 
 	[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
 	private struct ByHandleFileInformation

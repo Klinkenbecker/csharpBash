@@ -4,14 +4,14 @@
 #
 #   tests/bench/compare.sh [path\to\Bash.exe] [reference bash] [rounds]
 #
-# Defaults: dist/Bash.exe (else Bash/bin/Release/net8.0/Bash.exe); the bash running this
+# Defaults: dist/Bash.exe (else Bash/bin/Release/net10.0/Bash.exe); the bash running this
 # script; 3 rounds. Run it from Git Bash. Numbers include process startup (~0.08 s for the
 # .NET runtime); use tools/bench.csx for per-iteration A/Bs.
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../.." && pwd)"
 cs="${1:-}"
 if [ -z "$cs" ]; then
-	if [ -x "$root/dist/Bash.exe" ]; then cs="$root/dist/Bash.exe"; else cs="$root/Bash/bin/Release/net8.0/Bash.exe"; fi
+	if [ -x "$root/dist/Bash.exe" ]; then cs="$root/dist/Bash.exe"; else cs="$root/Bash/bin/Release/net10.0/Bash.exe"; fi
 fi
 ref="${2:-$BASH}"
 rounds="${3:-3}"

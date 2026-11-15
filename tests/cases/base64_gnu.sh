@@ -16,3 +16,5 @@ echo "--- -d -i, a space";          printf 'aGVs bG8=\n' | { base64 -d -i 2>&1; 
 echo "--- -d -i, CR and garbage";   printf 'aG!Vs\r\nbG*8=\r\n' | { base64 -d -i 2>&1; echo " rc=$?"; }
 echo "--- -d, garbage";             printf 'aG!Vs\n' | { base64 -d 2>&1; echo " rc=$?"; }
 echo "--- -i without -d";           printf 'hi' | { base64 -i 2>&1; echo "rc=$?"; }
+# 2026-11-15 (moving to .NET 10, which refuses a padded group's left-over bits; GNU ignores them)
+echo "--- -d, left-over bits";       for s in 'aR==' 'aGVsbG9=' 'aGVsbG8gd29ybGR=' 'aGk='; do printf '%s' "$s" | { base64 -d 2>&1; echo " rc=$?"; }; done

@@ -11,23 +11,23 @@ To skip building it: run the installer (README, "Use it with Claude Code"; from 
 
 1. Publish the Native AOT build somewhere the build never touches:
    ```cmd
-   tools\publish-aot.cmd            REM -> dist\Bash.exe, ~7.6 MiB
+   tools\publish-aot.cmd            REM -> dist\Bash.exe, ~7 MiB
    ```
-   One static executable. No .NET runtime on the target, and **~9 ms startup, against Git Bash's ~23 ms as Claude Code starts it** — which matters because Claude Code spawns a shell for *every* tool call. The script exists because AOT needs two things on the *build* machine that are easy to get wrong: the MSVC C++ toolchain (`vcvars64.bat`) and `vswhere.exe` on PATH, which the vcvars script does not add. Read the comment at the top of it before concluding your toolchain is missing.
+   One static executable. No .NET runtime on the target, and **~9 ms startup, against Git Bash's ~23 ms as Claude Code starts it** — which matters because Claude Code spawns a shell for *every* tool call. The build machine needs the supported toolchain, two free downloads: the .NET 10 SDK and the Visual Studio C++ build tools ([Developing C#Bash, "The supported toolchain"](DEVELOPING.md#the-supported-toolchain): what to install, the one-line install, the license condition). The script finds the C++ tools itself; if AOT fails, read the comment at the top of it before concluding your toolchain is missing.
 
    The managed alternatives, if you cannot or would rather not build AOT:
    ```sh
    # self-contained, no runtime needed on the target: ~79 MB, ~74 ms
    dotnet publish Bash/Bash.csproj -c Release -r win-x64 \
        -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o dist
-   # framework-dependent, smallest download, needs .NET 8 installed: ~1.7 MB, ~68 ms
+   # framework-dependent, smallest download, needs .NET 10 installed: ~1.7 MB, ~68 ms
    dotnet publish Bash/Bash.csproj -c Release -r win-x64 -p:SelfContained=false \
        -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:DebugType=none -o dist
    ```
    ReadyToRun keeps the runtime and its JIT, so it is about 11 % faster than AOT in *steady state* — but only past roughly 1.2 million shell operations in a single invocation, which no Claude Code tool call approaches. Pointing Claude Code at `bin\Release` is a bad idea either way: every rebuild replaces the file under a live session, and the test runner kills stale interpreter processes before building.
 2. Set the variable for your user, then start Claude Code from a NEW terminal (`setx` reaches only programs started
    afterwards):
-   ```powershell
+   ```cmd
    setx CLAUDE_CODE_GIT_BASH_PATH "C:/path/to/Bash.exe"
    ```
    Claude Code runs that shell even when another `bash.exe` (WSL's launcher in System32, Git's) comes first on PATH:
@@ -123,6 +123,11 @@ it cannot use is reported once on stderr and skipped. `type`, `command -v` and `
 PATH; they never report WSL, which has no file to name. Lookups are remembered per chain, so a changed folder list
 never runs a remembered program from a folder you removed. The installer does not write the file: create it when you
 want a different chain.
+
+The same file holds **`access-time = default | preserve`**. On NTFS, reading a file's details moves its access time
+(`stat` and `ls -l` read a file's first bytes for `#!`, as MSYS does, since Windows has no execute bit), as under Git
+Bash; `preserve` makes those reads leave it alone, so `ls -u` and `find -atime` mean "last really read". A real read
+(`cat`) moves it either way. With no line, `default`.
 
 **WSL reads standard input**, even for a tool that does not: inside `while read …; do …; done`, a command run in WSL
 takes the loop's remaining lines (measured). Give it `< /dev/null` there.

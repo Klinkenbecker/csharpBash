@@ -12,21 +12,21 @@ It was built to be the shell Claude Code uses on Windows. Claude Code starts a f
 
 | benchmark (seconds) | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.157** | 1.529 | 0.448 | 9.7× | 2.9× |
-| `arith` — 200 k `$(( ))` evaluations | **0.243** | 2.103 | 0.631 | 8.7× | 2.6× |
-| `func` — 100 k function calls | **0.217** | 2.342 | 0.582 | 10.8× | 2.7× |
-| `loop_big` — 2 M iterations | **1.483** | 15.223 | 3.489 | 10.3× | 2.4× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.057** | 15.398 | 0.857 | **270×** | 15.0× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.094** | 0.288 | 0.146 | 3.1× | 1.6× |
-| `find` — walk 400 files | **0.016** | 0.134 | 0.242 | 8.4× | 15.1× |
-| startup — `bash -c 'exit 0'` | **0.0103** | 0.0266 | 0.1313 | 2.6× | 12.7× |
+| `loop` — 200 k `while` iterations | **0.165** | 1.499 | 0.412 | 9.1× | 2.5× |
+| `arith` — 200 k `$(( ))` evaluations | **0.242** | 2.092 | 0.638 | 8.6× | 2.6× |
+| `func` — 100 k function calls | **0.222** | 2.332 | 0.608 | 10.5× | 2.7× |
+| `loop_big` — 2 M iterations | **1.477** | 19.061 | 3.602 | 12.9× | 2.4× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.060** | 15.735 | 0.890 | **262×** | 14.8× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.101** | 0.275 | 0.144 | 2.7× | 1.4× |
+| `find` — walk 400 files | **0.016** | 0.146 | 0.212 | 9.1× | 13.2× |
+| startup — `bash -c 'exit 0'` | **0.0083** | 0.0254 | 0.1288 | 3.1× | 15.5× |
 
 Every row gives the same output in all three shells, so a fast wrong answer can't count as a win. Where the speed
 comes from:
 
 - **No new process per command.** The `coreutils` row runs 900 small commands. Under Git Bash that is 900 Windows
   processes; under C#Bash it is none.
-- **It starts fast:** 10.3 ms, against Git Bash's 26.6 ms or WSL's 131.3 ms. Claude Code pays that on every call.
+- **It starts fast:** 8.3 ms, against Git Bash's 25.4 ms or WSL's 128.8 ms. Claude Code pays that on every call.
 - **It remembers where programs are.** On Windows, finding a program on a long PATH is slow, and not finding one is
   slower still. C#Bash remembers both, so a simple Claude Code call takes about 11 ms in all.
 
@@ -34,7 +34,9 @@ How it is measured, the caveats, and where each millisecond of a call goes: [Per
 
 ## Architecture
 
-A classic four-stage pipeline: **lexer → parser → AST → tree-walking evaluator**.
+A classic four-stage pipeline: **lexer → parser → AST → tree-walking evaluator**, in C# on .NET 10 (since build 847;
+.NET 8 before), published as one Native AOT executable. Building it: the .NET 10 SDK and the Visual Studio C++ build
+tools, both free ([the supported toolchain](docs/DEVELOPING.md#the-supported-toolchain)).
 
 ![Pipeline](docs/pipeline.svg)
 
@@ -65,9 +67,7 @@ To remove it, delete `%USERPROFILE%/.bash/bin` (and its PATH entry, if you added
 **Without the start file:**
 
 1. Run the installer (step 2 above): `Bash.exe` is then in `%USERPROFILE%/.bash/bin`.
-2. Point Claude Code at it;
-   -  Command Prompt: `setx CLAUDE_CODE_GIT_BASH_PATH "%USERPROFILE%/.bash/bin/Bash.exe"`.
-   -  PowerShell: `setx CLAUDE_CODE_GIT_BASH_PATH "$env:USERPROFILE/.bash/bin/Bash.exe"`.
+2. Point Claude Code at it, from a Command Prompt: `setx CLAUDE_CODE_GIT_BASH_PATH "%USERPROFILE%/.bash/bin/Bash.exe"`.
 3. Restart Claude Code, and check with `! bash --version` (the last line must read `C#Bash build …`).
 
 **If it is not C#Bash:** without `CLAUDE_CODE_GIT_BASH_PATH`, Claude Code runs the first `bash.exe` on PATH. With
@@ -115,7 +115,7 @@ Everything, in detail: [Features](docs/FEATURES.md).
 
 ## How it's tested
 
-306 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
+308 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
 bug fails a test instead of becoming its expected answer. A battery of 237 probes runs the same commands through both
 shells and compares them. Building and testing it yourself, and how the source is laid out: [Developing C#Bash](docs/DEVELOPING.md).
 

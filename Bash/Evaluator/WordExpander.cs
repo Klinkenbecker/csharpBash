@@ -287,7 +287,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 
 	/// <summary>As <see cref="ExpandToPattern(Word)"/>; <paramref name="shown"/>, when given, receives the operand as bash's
 	/// set -x prints it, in the same pass: every quoted character backslashed (`"x*"` is `\x\*`).</summary>
-	public string ExpandToPattern(Word word, System.Text.StringBuilder? shown)
+	public string ExpandToPattern(Word word, System.Text.StringBuilder? shown, bool extglob = false)
 		{
 		var sb = new System.Text.StringBuilder();
 		foreach (var p in word.Parts)
@@ -301,7 +301,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 				case TildePart:          text = ExpandPart(p); break;   // a tilde's result matches literally, as bash (red team F12)
 				default: text = ExpandPart(p); quoted = false; break;
 				}
-			sb.Append(quoted ? EscapeGlob(text) : text);
+			sb.Append(quoted ? EscapeGlob(text, extglob) : text);
 			if (shown is not null)
 				{
 				if (quoted) foreach (var c in text) shown.Append('\\').Append(c);
@@ -334,10 +334,15 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 		return ShellEncoding.Canonical(sb.ToString());
 		}
 
-	private static string EscapeGlob(string s)
+	private static string EscapeGlob(string s, bool extglob = false)
 		{
 		var sb = new System.Text.StringBuilder();
-		foreach (char c in s) { if (c is '*' or '?' or '[' or '\\' or ']') sb.Append('\\'); sb.Append(c); }
+		// with extglob (`[[ == ]]`), a quoted ( | ) @ + ! is text too: `[[ a == "@(a|b)" ]]` is false, as bash
+		foreach (char c in s)
+			{
+			if (c is '*' or '?' or '[' or '\\' or ']' || (extglob && c is '(' or ')' or '|' or '@' or '+' or '!')) sb.Append('\\');
+			sb.Append(c);
+			}
 		return sb.ToString();
 		}
 
@@ -703,8 +708,8 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			int colon = FindTopLevelColon(spec);
 			var offStr = colon < 0 ? spec : spec[..colon];
 			var lenStr = colon < 0 ? null : spec[(colon + 1)..];
-			long off = offStr.Trim().Length == 0 ? 0 : EvalArithmetic(offStr);
-			long? len = lenStr is null || lenStr.Trim().Length == 0 ? null : EvalArithmetic(lenStr);
+			long off = offStr.Trim().Length == 0 ? 0 : EvalArithmetic(offStr, context: name);   // bash: `s: 1/0: division by 0 …`
+			long? len = lenStr is null || lenStr.Trim().Length == 0 ? null : EvalArithmetic(lenStr, context: name);
 			if (elems is not null)
 				{
 				var list = elems;
@@ -1414,7 +1419,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 			// bash evaluates a non-numeric value as an expression itself (x="y+1"), and its errors are that expression's:
 			// `x='1+'; $((x))` was 0 (bash: "1+: syntax error: operand expected", the command abandoned), and a value
 			// naming itself was cut off as 0 at depth 8 (bash: "expression recursion level exceeded") (red team, 2026-10-19)
-			if (_depth >= MaxDepth) throw new EvalException($"{val}: expression recursion level exceeded (error token is \"{val}\")");
+			if (_depth >= MaxDepth) throw new ArithException($"{val}: expression recursion level exceeded (error token is \"{val}\")");
 			_depth++;
 			try { return _o.EvalArithmetic(val); }
 			finally { _depth--; }
@@ -1434,11 +1439,24 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 
 	private ArithVars? _arithVars;
 
-	public long EvalArithmetic(string expr)
+	// how deep evaluations nest (a subscript, a variable holding an expression): only the outermost decides an error's fate
+	private int _arithDepth;
+
+	/// <summary>Evaluate an arithmetic text. An error abandons the line, as bash's expansion errors (`$(( 1/0 ))`, a
+	/// substring offset, a subscript, an integer variable's value: measured against bash 5.1, 2026-11-15); with
+	/// <paramref name="command"/> (`let`, `(( ))`, `for (( ))`, `[[ -eq ]]`) it is thrown, for the command to report
+	/// and return 1. A nested evaluation passes it up to the outermost.</summary>
+	public long EvalArithmetic(string expr, bool command = false, string? context = null)
 		{
-		expr = ExpandVarsInArith(expr.Trim());
-		_arithVars ??= new ArithVars(this);
-		return ArithParser.Evaluate(expr, _arithVars);
+		_arithDepth++;
+		try
+			{
+			expr = ExpandVarsInArith(expr);   // untrimmed: a message shows the end of the text as written (the parser trims)
+			_arithVars ??= new ArithVars(this);
+			return ArithParser.Evaluate(expr, _arithVars);
+			}
+		catch (ArithException ex) when (!command && _arithDepth == 1) { Abandon(context is null ? ex.Message : $"{context}: {ex.Message}"); throw; }
+		finally { _arithDepth--; }
 		}
 
 	public string ExpandArith(string expr) => ExpandVarsInArith(expr.Trim());
@@ -1448,10 +1466,16 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	public string ExpandArithText(string expr) => ExpandVarsInArith(expr);
 
 	/// <summary>Evaluate an arithmetic text whose `$` expansions are done (<see cref="ExpandArithText"/>).</summary>
-	public long EvalExpandedArithmetic(string expanded)
+	public long EvalExpandedArithmetic(string expanded, bool command = false)
 		{
-		_arithVars ??= new ArithVars(this);
-		return ArithParser.Evaluate(expanded.Trim(), _arithVars);
+		_arithDepth++;
+		try
+			{
+			_arithVars ??= new ArithVars(this);
+			return ArithParser.Evaluate(expanded, _arithVars);
+			}
+		catch (ArithException ex) when (!command && _arithDepth == 1) { Abandon(ex.Message); throw; }
+		finally { _arithDepth--; }
 		}
 
 	/// <summary>Perform the `$var` / `${…}` / `$(…)` expansions inside an arithmetic

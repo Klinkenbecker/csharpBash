@@ -1,0 +1,13 @@
+rc=0
+mkdir: created directory 'e//'
+rc=0
+mkdir: cannot create directory 'a/b/': No such file or directory
+rc=1
+mkdir: cannot create directory 'mk1/': File exists
+rc=1
+mkdir: cannot create directory 'f/': File exists
+rc=1
+rc=0
+e/
+mk1/
+mk3/

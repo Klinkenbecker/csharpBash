@@ -1370,7 +1370,9 @@ public sealed partial class Builtins
 		{
 		if (args.Count == 0) { Console.Error.WriteLine(Err + "let: expression expected"); return 1; }
 		long last = 0;
-		foreach (var a in args) last = _eval.Expander.EvalArithmetic(a);
+		// an error is reported and is status 1, the line going on, as bash's (it was 2)
+		try { foreach (var a in args) last = _eval.Expander.EvalArithmetic(a, command: true); }
+		catch (ArithException ex) { Console.Error.WriteLine($"{ex.Prefix ?? Err}let: {ex.Message}"); return 1; }
 		return last != 0 ? 0 : 1;
 		}
 

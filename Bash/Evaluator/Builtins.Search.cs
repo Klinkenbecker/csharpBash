@@ -157,7 +157,7 @@ public sealed partial class Builtins
 
 	/// <summary>ERE → .NET: mostly identity, plus POSIX classes and `\&lt;` `\&gt;`. A `*` at the start
 	/// of the RE, a group or a branch is a literal, as in GNU (.NET rejected it).</summary>
-	private static string EreToNet(string pat)
+	private static string EreToNet(string pat, bool awk = false)
 		{
 		var sb = new StringBuilder(pat.Length + 8);
 		bool start = true;
@@ -173,7 +173,7 @@ public sealed partial class Builtins
 				continue;
 				}
 			if (c == '*' && start) { sb.Append("\\*"); start = false; continue; }
-			if (c == '[') { i = AppendBracket(pat, i, sb); start = false; continue; }
+			if (c == '[') { i = AppendBracket(pat, i, sb, awk); start = false; continue; }
 			sb.Append(c);
 			start = c is '(' or '|' or '^';
 			}
@@ -265,7 +265,7 @@ public sealed partial class Builtins
 
 	/// <summary>Copy a bracket expression starting at <paramref name="i"/>, expanding POSIX
 	/// classes; returns the index of the closing bracket (or of `[` when unterminated).</summary>
-	private static int AppendBracket(string pat, int i, StringBuilder sb)
+	private static int AppendBracket(string pat, int i, StringBuilder sb, bool awk = false)
 		{
 		int j = i + 1;
 		if (j < pat.Length && pat[j] == '^') j++;
@@ -278,6 +278,9 @@ public sealed partial class Builtins
 				int end = pat.IndexOf(":]", k + 2, StringComparison.Ordinal);
 				if (end > 0) { k = end + 1; continue; }
 				}
+			// awk reads `\]` and `\[` inside a set as the bracket itself (gawk; facts-8a, 2026-11-14: `[\]]` closed at the
+			// escaped `]`), so its scan steps over an escaped character; grep and sed keep POSIX's literal backslash
+			if (awk && pat[k] == '\\' && k + 1 < pat.Length) { k++; continue; }
 			if (pat[k] == ']') { close = k; break; }
 			}
 		if (close < 0) { sb.Append("\\["); return i; }
@@ -303,6 +306,7 @@ public sealed partial class Builtins
 				// GNU sed/grep extension: \t \n \r \f \v \\ \] inside a bracket expression
 				char n = body[p + 1];
 				string? esc = n switch { 't' => "\\t", 'n' => "\\n", 'r' => "\\r", 'f' => "\\f", 'v' => "\\v", '\\' => "\\\\", ']' => "\\]", _ => null };
+				if (esc is null && awk && n == '[') esc = "\\[";   // awk: `\[` in a set is `[` (gawk)
 				if (esc is not null) { sb.Append(esc); p++; continue; }
 				sb.Append("\\\\"); continue;
 				}
@@ -340,7 +344,7 @@ public sealed partial class Builtins
 		bool icase = o.Has('i') && !o.HasLong("no-ignore-case"), invert = o.Has('v'), lineNum = o.Has('n'), count = o.Has('c'), filesWithout = o.Has('L'), filesWith = o.Has('l'),
 		     wordMatch = o.Has('w'), lineMatch = o.Has('x'), fixedStr = o.Has('F'), ere = o.Has('E'), pcre = o.Has('P'), recursive = o.Has('r') || o.Has('R'),
 		     quiet = o.Has('q'), noMessages = o.Has('s'), noFilename = o.Has('h'), withFilename = o.Has('H'), onlyMatching = o.Has('o'), text = o.Has('a'),
-		     byteOffset = o.Has('b'), nullData = o.Has('z'), nullAfterName = o.Has('Z');
+		     byteOffset = o.Has('b'), nullData = o.Has('z'), nullAfterName = o.Has('Z'), lineBuffered = o.HasLong("line-buffered");
 		// a negative count is no limit, as GNU's; a non-number is its "invalid max count", exit 2 (it was rc 1, no word)
 		int maxCount = o.Int('m', -1, int.MinValue, (_, _) => "grep: invalid max count", 2);
 		if (maxCount == 0) return 1;   // -m 0: GNU reads nothing and prints nothing, -c included (it was no limit)
@@ -451,6 +455,7 @@ public sealed partial class Builtins
 							{
 							PrintLine(name, lineNo, lineOff, line, '-', showName, lineNum, byteOffset, nameSep, term);
 							afterLeft--; lastPrinted = lineNo;
+							if (lineBuffered) Console.Out.Flush();
 							}
 						else if (before > 0)
 							{
@@ -485,6 +490,8 @@ public sealed partial class Builtins
 						}
 					else PrintLine(name, lineNo, lineOff, line, ':', showName, lineNum, byteOffset, nameSep, term);
 					printedAny = true; lastPrinted = lineNo; afterLeft = after;
+					// --line-buffered: each line goes on as it is printed, into a pipe too (`tail -f log | grep --line-buffered x`)
+					if (lineBuffered) Console.Out.Flush();
 					if (maxCount > 0 && matched >= maxCount) break;
 					}
 				if (count)
@@ -636,6 +643,7 @@ public sealed partial class Builtins
 		// Hold space, ranges and line numbers start again with each file under -s and -i, as GNU and as before.
 		char sep = nullData ? '\0' : '\n';
 		using var shared = new SedShared(sep);
+		shared.Stdout.Unbuffered = o.Has('u');
 		foreach (var c in prog.Cmds)
 			{
 			string? wf = c.Cmd == 'w' ? c.Text : c.Cmd == 's' ? c.SWriteFile : null;
@@ -800,10 +808,15 @@ public sealed partial class Builtins
 		private readonly string _sep = sep.ToString();
 		private bool _owed;
 
+		/// <summary>-u: each write goes on at once, into a pipe too (`tail -f log | sed -u s/x/y/`), as GNU's unbuffered
+		/// output; it was parsed and ignored (found 2026-11-15 beside grep --line-buffered).</summary>
+		public bool Unbuffered;
+
 		public void Text(string s)
 			{
 			if (_owed) { W.Write(_sep); _owed = false; }
 			W.Write(s);
+			if (Unbuffered) W.Flush();
 			}
 
 		public void Line(string s, SedEnd ended)
@@ -811,6 +824,7 @@ public sealed partial class Builtins
 			if (_owed) { W.Write(_sep); _owed = false; }
 			if (ended != SedEnd.None) W.Write(ended == SedEnd.Crlf ? s + "\r" + _sep : s + _sep);
 			else { W.Write(s); _owed = true; }
+			if (Unbuffered) W.Flush();
 			}
 
 		/// <summary>Write the owed newline now.</summary>

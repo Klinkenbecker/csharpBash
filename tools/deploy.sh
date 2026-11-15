@@ -60,7 +60,9 @@ new_stamp=$("$new" --version 2>/dev/null | tail -1)
 [[ "$new_stamp" == *"hg.$node $rev" ]] || die "the published build's stamp is '$new_stamp', not rev $rev ($node)"
 
 # 3. the suite on that exact binary, detached (the console run is publish's, 2026-11-01)
-suite=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" -Interpreter "$new" -Detached 2>&1)
+# the launcher the detached suite starts each case with (tools/launch; built when missing, as benchtimer is)
+[ -f "$root/tools/launch/bin/launch.exe" ] || dotnet build "$root/tools/launch" -c Release -o "$root/tools/launch/bin" -nologo < /dev/null > /dev/null || die "cannot build tools/launch"
+suite=$(bash "$root/tests/run-tests.sh" --interpreter "$new" --detached < /dev/null 2>&1)   # run-tests.ps1 until 2026-11-14 (PowerShell removed)
 res=$(grep -E 'passed, [0-9]+ failed' <<< "$suite" | tail -1)
 echo "deploy: suite (-Detached): $res"
 # an optional program missing (MSYS: tests/cases/msys_pin.inc) is a loud complaint, never a stop (2026-11-09)
@@ -69,7 +71,7 @@ grep -E '^!!! [0-9]+ BYPASSED' <<< "$suite" | sed 's/^/deploy: /' >&2
 
 # 4. the battery, against WSL's GNU bash (its reference since 2026-10-19: Git is reached nowhere but the benchmark
 #    and the publish script)
-bat=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/compat/run-compat.ps1" 2>&1)
+bat=$(bash "$root/tests/compat/run-compat.sh" < /dev/null 2>&1)   # run-compat.ps1 until 2026-11-14
 bat_rc=$?
 echo "deploy: battery: $(grep -E 'pass, [0-9]+ diff' <<< "$bat" | tail -1)"
 [ $bat_rc -eq 0 ] || { grep -E 'REGRESS|FAIL' <<< "$bat" >&2; die "the battery regressed; not deployed"; }

@@ -10,13 +10,42 @@ The pipeline and the four design documents: [the README's Architecture section](
 ## Build · run · test
 
 ```sh
-dotnet build -c Release            # builds Bash.sln (.NET 8 SDK)
-Bash/bin/Release/net8.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/run-tests.ps1           # 306 self-checking cases (four need the Native AOT build: -Interpreter <exe>)
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/compat/run-compat.ps1   # 237-probe differential battery against WSL's GNU bash
+dotnet build -c Release            # builds Bash.sln (.NET 10 SDK)
+Bash/bin/Release/net10.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
+bash tests/run-tests.sh                    # 316 self-checking cases (four need the Native AOT build: --interpreter <exe>; --detached as Claude Code starts a shell)
+bash tests/compat/run-compat.sh            # 237-probe differential battery against WSL's GNU bash
 ```
 
 The test suite's expected outputs are never captured from the interpreter: most are GNU bash's own output (bash 5.1, run under WSL, the reference every behavior is matched against), the rest are authored from bash's documented behavior where a case is Windows-specific — so a regression fails rather than being silently baked in. Windows-only.
+
+## The supported toolchain
+
+C#Bash is a public project and builds only with publicly available tools that cost nothing (ruled 2026-11-15). On a
+clean Windows 10 or 11 (x64), two downloads, both from Microsoft:
+
+1. **The .NET 10 SDK** (https://dotnet.microsoft.com/download/dotnet/10.0). `global.json` asks for 10.0.404 or a later
+   10.0 feature band. MIT-licensed; the runtime parts that a single-file or Native AOT build carries are under the .NET
+   Library License.
+2. **Build Tools for Visual Studio 2022**, the C++ tools and a Windows SDK only (no IDE). Unattended, as an
+   administrator, with the bootstrapper from https://aka.ms/vs/17/release/vs_buildtools.exe:
+
+   ```
+   vs_buildtools.exe --quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.26100
+   ```
+
+   Name the two components: `--add Microsoft.VisualStudio.Workload.VCTools` alone installs no linker (both are only
+   recommended in that workload). Any later or larger Visual Studio holding the same two components serves too.
+
+**The license condition:** Build Tools is free to download, and Microsoft licenses it as a supplement to Visual
+Studio, so its use rests on a Visual Studio Community entitlement. Community's terms let "any number of your users ...
+develop and test applications released under Open Source Initiative (OSI) approved open source software licenses";
+C#Bash is MIT. Nothing here is open source but the .NET SDK, and nothing costs money. There is no open-source route
+today: .NET's Native AOT runtime libraries are built with Microsoft's C++ compiler and link only with its C runtime
+(DECISIONS 2026-11-14 "SPIKE ... zig").
+
+`tools/publish-aot.cmd` finds the newest released install holding the C++ tools through `vswhere`, runs its
+`vcvars64.bat`, and links with exactly that install (`-p:IlcUseEnvironmentalTools=true`); a prerelease Visual Studio is
+never used. Not yet proven on a clean machine.
 
 ## What the build and the tests use: WSL, Git for Windows, MSYS2
 
@@ -26,13 +55,13 @@ The development tooling is another matter. Each outside system has one job, and 
 
 | | Used by | For |
 |---|---|---|
-| **WSL** (`wsl.exe -e bash`, Ubuntu: GNU bash 5.1, coreutils, gawk, jq) | the battery (`tests/compat/run-compat.ps1`), the `bash -n` corpus (`tests/corpus/run-n.sh`), the `df` check (`tests/df/compare-wsl.sh`), the benchmark's third column, the `fallback_chain` case's WSL part (a `SKIP` line without WSL); and by hand, to produce a test case's expected output | **The reference.** Every behavior is matched against GNU bash on Linux. The corpus and `df` scripts run *in* WSL's bash and start C#Bash through WSL's interop. |
+| **WSL** (`wsl.exe -e bash`, Ubuntu: GNU bash 5.1, coreutils, gawk, jq) | the battery (`tests/compat/run-compat.sh`), the `bash -n` corpus (`tests/corpus/run-n.sh`), the `df` check (`tests/df/compare-wsl.sh`), the benchmark's third column, the `fallback_chain` case's WSL part (a `SKIP` line without WSL); and by hand, to produce a test case's expected output | **The reference.** Every behavior is matched against GNU bash on Linux. The corpus and `df` scripts run *in* WSL's bash and start C#Bash through WSL's interop. |
 | **Git for Windows** (PortableGit, configured at the top of each script: the benchmark pins 2.28.0 at `F:/Tools/PortableGit-2.28.0`, `publish.sh` uses `F:/Tools/PortableGit`) | the benchmark (`tests/bench/compare3.sh`, and the older `compare.sh`), `tools/publish.sh` | **Git Bash** is one of the shells the benchmark times; either Git Bash or C#Bash may run it, and its table names which (C#Bash is the reference way since 2026-11-14). **`git.exe`** is how `publish.sh` pushes to GitHub (the project's VCS is Mercurial). Nothing else reaches Git; the development machine keeps it off PATH. |
 | **MSYS**, optional (`tests/cases/msys_pin.inc`: pinned to `F:/Tools/PortableGit-2.28.0/usr/bin`; else the first PATH folder holding `msys-2.0.dll`) | nine suite cases: `coreutils_external`, `device_names`, `msys_arguments`, `msys_append_shared`, `msys_inherited_append`, `msys_redirects`, `native_args_msys`, `rm_reserved_names`, `awk_fallthrough` | They test how C#Bash runs MSYS programs. **Without an MSYS, the case prints `BYPASSED: <reason>`**: shown in red, named on its own summary line (`!!! N BYPASSED, NOT TESTED`), repeated by `deploy.sh`, never a failure. |
 | **git on PATH**, optional | two suite cases: `native_args_git`, `dev_tty_git_prompt` | How C#Bash runs git. Without it, the case prints `SKIP: <reason>`: a skip, never a pass. |
-| **Visual Studio 2022 C++ tools** (`vcvars64.bat`, `vswhere.exe`) | `tools/publish-aot.cmd` (and so `tools/deploy.sh` and `compare3.sh --build`) | The Native AOT link step. |
+| **The Visual Studio C++ tools**: any edition (Build Tools for Visual Studio is enough) with the components `Microsoft.VisualStudio.Component.VC.Tools.x86.x64` and a Windows SDK (`...Windows11SDK.26100`); `vswhere.exe` comes with the installer | `tools/publish-aot.cmd` (and so `tools/deploy.sh` and `compare3.sh --build`), which finds the newest released install holding the C++ tools through vswhere | The Native AOT link step. |
 
-So a machine with the .NET 8 SDK and WSL runs the whole suite (the MSYS cases bypassed and the git cases skipped when those are absent) and the battery. The push also needs Git for Windows; the benchmark uses Git Bash and WSL when they are there ([below](#running-the-benchmark)); the shipped build also needs the VS C++ tools. `tests/bench/claudecall.sh` (what a Claude Code call costs) still converts paths with `cygpath`, which comes with Git, so for now it runs only from Git Bash.
+So a machine with the .NET 10 SDK and WSL runs the whole suite (the MSYS cases bypassed and the git cases skipped when those are absent) and the battery. The push also needs Git for Windows; the benchmark uses Git Bash and WSL when they are there ([below](#running-the-benchmark)); the shipped build also needs the VS C++ tools. `tests/bench/claudecall.sh` (what a Claude Code call costs) still converts paths with `cygpath`, which comes with Git, so for now it runs only from Git Bash.
 
 ## Running the benchmark
 
@@ -41,7 +70,8 @@ those two may be missing: its column is left out, with a note. With neither, the
 `BYPASSED` line, exit 0, nothing timed and nothing appended.
 
 It uses:
-- **`tools/benchtimer`**, built: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. It starts and times
+- **`tools/benchtimer`**, built: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. A launch that runs past
+  300 s is killed with every process under it and its cell reads `TIMEOUT`; the run goes on. It starts and times
   every shell, and runs the sieve baseline.
 - **Git Bash**, optional: Git for Windows v2.28.0.windows.1's 64-bit PortableGit (46,902,448 bytes, SHA-256
   `0cd682188b76eeb3a5da3a466d4095d2ccd892e07aae5871c45bf8c43cdb3b13`), unpacked whole into `F:/Tools/PortableGit-2.28.0`
@@ -71,7 +101,7 @@ empty (the baseline lines then show no comparison).
 Bash/        interpreter source (Lexer/ Parser/ Evaluator/ IO/) + Bash.csproj
 docs/        the guides (USING, FEATURES, PERFORMANCE, DEVELOPING), architecture diagrams (SVG), bash startup
              reference, the installer plan, the module documents
-tests/       PowerShell test runner + cases/ and expected/; compat/ (the differential battery); bench/compare3.sh (the benchmark;
+tests/       the test runner (run-tests.sh, cases.tsv) + cases/ and expected/; compat/ (the differential battery); bench/compare3.sh (the benchmark;
              --build measures the committed tree against the deployed build); bench/claudecall.sh (what a Claude Code
              Bash call costs, and where it goes); corpus/run-n.sh (bash -n against GNU on 912 real scripts)
 tools/       publish-aot.cmd (the ship build); deploy.sh, publish.sh, release.sh and installer.sh (the project's own deploy, push,

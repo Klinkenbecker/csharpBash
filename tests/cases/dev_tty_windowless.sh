@@ -7,7 +7,7 @@
 # ConPTY has one too, measured), keeps /dev/tty. The consoles come from tests/fixtures/console-kind.ps1, the same
 # in both suite modes. Expected output: authored (Windows-specific); the messages are GNU bash's. git's own prompt is
 # dev_tty_git_prompt since 2026-10-20 (without git it printed the expected line here, a pass that could not fail).
-fx="$PWD/fixtures/console-kind.ps1"
+fx="$PWD/../tools/launch/bin/launch.exe"   # tools/launch: a console of a chosen kind (console-kind.ps1 until 2026-11-14)
 d=$(mktemp -d) && cd "$d" || exit 1
 cat > probe.sh <<'EOF'
 { echo to-tty > /dev/tty; } 2>&1; echo "write rc=$?"
@@ -15,7 +15,7 @@ read -r line </dev/tty 2>&1; echo "read rc=$?"
 cat /dev/tty 2>&1; echo "cat rc=$?"
 EOF
 echo '{ echo to-tty > /dev/tty; } 2>&1; echo "write rc=$?"' > writer.sh
-run() { powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$fx" -Kind "$1" -CommandLine "\"$BASH\" $2" -Cwd "$PWD"; }
+run() { "$fx" --"$1" --timeout 15 --stderr out --print --cwd "$PWD" --cmdline "\"$BASH\" $2"; }
 echo "== a console with no window"; run windowless probe.sh
 echo "== a console with a (hidden) window"; run window writer.sh
 cd / && rm -rf "$d"

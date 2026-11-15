@@ -1,8 +1,8 @@
 @echo off
 REM ============================================================================
-REM  The ship build: Native AOT. One static 5.7 MB executable, no .NET runtime
-REM  on the target, ~29 ms startup (the framework-dependent and self-contained
-REM  managed builds are 68-74 ms; see README "Performance").
+REM  The ship build: Native AOT. One static executable (~7 MB), no .NET runtime on
+REM  the target. Builds with the supported toolchain, the .NET 10 SDK and the VS
+REM  C++ build tools (docs/DEVELOPING.md "The supported toolchain").
 REM
 REM  Usage:  tools\publish-aot.cmd [output-dir]        default: dist
 REM
@@ -23,10 +23,22 @@ setlocal
 set "OUT=%~1"
 if "%OUT%"=="" set "OUT=%~dp0..\dist"
 
-set "VS=C:\Program Files\Microsoft Visual Studio\2022\Professional"
+REM The newest install with the C++ tools, any edition (Build Tools alone included): asked of vswhere with the
+REM component the ILCompiler itself requires. It was VS 2022 Professional's path, hard-coded, so a machine with only
+REM the Build Tools could not build (found 2026-11-15; DEVELOPING.md "Prerequisites").
+set "VSWHERE=%ProgramFiles(x86)%/Microsoft Visual Studio/Installer/vswhere.exe"
+if not exist "%VSWHERE%" (
+  echo publish-aot: no vswhere.exe: install Build Tools for Visual Studio with the C++ tools - see docs/DEVELOPING.md
+  exit /b 2
+)
+set "VS="
+for /f "usebackq delims=" %%I in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VS=%%I"
+if not defined VS (
+  echo publish-aot: no Visual Studio install has the C++ tools ^(Microsoft.VisualStudio.Component.VC.Tools.x86.x64^) - see docs/DEVELOPING.md
+  exit /b 2
+)
 if not exist "%VS%\VC\Auxiliary\Build\vcvars64.bat" (
   echo publish-aot: vcvars64.bat not found under "%VS%".
-  echo             Edit VS= in this script, or install the VS C++ build tools.
   exit /b 2
 )
 call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >nul 2>&1
@@ -43,7 +55,9 @@ REM so must the AOT bin folder: a native Bash.pdb left there on 2026-10-18 was c
 REM (found 2026-11-05; never shipped: deploy takes only Bash.exe).
 rmdir /s /q Bash\bin\x64\Release 2>nul
 rmdir /s /q "%OUT%" 2>nul
-dotnet publish Bash\Bash.csproj -c Release -r win-x64 -p:PublishAot=true -p:DebugType=none -o "%OUT%" --nologo -v q
+REM IlcUseEnvironmentalTools: link with the install found above (vcvars64 set LIB and PATH). Without it the ILCompiler
+REM runs its own vswhere with -prerelease and, here, linked with a prerelease VS 2026 (found 2026-11-15).
+dotnet publish Bash\Bash.csproj -c Release -r win-x64 -p:PublishAot=true -p:IlcUseEnvironmentalTools=true -p:DebugType=none -o "%OUT%" --nologo -v q
 if errorlevel 1 (echo publish-aot: FAILED & exit /b 1)
 REM No debug symbols in any release build (the global standing order, 2026-11-05): the output must hold no .pdb.
 if exist "%OUT%\*.pdb" (echo publish-aot: a .pdb is in %OUT% - no debug symbols may ship & exit /b 1)

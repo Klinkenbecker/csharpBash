@@ -24,6 +24,8 @@ public static class Glob
 
 	internal static bool IsMark(char c) => c >= FirstMark && c < FirstMark + Markable.Length;
 
+	private static readonly char BackslashMark = (char)(FirstMark + Markable.IndexOf('\\'));
+
 	/// <summary>The character a mark stands for, or the character itself.</summary>
 	internal static char Unmark(char c) => IsMark(c) ? Markable[c - FirstMark] : c;
 
@@ -127,11 +129,136 @@ public static class Glob
 		return -1;
 		}
 
-	public static bool Match(string pattern, string input, bool ignoreCase = false)
+	/// <param name="extglob">read `@( ) *( ) +( ) ?( ) !( )` groups (`[[ == ]]` only: bash takes them there with the
+	/// extglob option off; the option itself is refused, DECISIONS 2026-09-04).</param>
+	public static bool Match(string pattern, string input, bool ignoreCase = false, bool extglob = false)
 		{
+		if (extglob)
+			{
+			if (pattern.Contains('(') && HasExtGroup(pattern)) return ExtMatch(pattern, 0, input, 0, ignoreCase);
+			// a quoted value is backslashed for extglob (`\(`): still a plain string compare
+			if (TryLiteral(pattern, out var lit)) return ignoreCase ? string.Equals(lit, input, StringComparison.OrdinalIgnoreCase) : lit == input;
+			}
 		if (pattern == "*") return true;
 		if (!HasMeta(pattern)) return ignoreCase ? string.Equals(pattern, input, StringComparison.OrdinalIgnoreCase) : pattern == input;
 		return ToRegex(pattern, ignoreCase).IsMatch(input);
+		}
+
+	// ── extended groups (`[[ x == @(a|b) ]]`, 2026-11-15) ─────────────────────────────────────────────────────
+	// bash's five, as its manual gives them: ?(P) zero or one, *(P) zero or more, +(P) one or more, @(P) exactly one
+	// of the |-separated alternatives, !(P) anything except one of them. A backtracking matcher over the pattern text
+	// (a .NET regex has no "anything except" for a substring); patterns without a group keep the regex path.
+
+	private static bool IsExtOp(char c) => c is '@' or '*' or '+' or '?' or '!';
+
+	/// <summary>True when <paramref name="p"/> holds an extended group with its closing `)`.</summary>
+	internal static bool HasExtGroup(string p)
+		{
+		for (int i = 0; i + 1 < p.Length; i++)
+			{
+			char c = p[i];
+			if (c == '\\') { i++; continue; }
+			if (c == '[' && FindBracketClose(p, i) is int b and > 0) { i = b; continue; }
+			if (IsExtOp(c) && p[i + 1] == '(' && GroupClose(p, i + 1) > 0) return true;
+			}
+		return false;
+		}
+
+	// the `)` closing the `(` at open (nested groups and brackets skipped), or -1
+	private static int GroupClose(string p, int open)
+		{
+		int depth = 0;
+		for (int i = open; i < p.Length; i++)
+			{
+			char c = p[i];
+			if (c == '\\') { i++; continue; }
+			if (c == '[' && FindBracketClose(p, i) is int b and > 0) { i = b; continue; }
+			if (c == '(') depth++;
+			else if (c == ')' && --depth == 0) return i;
+			}
+		return -1;
+		}
+
+	// a group's alternatives, split at its own top-level `|`
+	private static List<string> Alternatives(string p, int open, int close)
+		{
+		var alts = new List<string>();
+		int depth = 0, start = open + 1;
+		for (int i = open + 1; i < close; i++)
+			{
+			char c = p[i];
+			if (c == '\\') { i++; continue; }
+			if (c == '[' && FindBracketClose(p, i) is int b and > 0 && b < close) { i = b; continue; }
+			if (c == '(') depth++;
+			else if (c == ')') depth--;
+			else if (c == '|' && depth == 0) { alts.Add(p[start..i]); start = i + 1; }
+			}
+		alts.Add(p[start..close]);
+		return alts;
+		}
+
+	private static bool Whole(List<string> alts, string s, bool ic)
+		{
+		foreach (var a in alts) if (ExtMatch(a, 0, s, 0, ic)) return true;
+		return false;
+		}
+
+	// *(P) from si: the rest here, or one more non-empty piece matching P and again
+	private static bool Repeat(List<string> alts, string p, int rest, string s, int si, bool ic)
+		{
+		if (ExtMatch(p, rest, s, si, ic)) return true;
+		for (int k = si + 1; k <= s.Length; k++)
+			if (Whole(alts, s[si..k], ic) && Repeat(alts, p, rest, s, k, ic)) return true;
+		return false;
+		}
+
+	private static bool ExtMatch(string p, int pi, string s, int si, bool ic)
+		{
+		while (pi < p.Length)
+			{
+			char c = p[pi];
+			if (IsExtOp(c) && pi + 1 < p.Length && p[pi + 1] == '(' && GroupClose(p, pi + 1) is int close and > 0)
+				{
+				var alts = Alternatives(p, pi + 1, close);
+				int rest = close + 1;
+				switch (c)
+					{
+					case '*': return Repeat(alts, p, rest, s, si, ic);
+					case '!':
+						for (int k = si; k <= s.Length; k++)
+							if (!Whole(alts, s[si..k], ic) && ExtMatch(p, rest, s, k, ic)) return true;
+						return false;
+					default:   // @ ? +: one piece first (? may also take none; + may repeat)
+						if (c == '?' && ExtMatch(p, rest, s, si, ic)) return true;
+						for (int k = si; k <= s.Length; k++)
+							if (Whole(alts, s[si..k], ic) && (c == '+' ? Repeat(alts, p, rest, s, k, ic) : ExtMatch(p, rest, s, k, ic))) return true;
+						return false;
+					}
+				}
+			switch (c)
+				{
+				case '*':
+					while (pi + 1 < p.Length && p[pi + 1] == '*' && !(pi + 2 < p.Length && p[pi + 2] == '(')) pi++;
+					for (int k = si; k <= s.Length; k++) if (ExtMatch(p, pi + 1, s, k, ic)) return true;
+					return false;
+				case '?':
+					if (si >= s.Length) return false;
+					si++; pi++;
+					continue;
+				case '[' when FindBracketClose(p, pi) is int b and > 0:
+					if (si >= s.Length || !ToRegex(p[pi..(b + 1)], ic).IsMatch(s[si].ToString())) return false;
+					si++; pi = b + 1;
+					continue;
+				case '\\' when pi + 1 < p.Length:
+					pi++;
+					c = p[pi];
+					break;
+				}
+			c = Unmark(c);
+			if (si >= s.Length || !(c == s[si] || (ic && char.ToUpperInvariant(c) == char.ToUpperInvariant(s[si])))) return false;
+			si++; pi++;
+			}
+		return si == s.Length;
 		}
 
 	/// <summary>True when <paramref name="pattern"/> has no live pattern character, only literal
@@ -178,6 +305,10 @@ public static class Glob
 	/// </summary>
 	public static List<string> Expand(string pattern, bool dotglob, bool nocase, bool globstar)
 		{
+		// A quoted backslash arrives marked; in a path it is still a separator, as an unquoted one is: `"$TMP"/x*` (TMP is
+		// F:\TEMP) gave F:/\TEMP/x... (`\TEMP` taken for one segment, then joined after `F:/`); MSYS gives F:\TEMP/x...
+		// (facts-8a's workaround, 2026-11-15)
+		pattern = pattern.Replace(BackslashMark, '\\');
 		// Split into (root prefix, segments). Keep the separator the user typed.
 		char sep = pattern.Contains('/') ? '/' : '\\';
 		string root = "";
@@ -200,15 +331,24 @@ public static class Glob
 			// MSYS drive form /c/... → C:\ root; otherwise the current drive's root
 			if (pattern.Length >= 2 && char.IsAsciiLetter(pattern[1]) && (pattern.Length == 2 || pattern[2] is '/' or '\\'))
 				{ root = pattern[..(pattern.Length >= 3 ? 3 : 2)]; rest = pattern.Length >= 3 ? pattern[3..] : ""; }
+			// /tmp/... is the temporary folder, as TranslatePath has it for a plain path: the walk started at the drive's
+			// root and looked for a folder named tmp, so `/tmp/x*` never matched (facts-8a, 2026-11-15)
+			else if (pattern.StartsWith("/tmp/", StringComparison.Ordinal) || pattern.StartsWith("/tmp\\", StringComparison.Ordinal))
+				{ root = pattern[..5]; rest = pattern[5..]; }
 			else { root = pattern[..1]; rest = pattern[1..]; }
 			}
+		// the folders before the first segment holding a pattern character are the root too, kept as typed: the walk
+		// joined every segment with one separator, so `F:\TEMP\d/x*` came out F:\TEMP/d/x-1.txt (MSYS: F:\TEMP\d/x-1.txt)
+		int firstMeta = rest.IndexOfAny(['*', '?', '[']);
+		if (firstMeta > 0 && rest.LastIndexOfAny(['/', '\\'], firstMeta) is int cut and >= 0)
+			{ root += rest[..(cut + 1)]; rest = rest[(cut + 1)..]; }
 		// a trailing separator ("*/", "dir/*/") matches directories only and is kept on the result
 		bool dirsOnly = rest.EndsWith('/') || rest.EndsWith('\\');
 		var segs = rest.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
 		if (segs.Length == 0) return [];
 
 		var results = new List<string>();
-		string startDir = ShellEnvironment.TranslatePath(root.Length == 0 ? "." : root);   // "." is the running shell's cwd
+		string startDir = ShellEnvironment.TranslatePath(root.Length == 0 ? "." : Unmark(root));   // "." is the running shell's cwd; a quoted character is itself
 		Walk(startDir, root, segs, 0, results, sep, dotglob, nocase, globstar);
 		if (dirsOnly)
 			results = results.Where(r => Directory.Exists(ShellEnvironment.TranslatePath(r))).Select(r => r + sep).ToList();

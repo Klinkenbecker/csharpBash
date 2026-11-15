@@ -2,13 +2,13 @@
 
 These can't be scripted (they need a real console: raw key input, signals,
 cursor rendering). Run them by hand in a real terminal. The automated suite
-(`run-tests.ps1`) covers everything that works in script mode.
+(`run-tests.sh`) covers everything that works in script mode.
 
 Build & launch:
 
 ```
 dotnet build -c Release Bash
-bin\Release\net8.0\Bash.exe          # from the Bash\ project dir
+bin\Release\net10.0\Bash.exe          # from the Bash\ project dir
 ```
 
 Tick each box; note anything that misbehaves. Reference: real bash.

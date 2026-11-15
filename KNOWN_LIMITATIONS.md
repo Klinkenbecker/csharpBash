@@ -17,6 +17,9 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
 - **A regex or a glob sees a character beyond U+FFFF (an emoji) as two**: `^.$` and a lone `[[:punct:]]` do not match
   one; `^[[:punct:]]+$` does. The POSIX classes follow .NET's Unicode version where glibc's differs (U+0CF3 and U+0ECE
   are print here, unassigned in GNU). Match such a character with a `+` class, or by its text.
+- **Reading a file's details moves its access time** on NTFS: `stat` and `ls -l` read a file's first bytes for `#!`
+  (Windows has no execute bit), as Git Bash's do, so `ls -u` and `find -atime` see the look as a use. Put
+  `access-time = preserve` in `%USERPROFILE%/.bash/etc/csharpBash.config` to keep it; `cat` still counts as a read.
 - **`df -i`**: Windows keeps no inode counts. It goes to the fallback chain, as any option C#Bash lacks does; in WSL,
   `df -i /` answers for WSL's own Linux disk, and a drive (`F:/`, there `/mnt/f`) for what WSL reports of it, not NTFS.
 - **MSYS2's own programs (runtime 3.1.7) keep the quotes of a quoted word holding a non-ASCII character**: `'é{x}'`
@@ -57,8 +60,9 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
 
 Each says so when asked for, with a link to ask for it; every request is counted (`unserviced.jsonl`).
 
-- **extglob** (`shopt -s extglob` is refused, so `@( )`, `*( )`, `+( )`, `?( )`, `!( )` patterns are not available):
-  use `case` with `|`, or `[[ $x == a || $x == b ]]`.
+- **extglob** (`shopt -s extglob` is refused, so `@( )`, `*( )`, `+( )`, `?( )`, `!( )` patterns are not available in
+  `case`, `${x#…}` or file names): `[[ $x == @(a|b) ]]` takes them, as bash does with the option off; or use `case`
+  with `|`.
 - **`>( )`**: write to a temporary file, or pipe through `tee`.
 - **jq's `def`** (the in-process jq is a jq 1.6 subset): write the helper out where it is used; or run a full jq, which
   the fallback chain reaches in WSL.

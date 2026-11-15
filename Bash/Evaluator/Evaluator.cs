@@ -1568,16 +1568,16 @@ public sealed class Evaluator
 				{
 				var expanded = _expander.ExpandArithText(am.Expression);
 				Xtrace($"(( {expanded} ))");
-				return _expander.EvalExpandedArithmetic(expanded) != 0 ? 0 : 1;
+				return _expander.EvalExpandedArithmetic(expanded, command: true) != 0 ? 0 : 1;
 				}
-			long v = _expander.EvalArithmetic(am.Expression);
+			long v = _expander.EvalArithmetic(am.Expression, command: true);
 			return v != 0 ? 0 : 1;
 			}
 		// not a fatal one (set -u's unbound variable, ${x:?}, a readonly assigned): that ends a non-interactive shell, as
 		// bash's, and goes on up as before (its message still escapes the redirection, where bash's does not: not matched)
 		catch (EvalException ex) when (ex is not FatalShellException)
 			{
-			Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}((: {am.Expression.Trim()} : {ex.Message}");
+			Console.Error.WriteLine(ex is ArithException ? $"{ex.Prefix ?? ErrorPrefix}((: {ex.Message}" : $"{ex.Prefix ?? ErrorPrefix}((: {am.Expression.Trim()} : {ex.Message}");
 			return 1;
 			}
 		}
@@ -3386,8 +3386,19 @@ public sealed class Evaluator
 				}
 			if (_traps.Count != 0) { SetCommand(af.Heads[part]); DebugTrap(null); }
 			if (expr.Length == 0) return 1;
-			return expanded is not null ? _expander.EvalExpandedArithmetic(expanded) : _expander.EvalArithmetic(expr);
+			// an error in a part ends the loop with status 1, as bash's (it was 2 through the generic handler)
+			try { return expanded is not null ? _expander.EvalExpandedArithmetic(expanded, command: true) : _expander.EvalArithmetic(expr, command: true); }
+			catch (ArithException ex)
+				{
+				Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}((: {ex.Message}");
+				throw new ArithForFailed();
+				}
 			}
+		try { return ArithForLoop(); }
+		catch (ArithForFailed) { _env.LastExitCode = 1; return 1; }
+
+		int ArithForLoop()
+		{
 		Part(0, af.Init);
 		int code = 0;
 		while (true)
@@ -3401,6 +3412,10 @@ public sealed class Evaluator
 			}
 		return code;
 		}
+		}
+
+	// a `for (( ))` part's arithmetic error, reported where it happened: ends that loop only
+	private sealed class ArithForFailed : Exception;
 
 	/// <summary>Run a condition (if/while/until) with errexit suppressed.</summary>
 	private int ExecCondition(Node cond)
@@ -3598,9 +3613,10 @@ public sealed class Evaluator
 			case "=" or "==" or "!=":
 				{
 				var shown = Options.XTrace ? new System.Text.StringBuilder() : null;
-				var glob = _expander.ExpandToPattern(b.Right, shown);
+				// extglob always, as bash's [[ ]] (a pattern from a variable too: `p='!(x)'; [[ y == $p ]]` is true)
+				var glob = _expander.ExpandToPattern(b.Right, shown, extglob: true);
 				CondTrace(left, b.Op, shown?.ToString() ?? "");
-				return Glob.Match(glob, left, Options.NoCaseMatch) == (b.Op != "!=");
+				return Glob.Match(glob, left, Options.NoCaseMatch, extglob: true) == (b.Op != "!=");
 				}
 			case "=~":
 				{
@@ -3635,14 +3651,14 @@ public sealed class Evaluator
 				long l, r;
 				try
 					{
-					l = _expander.EvalArithmetic(left.Length == 0 ? "0" : left);
-					r = _expander.EvalArithmetic(right.Length == 0 ? "0" : right);
+					l = _expander.EvalArithmetic(left.Length == 0 ? "0" : left, command: true);
+					r = _expander.EvalArithmetic(right.Length == 0 ? "0" : right, command: true);
 					}
 				// reported here, inside `[[ ]]`'s redirections (`2>/dev/null` silences it), and the test is false, as bash's:
 				// it escaped them and stopped the whole `[[ ]]` with status 2 (2026-11-07). The words are still C#Bash's.
 				catch (EvalException ex) when (ex is not FatalShellException)
 					{
-					Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{ex.Message}");
+					Console.Error.WriteLine($"{ex.Prefix ?? ErrorPrefix}{(ex is ArithException ? "[[: " : "")}{ex.Message}");   // bash: `[[: 1+: syntax error …`
 					throw new CondTestError(1);
 					}
 				return b.Op switch

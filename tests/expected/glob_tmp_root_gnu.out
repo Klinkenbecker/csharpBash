@@ -1,0 +1,11 @@
+/tmp/N-a.txt /tmp/N-b.txt /tmp/N-d 
+/tmp/N-a.txt /tmp/N-b.txt 
+/tmp/N-d/ 
+/tmp/N-d/inner.txt 
+/tmp/N-zzz* 
+file /tmp/N-a.txt
+file /tmp/N-b.txt
+/tmp/N-a.txt
+/tmp/N-b.txt
+/tmp/N-d
+N-a.txt N-b.txt 

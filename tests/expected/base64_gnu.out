@@ -27,3 +27,8 @@ hbase64: invalid input
 --- -i without -d
 aGk=
 rc=0
+--- -d, left-over bits
+i rc=0
+hello rc=0
+hello world rc=0
+hi rc=0

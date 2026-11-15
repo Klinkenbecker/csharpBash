@@ -12,11 +12,61 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 812 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 862 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 861 | 2026-11-15 | publish prep: README table and PERFORMANCE from build 859 (first on .NET 10), perf-history 859, KNOWN_ISSUES release section 859, DEVELOPING 316 cases, anchor |
+| 860 | 2026-11-15 | DECISIONS: the refusal protocol (exit 127, nothing written) and C#Bash's rerun with the unix-tools chain, ratified |
+| 859 | 2026-11-15 | KNOWN_ISSUES: 859 is built with SDK 10.0.404 (the patched compiler); dev_tty_git_prompt uses Git for Windows when git on PATH is Wombat |
+| 858 | 2026-11-15 | global.json asks for SDK 10.0.404 (the Brotli CVE's patched compiler); anchor: Wombat and SDK installed, publish go |
+| 857 | 2026-11-15 | docs: README and PERFORMANCE say C#Bash runs on .NET 10 since build 847 |
+| 856 | 2026-11-15 | docs: build docs name the supported toolchain (.NET 10 SDK, VS C++ build tools); README/USING drop the PowerShell setx line (the architect's go) |
+| 855 | 2026-11-15 | anchor: Wombat's folder is F:/Koliada/Tools/wombat (renamed 2026-11-15) |
+| 854 | 2026-11-15 | anchor: 853 deployed (suite 316/0, battery 220); bugs list empty |
+| 853 | 2026-11-15 | arithmetic error messages in bash's words (EXPR: MESSAGE (error token is ...)), per context; base 64 @ and _; 0x is 0; case arith_error_messages_gnu |
+| 852 | 2026-11-15 | record: 851 deployed; Wombat ready for adoption (awaiting the architect) |
+| 851 | 2026-11-15 | glob: a quoted backslash in a path is a separator; literal folders kept as typed; case glob_quoted_backslash |
+| 850 | 2026-11-15 | a glob rooted at /tmp expands (facts-8a); case glob_tmp_root_gnu; records for 849 |
+| 849 | 2026-11-15 | arithmetic errors as bash: an expansion/assignment error abandons the line; let and for (( )) return 1; integer ** and negative exponent error; case arith_errors_flow_gnu; redirect's expected = GNU |
+| 848 | 2026-11-15 | record: 847 deployed on .NET 10; NU1903 (ILCompiler 10.0.5, Brotli CVE) awaiting a patched SDK |
+| 847 | 2026-11-15 | the supported toolchain (ruled): .NET 10 (net10.0, global.json), Build Tools 2022; publish-aot links with the released install; base64 left-over bits; posix_classes_unicode excludes Unicode 15.1/16 code points |
+| 846 | 2026-11-15 | publish-aot.cmd finds the C++ tools through vswhere (any edition, Build Tools included) instead of VS 2022 Professional's hard-coded path; DEVELOPING prerequisites |
+| 845 | 2026-11-15 | record: sed -u fixed, 844 deployed; AOT toolchain research (awaiting the architect); publish-aot.cmd on the bugs list |
+| 844 | 2026-11-15 | sed -u flushes each line it writes, as GNU; case sed_unbuffered_gnu |
+| 843 | 2026-11-15 | anchor: bugs list after 841; sed -u working |
+| 842 | 2026-11-15 | record: [[ == ]] extended groups fixed, 841 deployed |
+| 841 | 2026-11-15 | KNOWN_ISSUES: the extglob fix deploys as build 841 |
+| 840 | 2026-11-15 | [[ == ]] reads extended groups @( ) *( ) +( ) ?( ) !( ) as bash does with extglob off (KNOWN_ISSUES); case cond_extglob_gnu |
+| 839 | 2026-11-15 | anchor: the open KNOWN_ISSUES are the bugs list (the architect); sed -u on it |
+| 838 | 2026-11-14 | record: grep --line-buffered fixed, 837 deployed, git-9d told; sed -u found (awaiting) |
+| 837 | 2026-11-14 | grep --line-buffered flushes each printed line (git-9d); case grep_line_buffered_gnu |
+| 836 | 2026-11-14 | record: mkdir trailing slash fixed, 835 deployed, git-9d told |
+| 835 | 2026-11-14 | mkdir: a trailing slash names the folder itself (git-9d); case mkdir_trailing_slash_gnu |
+| 834 | 2026-11-14 | Deployed 833 (facts-8a's awk fixes); facts-8a told; anchor |
+| 833 | 2026-11-14 | RESUME anchor: 833 deploying (facts-8a's awk fixes) |
+| 832 | 2026-11-14 | Bugs list (facts-8a): awk escaped brackets in a set, -e/--source in-process, an empty separator per character; case awk_brackets_e_split_gnu, red on 827 |
+| 831 | 2026-11-14 | Bugs list: three awk bugs from facts-8a, verified against GNU (\] in brackets, -e to WSL, empty separator) |
+| 830 | 2026-11-14 | RESUME anchor: the nightly-publish idea recorded as his to ponder; nothing scheduled |
+| 829 | 2026-11-14 | RESUME anchor rewritten fresh at 90% context: true state, awaiting items, done today, rules, next publish |
+| 828 | 2026-11-14 | Deployed 827: the first deploy through the bash runners (suite 307/0, battery 220) |
+| 827 | 2026-11-14 | Recorded: PowerShell removed (proof, the slip undone); RESUME anchor |
+| 826 | 2026-11-14 | PowerShell removed (the architect: before the next publish): deploy.sh and publish.sh run tests/run-tests.sh and tests/compat/run-compat.sh; the console-kind cases use tools/launch --print; consoleless.sh; the four .ps1 files gone; docs. Proven first: old and new runners agree case for case on 816 in both modes, a planted failure fails in both, the batteries report the same probes |
+| 825 | 2026-11-14 | Undo: tests/expected/args.out carried the planted-failure line (taken into hg 824 by a commit with no file list while the equivalence test ran); restored to rev 822's |
+| 824 | 2026-11-14 | RESUME anchor: run-tests equivalent; planted failure and battery comparison running |
+| 823 | 2026-11-14 | PowerShell removal, step 2 (not switched over): run-tests.sh splits cases.tsv by hand (an empty column vanished under read's tab handling: args.sh got no arguments, aot-only cases their comment); tests/compat/run-compat.sh (the battery, same lines) |
+| 822 | 2026-11-14 | RESUME anchor: PowerShell removal step 1 committed, equivalence runs going |
+| 821 | 2026-11-14 | PowerShell removal, step 1 (not switched over): tools/launch (detached / windowless / hidden-window starts, timeout kills the tree), tests/cases.tsv (the 307 cases with their comments, from run-tests.ps1), tests/run-tests.sh (same options and lines; exact comparison; console cases get pipes as before and a 120 s bound) |
+| 820 | 2026-11-14 | RESUME anchor and DECISIONS: the PowerShell runners' measured behavior and the removal plan; zig spike done |
+| 819 | 2026-11-14 | Spike recorded: zig links .NET AOT output and makes the Windows import libraries, but not MSVC's C/C++ runtime (LIBCMT, OLDNAMES, libcpmt): VS's build tools stay needed |
+| 818 | 2026-11-14 | RESUME anchor: greenlit PowerShell removal and the zig AOT spike |
+| 817 | 2026-11-14 | Deployed 816 (access-time, benchtimer limit); PowerShell removal and the zig AOT spike put to the architect |
+| 816 | 2026-11-14 | RESUME anchor: 816 deploying (access-time, benchtimer limit) |
+| 815 | 2026-11-14 | access-time = default \| preserve (the architect): preserve keeps a file's access time when stat / ls -l read its details (the #! read and the detail handles hold it via SetFileTime); case access_time_preserve, red on 806. Ruled: WSL a permitted dependency, off the TBD list |
+| 814 | 2026-11-14 | benchtimer: a per-launch bound (300 s, --limit) in the same wait, nothing added to the timed path; a hang is killed with its children and compare3's cell reads TIMEOUT (the architect's go) |
+| 813 | 2026-11-14 | RESUME anchor: published hg-811 (build 806) |
+| 812 | 2026-11-14 | Published hg 811 (release hg-811, build 806); recorded |
 | 811 | 2026-11-14 | The 806 publish's doc review: README table and startup line from compare3 on 806 (C#Bash host, quiet), 306 cases; PERFORMANCE; KNOWN_ISSUES for the 806 release; the advantage graph with build 806 |
 | 810 | 2026-11-14 | PERFORMANCE.md: the advantage section's paragraphs reflowed for reading (the architect's edit, Typora) |
 | 809 | 2026-11-14 | Advantage graph: each point's hover names its hg revision; PERFORMANCE.md links the graph on its own (raw, interactive) in place of an artifact |

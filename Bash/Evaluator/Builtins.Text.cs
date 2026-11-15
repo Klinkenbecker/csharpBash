@@ -1824,6 +1824,8 @@ public sealed partial class Builtins
 	/// skips them all; it dropped all white space and took -i without doing anything. Whole groups of 4 are decoded as
 	/// they come; the last group, which may hold the padding, waits for the next block or the end. Invalid input: what
 	/// came before it is written, a group cut short by it as far as it goes (`aG!` writes `h`), then "invalid input", 1.</summary>
+	private const string B64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
 	private static int Base64Decode(Stream src, bool ignoreGarbage)
 		{
 		using var inBlock = Block.Rent();
@@ -1868,6 +1870,15 @@ public sealed partial class Builtins
 		bool Decode(int count, bool final)
 			{
 			if (count == 0) return true;
+			// GNU ignores the bits a padded group leaves over (`aR==` is `i`, `aG` cut short is `h`); .NET 10 refuses them
+			// as invalid (.NET 8 took them; found 2026-11-15 moving to .NET 10): clear them, which writes the same bytes
+			for (int g = 0; g + 4 <= count; g += 4)
+				if (pend[g + 3] == '=')
+					{
+					int at = pend[g + 2] == '=' ? g + 1 : g + 2;
+					int v = B64Alphabet.IndexOf((char)pend[at]);
+					if (v >= 0) pend[at] = (byte)B64Alphabet[v & (at == g + 1 ? 0x30 : 0x3C)];
+					}
 			var status = System.Buffers.Text.Base64.DecodeFromUtf8(pend.AsSpan(0, count), output, out int used, out int written, final);
 			sink.Write(output, 0, written);
 			return status == System.Buffers.OperationStatus.Done && used == count;

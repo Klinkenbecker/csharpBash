@@ -70,14 +70,16 @@ public sealed partial class Builtins
 			var p = P(d);
 			try
 				{
-				if (Directory.Exists(p) || File.Exists(p))
+				// `mkdir dir/`: the checks name dir itself (its parent is not dir); a root keeps its separator.
+				var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(p));
+				if (Directory.Exists(full) || File.Exists(full))
 					{
-					if (!parents || File.Exists(p)) { Console.Error.WriteLine($"mkdir: cannot create directory '{d}': File exists"); rc = 1; }
+					if (!parents || File.Exists(full)) { Console.Error.WriteLine($"mkdir: cannot create directory '{d}': File exists"); rc = 1; }
 					continue;
 					}
 				if (!parents)
 					{
-					var parent = Path.GetDirectoryName(Path.GetFullPath(p));
+					var parent = Path.GetDirectoryName(full);
 					if (!string.IsNullOrEmpty(parent) && !Directory.Exists(parent))
 						{ Console.Error.WriteLine($"mkdir: cannot create directory '{d}': No such file or directory"); rc = 1; continue; }
 					}

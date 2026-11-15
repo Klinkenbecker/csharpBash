@@ -1,13 +1,42 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-12 (bash-1b). SUPERSEDES every block below. DEPLOYED 798 (785: the fallback chain, daq-a1's two fixes, facts-8a's PIPESTATUS, the cygpath hint; 787: git-9d's nullglob leak; 789: facts-8a's mv fix; 798: help fallback + the no-topic hint; reporters told). PUBLISHED 2026-11-14: hg-801 with build 798 (DECISIONS "PUBLISHED: hg rev 801"); ~/.bash runs 798. DEPLOYED 806 (not published): PIPESTATUS written only when read (func/loop/arith 6-8 % faster than 798) + the awk parameter pass-through bug. NEXT: benchtimer per-launch bound (agreed in principle: must not touch row times). AT EACH PUBLISH (ruled 2026-11-14): `tools/perf-history.sh --add` in the doc review (publish.sh refuses without it). Bugs list empty. The benchmark is PUBLISH's, never deploy's.
+> ## RESUME HERE — 2026-11-14 11:00 (bash-1b, at 90% context). SUPERSEDES every block below (they are history).
+> **TRUE STATE:** DEPLOYED 859 (.NET 10, SDK 10.0.404; `1.0.0+hg.44d78d60c3cb 859`, rollback dist/*.rev853); PUBLISHING 859 (2026-11-15, his go: benchmark 859 clean run, perf-history added, KNOWN_ISSUES release section 859). NEXT (ratified, "go when ready"): the refusal protocol (DECISIONS "RULED ... the refusal protocol"): exit 127 from a ~/.bash/bin program = rerun with the next in unix-tools; replay buffer for pumped stdin.
+> PUBLISHED hg-811 = build 806 (GitHub main git 8583518); this machine's ~/.bash runs 806. NOT published: 816
+> (access-time = default|preserve; benchtimer per-launch limit 300 s/TIMEOUT), 827 (PowerShell removed: bash runners), 833 (awk), 835 (mkdir dir/), 837 (grep --line-buffered), 841 ([[ == @(a|b) ]]), 844 (sed -u).
+> **BUGS list (2026-11-15, the architect: "how is the bugs list empty if you have two open known issues?" -- KNOWN_ISSUES ARE the bugs list): DONE 841 `[[ == ]]` extended groups; DONE 844 `sed -u` (suite 312/0, battery 220). DONE (hg 846-847, deploying 847): publish-aot.cmd finds the C++ tools via vswhere. DONE 849 arithmetic error BEHAVIOR (abandon/1, ** exact); 850 /tmp glob (facts-8a, told); 851 quoted-backslash glob path. 853 arithmetic error WORDING (bash's words). OPEN: none (KNOWN_ISSUES empty); corners recorded in DECISIONS: `x++ ++`, lone `$`, `$(( (1+2 ))`.** FEATURES list: empty.
+> **RULED 2026-11-15 (the architect: "'AOT toolchain' - we should specify, use and allow this as our supported
+> toolchain. We should also update to .NET10"): the SUPPORTED TOOLCHAIN = .NET 10 SDK + Build Tools for VS 2022 (VC.Tools.x86.x64
+> + Windows11SDK.26100), docs/DEVELOPING.md "The supported toolchain"; net10.0 + global.json; publish-aot.cmd links with
+> the released install (IlcUseEnvironmentalTools; the ILCompiler's own lookup took prerelease VS 2026). .NET 10 cost two
+> fixes (base64 left-over bits; 22 Unicode 15.1/16 code points excluded from posix_classes_unicode). DO NOT re-open. Its
+> speed shows at the next publish's benchmark. AWAITING: a clean-machine proof (Windows Sandbox = a machine-wide change: ask).
+> **DONE 2026-11-15 (his go):** Wombat installed on guy-windows8 (~/.bash/bin/git.exe build 92, ~/.bash/etc/gitconfig + gitattributes; csharpBash.config back to PATH;WSL; guy-windows11 is its owner's); SDK 10.0.404 (runtime 10.0.15) installed, global.json 10.0.404; docs: PowerShell setx line gone, build docs name the supported toolchain, README/PERFORMANCE say .NET 10. OPEN: Windows Sandbox needs HIS elevated dism + a restart (command given); Wombat KNOWN_ISSUES.md (F:/Koliada/Tools/wombat, rev 97) to ship beside the install under a non-colliding name (installer change). PUBLISH: GO (2026-11-15, quiet machine).
+> **AWAITING THE ARCHITECT (do NOT decide):** (s-done) INSTALL a patched .NET SDK (10.0.403; machine-wide): NU1903 on 847, ILCompiler 10.0.5 (and 8.0.25 before) is in CVE-2026-111497 (Brotli decoder overflow, High; patched 10.0.14 = SDK 10.0.114/10.0.403); C#Bash uses no Brotli (grep), so not exploitable through it; then global.json minimum 10.0.403 (Claude: yes to both). (a) README's two lines on USERS' own PowerShell (installer PATH note;
+> `setx` example): keep or remove? (d) TBD
+> list (e) now: VS C++ tools, git.exe for publish (WSL permitted 2026-11-14; PowerShell gone). (e) a nightly 00:01 publish
+> "as necessary": he is pondering it (2026-11-14: "I will ponder - ! might find a better way!"); Claude's proposal: a
+> session CronCreate job (session-only, 7-day expiry, up to ~30 min late), skipping busy nights; nothing scheduled.
+> **DONE TODAY, do NOT redo:** fallback chain (785; csharpBash.config `unix-tools`; this machine's config =
+> `F:/Tools/PortableGit/cmd;PATH;WSL` + an access-time comment, his choice A); PIPESTATUS on read (806, func/loop/arith
+> back to 754's); awk param pass-through fix (806); advantage graph atop PERFORMANCE.md (docs/perf-history.tsv/.svg,
+> `tools/perf-history.sh --add` at every publish; publish.sh enforces); compare3 hosted by C#Bash (RULED); benchtimer
+> limit; access-time option; PowerShell removed (tools/launch, tests/cases.tsv, tests/run-tests.sh,
+> tests/compat/run-compat.sh; proven equivalent on 816; deploy 827 green through them).
+> **RULES learned today (memories):** machine-wide config is put to him as options first; propose only the open part;
+> no benchmark per feature (publish only); a commit during a test run names its files (hg 824 took a planted line).
+> **NEXT PUBLISH:** his word + a quiet machine (ListAgents; ask busy peers for a slot); compare3 hosted by C#Bash; doc
+> review incl. `tools/perf-history.sh --add`; KNOWN_ISSUES "Fixed after this release (hg-811…)" becomes the release
+> section; publish.sh <msgfile> C:/Users/guy/klinkenbecker.gh-token.
+
+> ## (older block, superseded) RESUME HERE — 2026-11-12 (bash-1b). DEPLOYED 798 (785: the fallback chain, daq-a1's two fixes, facts-8a's PIPESTATUS, the cygpath hint; 787: git-9d's nullglob leak; 789: facts-8a's mv fix; 798: help fallback + the no-topic hint; reporters told). PUBLISHED 2026-11-14: hg-801 with build 798 (DECISIONS "PUBLISHED: hg rev 801"); ~/.bash runs 798. PUBLISHED 806 as hg-811 (2026-11-14): PIPESTATUS written only when read + the awk parameter pass-through fix + the advantage graph; ~/.bash runs 806. DEPLOYED 816 (access-time = default|preserve, benchtimer limit; not published). GREENLIT 2026-11-14 ("1/ yes 2/ yes"): (1) POWERSHELL REMOVED (hg 826, DECISIONS "DONE ... PowerShell removed"; the bash runners proven equivalent first; DEPLOYED 827 through them: suite 307/0, battery 220; open: README's two user-PowerShell lines); (2) ZIG SPIKE DONE (DECISIONS "SPIKE"): zig links and makes the import libs, not MSVC's CRT; AWAITING HIM: VS Build Tools or a permitted exception (plan in DECISIONS 2026-11-14 "DEPLOYED 816"). AT EACH PUBLISH (ruled 2026-11-14): `tools/perf-history.sh --add` in the doc review (publish.sh refuses without it). Bugs list empty. The benchmark is PUBLISH's, never deploy's.
 > **NEXT (GREENLIT, the features list in order): (1) find -anewer/-cnewer DEPLOYED 768 (no
 > benchmark: it cannot slow it; the architect, 2026-11-11, "why do I want a window for 766?"). (2) the jq batch DEPLOYED 770 (with the contains bug fix). (3) the fallback chain BUILT 778 (DECISIONS "FEATURE BUILT (features list 3)"; %USERPROFILE%/.bash/etc/csharpBash.config, `unix-tools = folder;PATH;WSL`, default PATH;WSL; installer writes none: InstallGen cannot keep a user file)
 > Features list now EMPTY. Bugs first whenever one is reported. UNCONFIRMED reading: "make sure the specified
 > fallbacks are published" = the fallback chain stated in the
 > published docs: DONE (USING.md "The fallback chain"). Stated, not yet ruled: SetFileTime holding the access time
 > (Windows moves it on any handle open; Git Bash does too).**
-> **TRUE STATE: DEPLOYED 806** (`1.0.0+hg.a68989361d0e 806`, rollback dist/*.rev798). **PUBLISHED (2026-11-14): GitHub main = git 9b8b6d5 = hg 801; release hg-801 = build 798. Before that: GitHub main = git
+> **TRUE STATE: DEPLOYED 827** (`1.0.0+hg.677486cf396e 827`, rollback dist/*.rev816). **PUBLISHED (2026-11-14): GitHub main = git 8583518 = hg 811; release hg-811 = build 806. Before that: hg-801 = build 798; GitHub main = git
 > 273943b = hg 756; release hg-756 = csharpBash-setup.exe with build 754** (this machine's ~/.bash runs 754; new
 > sessions start on it). PUBLISHED 2026-11-11: 729-754 (DECISIONS "PUBLISHED: ... hg rev 756"; KNOWN_ISSUES lists
 > each). Deployed beyond the release: 765-798. The next publish needs his word, a benchmark window (12 sessions asked)
@@ -104,7 +133,7 @@
 > **PENDING REPLIES (no action owed):** c-parser-ac's `\x27` repro (that session has ended; c-parser-92 is live).
 > **LIVE SESSIONS (2026-11-08, 12; bash-1b is C#Bash):** daq-a1, lantern-92 (was lantern-5f), c-parser-92, msp430-be, installer-a4, koliada-net-forms-cb,
 > nupkg-33, kes-install-43 (real hardware installs), qa-de, koliada-net-b9, guy-bf (home folder; was guy-bc before a
-> restart), git-b3 (Wombat, F:/Koliada/Tools/git: a git.exe for ~/.bash/bin, one installer artifact later).
+> restart), git-b3 (Wombat, F:/Koliada/Tools/wombat since 2026-11-15, was .../git: a git.exe for ~/.bash/bin, one installer artifact later).
 > esdk-a2's CC8051 build runs ON dist/sh.exe + dist/Bash.exe when it is live. Message only the session that must act or
 > know (memory peer-messages-flood-his-screens).
 > **HOW WE WORK:** a peer's BUG: verify against GNU, raise with a position, wait ~10 min, fix (a GNU-checked case red on
@@ -128,7 +157,7 @@
 >     / 2.0 (its own session); parked: serial I/O, `compgen -c`. WATCH: external_redirects failed once (check commit first).
 > (e) TBD, the build's and deploy's outside dependencies (the architect, 2026-11-09: C#Bash must build and deploy
 >     "with _NO_ external dependancies"; ".NET is never 'external', however the 'never event horizon' is never that far
->     away!"): the deploy's battery needs WSL (its reference; "we will come back to wsl"); the AOT link needs Visual
+>     away!"; WSL PERMITTED as .NET is, 2026-11-14: "WSL is another permited exception to TBD"): the AOT link needs Visual
 >     Studio's C++ tools (publish-aot.cmd, vcvars64.bat); the runners are PowerShell (run-tests.ps1, run-compat.ps1);
 >     publish.sh needs git.exe to push. MSYS and any extra Unix tools are users' luxuries, never required.
 > **SETTLED 2026-10-31..11-07, do NOT re-open (DECISIONS has each):** the CRLF rule and its correction (above); $PATH's two forms (`/c/x:/f/y` inside,

@@ -45,6 +45,16 @@ internal static class Fallbacks
 				if (line.Length == 0 || line[0] == '#') continue;
 				int eq = line.IndexOf('=');
 				var key = eq < 0 ? line : line[..eq].Trim();
+				if (eq > 0 && key == "access-time")
+					{
+					// `access-time = default | preserve` (the architect, 2026-11-14): whether reading a file's details (stat,
+					// ls -l) leaves its access time alone; default is Windows' and Git Bash's (it moves)
+					var val = line[(eq + 1)..].Trim();
+					if (val == "preserve") _preserveAccessTime = true;
+					else if (val == "default") _preserveAccessTime = false;
+					else Warn($"access-time: '{val}' is not default or preserve (default kept)");
+					continue;
+					}
 				if (eq < 0 || key != "unix-tools") { Warn($"unknown line '{line}' (ignored)"); continue; }
 				var steps = new List<string>();
 				foreach (var s in line[(eq + 1)..].Split(';'))
@@ -84,6 +94,12 @@ internal static class Fallbacks
 			return _composed;
 			}
 		}
+
+	private static bool _preserveAccessTime;
+
+	/// <summary>`access-time = preserve`: reading a file's details leaves its access time alone (ShellFile.OpenForDetails).
+	/// Read with the rest of the file, at its first need.</summary>
+	public static bool PreserveAccessTime { get { Load(); return _preserveAccessTime; } }
 
 	/// <summary>WSL's launcher when WSL is a step and Windows has one, else null.</summary>
 	public static string? Wsl

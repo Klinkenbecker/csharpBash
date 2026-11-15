@@ -65,7 +65,7 @@ echo "publish: hg rev $tip ($node); benchmark of the deployed build ($stamp) fou
 built=${stamp##* }
 cut -f1 docs/perf-history.tsv | grep -qx "$built" || die "docs/perf-history.tsv has no rows for build $built: run tools/perf-history.sh --add in the doc review"
 echo "publish: the advantage graph carries build $built"
-res=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$root/tests/run-tests.ps1" -Interpreter "$root/dist/Bash.exe" 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)
+res=$(bash "$root/tests/run-tests.sh" --interpreter "$root/dist/Bash.exe" < /dev/null 2>&1 | grep -E 'passed, [0-9]+ failed' | tail -1)   # run-tests.ps1 until 2026-11-14
 echo "publish: suite (console) on the deployed build: $res"
 [[ "$res" == *" 0 failed" ]] || die "the suite failed on dist/Bash.exe with a console; nothing published"
 

@@ -1074,7 +1074,8 @@ public sealed class Parser
 				if (CondOperandAbsent()) throw CondError($"unexpected argument `{Found()}' to conditional binary operator", opTok);
 				return new CondBinary(op, left, ParseRegexOperand());
 				}
-			var right = CondOperand() ?? throw CondError($"unexpected argument `{Found()}' to conditional binary operator", opTok);
+			var right = (op is "=" or "==" or "!=" ? CondPatternOperand() : CondOperand())
+			            ?? throw CondError($"unexpected argument `{Found()}' to conditional binary operator", opTok);
 			return new CondBinary(op, left, right);
 			}
 		// `<` and `>` are lexed as redirect operators: accept them as string comparison here
@@ -1105,6 +1106,55 @@ public sealed class Parser
 
 	// while `=~`'s operand is parsed: every escaped character in it is quoted (Token.EscapedAt)
 	private bool _regexOperand;
+
+	// while a `[[ == ]]` pattern is parsed: every escaped character is quoted, so `@(a\|b)` keeps its `|` literal
+	private bool _condPattern;
+
+	/// <summary>The pattern operand of `[[ x == P ]]` (and `=`, `!=`). bash reads it with extglob on, whatever the shell
+	/// option says (bash 5.1, measured 2026-11-15: `[[ a == @(a|b) ]]` true with extglob off; not the left operand, not
+	/// `case`), so an extended group `@( ) *( ) +( ) ?( ) !( )` is one word: its `(`, `|`, `)` and inner spaces are pattern
+	/// text. It was a syntax error ("unexpected token `('"). A group opens only after an unquoted @ * + ? ! with no space
+	/// before the `(` (`"@"(a)` stays an error, as bash).</summary>
+	private Word? CondPatternOperand()
+		{
+		if (CondOperandAbsent()) return null;
+		var firstTok = Peek();
+		var parts = new List<WordPart>();
+		int depth = 0;
+		bool first = true;
+		_condPattern = true;
+		try
+			{
+			while (true)
+				{
+				var t = Peek();
+				if (depth == 0)
+					{
+					if (!first && t.HasLeadingSpace) break;
+					if (t.Type == TokenType.LParen && !first && parts.Count > 0 && parts[^1] is LiteralPart { Value: [.., '@' or '*' or '+' or '?' or '!'] })
+						{ Advance(); parts.Add(new LiteralPart("(")); depth++; first = false; continue; }
+					if (!IsWordToken()) break;
+					parts.AddRange(ParseWordParts());
+					first = false;
+					continue;
+					}
+				// inside a group: everything is pattern text up to its `)`, as bash reads on for it
+				if (t.Type is TokenType.Eof or TokenType.Newline) throw CondError("unexpected EOF while looking for matching `)'");
+				if (t.HasLeadingSpace) parts.Add(new LiteralPart(" "));
+				switch (t.Type)
+					{
+					case TokenType.LParen: Advance(); parts.Add(new LiteralPart("(")); depth++; break;
+					case TokenType.RParen: Advance(); parts.Add(new LiteralPart(")")); depth--; break;
+					default:
+						if (IsWordToken()) parts.AddRange(ParseWordParts());
+						else { Advance(); parts.Add(new LiteralPart(t.Value)); }   // `|`, `||`
+						break;
+					}
+				}
+			}
+		finally { _condPattern = false; }
+		return parts.Count == 0 ? null : new Word(parts) { RawSpan = SpanFrom(firstTok) };
+		}
 
 	private Word ParseRegexOperandParts()
 		{
@@ -1266,7 +1316,7 @@ public sealed class Parser
 				Advance();
 				// a backslash-escaped `* ? [ { } , ~ \ .` (marked by the lexer) is a QUOTED character; in `=~`'s operand every
 				// escaped character is (Token.EscapedAt: `^a\+b$` is a literal +, as bash; 2026-11-07)
-				int[]? escapedAt = _regexOperand ? t.EscapedAt : null;
+				int[]? escapedAt = _regexOperand || _condPattern ? t.EscapedAt : null;
 				if (t.Value.IndexOf(Lexer.Lexer.EscapeMark) >= 0 || escapedAt is not null)
 					{
 					var lit = new System.Text.StringBuilder();

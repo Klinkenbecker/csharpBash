@@ -16,7 +16,7 @@
 #     the run stops (exit 2): a different corpus is a different measurement.
 #   * GNU bash's verdicts are measured again every run, in WSL, on the same files; one that differs
 #     from the manifest is REFERENCE DRIFT (exit 2).
-#   * the candidate is the Release build, built first (as tests/run-tests.ps1 does), unless --no-build
+#   * the candidate is the Release build, built first (as tests/run-tests.sh does), unless --no-build
 #     or --cs <exe> (F:/... or /mnt/f/...). It is never the harness: the loop runs in WSL's bash (a
 #     C#Bash defect in reading a file list once hid most of a run), and starts C#Bash through WSL's
 #     interop with each file's path in Windows form. Until 2026-10-19 the loop ran in Git Bash (Git
@@ -41,7 +41,7 @@ export BASH_UNSERVICED_LOG=/dev/null WSLENV="BASH_UNSERVICED_LOG${WSLENV:+:$WSLE
 files="$here/files"; manifest="$here/manifest.txt"; baseline="$here/baseline.txt"; last="$here/last-run.txt"
 
 usage() { echo "usage: tests/corpus/run-n.sh [--printer] [--no-build] [--cs <exe>] [--update-baseline] [--update-manifest]" >&2; exit 2; }
-build=1; cs="$root/Bash/bin/Release/net8.0/Bash.exe"; upd_base=0; upd_man=0; printer=0
+build=1; cs="$root/Bash/bin/Release/net10.0/Bash.exe"; upd_base=0; upd_man=0; printer=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-build) build=0; shift ;;

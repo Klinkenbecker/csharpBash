@@ -38,17 +38,38 @@ public static class ArithParser
 	private sealed class ArithParserState
 		{
 		private readonly string _s;
+		private readonly string _raw;    // the text as given: a message shows it front-trimmed, its end kept (trimmed only then)
 		private readonly IArithVars? _vars;
 		private int _pos;
 		private int _skip;      // >0 while parsing an operand whose value is discarded
+		// where the token being looked at starts (bash's "error token" runs from here to the end): set by SkipWs, which
+		// comes before every token; the end of the text never moves it, so at the end it names the last token read
+		private int _tok;
 
-		public ArithParserState(string s, IArithVars? vars) { _s = s.Trim(); _vars = vars; }
+		public ArithParserState(string s, IArithVars? vars) { _s = s.Trim(); _raw = s; _vars = vars; }
+
+		/// <summary>An error as bash words it (measured against bash 5.1, 2026-11-15): `EXPR: MESSAGE (error token is
+		/// "TOKEN")`; it was C#Bash's own words ("Expected number in arithmetic expression").</summary>
+		private ArithException Error(string message)
+			{
+			var full = _raw.TrimStart();
+			return new($"{full}: {message} (error token is \"{full[Math.Min(_tok, full.Length)..]}\")");
+			}
+
+		/// <summary>A malformed number, as bash names it: the number itself stands for the expression (`2#102: value too
+		/// great for base (error token is "2#102")`).</summary>
+		private ArithException NumberError(int start, string message)
+			{
+			int end = start;
+			while (end < _s.Length && (char.IsLetterOrDigit(_s[end]) || _s[end] is '#' or '@' or '_')) end++;
+			var text = _s[start..end];
+			return new($"{text}: {message} (error token is \"{text}\")");
+			}
 
 		public void ExpectEnd()
 			{
 			SkipWs();
-			if (_pos < _s.Length)
-				throw new EvalException($"Unexpected character '{_s[_pos]}' in arithmetic expression");
+			if (_pos < _s.Length) throw Error("syntax error in expression");
 			}
 
 		// ── expression grammar (lowest precedence first) ──────────────────────────
@@ -79,9 +100,9 @@ public static class ArithParser
 						"+="  => cur + rhs,
 						"-="  => cur - rhs,
 						"*="  => cur * rhs,
-						"/="  => rhs == 0 ? (_skip > 0 ? 0 : throw new EvalException("Division by zero")) : cur / rhs,
-						"%="  => rhs == 0 ? (_skip > 0 ? 0 : throw new EvalException("Modulo by zero"))   : cur % rhs,
-						"**=" => (long)Math.Pow(cur, rhs),
+						"/="  => rhs == 0 ? (_skip > 0 ? 0 : throw Error("division by 0")) : cur / rhs,
+						"%="  => rhs == 0 ? (_skip > 0 ? 0 : throw Error("division by 0")) : cur % rhs,
+						"**=" => Power(cur, rhs),
 						"<<=" => cur << (int)rhs,
 						">>=" => cur >> (int)rhs,
 						"&="  => cur & rhs,
@@ -94,7 +115,12 @@ public static class ArithParser
 					}
 				_pos = save;
 				}
-			return ParseTernary();
+			long result = ParseTernary();
+			// `3 = 4`: an assignment to what is not a variable (it was "syntax error in expression"'s kind)
+			SkipWs();
+			int at = _pos;
+			if (MatchAssignOp() is not null) { _pos = at; throw Error("attempted assignment to non-variable"); }
+			return result;
 			}
 
 		private string? MatchAssignOp()
@@ -122,9 +148,12 @@ public static class ArithParser
 				{
 				_pos++;
 				long t, f;
-				if (val != 0) { t = ParseAssign(); SkipWs(); Consume(':'); _skip++; try { f = ParseAssign(); } finally { _skip--; } return t; }
-				_skip++; try { t = ParseAssign(); } finally { _skip--; }
-				SkipWs(); Consume(':');
+				// bash: `1 ? : 2` and `1 ? 2 :` are "expression expected", a missing `:` its own message
+				SkipWs(); if (_pos >= _s.Length || At(':')) throw Error("expression expected");
+				if (val != 0) t = ParseAssign(); else { _skip++; try { t = ParseAssign(); } finally { _skip--; } }
+				SkipWs(); Consume(':', "`:' expected for conditional expression");
+				SkipWs(); if (_pos >= _s.Length) throw Error("expression expected");
+				if (val != 0) { _skip++; try { f = ParseAssign(); } finally { _skip--; } return t; }
 				f = ParseAssign();
 				return f;
 				}
@@ -241,11 +270,22 @@ public static class ArithParser
 				{
 				SkipWs();
 				if (At('*') && !Ahead('*') && !Ahead('=')) { _pos++; left *= ParsePower(); }
-				else if (At('/') && !Ahead('=')) { _pos++; long r = ParsePower(); left = r == 0 ? (_skip > 0 ? 0 : throw new EvalException("Division by zero")) : left / r; }
-				else if (At('%') && !Ahead('=')) { _pos++; long r = ParsePower(); left = r == 0 ? (_skip > 0 ? 0 : throw new EvalException("Modulo by zero"))   : left % r; }
+				else if (At('/') && !Ahead('=')) { _pos++; long r = ParsePower(); left = r == 0 ? (_skip > 0 ? 0 : throw Error("division by 0")) : left / r; }
+				else if (At('%') && !Ahead('=')) { _pos++; long r = ParsePower(); left = r == 0 ? (_skip > 0 ? 0 : throw Error("division by 0")) : left % r; }
 				else break;
 				}
 			return left;
+			}
+
+		/// <summary>b ** e in 64-bit integers, wrapping as bash's repeated multiplication; it was Math.Pow through a double
+		/// (3**39 came out 4052555153018976256, bash 4052555153018976267) and a negative exponent gave 0, where bash says
+		/// "exponent less than 0" (2026-11-15), even in a branch not taken (`0 && 2**-1`), unlike division by 0.</summary>
+		private long Power(long b, long e)
+			{
+			if (e < 0) throw Error("exponent less than 0");   // even in a branch not taken, as bash (measured)
+			long r = 1;
+			unchecked { while (e > 0) { if ((e & 1) != 0) r *= b; b *= b; e >>= 1; } }
+			return r;
 			}
 
 		// Right-associative power.
@@ -254,7 +294,7 @@ public static class ArithParser
 			long b = ParseUnary();
 			SkipWs();
 			if (_pos + 2 < _s.Length && _s[_pos] == '*' && _s[_pos + 1] == '*' && _s[_pos + 2] == '=') return b;
-			if (Match2('*', '*')) return (long)Math.Pow(b, ParsePower());
+			if (Match2('*', '*')) return Power(b, ParsePower());
 			return b;
 			}
 
@@ -286,10 +326,12 @@ public static class ArithParser
 		private long ParsePrimary()
 			{
 			SkipWs();
+			int open = _pos;
 			if (TryConsume('('))
 				{
 				var v = ParseComma();
-				SkipWs(); Consume(')');
+				SkipWs(); Consume(')', "missing `)'");
+				_tok = open;   // bash reads a parenthesized group as one token: `5 / (2 - 2)` names "(2 - 2)"
 				return v;
 				}
 			if (_pos < _s.Length && (char.IsLetter(_s[_pos]) || _s[_pos] == '_'))
@@ -320,8 +362,10 @@ public static class ArithParser
 					else if (_s[_pos] == ']') { depth--; if (depth == 0) break; }
 					_pos++;
 					}
+				// no `]`: bash's "bad array subscript", its token the whole name on (`a[1`)
+				if (_pos >= _s.Length) { _tok = start; throw Error("bad array subscript"); }
 				var sub = _s[s0.._pos];
-				if (_pos < _s.Length) _pos++;   // ]
+				_pos++;   // ]
 				return (name, sub);
 				}
 			return (name, null);
@@ -335,69 +379,68 @@ public static class ArithParser
 			_vars?.Set(name, sub, value);
 			}
 
-		// Substring-free number parsing (no allocation).
+		// Substring-free number parsing (no allocation). bash's words for a bad one (measured against bash 5.1,
+		// 2026-11-15): a missing operand "syntax error: operand expected"; `08`, `2#102`, `0xg`, `12a` "value too great for
+		// base"; `65#1` "invalid arithmetic base"; `2#` "invalid integer constant". `0x` alone is 0, and base 64 takes
+		// `@` (62) and `_` (63) as digits (`64#@` was an error).
 		private long ParseNumber()
 			{
 			SkipWs();
-			if (_pos >= _s.Length)
-				throw new EvalException("Expected number in arithmetic expression");
+			if (_pos >= _s.Length || !char.IsAsciiDigit(_s[_pos])) throw Error("syntax error: operand expected");
+			int start = _pos;
+			long v = 0;
 
-			char c = _s[_pos];
-
-			// hex: 0x…
-			if (c == '0' && _pos + 1 < _s.Length && (_s[_pos + 1] is 'x' or 'X'))
+			if (_s[_pos] == '0' && _pos + 1 < _s.Length && (_s[_pos + 1] is 'x' or 'X'))
 				{
 				_pos += 2;
-				int start = _pos;
-				long v = 0;
 				while (_pos < _s.Length && Uri.IsHexDigit(_s[_pos])) { v = v * 16 + HexVal(_s[_pos]); _pos++; }
-				if (_pos == start) throw new EvalException("Expected hex digits in arithmetic expression");
-				return v;
 				}
-
-			// decimal, or octal when a leading 0 is followed by more digits, or base#digits
-			if (char.IsAsciiDigit(c))
+			else
 				{
-				int start = _pos;
 				while (_pos < _s.Length && char.IsAsciiDigit(_s[_pos])) _pos++;
 				if (At('#'))
 					{
 					long b = 0;
-					for (int i = start; i < _pos; i++) b = b * 10 + (_s[i] - '0');
-					if (b < 2 || b > 64) throw new EvalException($"Invalid arithmetic base '{b}'");
+					for (int i = start; i < _pos && b <= 64; i++) b = b * 10 + (_s[i] - '0');
+					if (b < 2 || b > 64) throw NumberError(start, "invalid arithmetic base");
 					_pos++;
-					long v = 0; int ds = _pos;
-					while (_pos < _s.Length && char.IsLetterOrDigit(_s[_pos]))
+					int ds = _pos;
+					while (_pos < _s.Length && (char.IsAsciiLetterOrDigit(_s[_pos]) || _s[_pos] is '@' or '_'))
 						{
 						char d = _s[_pos];
 						int dv = char.IsAsciiDigit(d) ? d - '0'
 							: char.IsAsciiLetterLower(d) ? d - 'a' + 10
-							: char.IsAsciiLetterUpper(d) ? d - 'A' + (b <= 36 ? 10 : 36) : 99;
-						if (dv >= b) throw new EvalException($"Value too great for base '{d}'");
+							: char.IsAsciiLetterUpper(d) ? d - 'A' + (b <= 36 ? 10 : 36)
+							: d == '@' ? 62 : 63;
+						if (dv >= b) throw NumberError(start, "value too great for base");
 						v = v * b + dv; _pos++;
 						}
-					if (_pos == ds) throw new EvalException("Expected digits after base#");
+					if (_pos == ds) throw NumberError(start, "invalid integer constant");
 					return v;
 					}
 				int @base = (_pos - start > 1 && _s[start] == '0') ? 8 : 10;
-				long val = 0;
 				for (int i = start; i < _pos; i++)
 					{
 					int d = _s[i] - '0';
-					if (d >= @base) throw new EvalException($"Invalid octal digit '{_s[i]}' in arithmetic expression");
-					val = val * @base + d;
+					if (d >= @base) throw NumberError(start, "value too great for base");
+					v = v * @base + d;
 					}
-				return val;
 				}
-
-			throw new EvalException($"Unexpected '{c}' in arithmetic expression");
+			// a number runs on into letters (`0xg`, `12a`): one bad number, as bash reads it
+			if (_pos < _s.Length && (char.IsAsciiLetterOrDigit(_s[_pos]) || _s[_pos] is '@' or '_'))
+				throw NumberError(start, "value too great for base");
+			return v;
 			}
 
 		// ── helpers ───────────────────────────────────────────────────────────────
 
 		private static int HexVal(char c) => c <= '9' ? c - '0' : (char.ToLowerInvariant(c) - 'a' + 10);
 
-		private void SkipWs() { while (_pos < _s.Length && _s[_pos] is ' ' or '\t' or '\n' or '\r') _pos++; }
+		private void SkipWs()
+			{
+			while (_pos < _s.Length && _s[_pos] is ' ' or '\t' or '\n' or '\r') _pos++;
+			if (_pos < _s.Length) _tok = _pos;
+			}
 
 		private bool At(char c)    => _pos < _s.Length && _s[_pos] == c;
 		private bool Ahead(char c) => _pos + 1 < _s.Length && _s[_pos + 1] == c;
@@ -416,9 +459,9 @@ public static class ArithParser
 			return false;
 			}
 
-		private void Consume(char c)
+		private void Consume(char c, string message)
 			{
-			if (!At(c)) throw new EvalException($"Expected '{c}' in arithmetic expression");
+			if (!At(c)) throw Error(message);
 			_pos++;
 			}
 		}
