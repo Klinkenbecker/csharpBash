@@ -407,7 +407,7 @@ public sealed class ShellEnvironment
 			}
 		if (arg == "/tmp" || arg.StartsWith("/tmp/", StringComparison.Ordinal))
 			{
-			var temp = ToShellPath(Path.TrimEndingDirectorySeparator(Path.GetTempPath()));
+			var temp = ToShellPath(TempFolder);
 			return arg.Length == 4 ? temp : temp + arg[4..];
 			}
 		return arg;
@@ -453,7 +453,7 @@ public sealed class ShellEnvironment
 		// /tmp, /tmp/...
 		if (path == "/tmp" || path.StartsWith("/tmp/", StringComparison.Ordinal) || path.StartsWith("/tmp\\", StringComparison.Ordinal))
 			{
-			var temp = ToShellPath(Path.TrimEndingDirectorySeparator(Path.GetTempPath()));
+			var temp = ToShellPath(TempFolder);
 			return path.Length == 4 ? temp : temp + "/" + ToShellPath(path[5..]);
 			}
 
@@ -475,6 +475,26 @@ public sealed class ShellEnvironment
 	/// straight character swap), and a bare root `E:\` becomes `E:/`.
 	/// </summary>
 	public static string ToShellPath(string path) => path.Replace('\\', '/');
+
+	/// <summary>The folder /tmp names (and mktemp's, a process substitution's and diff's temporary files go in), found
+	/// once: TMP, then TEMP, as Windows' GetTempPath reads them, but only a full Windows path; with neither, the user's
+	/// temp folder (%LOCALAPPDATA%/Temp, Windows' default for both), else GetTempPath's answer. A shell started by this one
+	/// gets its variables as typed, so `TMP=/tmp/x bash -c 'cat /tmp/f'` gave the child TMP=/tmp/x, which GetTempPath read
+	/// as a folder on the current drive: its /tmp was C:/tmp/x (facts-8a, 2026-11-16). Git Bash's /tmp does not follow
+	/// TMP either. Fixed for the shell's life, as a mount is (an exported TMP never reached the process anyway).</summary>
+	public static string TempFolder => s_tempFolder ??= FindTempFolder();
+	private static string? s_tempFolder;
+
+	private static string FindTempFolder()
+		{
+		foreach (var name in (ReadOnlySpan<string>)["TMP", "TEMP"])
+			if (Environment.GetEnvironmentVariable(name) is { Length: > 0 } v && Path.IsPathFullyQualified(v))
+				return Path.TrimEndingDirectorySeparator(Path.GetFullPath(v));
+		if (Environment.GetEnvironmentVariable("LOCALAPPDATA") is { Length: > 0 } local && Path.IsPathFullyQualified(local)
+		    && Path.Combine(local, "Temp") is var user && Directory.Exists(user))
+			return user;
+		return Path.TrimEndingDirectorySeparator(Path.GetTempPath());
+		}
 
 	/// <summary>`~` as bash expands it: the value of HOME (<paramref name="home"/>), or the profile when it is unset or
 	/// empty (bash takes the account's home directory then), in shell form.</summary>

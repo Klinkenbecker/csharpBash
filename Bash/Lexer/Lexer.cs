@@ -375,7 +375,7 @@ public sealed class Lexer
 			// never the rest of the file, which a nested ${ counted twice used to swallow silently.
 			int end = ConstructEnd(_src, _pos - 1);
 			if (end < 0)
-				throw new LexException("Unterminated parameter expansion ${", startLine, startCol) { Incomplete = true, Missing = '}' };
+				throw new LexException("Unterminated parameter expansion ${", startLine, startCol) { Incomplete = true, Missing = LastUnclosed };
 			Advance(); // {
 			var sb = new System.Text.StringBuilder();
 			while (_pos < end - 1) sb.Append(Advance());
@@ -511,8 +511,8 @@ public sealed class Lexer
 			if (Peek() == '`' || (Peek() == '$' && _pos + 1 < _src.Length && (_src[_pos + 1] == '(' || _src[_pos + 1] == '{')))
 				{
 				int end = ConstructEnd(_src, _pos);
-				if (end < 0)
-					throw new LexException("Unterminated double-quoted string", startLine, startCol) { Incomplete = true, Missing = '"' };
+				if (end < 0)   // what bash names is the innermost construct left open (`"${x:+it's}"`: a `'`)
+					throw new LexException("Unterminated double-quoted string", startLine, startCol) { Incomplete = true, Missing = LastUnclosed };
 				while (_pos < end) sb.Append(Advance());
 				continue;
 				}
@@ -525,6 +525,13 @@ public sealed class Lexer
 		}
 
 	// ── the one construct matcher ─────────────────────────────────────────────
+
+	/// <summary>After <see cref="ConstructEnd"/> returned -1: the closing character of the innermost construct the text
+	/// ran out inside, which is what bash says it was looking for. `"${x:+it's}"` lacks a `'`, not the `"` or `}` C#Bash
+	/// named until 2026-11-17 (KNOWN_ISSUES "an apostrophe inside a double-quoted ${x:+...}").</summary>
+	public static char LastUnclosed => t_unclosed;
+	[ThreadStatic] private static char t_unclosed;
+	private static int Unclosed(char closing) { t_unclosed = closing; return -1; }
 
 	/// <summary>
 	/// The index just past the construct that opens at <paramref name="i"/> in <paramref name="s"/>,
@@ -541,7 +548,7 @@ public sealed class Lexer
 		{
 		if (i >= s.Length) return -1;
 		char c = s[i];
-		if (c == '\'') { int e = s.IndexOf('\'', i + 1); return e < 0 ? -1 : e + 1; }
+		if (c == '\'') { int e = s.IndexOf('\'', i + 1); return e < 0 ? Unclosed('\'') : e + 1; }
 		if (c == '`')
 			{
 			for (int j = i + 1; j < s.Length; j++)
@@ -549,7 +556,7 @@ public sealed class Lexer
 				if (s[j] == '\\') { j++; continue; }
 				if (s[j] == '`') return j + 1;
 				}
-			return -1;
+			return Unclosed('`');
 			}
 		if (c == '"')
 			{
@@ -566,7 +573,7 @@ public sealed class Lexer
 					}
 				j++;
 				}
-			return -1;
+			return Unclosed('"');
 			}
 		if (c != '$' || i + 1 >= s.Length) return i + 1;
 		char n = s[i + 1];
@@ -577,7 +584,7 @@ public sealed class Lexer
 				if (s[j] == '\\') { j++; continue; }
 				if (s[j] == '\'') return j + 1;
 				}
-			return -1;
+			return Unclosed('\'');
 			}
 		if (n is '{' or '(')
 			{
@@ -605,7 +612,7 @@ public sealed class Lexer
 						if (s[j] is '\'' or '"')
 							{
 							int q = s.IndexOf(s[j], j + 1);
-							if (q < 0) return -1;
+							if (q < 0) return Unclosed(s[j]);
 							delim.Append(s, j + 1, q - j - 1);
 							j = q + 1;
 							}
@@ -624,7 +631,7 @@ public sealed class Lexer
 						{
 						while (true)
 							{
-							if (j >= s.Length) return -1;
+							if (j >= s.Length) return Unclosed(')');
 							int eol = s.IndexOf('\n', j);
 							var line = eol < 0 ? s[j..] : s[j..eol];
 							j = eol < 0 ? s.Length : eol + 1;
@@ -667,7 +674,7 @@ public sealed class Lexer
 				else if (ch == close && --depth == 0) return j + 1;
 				j++;
 				}
-			return -1;
+			return Unclosed(close);
 			}
 		if (char.IsLetter(n) || n == '_')
 			{

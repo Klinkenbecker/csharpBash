@@ -93,7 +93,7 @@ Claude Code's per-command wrapper, its shell snapshot (`bash -c -l`), cwd tracki
 
 **Finding a command**, in this order: an alias, a keyword, a function, a builtin or embedded tool; a name with a slash (or a drive, `F:x`) is that path, from the shell's own directory and never searched for; anything else is searched along [the fallback chain](#the-fallback-chain) (by default PATH, then WSL), trying each folder as named and then with every `PATHEXT` extension (`.COM`, `.EXE`, `.BAT`, `.CMD`, …), and taking the first match that can run (a program Windows starts, `.com` `.exe` `.bat` `.cmd`, a `.sh` file, or a `#!` line: what `[ -x ]` says). A `.js`, `.vbs` or other `PATHEXT` file that runs only through a file association is passed over, as Git Bash does. A `#!` script runs by its interpreter line (bash and sh scripts in-process), found on PATH or by its path; a `.sh` file without one runs in-process too, and so does any other text file with no `#!` named by its path (`./build`), as bash and msys run one (binary content is refused: "cannot execute binary file: Exec format error"); found on PATH by a bare name, such a file is not run. `/bin/NAME` and `/usr/bin/NAME`, when the drive has no such folder, run `NAME` (a builtin first, then PATH), as a `#!` line does. A bare name never runs a script from the current directory: write `./script`, as in bash.
 
-- **`sh` is the shell under the name `sh.exe`**, beside `Bash.exe` (the installer and deploy make it a hard link; by hand a copy works), as Git for Windows and MSYS2 ship theirs (each one's `sh.exe` is byte-for-byte its `bash.exe`). Step 4 above puts that folder on PATH, so `sh -c`, `sh script`, `… | sh`, `xargs sh -c` and `find -exec sh -c` find it, and so do the programs the shell starts (`make`, say); something started outside C#Bash needs the folder on its own PATH. Started as `sh`, it runs bash's default mode, as a `#!/bin/sh` script does: POSIX mode is not available, and nothing is printed about it. Its messages name it by its path (`$0` is the path it was started by). `tools/deploy.sh` makes `dist/sh.exe` a hard link to `dist/Bash.exe` (since 2026-11-01; one file on disk, re-made at every deploy so it never keeps an old build). With only `Bash.exe` downloaded, make it yourself: a copy, or a hard link (`ln Bash.exe sh.exe` in C#Bash), made again after each new `Bash.exe`, since a link keeps the build it was made to.
+- **`sh` is the shell under the name `sh.exe`**, beside `Bash.exe` (the installer and deploy make it a hard link; by hand a copy works), as Git for Windows and MSYS2 ship theirs (each one's `sh.exe` is byte-for-byte its `bash.exe`). Step 3 above puts that folder on PATH, so `sh -c`, `sh script`, `… | sh`, `xargs sh -c` and `find -exec sh -c` find it, and so do the programs the shell starts (`make`, say); something started outside C#Bash needs the folder on its own PATH. Started as `sh`, it runs bash's default mode, as a `#!/bin/sh` script does: POSIX mode is not available, and nothing is printed about it. Its messages name it by its path (`$0` is the path it was started by). `tools/deploy.sh` makes `dist/sh.exe` a hard link to `dist/Bash.exe` (since 2026-11-01; one file on disk, re-made at every deploy so it never keeps an old build). With only `Bash.exe` downloaded, make it yourself: a copy, or a hard link (`ln Bash.exe sh.exe` in C#Bash), made again after each new `Bash.exe`, since a link keeps the build it was made to.
 - **Lookups are remembered across shells**, in `~/.bash/commands`, one small file per PATH value. A remembered program is used after one existence check, so a moved or deleted one is simply searched for again. A program installed later in a folder earlier on PATH stays hidden behind the remembered one until `hash -r`.
 - **`hash name` also remembers a miss.** In a later shell it answers `hash: x: not found (remembered miss: hash -r searches again)` without searching. Running a program, `command -v` and `type` always search, as bash does. After installing a tool you had probed with `hash`, run `hash -r` (or `hash -d name`).
 - **Windows limits that remain:** a program whose own path is over 260 characters, or one started from a directory over 258 characters, cannot be started (cmd cannot either; C#Bash says so, 126), though the shell itself can `cd` there and work with its files. A file name ending in a dot or a space cannot exist through Windows' file API, which drops it: a command name `s1.` finds nothing, but `cat s1.` reads `s1`.
@@ -110,7 +110,9 @@ unix-tools = F:/Tools/UnixUtils/usr/local/wbin;PATH;WSL
 ```
 
 - **A folder** of Unix tools: searched like a PATH entry, so a tools folder can come first for the shell without
-  touching the Windows PATH. Any number, each an absolute path.
+  touching the Windows PATH. Any number, each an absolute path. A folder named before `PATH` is searched before
+  `%USERPROFILE%/.bash/bin` too (it is on PATH), so a program of the same name there is hidden: name the folder after
+  `PATH` when `.bash/bin` holds one (for example `PATH;F:/Tools/PortableGit/cmd;WSL`, so a git in `.bash/bin` comes first).
 - **`PATH`**: the shell's PATH.
 - **`WSL`**: the tool run in WSL (`wsl.exe`), when nothing earlier has it. Windows-rooted arguments (`F:/x`) arrive
   as `/mnt/f/x`; a tool WSL does not have either is "command not found", 127. A start costs about 0.15 s. It starts
@@ -123,6 +125,27 @@ it cannot use is reported once on stderr and skipped. `type`, `command -v` and `
 PATH; they never report WSL, which has no file to name. Lookups are remembered per chain, so a changed folder list
 never runs a remembered program from a folder you removed. The installer does not write the file: create it when you
 want a different chain.
+
+**A program in `%USERPROFILE%/.bash/bin` that cannot serve a request hands it on** (the refusal protocol, since build
+864). The program decides before it reads its input or writes anything (reading files to decide is fine), and if it cannot
+serve the request it exits **127** with nothing on stdout or stderr (it may log its reason to
+`%USERPROFILE%/.bash/unserviced.jsonl`). C#Bash then runs the same command again from scratch, with the same
+arguments, redirections and unread input, using the next program of that name in the chain above (`.bash/bin` left
+out), WSL included when it is a step; with none it says `<name>: <program> does not serve this request, and
+unix-tools has no other` and the status is 127. Any other exit status is the program's answer, an error included, and
+is never run again. This applies to every program in that folder, yours included, but C#Bash's own `bash` and `sh`,
+whose 127 is a script's "command not found", an answer: Wombat's `git.exe` (a git replacement for Windows, not yet
+published) follows it; a program that exits 127 for
+another reason is run again, which is its owner's to avoid. **C#Bash marks the calls it will run again:** the program
+has `BASH_RERUN_ON_127=1` in its environment (unless the mark is written on the command, below) only when it was found
+by a bare name in that folder and its input can be
+handed to the next one (when it cannot be, the program is not marked; if it exits 127 anyway, C#Bash says `<name>:
+<program> does not serve this request; not run again:
+<why>`); every other program C#Bash starts has the variable removed, an inherited or exported one
+included, unless the mark is written on the command itself (below). A program can so refuse in silence where it has the mark, and say why, as an ordinary error, where it has
+not (Wombat: exit 128 and `fatal: wombat does not support '<what>' yet`), as for cmd, an editor or a call by path.
+To test a program against the protocol, write the mark on the command itself: `BASH_RERUN_ON_127=1 ./prog` (or
+through `env`) reaches the program as written, by path too, and `BASH_RERUN_ON_127=0 prog` turns C#Bash's own off.
 
 The same file holds **`access-time = default | preserve`**. On NTFS, reading a file's details moves its access time
 (`stat` and `ls -l` read a file's first bytes for `#!`, as MSYS does, since Windows has no execute bit), as under Git

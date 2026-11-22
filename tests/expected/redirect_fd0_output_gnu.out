@@ -1,0 +1,8 @@
+env, a builtin: wo=[] out=[]
+env, a program: wo=[] out=[]
+a builtin: wo=[] out=[]
+a function: wo=[] out=[]
+a group: wo=[] out=[]
+appended: wo=[old] out=[]
+to /dev/null: wo=[] out=[kept]
+the file is created

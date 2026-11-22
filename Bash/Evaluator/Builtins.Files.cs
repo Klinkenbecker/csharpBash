@@ -960,7 +960,7 @@ public sealed partial class Builtins
 		// a template is relative to the current directory unless -t, -p/--tmpdir or no template, and the name prints as
 		// built (GNU): `mktemp x.XXXX` went to TEMP and printed its full path (2026-10-17)
 		bool useTmp = tmpdir is not null || o.HasLong("tmpdir") || o.Has('t') || o.Operands.Count == 0;
-		string baseDir = useTmp ? P(tmpdir is { Length: > 0 } ? tmpdir : (Environment.GetEnvironmentVariable("TMPDIR") is { Length: > 0 } td ? td : Path.GetTempPath())) : "";
+		string baseDir = useTmp ? P(tmpdir is { Length: > 0 } ? tmpdir : (Environment.GetEnvironmentVariable("TMPDIR") is { Length: > 0 } td ? td : ShellEnvironment.TempFolder)) : "";
 		int xs = template.Length - template.TrimEnd('X').Length;
 		if (xs < 3) { Console.Error.WriteLine($"mktemp: too few X's in template '{shown}'"); return 1; }
 		var rnd = new Random();

@@ -1,33 +1,60 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-14 11:00 (bash-1b, at 90% context). SUPERSEDES every block below (they are history).
-> **TRUE STATE:** DEPLOYED 859 (.NET 10, SDK 10.0.404; `1.0.0+hg.44d78d60c3cb 859`, rollback dist/*.rev853); PUBLISHING 859 (2026-11-15, his go: benchmark 859 clean run, perf-history added, KNOWN_ISSUES release section 859). NEXT (ratified, "go when ready"): the refusal protocol (DECISIONS "RULED ... the refusal protocol"): exit 127 from a ~/.bash/bin program = rerun with the next in unix-tools; replay buffer for pumped stdin.
-> PUBLISHED hg-811 = build 806 (GitHub main git 8583518); this machine's ~/.bash runs 806. NOT published: 816
-> (access-time = default|preserve; benchtimer per-launch limit 300 s/TIMEOUT), 827 (PowerShell removed: bash runners), 833 (awk), 835 (mkdir dir/), 837 (grep --line-buffered), 841 ([[ == @(a|b) ]]), 844 (sed -u).
-> **BUGS list (2026-11-15, the architect: "how is the bugs list empty if you have two open known issues?" -- KNOWN_ISSUES ARE the bugs list): DONE 841 `[[ == ]]` extended groups; DONE 844 `sed -u` (suite 312/0, battery 220). DONE (hg 846-847, deploying 847): publish-aot.cmd finds the C++ tools via vswhere. DONE 849 arithmetic error BEHAVIOR (abandon/1, ** exact); 850 /tmp glob (facts-8a, told); 851 quoted-backslash glob path. 853 arithmetic error WORDING (bash's words). OPEN: none (KNOWN_ISSUES empty); corners recorded in DECISIONS: `x++ ++`, lone `$`, `$(( (1+2 ))`.** FEATURES list: empty.
-> **RULED 2026-11-15 (the architect: "'AOT toolchain' - we should specify, use and allow this as our supported
-> toolchain. We should also update to .NET10"): the SUPPORTED TOOLCHAIN = .NET 10 SDK + Build Tools for VS 2022 (VC.Tools.x86.x64
-> + Windows11SDK.26100), docs/DEVELOPING.md "The supported toolchain"; net10.0 + global.json; publish-aot.cmd links with
-> the released install (IlcUseEnvironmentalTools; the ILCompiler's own lookup took prerelease VS 2026). .NET 10 cost two
-> fixes (base64 left-over bits; 22 Unicode 15.1/16 code points excluded from posix_classes_unicode). DO NOT re-open. Its
-> speed shows at the next publish's benchmark. AWAITING: a clean-machine proof (Windows Sandbox = a machine-wide change: ask).
-> **DONE 2026-11-15 (his go):** Wombat installed on guy-windows8 (~/.bash/bin/git.exe build 92, ~/.bash/etc/gitconfig + gitattributes; csharpBash.config back to PATH;WSL; guy-windows11 is its owner's); SDK 10.0.404 (runtime 10.0.15) installed, global.json 10.0.404; docs: PowerShell setx line gone, build docs name the supported toolchain, README/PERFORMANCE say .NET 10. OPEN: Windows Sandbox needs HIS elevated dism + a restart (command given); Wombat KNOWN_ISSUES.md (F:/Koliada/Tools/wombat, rev 97) to ship beside the install under a non-colliding name (installer change). PUBLISH: GO (2026-11-15, quiet machine).
-> **AWAITING THE ARCHITECT (do NOT decide):** (s-done) INSTALL a patched .NET SDK (10.0.403; machine-wide): NU1903 on 847, ILCompiler 10.0.5 (and 8.0.25 before) is in CVE-2026-111497 (Brotli decoder overflow, High; patched 10.0.14 = SDK 10.0.114/10.0.403); C#Bash uses no Brotli (grep), so not exploitable through it; then global.json minimum 10.0.403 (Claude: yes to both). (a) README's two lines on USERS' own PowerShell (installer PATH note;
-> `setx` example): keep or remove? (d) TBD
-> list (e) now: VS C++ tools, git.exe for publish (WSL permitted 2026-11-14; PowerShell gone). (e) a nightly 00:01 publish
-> "as necessary": he is pondering it (2026-11-14: "I will ponder - ! might find a better way!"); Claude's proposal: a
-> session CronCreate job (session-only, 7-day expiry, up to ~30 min late), skipping busy nights; nothing scheduled.
-> **DONE TODAY, do NOT redo:** fallback chain (785; csharpBash.config `unix-tools`; this machine's config =
-> `F:/Tools/PortableGit/cmd;PATH;WSL` + an access-time comment, his choice A); PIPESTATUS on read (806, func/loop/arith
-> back to 754's); awk param pass-through fix (806); advantage graph atop PERFORMANCE.md (docs/perf-history.tsv/.svg,
-> `tools/perf-history.sh --add` at every publish; publish.sh enforces); compare3 hosted by C#Bash (RULED); benchtimer
-> limit; access-time option; PowerShell removed (tools/launch, tests/cases.tsv, tests/run-tests.sh,
-> tests/compat/run-compat.sh; proven equivalent on 816; deploy 827 green through them).
-> **RULES learned today (memories):** machine-wide config is put to him as options first; propose only the open part;
-> no benchmark per feature (publish only); a commit during a test run names its files (hg 824 took a planted line).
-> **NEXT PUBLISH:** his word + a quiet machine (ListAgents; ask busy peers for a slot); compare3 hosted by C#Bash; doc
-> review incl. `tools/perf-history.sh --add`; KNOWN_ISSUES "Fixed after this release (hg-811…)" becomes the release
-> section; publish.sh <msgfile> C:/Users/guy/klinkenbecker.gh-token.
+> ## RESUME HERE — 2026-11-17 (bash-ef, batten down). SUPERSEDES every block below (they are history).
+> **TRUE STATE:** DEPLOYED 885 (`1.0.0+hg.356e1ef39397 885`) to dist AND ~/.bash/bin: every local session runs it
+> (deploy.sh swaps both since 880; DECISIONS 2026-11-17 "RULED + BUILT: deploy goes into ~/.bash/bin"; DO NOT revert to
+> dist-only). Rollbacks: dist keeps all (newest *.rev882), ~/.bash/bin keeps one (*.rev882). PUBLISHED: hg-861 = build
+> 859 (2026-11-15); 864-885 unpublished (KNOWN_ISSUES "Fixed after this release (hg-861, build 859)").
+> **SINCE 859:** the refusal protocol (864) and its mark BASH_RERUN_ON_127=1 (code 866, first deployed in 868; a mark written on the command goes
+> through, 885); bash/sh in ~/.bash/bin never rerun (868); a tree kill spares the console host (870); an output redirect
+> onto fd 0 (872); EBADF (874); /tmp ignores an MSYS-form TMP (877); deploy into ~/.bash (880); the innermost unclosed
+> construct named (882). Each in DECISIONS, the deploys in "RECORD (batten down, the global CLAUDE.md routine): the
+> deploys of 2026-11-16/17, and a withdrawn cause".
+> **WOMBAT (git):** ~/.bash/bin/git.exe = Wombat 102 (rollback git.exe.rev92). This machine's unix-tools
+> (~/.bash/etc/csharpBash.config) = `PATH;F:/Tools/PortableGit/cmd;WSL` (his goal 2026-11-17: "the latest git is always
+> deployed and always falls back 'as before' (portable git)"; PATH first keeps Wombat first, measured). Each Wombat
+> deploy notice from git-9d: this session swaps it in, by hand (DECISIONS 2026-11-17 "RULED (via Wombat): C#Bash puts
+> each Wombat deploy into ~/.bash/bin itself"; a contract tool for it is on the features list). The joint try (Wombat
+> 102 + C#Bash 874, Wombat DECISIONS 2026-11-16) passed. A plain git call from a Claude session refused loudly is
+> ACCEPTABLE (his ruling; DO NOT add a change for it), but that ruling rested on a cause since withdrawn and does not
+> by itself settle bug (1): whether (1) is worked is (A1) below (Claude: work it; fixed, such a call is marked, as 868 designed). The installer ships no git until Wombat's
+> repository is pushed (DECISIONS 2026-11-10, step 2). OPEN, this session's call, with that installer change: the name
+> under which Wombat's KNOWN_ISSUES.md ships beside the install (it would collide with C#Bash's own).
+> **RULES 2026-11-17 (DO NOT re-open):** KNOWN_LIMITATIONS is this session's alone; every report enters KNOWN_ISSUES
+> first, moved as appropriate by this session. "If you see something, say something" (global memory). A "why...?"
+> question is a question, never a go. SUPPORTED TOOLCHAIN (RULED 2026-11-15): .NET 10 SDK + Build Tools for VS 2022
+> (docs/DEVELOPING.md).
+> **BUGS LIST (KNOWN_ISSUES "Open"), in its order; (1) waits on (A1), the rest are worked meanwhile (bug-fixes-dont-wait):**
+> (1) a refused bare git is sometimes not marked (git-9d; confirmed by Wombat's lines in the request log; cause unknown; the earlier "stdin
+> judged unreplayable" cause is WITHDRAWN); (2) `coproc` not implemented but `type` calls it a keyword (claude-c3 via guy-bf); (2b) jq's `def` and `foreach` say "command not found" on 806 (guy-0a, claude-c3 via guy-bf; 885 with
+> WSL in the chain but no jq there not yet tried; `def` itself deferred, DECISIONS "RULED: jq `def` deferred until a
+> second request"); (3) ~/.bash/help.json is not refreshed from the tables of revs 553, 645 and 665 (Builtins.Help.cs
+> EarlierHelpTables; no effect today); (4) a quoted argument to `cmd //c` reaches cmd as `\"` (glassmirror-4e via guy-bf; not yet compared with Git Bash); (5) grep -E with a bounded repeat (`.{0,300}`) ~135x slower than GNU (facts-8a; not yet reproduced); (6) /tmp with TMP and TEMP both in MSYS form (the 877 gap); (7) UNVERIFIED, measure first: whether a unix-tools
+> folder named before PATH outranks this shell's own bash/sh (USING step 3 says not). FEATURES list: `coproc` (claude-c3: a two-way pipe to a child); jq `foreach` and `def` in-process (guy-0a, claude-c3; see A3); a contract
+> tool for the Wombat swap (the 2026-10-12 rule). Limitations (KNOWN_LIMITATIONS "Error wording"): the error wording
+> RULED 2026-11-17, and `[ -t /dev/stdin ]` moved there by this session. KNOWN_ files changed between deploys: refresh
+> ~/.bash's copies by hand (DECISIONS "RECORD (batten down, second audit)" (4)).
+> **AWAITING THE ARCHITECT (do NOT decide):** the next PUBLISH (his word, a quiet machine; ships 864-885;
+> guy-windows11 changes only when its owner runs the installer there); Windows Sandbox for the clean-machine toolchain
+> proof (his elevated dism + a restart); README.md's remaining mention of users' own PowerShell (lines 57-58: keep or
+> remove); a nightly publish (his: "I will ponder - ! might find a better way!"; nothing scheduled); his word on the
+> chain order written 2026-11-17, `PATH;F:/Tools/PortableGit/cmd;WSL` in place of his line
+> `F:/Tools/PortableGit/cmd;PATH;WSL` (reason measured; DECISIONS "DONE (his goal)"); (A1) Claude's ask "Shall I track
+> down the cause?" of bug (1), unanswered: the process works bugs without waiting (bug-fixes-dont-wait), an unanswered
+> ask is never a go (global feedback_missed_ask_is_not_a_go), and a fix changes the outcome his ruling called
+> acceptable: which governs; (A2) THE SWITCH wording he agreed (Wombat DECISIONS 2026-11-15, "4/ concur") says a loud
+> 128 is rerun, which predates the protocol (only a marked 127 is): it needs redrafting (Wombat's session) and his
+> word; (A3) whether guy-0a's report meets the revisit condition of "RULED: jq `def` deferred until a second request";
+> (A4) Claude Code's own git calls are 3,118 of the request log's 4,189 lines (refused on `-c`), skewing the counts he
+> chooses features by (Claude: keep them loud, count without that signature; DECISIONS "RECORD (batten down, fourth audit)").
+> **NEXT PUBLISH:** compare3 hosted by C#Bash; the doc review incl. `tools/perf-history.sh --add`; KNOWN_ISSUES' "Fixed
+> after this release" becomes the release section; `tools/publish.sh <msgfile> C:/Users/guy/klinkenbecker.gh-token`;
+> check the installer over a deploy-placed Bash.exe and the rollbacks in ~/.bash/bin (Bash.exe.rev*, sh.exe.rev*,
+> git.exe.rev92), untested. After it, and once guy-windows11's owner has run the C#Bash installer and installed Wombat's
+> git.exe there: tell git-9d (Wombat's session sends guy-bf THE SWITCH wording, per (A2)).
+> **PENDING FOR WOMBAT'S SESSION** (git-9d not running 2026-11-17, message undelivered; send when it is back): (1) the
+> agreed SWITCH wording predates the protocol (A2); (2) its records: PROJECT_CONTEXT.md:16 "build 92 ... until
+> reinstalled" (it is 102), :25 "re-run contract.sh" (done under 880/882), and for the (A2) redraft: THE SWITCH targets CLAUDE.md:87 now (Wombat DECISIONS:1321 says :84; append-only, not a record fix).
 
 > ## (older block, superseded) RESUME HERE — 2026-11-12 (bash-1b). DEPLOYED 798 (785: the fallback chain, daq-a1's two fixes, facts-8a's PIPESTATUS, the cygpath hint; 787: git-9d's nullglob leak; 789: facts-8a's mv fix; 798: help fallback + the no-topic hint; reporters told). PUBLISHED 2026-11-14: hg-801 with build 798 (DECISIONS "PUBLISHED: hg rev 801"); ~/.bash runs 798. PUBLISHED 806 as hg-811 (2026-11-14): PIPESTATUS written only when read + the awk parameter pass-through fix + the advantage graph; ~/.bash runs 806. DEPLOYED 816 (access-time = default|preserve, benchtimer limit; not published). GREENLIT 2026-11-14 ("1/ yes 2/ yes"): (1) POWERSHELL REMOVED (hg 826, DECISIONS "DONE ... PowerShell removed"; the bash runners proven equivalent first; DEPLOYED 827 through them: suite 307/0, battery 220; open: README's two user-PowerShell lines); (2) ZIG SPIKE DONE (DECISIONS "SPIKE"): zig links and makes the import libs, not MSVC's CRT; AWAITING HIM: VS Build Tools or a permitted exception (plan in DECISIONS 2026-11-14 "DEPLOYED 816"). AT EACH PUBLISH (ruled 2026-11-14): `tools/perf-history.sh --add` in the doc review (publish.sh refuses without it). Bugs list empty. The benchmark is PUBLISH's, never deploy's.
 > **NEXT (GREENLIT, the features list in order): (1) find -anewer/-cnewer DEPLOYED 768 (no

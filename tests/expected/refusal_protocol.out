@@ -1,0 +1,30 @@
+alt:x y
+a
+b
+pipe rc=0
+alt:z
+hello
+here-string rc=0
+alt:
+body
+here-doc rc=0 body expanded 1 time(s)
+alt:
+from a file
+file rc=0
+fails rc=3
+lone rc=127
+only: W/home/.bash/bin/only.cmd does not serve this request, and unix-tools has no other
+only rc=127
+bare: marked:1
+by path: unmarked
+outside: unmarked
+assigned: marked:1
+inherited: unmarked
+unreplayable: unmarked
+assigned, by path: marked:1
+assigned through env: marked:1
+assigned over C#Bash's: marked:0
+bin-bash
+bash rc=127
+bin-sh
+sh rc=127

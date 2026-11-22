@@ -1351,7 +1351,7 @@ public sealed class WordExpander(ShellEnvironment env, Evaluator eval)
 	/// path, in the shell's form (`F:/TEMP/bash-procsub-&lt;id&gt;`). The file lives until the enclosing command has finished.</summary>
 	private string RunProcessSubstitution(Node command)
 		{
-		var path = Path.Combine(Path.GetTempPath(), "bash-procsub-" + Guid.NewGuid().ToString("N")[..12]);
+		var path = Path.Combine(ShellEnvironment.TempFolder, "bash-procsub-" + Guid.NewGuid().ToString("N")[..12]);
 		var oldOut = ConsoleMux.OutSlot;
 		var oldRaw = ConsoleMux.Raw;
 		bool oldCap = ConsoleMux.Capturing;

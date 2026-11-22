@@ -90,6 +90,23 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		else if (o is null && ConsoleMux.RealOutBuffered) { ConsoleMux.OutDirty = false; ConsoleMux.RealOut.Flush(); }   // the process stdout, redirected (step (c))
 		}
 
+	/// <summary>A read from an unreadable stdin (`0<&-`, `0> f`), as bash 5.1 and GNU's tools report it: the first line
+	/// (null: none) and the status, measured through WSL 2026-11-16 (KNOWN_ISSUES "a redirection onto a descriptor in the
+	/// wrong direction"). bash's builtins take the shell's prefix. mapfile ends quietly with what it read (bash).</summary>
+	private static readonly Dictionary<string, (string? Line, int Status, bool Bash)> StdinReadErrors = new()
+		{
+		["read"]      = ("read: read error: 0: Bad file descriptor", 1, true),
+		["mapfile"]   = (null, 0, true),
+		["readarray"] = (null, 0, true),
+		["sort"]      = ("sort: stat failed: -: Bad file descriptor", 2, false),
+		["sed"]       = ("sed: read error on stdin: Bad file descriptor", 4, false),
+		["awk"]       = ("awk: fatal: error reading input file `-': Bad file descriptor", 2, false),
+		["tr"]        = ("tr: read error: Bad file descriptor", 1, false),
+		["od"]        = ("od: 'standard input': read error: Bad file descriptor", 1, false),
+		["tee"]       = ("tee: read error: Bad file descriptor", 1, false),
+		["xargs"]     = ("xargs: error closing file: Bad file descriptor", 1, false),
+		};
+
 	public bool TryExecute(string name, List<string> args, out int exitCode)
 		{
 		// Unsupported-option policy for coreutils (DECISIONS 2026-09-04 #2):
@@ -142,6 +159,25 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			exitCode = 2;
 			Unserviced.Log(ex.Tool, ex.Option, ex.Message, args, "failed, exit 2");
 			return true;
+			}
+		// a write to a stdout closed or open for reading (`>&-`, `1< f`): bash's EBADF, in bash's words for its builtins
+		// (`bash: line 1: echo: write error: Bad file descriptor`) and GNU's for a tool (`cat: write error: ...`), status 1
+		// (KNOWN_ISSUES 2026-11-16: it was written as usual, or nowhere)
+		catch (BadDescriptorWriteException ex)
+			{
+			Console.Error.WriteLine($"{(Array.IndexOf(BashBuiltinNames, name) >= 0 ? Err : "")}{name}: write error: {ex.Message}");
+			exitCode = 1;
+			}
+		// a read from a stdin closed or open for writing (`0<&-`, `0> f`): bash's and GNU's first line and status for a
+		// builtin that leaves it to here; one that reports its inputs itself (cat, head, wc, grep...) has said it already
+		catch (BadDescriptorReadException ex)
+			{
+			if (StdinReadErrors.TryGetValue(name, out var e))
+				{
+				if (e.Line is not null) Console.Error.WriteLine((e.Bash ? Err : "") + e.Line);
+				exitCode = e.Status;
+				}
+			else { Console.Error.WriteLine($"{name}: {ex.Message}"); exitCode = 1; }
 			}
 		// A filesystem failure inside a builtin is an ordinary error, not a reason to kill the
 		// shell. Until 2026-09-11 an unguarded open anywhere in a tool (found: `split` with a

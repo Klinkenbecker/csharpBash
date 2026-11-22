@@ -1090,7 +1090,7 @@ public sealed class Evaluator
 		int pid = job.ChildPid;
 		if (pid > 0)
 			{
-			try { System.Diagnostics.Process.GetProcessById(pid).Kill(true); } catch { }
+			try { Builtins.KillTree(System.Diagnostics.Process.GetProcessById(pid)); } catch { }   // never a console's host
 			return 0;
 			}
 		if (job.Done || job.Shell is not null) return 0;
@@ -2318,16 +2318,96 @@ public sealed class Evaluator
 	private int _interpreterDepth;
 	private const int MaxInterpreterDepth = 8;
 
+	// ── the refusal protocol (RULED 2026-11-15, DECISIONS "the refusal protocol") ─────────────────────────────
+	// A program in ~/.bash/bin that cannot serve a request says so before reading or writing anything: exit 127,
+	// nothing on stdout or stderr. The command is then run again from scratch with the next program of that name in
+	// unix-tools (~/.bash/bin left out): same arguments, same redirections, the same unread stdin (a pipeline stage's
+	// comes back by the give-back, a file is shared at its offset, a here-document is kept as expanded).
+	[ThreadStatic] private static string? t_ranProgram;      // the program the last ExecExternalOnce started (a bare name's)
+	[ThreadStatic] private static bool t_ranUnreplayable;     // its stdin was an in-process stream with no give-back
+	[ThreadStatic] private static Dictionary<Redirect, string>? t_hereBodies;   // here-documents as expanded, for a rerun
+
 	private int ExecExternal(string name, List<string> args,
 		List<(string, string)> tempAssign, List<Redirect> redirects, bool clearEnv = false,
 		IReadOnlyCollection<string>? unsetEnv = null)
+		{
+		var savedBodies = t_hereBodies;
+		t_hereBodies = redirects.Count > 0 && redirects.Exists(r => r.Kind is RedirectKind.Heredoc or RedirectKind.HeredocStrip or RedirectKind.HereString)
+			? new Dictionary<Redirect, string>(ReferenceEqualityComparer.Instance) : null;
+		try
+			{
+			int rc = ExecExternalOnce(name, args, tempAssign, redirects, clearEnv, unsetEnv);
+			if (rc != 127 || t_ranProgram is not { } ran || !Reruns(ran)) return rc;
+			if (t_ranUnreplayable) return Refused(name, ran, redirects, "its input was already given to it");
+			if (NextProgram(name, ran) is { } next)
+				return ExecExternalOnce(name, args, tempAssign, redirects, clearEnv, unsetEnv, program: next);
+			if (Fallbacks.Wsl is { } wsl) return RunInWsl(wsl, name, args, tempAssign, redirects, clearEnv, unsetEnv);
+			return Refused(name, ran, redirects, null);
+			}
+		finally { t_hereBodies = savedBodies; }
+		}
+
+	/// <summary>A here-document's or here-string's body, expanded once per command: a rerun reuses it, so a `$( )`
+	/// in it does not run twice.</summary>
+	private string HereBody(Redirect r)
+		{
+		if (t_hereBodies is { } kept && kept.TryGetValue(r, out var body)) return body;
+		body = ExpandRedirectBody(r.Target);
+		if (t_hereBodies is { } keep) keep[r] = body;
+		return body;
+		}
+
+	private static bool InBashBin(string program)
+		{
+		if (Unserviced.Folder is not { } home) return false;
+		var dir = Path.GetDirectoryName(Path.GetFullPath(program));
+		return dir is not null && string.Equals(Path.TrimEndingDirectorySeparator(dir), Path.GetFullPath(Path.Combine(home, "bin")), StringComparison.OrdinalIgnoreCase);   // both in one form (home may be F:/x)
+		}
+
+	/// <summary>Whether a 127 from <paramref name="program"/>, started by a bare name, is a refusal run again: a program in
+	/// ~/.bash/bin other than C#Bash itself. bash and sh there are the installer's C#Bash, whose 127 is a script's "not
+	/// found", an answer: `bash -c 'x; exit 127'` ran twice (2026-11-16).</summary>
+	private static bool Reruns(string program)
+		=> InBashBin(program) && Path.GetFileNameWithoutExtension(program) is var n
+		   && !n.Equals("bash", StringComparison.OrdinalIgnoreCase) && !n.Equals("sh", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>The refusal protocol's mark (RULED 2026-11-16 with Wombat, "silent only on C#Bash's marked calls"): set to
+	/// 1 for a program only where C#Bash will run the command again on its 127, and removed for every other child, an
+	/// inherited one included, unless the mark is written on the command itself (885); a program refuses in silence only
+	/// when it has it.</summary>
+	internal const string RerunMark = "BASH_RERUN_ON_127";
+
+	/// <summary>The next program named <paramref name="name"/> in unix-tools' folders and PATH, the refusing program's
+	/// folder left out.</summary>
+	private string? NextProgram(string name, string refused)
+		{
+		var skip = Path.TrimEndingDirectorySeparator(Path.GetDirectoryName(Path.GetFullPath(refused)) ?? "");
+		var dirs = ShellEnvironment.PathDirs(Fallbacks.SearchPath(_env.Get("PATH")))
+			.Where(d => !string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(ShellEnvironment.TranslatePath(d))), skip, StringComparison.OrdinalIgnoreCase));
+		var path = string.Join(";", dirs);
+		return path.Length == 0 ? null : ResolveOnPath(name, path);
+		}
+
+	private int Refused(string name, string program, List<Redirect> redirects, string? why)
+		{
+		using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
+		Console.Error.WriteLine(why is null
+			? $"{ErrorPrefix}{name}: {ShellEnvironment.ToShellPath(program)} does not serve this request, and unix-tools has no other"
+			: $"{ErrorPrefix}{name}: {ShellEnvironment.ToShellPath(program)} does not serve this request; not run again: {why}");
+		return 127;
+		}
+
+	private int ExecExternalOnce(string name, List<string> args,
+		List<(string, string)> tempAssign, List<Redirect> redirects, bool clearEnv = false,
+		IReadOnlyCollection<string>? unsetEnv = null, string? program = null)
 		{
 		// `PATH=… cmd`: bash finds cmd on that PATH (it was looked up on the shell's own until 2026-10-11)
 		string? tempPath = null;
 		foreach (var (n, v) in tempAssign) if (n == "PATH") tempPath = ShellEnvironment.NormalizePath(v);
 		bool bare  = !IsPathName(name);
-		var  found = bare ? ResolveOnPath(name, tempPath) : null;   // cached full path, else OS resolves
-		if (bare && tempPath is null) HashHit(name);
+		t_ranProgram = null;
+		var  found = program ?? (bare ? ResolveOnPath(name, tempPath) : null);   // cached full path, else OS resolves; a refusal's rerun names its program
+		if (bare && tempPath is null && program is null) HashHit(name);
 		// a bare name with a colon is an NTFS stream, never a program: Windows' launcher found `ads:bar.exe` in the
 		// current directory (red team, 2026-10-17); bash looks it up on PATH and finds nothing
 		if (bare && name.Contains(':')) return NotFound(name, redirects);
@@ -2552,6 +2632,7 @@ public sealed class Evaluator
 		ChildFd Destination(TextWriter text, Stream? raw)
 			{
 			if (ReferenceEquals(text, TextWriter.Null)) return new HandleFd(Nul());   // in-process > /dev/null
+			if (text is BadDescriptorWriter) return new HandleFd(Nul());              // a closed stdout: NUL, as `ext >&-`
 			var sw = text as StreamWriter;
 			if (sw?.BaseStream is FileStream fs && HandOff(fs, sw) is { } f) return f;
 			if (sw is not null && raw is not null && !ConsoleMux.Capturing && ReferenceEquals(sw.BaseStream, raw))
@@ -2601,9 +2682,9 @@ public sealed class Evaluator
 			foreach (var r in redirects)
 				{
 				if (r.Kind is RedirectKind.Heredoc or RedirectKind.HeredocStrip)
-					{ fds[0] = new InPumpFd(null, null, ExpandRedirectBody(r.Target)); continue; }
+					{ fds[0] = new InPumpFd(null, null, HereBody(r)); continue; }
 				if (r.Kind == RedirectKind.HereString)
-					{ fds[0] = new InPumpFd(null, null, ExpandRedirectBody(r.Target) + "\n"); continue; }
+					{ fds[0] = new InPumpFd(null, null, HereBody(r) + "\n"); continue; }
 
 				var raw    = ExpandRedirectWord(r.Target);
 				var target = ShellEnvironment.TranslatePath(raw);
@@ -2680,12 +2761,26 @@ public sealed class Evaluator
 		// the job of the shell that made it (DECISIONS 2026-10-05).
 		bool detached   = ChildOutlivesShell;
 		bool ownConsole = detached && HiddenConsole.ConsoleMayDieWithAShell;
+		// the refusal protocol's mark: only where a 127 is run again (a bare name's program in ~/.bash/bin, its stdin
+		// replayable); without it a program called by path would refuse in silence, with nothing to run it again. An
+		// inherited or exported one is removed; one written on the command itself (`BASH_RERUN_ON_127=1 prog`, `env
+		// BASH_RERUN_ON_127=1 prog`) is the caller's own and goes through as written, over C#Bash's (RULED 2026-11-17, the
+		// architect: "Your position, go"; git-9d: a program's tests against the protocol call it by path)
+		string? written = null;
+		foreach (var (k, v) in tempAssign) if (k == RerunMark) written = v;
+		psi.Environment.Remove(RerunMark);
+		if (written is not null) psi.Environment[RerunMark] = written;
+		else if (bare && program is null && Reruns(fileName) && fds[0] is not InPumpFd { GiveBack: null, Literal: null })
+			psi.Environment[RerunMark] = "1";
 		try
 			{
 			if (Timing.On) Timing.Mark("ext+ " + name);   // the performance review's timing switch
 			Builtins.FlushBuffered();   // nothing the shell buffered may come after the child's output (2026-10-28)
 			proc = ChildLauncher.Start(psi, HandleFor(fds[0]), HandleFor(fds[1]), HandleFor(fds[2]),
 			                           noWindow: hideConsole || ownConsole, breakaway: detached);
+			// the refusal protocol: which program ran, and whether its stdin could be given to another (ExecExternal)
+			t_ranProgram = bare ? fileName : null;
+			t_ranUnreplayable = fds[0] is InPumpFd { GiveBack: null, Literal: null };
 			}
 		catch (System.ComponentModel.Win32Exception ex)
 			{
@@ -2747,7 +2842,7 @@ public sealed class Evaluator
 				Thread t = end switch
 					{
 					InPumpFd i  => new Thread(() => FeedChild(i, shellEnd)),
-					OutPumpFd o => new Thread(() => { if (DrainChild(o, shellEnd)) { brokenPipe = true; try { proc.Kill(true); } catch { } } }),
+					OutPumpFd o => new Thread(() => { if (DrainChild(o, shellEnd)) { brokenPipe = true; try { Builtins.KillTree(proc); } catch { } } }),   // never the adopted console's host
 					_           => throw new InvalidOperationException(),
 					};
 				t.IsBackground = true;
@@ -2847,6 +2942,7 @@ public sealed class Evaluator
 	/// Only a pipe, a here-doc or a text source is still pumped.</remarks>
 	private static ChildFd CurrentStdin()
 		{
+		if (ConsoleMux.In is BadDescriptorReader) return new InPumpFd(Stream.Null, null, null);   // a closed stdin: empty
 		var lf = ConsoleMux.In as LfReader;
 		var pending = lf?.TakeBuffered();
 		int pendingBytes = pending is { Length: > 0 } ? ShellEncoding.Utf8.GetByteCount(pending) : 0;
@@ -3089,6 +3185,21 @@ public sealed class Evaluator
 				case RedirectKind.Append:
 					{
 					bool append = r.Kind == RedirectKind.Append;
+					// `0> f`, `0>> f`, `0>/dev/null`: f is opened for writing on fd 0, so stdin cannot be read ("Bad file
+					// descriptor") and stdout is untouched. It was installed as STDOUT: `env X=1 git hash-object --stdin
+					// 0> f` wrote git's output into f, and `echo kept 0>/dev/null` printed nothing (git-9d, 2026-11-16)
+					if (fd == 0)
+						{
+						if (rawTarget is not ("/dev/null" or "/dev/stdout" or "/dev/stderr" or "/dev/tty"))
+							{
+							if (Options.NoClobber && r.Kind == RedirectKind.Output && File.Exists(target))
+								{ throw RedirectFailed(scope, $"{rawTarget}: cannot overwrite existing file"); }
+							try { (append ? ShellFile.Append(target) : ShellFile.Create(target)).Dispose(); }   // created or emptied, as bash
+							catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
+							}
+						UnreadableStdin(scope);
+						break;
+						}
 					// /dev specials
 					if (rawTarget == "/dev/null")
 						{
@@ -3096,8 +3207,8 @@ public sealed class Evaluator
 						else { scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(System.IO.TextWriter.Null); ConsoleMux.Raw = System.IO.Stream.Null; }
 						break;
 						}
-					if (rawTarget == "/dev/stdout") { if (fd == 2) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); } break; }
-					if (rawTarget == "/dev/stderr") { if (fd != 2) { scope.SaveOut(); ConsoleMux.SetOut(ConsoleMux.Err); } break; }
+					if (rawTarget == "/dev/stdout") { if (fd == 2) CopyOutToErr(scope); break; }
+					if (rawTarget == "/dev/stderr") { if (fd != 2) CopyErrToOut(scope); break; }
 					if (rawTarget == "/dev/tty")
 						{
 						// the console itself (CONOUT$); with none, bash's "No such device or address"
@@ -3161,6 +3272,15 @@ public sealed class Evaluator
 				case RedirectKind.Input:
 					{
 					int ifd = r.Fd ?? 0;
+					if (ifd is 1 or 2)
+						{
+						// `1< f`, `2< f`: f opened for reading on fd 1 or 2, so a write there fails ("Bad file descriptor"; a
+						// message to stderr is lost). It was taken as numbered descriptor 1 or 2 and stdout written as usual.
+						try { ShellFile.OpenInput(target).Dispose(); }
+						catch (Exception ex) { throw RedirectFailed(scope, $"{rawTarget}: {RedirectMessage(target, ex, kind is not RedirectKind.Input)}"); }
+						if (ifd == 1) UnwritableStdout(scope); else UnwritableStderr(scope);
+						break;
+						}
 					if (ifd > 0)
 						{
 						// 3<file: open a numbered descriptor for `<&3` / `read -u 3`
@@ -3189,15 +3309,18 @@ public sealed class Evaluator
 					// "<cwd>/1" -- "ambiguous redirect", caught by the suite 2026-10-03)
 					if (rawTarget == "-")
 						{
-						// n>&- closes n
-						if (ofd == 1) { scope.SaveOut(); scope.SaveRaw(); ConsoleMux.SetOut(System.IO.TextWriter.Null); ConsoleMux.Raw = System.IO.Stream.Null; }
-						else if (ofd == 2) { scope.SaveErr(); ConsoleMux.SetErr(System.IO.TextWriter.Null); }
+						// n>&- closes n: a write to a closed stdout fails ("Bad file descriptor"; it went nowhere until
+						// 2026-11-16), a message to a closed stderr is lost
+						if (ofd == 1) UnwritableStdout(scope);
+						else if (ofd == 0) UnreadableStdin(scope);
+						else if (ofd == 2) UnwritableStderr(scope);
 						else scope.TrackFd(_fds, ShellToken,ofd, null);
 						break;
 						}
 					if (!int.TryParse(rawTarget, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
-					if (ofd == 1 && src == 2) { scope.SaveOut(); ConsoleMux.SetOut(ConsoleMux.Err); break; }          // 1>&2
-					if (ofd == 2 && src == 1) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); break; }          // 2>&1
+					if (ofd == 0 && src is 1 or 2) { UnreadableStdin(scope); break; }   // 0>&1: stdin is a writing end (it was ignored)
+					if (ofd == 1 && src == 2) { CopyErrToOut(scope); break; }          // 1>&2
+					if (ofd == 2 && src == 1) { CopyOutToErr(scope); break; }          // 2>&1
 					if (ofd > 2 && src <= 2)
 						{
 						// 3>&1, 4>&2: descriptor N is a copy of where fd 1 or 2 points NOW, so a later
@@ -3233,12 +3356,15 @@ public sealed class Evaluator
 					int ifd = r.Fd ?? 0;
 					if (rawTarget == "-")   // an fd number or "-", never a path (see OutputDup)
 						{
-						if (ifd == 0) { scope.SaveIn(); scope.SaveRawIn(); ConsoleMux.SetIn(new System.IO.StringReader("")); ConsoleMux.RawIn = System.IO.Stream.Null; }
+						// n<&- closes n, as n>&-: stdin read as empty, and `1<&-` was ignored, until 2026-11-16
+						if (ifd == 0) UnreadableStdin(scope);
+						else if (ifd == 1) UnwritableStdout(scope);
+						else if (ifd == 2) UnwritableStderr(scope);
 						else scope.TrackFd(_fds, ShellToken,ifd, null);
 						break;
 						}
 					if (!int.TryParse(rawTarget, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int src)) { throw RedirectFailed(scope, $"{rawTarget}: ambiguous redirect"); }
-					if (ifd == 2 && src == 1) { scope.SaveErr(); ConsoleMux.SetErr(ConsoleMux.Out); break; }          // 2<&1 (defensive)
+					if (ifd == 2 && src == 1) { CopyOutToErr(scope); break; }          // 2<&1 (defensive)
 					if (ifd > 2 && src <= 2) { scope.TrackFd(_fds, ShellToken,ifd, StdStream(src), shared: true); break; }      // 3<&0: a copy, as 3>&1
 					if (ifd == 0 && src > 2)
 						{
@@ -3256,6 +3382,45 @@ public sealed class Evaluator
 				}
 			}
 		return scope;
+		}
+
+	/// <summary>Stdin closed or open for writing (`0<&-`, `0> f`, `0>&1`): a read fails "Bad file descriptor", as bash's
+	/// (KNOWN_ISSUES 2026-11-16; it read as empty); a program started from here gets an empty stdin.</summary>
+	private static void UnreadableStdin(RedirectScope scope)
+		{
+		scope.SaveIn(); scope.SaveRawIn();
+		ConsoleMux.SetIn(new BadDescriptorReader()); ConsoleMux.RawIn = new BadDescriptorStream(forWrite: false);
+		}
+
+	/// <summary>Stdout closed or open for reading (`>&-`, `1<&-`, `1< f`): a write fails "Bad file descriptor", as bash's
+	/// (it was written as usual, or nowhere); a program started from here gets NUL.</summary>
+	private static void UnwritableStdout(RedirectScope scope)
+		{
+		scope.SaveOut(); scope.SaveRaw();
+		ConsoleMux.SetOut(new BadDescriptorWriter()); ConsoleMux.Raw = new BadDescriptorStream(forWrite: true);
+		}
+
+	/// <summary>Stderr closed or open for reading (`2>&-`, `2<&-`, `2< f`): a message there is lost, as bash's; a copy onto
+	/// stdout (`>&2`) fails a write. A program started from here gets NUL.</summary>
+	private static void UnwritableStderr(RedirectScope scope)
+		{
+		scope.SaveErr(); ConsoleMux.SetErr(new BadDescriptorWriter(silent: true));
+		}
+
+	/// <summary>`1>&2`, `>/dev/stderr`: stdout onto where stderr points; a closed stderr's copy fails a write (bytes too).</summary>
+	private static void CopyErrToOut(RedirectScope scope)
+		{
+		scope.SaveOut();
+		if (ConsoleMux.Err is BadDescriptorWriter)
+			{ scope.SaveRaw(); ConsoleMux.SetOut(new BadDescriptorWriter()); ConsoleMux.Raw = new BadDescriptorStream(forWrite: true); }
+		else ConsoleMux.SetOut(ConsoleMux.Err);
+		}
+
+	/// <summary>`2>&1`, `2>/dev/stdout`: stderr onto where stdout points; a closed stdout's copy loses a message.</summary>
+	private static void CopyOutToErr(RedirectScope scope)
+		{
+		scope.SaveErr();
+		ConsoleMux.SetErr(ConsoleMux.Out is BadDescriptorWriter ? new BadDescriptorWriter(silent: true) : ConsoleMux.Out);
 		}
 
 	/// <summary>A stream onto where fd 0, 1 or 2 points now: the file or pipe it writes or reads, a

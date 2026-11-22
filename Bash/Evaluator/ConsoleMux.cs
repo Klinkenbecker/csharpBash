@@ -161,7 +161,58 @@ public static class ConsoleMux
 	}
 
 /// <summary>Thrown to a writer whose reader has gone away — bash's SIGPIPE.</summary>
-public sealed class BrokenPipeException() : IOException("Broken pipe");
+public class BrokenPipeException(string message = "Broken pipe") : IOException(message);
+
+// ── a descriptor closed or open the other way (bash's EBADF) ─────────────────────────────────────────────────────
+// `0<&-`, `0> f`, `0>&1` leave stdin unreadable; `>&-`, `1<&-`, `1< f` leave stdout unwritable. In bash a read or
+// write there fails "Bad file descriptor"; C#Bash read such a stdin as empty and wrote such a stdout as usual or
+// nowhere (KNOWN_ISSUES 2026-11-16). A program C#Bash starts gets NUL there, as Windows has no closed descriptor.
+
+/// <summary>A write to an unwritable stdout. A BrokenPipeException, so every path that carries a broken pipe out of a
+/// builtin carries it to Builtins.TryExecute, which reports "NAME: write error: Bad file descriptor", status 1.</summary>
+public sealed class BadDescriptorWriteException() : BrokenPipeException("Bad file descriptor");
+
+/// <summary>A read from an unreadable stdin: an ordinary I/O error, which each tool reports as it reports a file's.</summary>
+public sealed class BadDescriptorReadException() : IOException("Bad file descriptor");
+
+/// <summary>The byte view of an unreadable stdin or an unwritable stdout.</summary>
+public sealed class BadDescriptorStream(bool forWrite) : Stream
+	{
+	public bool ForWrite => forWrite;
+	public override bool CanRead  => !forWrite;   // it can be asked, and fails
+	public override bool CanWrite => forWrite;
+	public override bool CanSeek  => false;
+	public override long Length   => throw new NotSupportedException();
+	public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+	public override int  Read(byte[] buffer, int offset, int count) => throw new BadDescriptorReadException();
+	public override void Write(byte[] buffer, int offset, int count) => throw new BadDescriptorWriteException();
+	public override void Flush() { }
+	public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+	public override void SetLength(long value) => throw new NotSupportedException();
+	}
+
+/// <summary>The text view of an unreadable stdin.</summary>
+public sealed class BadDescriptorReader : TextReader
+	{
+	public override int     Peek() => throw new BadDescriptorReadException();
+	public override int     Read() => throw new BadDescriptorReadException();
+	public override int     Read(char[] buffer, int index, int count) => throw new BadDescriptorReadException();
+	public override string? ReadLine() => throw new BadDescriptorReadException();
+	public override string  ReadToEnd() => throw new BadDescriptorReadException();
+	}
+
+/// <summary>The text view of an unwritable stdout, or (<paramref name="silent"/>) of an unwritable stderr, where a
+/// message is lost as bash loses it. A copy onto the other descriptor (`1>&2`, `2>&1`) takes the other kind: `echo hi
+/// 2< f >&2` fails as bash's does, and `echo hi >&- 2>&1` loses its message instead of failing on it.</summary>
+public sealed class BadDescriptorWriter(bool silent = false) : TextWriter
+	{
+	public bool Silent => silent;
+	public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+	public override void Write(char value) { if (!silent) throw new BadDescriptorWriteException(); }
+	public override void Write(string? value) { if (!silent && !string.IsNullOrEmpty(value)) throw new BadDescriptorWriteException(); }
+	public override void Write(char[] buffer, int index, int count) { if (!silent && count > 0) throw new BadDescriptorWriteException(); }
+	public override void Flush() { }
+	}
 
 /// <summary>
 /// An in-memory pipe between two pipeline stages: a bounded byte queue with blocking

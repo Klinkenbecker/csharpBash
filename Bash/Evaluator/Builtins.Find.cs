@@ -535,7 +535,7 @@ public sealed partial class Builtins
 			{
 			if (a == "-" || b == "-")
 				{
-				stdinCopy = Path.Combine(Path.GetTempPath(), "csbash-diff-" + Guid.NewGuid().ToString("N")[..12]);
+				stdinCopy = Path.Combine(ShellEnvironment.TempFolder, "csbash-diff-" + Guid.NewGuid().ToString("N")[..12]);
 				using var fs = ShellFile.Create(stdinCopy);
 				if (Evaluator.CurrentRawStdin() is { } raw) raw.CopyTo(fs);   // bytes, with any read-ahead first
 				else { var bytes = ShellEncoding.Utf8.GetBytes(Console.In.ReadToEnd()); fs.Write(bytes, 0, bytes.Length); }

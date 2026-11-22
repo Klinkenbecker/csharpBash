@@ -1332,6 +1332,7 @@ public sealed partial class Builtins
 				finally { if (f != "-") r?.Dispose(); }
 				}
 			}
+		catch (BadDescriptorReadException) { throw; }   // reported in GNU's words by TryExecute
 		catch (Exception ex) { Console.Error.WriteLine($"sort: {IoError(ex)}"); return 2; }
 
 		string[] SplitFields(string s)
@@ -1652,6 +1653,7 @@ public sealed partial class Builtins
 			total = ForEachPiece(new ConcatStream([.. opened.Select(p => p.S)]), limit, width, Line);
 			}
 		catch (BrokenPipeException) { throw; }
+		catch (BadDescriptorReadException) { throw; }   // reported in GNU's words by TryExecute
 		catch (Exception ex) { Console.Error.WriteLine($"od: {IoError(ex)}"); return 1; }
 		finally { foreach (var (name, s) in opened) if (name != "-") s.Dispose(); }
 		if (addr != "n") Console.WriteLine(Addr(skip + total));   // GNU prints it for empty input too (`0000000`)

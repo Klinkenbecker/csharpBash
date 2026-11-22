@@ -12,7 +12,7 @@ The pipeline and the four design documents: [the README's Architecture section](
 ```sh
 dotnet build -c Release            # builds Bash.sln (.NET 10 SDK)
 Bash/bin/Release/net10.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-bash tests/run-tests.sh                    # 316 self-checking cases (four need the Native AOT build: --interpreter <exe>; --detached as Claude Code starts a shell)
+bash tests/run-tests.sh                    # 322 self-checking cases (four need the Native AOT build: --interpreter <exe>; --detached as Claude Code starts a shell)
 bash tests/compat/run-compat.sh            # 237-probe differential battery against WSL's GNU bash
 ```
 

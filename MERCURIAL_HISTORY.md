@@ -12,11 +12,55 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 862 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 906 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 905 | 2026-11-22 | publish doc review (builds 864-885): README table + startup line and PERFORMANCE from the 885 compare3 run (2026-11-22, quiet, C#Bash host); graph adds 885; case count 322 (README was 308, missed at hg-861); KNOWN_ISSUES release section for 885, cp -a hard-link bug entered (open) |
+| 904 | 2026-11-17 | KNOWN_ISSUES: coproc not implemented but type calls it a keyword; jq foreach joins def (claude-c3 via guy-bf); features list: coproc, jq foreach/def; anchor |
+| 903 | 2026-11-17 | KNOWN_ISSUES: grep -E with a bounded repeat ~135x slower than GNU (facts-8a); anchor |
+| 902 | 2026-11-17 | KNOWN_ISSUES: a quoted argument to cmd //c reaches cmd as backslash-quote (glassmirror-4e via guy-bf); anchor |
+| 901 | 2026-11-17 | batten down, fourth audit fixed: resume block (bug (1) waits on A1, the list's order, A4, the unverified bash/sh order), KNOWN_ISSUES (log wording, seconds, help.json), KNOWN_LIMITATIONS (MSYS path conversion for every machine, guy-bf's need), USING (the not-run-again condition), case headers and rows cite DECISIONS; DECISIONS record |
+| 900 | 2026-11-17 | anchor: pending message for Wombat's session (git-9d not running) |
+| 899 | 2026-11-17 | batten down, third audit fixed: resume block (A1-A3 to the architect, once fixed, the switch, the publish path), KNOWN_ISSUES (bug (1) evidence, jq deferral, help.json), KNOWN_LIMITATIONS (chain order, printed or run), USING (step 3, example, the mark), RerunMark comment; DECISIONS record |
+| 898 | 2026-11-17 | batten down, second audit fixed: resume block (bug (1) vs the ruling, the git line, Wombat KNOWN_ISSUES name open, guy-windows11, publish checklist), KNOWN_ISSUES (/tmp gap, jq wording, the mark's builds, the link), KNOWN_LIMITATIONS ([ -t /dev/stdin ] moved, preamble), USING (the mark), deploy.sh header, case comments; DECISIONS record |
+| 897 | 2026-11-17 | batten down: the resume block rewritten (first audit's anchor findings: stale state, leftovers, refs) |
+| 896 | 2026-11-17 | batten down, first audit fixed: catch-up DEPLOYED record 868-885 + the withdrawn stdin cause (DECISIONS); jq def report (KNOWN_ISSUES); chain advice PATH first (KNOWN_LIMITATIONS, USING); deploy.sh: header, message, KNOWN_ copies name the build; refusal_protocol row text |
+| 895 | 2026-11-17 | batten down: KNOWN_ISSUES [ -t /dev/stdin ] (open); DECISIONS record of the session observations |
+| 894 | 2026-11-17 | anchor: bugs list holds the intermittent mark; the KNOWN_ files rule |
+| 893 | 2026-11-17 | RULED: KNOWN_LIMITATIONS is C#Bash's alone, every report enters KNOWN_ISSUES first; git-9d's intermittent-mark report entered (open); DECISIONS |
+| 892 | 2026-11-17 | RULED: the last two bugs are limitations (KNOWN_LIMITATIONS Error wording); bugs list empty; anchor tidied (stale bugs lines, superseded (w)) |
+| 891 | 2026-11-17 | RULED: a Claude session's loud Wombat refusal is fine (his words); DECISIONS, anchor |
+| 890 | 2026-11-17 | his goal done: unix-tools PATH;PortableGit/cmd;WSL and Wombat 102 in ~/.bash/bin; found: Claude Code's stdin withholds the mark (open, his); DECISIONS, anchor |
+| 889 | 2026-11-17 | RULED: the rerun chain stays PATH;WSL and ~/.bash/bin keeps Wombat 92 (his: No leave as is); DECISIONS, anchor |
+| 888 | 2026-11-17 | anchor: the Wombat line no longer says his go is needed for the copy |
+| 887 | 2026-11-17 | DECISIONS + anchor: each Wombat deploy goes into ~/.bash/bin by C#Bash (his ruling via Wombat); 102 waits on the rerun chain (PATH;WSL would send refusals to WSL git) |
+| 886 | 2026-11-17 | anchor: 885 deployed (a written mark goes through); the features item done |
+| 885 | 2026-11-17 | a mark written on the command itself (BASH_RERUN_ON_127=1 prog, env ...) goes through as written, by path too (RULED: the architect, Your position, go; git-9d); case refusal_protocol; USING, KNOWN_ISSUES, DECISIONS |
+| 884 | 2026-11-17 | anchor: features list: a supported way to run a program as a marked call (git-9d); awaiting his ruling |
+| 883 | 2026-11-17 | anchor: 882 deployed to dist and ~/.bash/bin |
+| 882 | 2026-11-17 | an unclosed construct is named by the innermost one left open, as bash (Lexer.ConstructEnd records it); case unclosed_innermost_gnu; KNOWN_ISSUES (fixed; an unclosed ${ inside a word left open), DECISIONS |
+| 881 | 2026-11-17 | anchor: 880 deployed to dist and ~/.bash/bin; every local session runs it |
+| 880 | 2026-11-17 | deploy goes into ~/.bash/bin too, where every local session starts (the architect: deploy is supposed to deploy to ~/.bash/), and dist; KNOWN_ files copied; one rollback kept there; KNOWN_ISSUES: the apostrophe in a double-quoted ${x:+...} (open); DECISIONS, anchor |
+| 879 | 2026-11-17 | anchor: deploy has not reached ~/.bash since 2026-11-07 (the architect's question, his words); proposal awaiting his go |
+| 878 | 2026-11-16 | anchor: 877 deployed (/tmp ignores an MSYS-form TMP) |
+| 877 | 2026-11-16 | /tmp no longer follows an MSYS-form TMP in a child shell: TempFolder (TMP/TEMP only when a full Windows path) for /tmp, mktemp, process substitution, diff (facts-8a); case tmp_ignores_tmp_var_gnu; KNOWN_ISSUES, DECISIONS |
+| 876 | 2026-11-16 | anchor: Wombat 102 deployed, joint try with 874 passed; awaiting his go on ~/.bash/bin/git.exe 102 and the rerun chain |
+| 875 | 2026-11-16 | anchor: 874 deployed (bad descriptor); the tools' wording left open |
+| 874 | 2026-11-16 | a closed or wrong-way descriptor is bash's Bad file descriptor for in-process commands: reads fail with GNU's words and status, writes fail write error 1, stderr's messages lost; case bad_descriptor_gnu; KNOWN_ISSUES (fixed; tools' wording left open), DECISIONS |
+| 873 | 2026-11-16 | anchor: 872 deployed (fd 0 output redirect); the wider class open on the bugs list |
+| 872 | 2026-11-16 | an output redirect onto fd 0 (0> f, 0>> f, 0>/dev/null) for env, a builtin, a function or a group was installed as stdout; now stdin, read as empty (git-9d); case redirect_fd0_output_gnu; KNOWN_ISSUES (fixed + the wider class open), DECISIONS |
+| 871 | 2026-11-16 | anchor + DECISIONS: 870 deployed (the console-host fix); the JIT first-run exit checked on AOT |
+| 870 | 2026-11-16 | a tree kill (broken pipe, timeout, kill, job kill) never kills a console host: a console-less shell's first child's conhost is the shell's adopted console, and killing it left code page 437 (facts-8a); case console_survives_kill; KNOWN_ISSUES, DECISIONS |
+| 869 | 2026-11-16 | anchor: 868 deployed (the refusal protocol mark) |
+| 868 | 2026-11-16 | the refusal protocol: a program decides before it reads its input or writes anything, reading files to decide is fine (RULED); USING, DECISIONS, anchor |
+| 867 | 2026-11-16 | DECISIONS: correction, Wombat starts no program, so it strips no mark |
+| 866 | 2026-11-16 | the refusal protocol's mark: BASH_RERUN_ON_127=1 only where C#Bash reruns a 127 (Wombat's ruling, "silent only for C#Bash's marked calls"); bash and sh in ~/.bash/bin never rerun (864 ran `bash -c '...; exit 127'` twice); case refusal_protocol; USING, KNOWN_ISSUES, DECISIONS, anchor |
+| 865 | 2026-11-15 | anchor: 864 deployed (the refusal protocol) |
+| 864 | 2026-11-15 | the refusal protocol: exit 127 from a ~/.bash/bin program reruns the command with the next in unix-tools; case refusal_protocol; USING, KNOWN_ISSUES |
+| 863 | 2026-11-15 | anchor: drop the orphaned unpublished-builds line |
+| 862 | 2026-11-15 | record: published hg-861 = build 859 (first on .NET 10) |
 | 861 | 2026-11-15 | publish prep: README table and PERFORMANCE from build 859 (first on .NET 10), perf-history 859, KNOWN_ISSUES release section 859, DEVELOPING 316 cases, anchor |
 | 860 | 2026-11-15 | DECISIONS: the refusal protocol (exit 127, nothing written) and C#Bash's rerun with the unix-tools chain, ratified |
 | 859 | 2026-11-15 | KNOWN_ISSUES: 859 is built with SDK 10.0.404 (the patched compiler); dev_tty_git_prompt uses Git for Windows when git on PATH is Wombat |

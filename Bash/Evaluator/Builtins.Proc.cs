@@ -58,6 +58,41 @@ public sealed partial class Builtins
 		return list;
 		}
 
+	/// <summary>Ends <paramref name="proc"/> and every process it started, as Process.Kill(true) did, but never a
+	/// console's host (conhost.exe), which ends by itself with its last client. A shell with no console adopts its first
+	/// child's console (HiddenConsole), whose host is that child's own child: a broken pipe, `timeout` or `kill` ending
+	/// the child's tree killed the shell's console, and every later program got a fresh one on code page 437, so a .NET
+	/// program wrote CP437 into its pipe (facts-8a, 2026-11-16). A process counts as a child only if it started after its
+	/// parent, so a reused process id is never taken for one.</summary>
+	internal static void KillTree(System.Diagnostics.Process proc)
+		{
+		DateTime rootStart;
+		try { rootStart = proc.StartTime; } catch { rootStart = DateTime.MinValue; }
+		try { proc.Kill(); } catch { }   // the root first, so it starts nothing more
+		var all   = ListProcesses(false);
+		var queue = new Queue<(int Pid, DateTime Start)>();
+		var seen  = new HashSet<int> { proc.Id };
+		queue.Enqueue((proc.Id, rootStart));
+		while (queue.Count > 0)
+			{
+			var (parent, parentStart) = queue.Dequeue();
+			foreach (var p in all)
+				{
+				if (p.Ppid != parent || !seen.Add(p.Pid)) continue;
+				if (p.Name.Equals("conhost.exe", StringComparison.OrdinalIgnoreCase)) continue;
+				try
+					{
+					using var child = System.Diagnostics.Process.GetProcessById(p.Pid);
+					var start = child.StartTime;
+					if (start < parentStart) continue;   // a reused id, not this parent's child
+					try { child.Kill(); } catch { }
+					queue.Enqueue((p.Pid, start));
+					}
+				catch { }   // gone already, or not ours to open
+				}
+			}
+		}
+
 	private static string ReadCommandLine(int pid)
 		{
 		var h = OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, (uint)pid);

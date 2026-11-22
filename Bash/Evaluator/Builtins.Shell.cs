@@ -690,7 +690,9 @@ public sealed partial class Builtins
 		var sb = new StringBuilder();
 		while (true)
 			{
-			int ch = Console.In.Read();
+			int ch;
+			try { ch = Console.In.Read(); }
+			catch (BadDescriptorReadException) { ch = -1; }   // `mapfile a 0<&-`: bash ends quietly with what it read
 			if (ch < 0) { if (sb.Length > 0) lines.Add(sb.ToString()); break; }
 			sb.Append((char)ch);
 			if ((char)ch == delim[0])
@@ -1635,7 +1637,7 @@ public sealed partial class Builtins
 			try
 				{
 				var proc = System.Diagnostics.Process.GetProcessById(pid);
-				if (!sigZero) proc.Kill(true);
+				if (!sigZero) KillTree(proc);   // never a console's host (KillTree)
 				}
 			catch (ArgumentException) { Console.Error.WriteLine($"{Err}kill: ({pid}) - No such process"); rc = 1; }
 			catch (Exception ex)      { Console.Error.WriteLine($"{Err}kill: ({pid}) - {ex.Message}"); rc = 1; }

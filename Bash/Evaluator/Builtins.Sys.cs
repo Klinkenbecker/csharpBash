@@ -694,7 +694,7 @@ public sealed partial class Builtins
 		if (worker.Join(waitMs)) return rc;
 		// expired
 		int child = job.ChildPid;
-		if (child > 0) { try { System.Diagnostics.Process.GetProcessById(child).Kill(true); } catch { } }
+		if (child > 0) { try { KillTree(System.Diagnostics.Process.GetProcessById(child)); } catch { } }   // never a console's host
 		if (o.Has('v')) Console.Error.WriteLine($"timeout: sending signal {(o.Get('s') ?? "TERM")} to command '{cmd}'");
 		if (child > 0) worker.Join(5000);
 		if (!done && child == 0)
