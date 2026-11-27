@@ -428,6 +428,29 @@ public static class ChildLauncher
 
 	/// <summary>True when the handle is a disk file (seekable, its offset shared with a child).</summary>
 	public static bool IsDiskFile(IntPtr h) => h != IntPtr.Zero && GetFileType(h) == FILE_TYPE_DISK;
+
+	/// <summary>What a handle is open on, for test's -p, -f, -s and -c of /dev/fd/N: 1 a disk file (with its size), 2 a
+	/// character device (a console, NUL), 3 a pipe; 0 none or unknown.</summary>
+	public static (uint Type, long Size) HandleType(IntPtr h)
+		{
+		if (h == IntPtr.Zero || h == InvalidHandle) return (0, 0);
+		uint t = GetFileType(h);
+		return (t, t == FILE_TYPE_DISK && GetFileInformationByHandle(h, out var i) ? ((long)i.FileSizeHigh << 32) | i.FileSizeLow : 0);
+		}
+
+	/// <summary>The path of the file a handle is open on (`\\?\` form), or null.</summary>
+	public static string? HandlePath(IntPtr h)
+		{
+		var buf = new char[1024];
+		uint n = GetFinalPathNameByHandleW(h, buf, (uint)buf.Length, 0);
+		return n == 0 || n >= buf.Length ? null : new string(buf, 0, (int)n);
+		}
+	[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+	private static extern uint GetFinalPathNameByHandleW(IntPtr hFile, [Out] char[] lpszFilePath, uint cchFilePath, uint dwFlags);
+
+	/// <summary>True when a character-device handle is a console (NUL is not one).</summary>
+	public static bool IsConsole(IntPtr h) => GetConsoleMode(h, out _);
+	[DllImport("kernel32.dll")] private static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
 	[DllImport("kernel32.dll")] private static extern IntPtr GetStdHandle(int nStdHandle);
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern bool WriteFile(SafeFileHandle hFile, byte[] lpBuffer, int nNumberOfBytesToWrite, out int lpNumberOfBytesWritten, IntPtr lpOverlapped);

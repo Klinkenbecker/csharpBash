@@ -189,16 +189,17 @@ public static class CommandPrinter
 					Redirects(wc.Redirects);
 					break;
 				case ForCommand fc:
-					_sb.Append("for ").Append(fc.Variable).Append(" in ");
-					_sb.Append(fc.Words.Count == 0 ? "\"$@\"" : string.Join(" ", fc.Words.Select(WordText)));
-					_sb.Append(';');
-					NewLine(indent);
-					_sb.Append("do");
-					NewLine(indent + 4);
-					Body(fc.Body, indent + 4, terminateLast: true);
-					NewLine(indent);
-					_sb.Append("done");
+					NameInWords("for", fc.Variable, fc.Words, fc.Body, indent);
 					Redirects(fc.Redirects);
+					break;
+				case SelectCommand sc:
+					NameInWords("select", sc.Variable, sc.Words, sc.Body, indent);
+					Redirects(sc.Redirects);
+					break;
+				case CoprocCommand co:
+					// bash names the default: `coproc cat` prints `coproc COPROC cat`
+					_sb.Append("coproc ").Append(co.Name ?? "COPROC").Append(' ');
+					Cmd(co.Body, indent);
 					break;
 				case ArithForCommand af:
 					// each part with its front trimmed, its end as written (`i++ ))`), an empty one as `1` (bash):
@@ -238,6 +239,20 @@ public static class CommandPrinter
 					_sb.Append(node.Span.IsKnown ? node.Span.Text : "");
 					break;
 				}
+			}
+
+		/// <summary>`for`/`select` `name in words;` then `do` … `done` on lines of their own (bash).</summary>
+		private void NameInWords(string keyword, string name, List<Word> words, Node body, int indent)
+			{
+			_sb.Append(keyword).Append(' ').Append(name).Append(" in ");
+			_sb.Append(words.Count == 0 ? "\"$@\"" : string.Join(" ", words.Select(WordText)));
+			_sb.Append(';');
+			NewLine(indent);
+			_sb.Append("do");
+			NewLine(indent + 4);
+			Body(body, indent + 4, terminateLast: true);
+			NewLine(indent);
+			_sb.Append("done");
 			}
 
 		/// <summary>`if C; then` … `else` … `fi`; an `elif` is printed as `else` and a nested `if` (bash).</summary>

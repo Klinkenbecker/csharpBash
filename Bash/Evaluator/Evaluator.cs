@@ -596,6 +596,8 @@ public sealed class Evaluator
 				CaseCommand cc            => ExecCase(cc),
 				FunctionDef fd            => ExecFunctionDef(fd),
 				ConditionalExpression ce  => ExecConditional(ce),
+				SelectCommand             => NotAvailableHere("select", "select (menus)"),
+				CoprocCommand             => NotAvailableHere("coproc", "coproc (coprocesses)"),
 				_ => throw new EvalException($"Unhandled node type: {node.GetType().Name}")
 				};
 			}
@@ -1938,14 +1940,20 @@ public sealed class Evaluator
 	/// program only when it is a FILE there (`command -v` gives a path), else prints this shell's own "command not
 	/// found" and exits 127: WSL's own miss is exit 1, like any failure (measured). wsl.exe gets PATH cut to System32 (a
 	/// start was 579 ms with this machine's PATH, 149 ms without, and quiet) and arguments as given but Windows-rooted
-	/// paths as /mnt/x/... (no MSYS conversion). WSL reads stdin even for a tool that does not (measured): documented.</summary>
+	/// paths as /mnt/x/... (no MSYS conversion). WSL reads stdin even for a tool that does not (measured): documented.
+	/// A caller handing on a request (a builtin's, a refusing program's) gives its own answer for a miss in
+	/// <paramref name="miss"/> and <paramref name="missStatus"/>: "command not found" for a tool that is right here was
+	/// the wrong answer (KNOWN_ISSUES, jq's `def` on guy-windows11, 2026-11-17). The script prints it, so a miss costs no
+	/// second WSL start and is never guessed from a status (a real tool can exit 127: xargs).</summary>
 	internal int RunInWsl(string wsl, string name, List<string> args, List<(string, string)> tempAssign,
-		List<Redirect> redirects, bool clearEnv = false, IReadOnlyCollection<string>? unsetEnv = null)
+		List<Redirect> redirects, bool clearEnv = false, IReadOnlyCollection<string>? unsetEnv = null,
+		string? miss = null, int missStatus = 127)
 		{
 		// WSL starts in `/` and goes to the shell's folder only to run a tool it has: started there, WSL held the folder
 		// for a moment after a miss, so the script's next `rm -rf` of it failed ("being used by another process")
-		const string Script = "p=$(command -v \"$1\" 2>/dev/null); case $p in /*) cd \"$2\" || exit 126; shift 2; exec \"$p\" \"$@\";; esac; printf '%s\\n' \"$0\" >&2; exit 127";
-		var spawn = new List<string> { "--cd", "/", "-e", "sh", "-c", Script, $"{ErrorPrefix}{name}: command not found", name, Fallbacks.ToWslArgument(_env.Cwd) };
+		const string Script = "p=$(command -v \"$1\" 2>/dev/null); case $p in /*) cd \"$2\" || exit 126; shift 3; exec \"$p\" \"$@\";; esac; printf '%s\\n' \"$0\" >&2; exit \"$3\"";
+		var spawn = new List<string> { "--cd", "/", "-e", "sh", "-c", Script, miss ?? $"{ErrorPrefix}{name}: command not found", name,
+			Fallbacks.ToWslArgument(_env.Cwd), missStatus.ToString(System.Globalization.CultureInfo.InvariantCulture) };
 		spawn.AddRange(args.Select(Fallbacks.ToWslArgument));
 		// WSLENV cleared (the architect, 2026-11-12, "yes; go"): a fallback tool is a generic Linux tool, and a WSLENV naming a
 		// path WSL cannot translate (this machine's ESDK variables on X:) printed "wsl: Failed to translate ..." first on
@@ -2025,7 +2033,10 @@ public sealed class Evaluator
 	/// as bash does. Otherwise the shell's own PATH (ShellEnvironment.CurrentPath), whose hash is reset
 	/// whenever that value is not the one it was built for (a subshell's PATH, restored).</param>
 	/// <param name="probe">`hash name`: the one lookup that records a miss and obeys an earlier process's.</param>
-	public string? ResolveOnPath(string name, string? pathOverride = null, bool probe = false)
+	/// <param name="searchList">The override is already a search list (NextProgram's: the chain without the refusing
+	/// program's folder), searched as it is: composed again, it got this shell's own folder back first, so a refusing
+	/// program in it was found as its own "next" and nothing was run again (956, caught by unix_tools_order).</param>
+	public string? ResolveOnPath(string name, string? pathOverride = null, bool probe = false, bool searchList = false)
 		{
 		if (name.Length == 0 || IsPathName(name) || name.Contains(':')) return null;   // a colon: a stream, never a file
 		if (DotOrSpaceEnding(name)) return null;   // Win32 would drop it and find `s1` for `s1.` (2026-10-17)
@@ -2040,7 +2051,7 @@ public sealed class Evaluator
 		var pathExtValue = PathExt;
 		// the configured folders of Unix tools and PATH, in the configured order (Fallbacks, 2026-11-11); PATH itself
 		// when no folder is configured. Read here, at the first lookup, never at startup.
-		pathValue = Fallbacks.SearchPath(pathValue);
+		if (!searchList) pathValue = Fallbacks.SearchPath(pathValue);
 		// remembered answers (CommandMap): every lookup uses a hit after one existence probe; only `hash name`
 		// obeys a miss, and only one an earlier process recorded (DECISIONS 2026-10-16 "only `hash` records and
 		// obeys misses"): anything else searches, as bash
@@ -2341,7 +2352,8 @@ public sealed class Evaluator
 			if (t_ranUnreplayable) return Refused(name, ran, redirects, "its input was already given to it");
 			if (NextProgram(name, ran) is { } next)
 				return ExecExternalOnce(name, args, tempAssign, redirects, clearEnv, unsetEnv, program: next);
-			if (Fallbacks.Wsl is { } wsl) return RunInWsl(wsl, name, args, tempAssign, redirects, clearEnv, unsetEnv);
+			// WSL without the tool answers as no next program does, not "command not found"
+			if (Fallbacks.Wsl is { } wsl) return RunInWsl(wsl, name, args, tempAssign, redirects, clearEnv, unsetEnv, RefusedText(name, ran, null), 127);
 			return Refused(name, ran, redirects, null);
 			}
 		finally { t_hereBodies = savedBodies; }
@@ -2385,17 +2397,19 @@ public sealed class Evaluator
 		var dirs = ShellEnvironment.PathDirs(Fallbacks.SearchPath(_env.Get("PATH")))
 			.Where(d => !string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(ShellEnvironment.TranslatePath(d))), skip, StringComparison.OrdinalIgnoreCase));
 		var path = string.Join(";", dirs);
-		return path.Length == 0 ? null : ResolveOnPath(name, path);
+		return path.Length == 0 ? null : ResolveOnPath(name, path, searchList: true);
 		}
 
 	private int Refused(string name, string program, List<Redirect> redirects, string? why)
 		{
 		using var scope = redirects.Count > 0 ? ApplyRedirects(redirects) : null;
-		Console.Error.WriteLine(why is null
-			? $"{ErrorPrefix}{name}: {ShellEnvironment.ToShellPath(program)} does not serve this request, and unix-tools has no other"
-			: $"{ErrorPrefix}{name}: {ShellEnvironment.ToShellPath(program)} does not serve this request; not run again: {why}");
+		Console.Error.WriteLine(RefusedText(name, program, why));
 		return 127;
 		}
+
+	private string RefusedText(string name, string program, string? why) => why is null
+		? $"{ErrorPrefix}{name}: {ShellEnvironment.ToShellPath(program)} does not serve this request, and unix-tools has no other"
+		: $"{ErrorPrefix}{name}: {ShellEnvironment.ToShellPath(program)} does not serve this request; not run again: {why}";
 
 	private int ExecExternalOnce(string name, List<string> args,
 		List<(string, string)> tempAssign, List<Redirect> redirects, bool clearEnv = false,
@@ -2593,6 +2607,23 @@ public sealed class Evaluator
 				psi.Environment[k] = nv;
 				}
 			}
+		// ONE temp folder for every C#Bash (the architect, 2026-11-24): this shell run again gets this one's in TMP, TEMP and
+		// TMPDIR, whatever was typed for it (`env -i`, `env -u` too): `TMP=/tmp/x TEMP=/tmp/y bash` gave the child the
+		// user's temp folder as /tmp, not its parent's (bugs list 6). Any other program gets what was typed for it.
+		// (looked up only when a value differs: nothing typed, and the three are already the place)
+		var tempPlace = ShellEnvironment.ToShellPath(ShellEnvironment.TempFolder);
+		bool tempDiffers = false;
+		foreach (var tempVar in (ReadOnlySpan<string>)["TMP", "TEMP", "TMPDIR"])
+			tempDiffers |= !psi.Environment.TryGetValue(tempVar, out var tv) || tv != tempPlace;
+		if (tempDiffers && (self ??= ChildLauncher.IsThisShell(fileName)))
+			{
+			foreach (var tempVar in (ReadOnlySpan<string>)["TMP", "TEMP", "TMPDIR"])
+				{
+				foreach (var k in psi.Environment.Keys.Where(k => k != tempVar && k.Equals(tempVar, StringComparison.OrdinalIgnoreCase)).ToList())
+					psi.Environment.Remove(k);
+				psi.Environment[tempVar] = tempPlace;
+				}
+			}
 
 		// ── the child's std handles (DECISIONS 2026-10-04: the real file handle) ─────────────
 		// Each of fd 0-2 starts where this shell's own stream points NOW -- the newest installation
@@ -2643,7 +2674,12 @@ public sealed class Evaluator
 		var fds = new ChildFd[3];
 		// fd 0's default is taken only if no redirect replaces it: taking it hands over what a `read`
 		// buffered, so `while read; do ext < /dev/null; done < f` lost the loop's input (2026-10-10)
-		ChildFd Stdin() => fds[0] ??= CurrentStdin();
+		// An in-process `< /dev/null` (a group's, a builtin's, `eval`'s) or a closed stdin: NUL, as Destination does for
+		// stdout and as the 2026-10-04 rule says (`/dev/null` is the NUL device for every external child). It was a pumped
+		// empty stream, which the refusal protocol counts as input it cannot give again, so a refused program was neither
+		// marked nor run again under Claude Code's `eval '...' < /dev/null` (bug (1), DECISIONS 2026-11-22).
+		ChildFd Stdin() => fds[0] ??= ReferenceEquals(ConsoleMux.RawIn, Stream.Null) || ConsoleMux.In is BadDescriptorReader
+			? new HandleFd(Nul()) : CurrentStdin();
 		fds[1] = ConsoleMux.OutSwapped ? Destination(ConsoleMux.Out, ConsoleMux.Raw) : new InheritFd(1);
 		fds[2] = !ConsoleMux.ErrSwapped ? new InheritFd(2)
 		       : ReferenceEquals(ConsoleMux.Err, ConsoleMux.Out) ? fds[1]   // in-process 2>&1, or `|&`: one destination, one pipe
@@ -2658,6 +2694,20 @@ public sealed class Evaluator
 				}
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 				{ throw new RedirectException($"{raw}: {RedirectMessage(target, ex, how != ChildLauncher.Access.Read)}"); }
+			}
+		// A here-document for a child: through a pipe up to 65,536 UTF-8 bytes, beyond that a temporary file, as bash 5.1
+		// hands them over (bugs list 16, 2026-11-27: always a pipe, so `[ -f /dev/stdin ]` in the child was false). The
+		// file is deleted when the last handle to it, the child's, closes. A handle, not a FileStream: its finalizer could
+		// close the handle before the child starts. The UTF-8 count runs only where the length leaves it open.
+		ChildFd HereFd(string text)
+			{
+			if (text.Length * 3L <= 65536 || (text.Length <= 65536 && ShellEncoding.Utf8.GetByteCount(text) <= 65536))
+				return new InPumpFd(null, null, text);
+			var path = Path.Combine(Path.GetTempPath(), $"bash-heredoc-{Environment.ProcessId}-{Guid.NewGuid():N}.tmp");
+			var h = Keep(File.OpenHandle(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete, FileOptions.DeleteOnClose));
+			System.IO.RandomAccess.Write(h, ShellEncoding.Utf8.GetBytes(text), 0);
+			ChildLauncher.SeekHandle(h, 0);   // the child reads from the shared OS file pointer
+			return new HandleFd(h);
 			}
 		// /dev/tty: the console itself; with none, bash's "No such device or address"
 		ChildFd ConsoleTarget(string device, string raw)
@@ -2677,19 +2727,22 @@ public sealed class Evaluator
 			return OpenTarget(raw, target, append ? appendAccess : ChildLauncher.Access.Truncate);
 			}
 
+		// what this command's own redirects made of stdin, for a later `> /dev/stdin` in the same command (`cmd < f >
+		// /dev/stdin` writes f, as GNU applies them in order; the shell's stdin is what an earlier one did not replace)
+		bool stdinSet = false; string? stdinWrite = null;
 		try
 			{
 			foreach (var r in redirects)
 				{
 				if (r.Kind is RedirectKind.Heredoc or RedirectKind.HeredocStrip)
-					{ fds[0] = new InPumpFd(null, null, HereBody(r)); continue; }
+					{ fds[0] = HereFd(HereBody(r)); stdinSet = true; stdinWrite = FileTests.StdinIsPipe; continue; }
 				if (r.Kind == RedirectKind.HereString)
-					{ fds[0] = new InPumpFd(null, null, HereBody(r) + "\n"); continue; }
+					{ fds[0] = HereFd(HereBody(r) + "\n"); stdinSet = true; stdinWrite = FileTests.StdinIsPipe; continue; }
 
 				var raw    = ExpandRedirectWord(r.Target);
 				var target = ShellEnvironment.TranslatePath(raw);
 				int fd     = r.Fd ?? (r.Kind is RedirectKind.Input or RedirectKind.InputDup or RedirectKind.ReadWrite ? 0 : 1);
-				var kind   = DeviceRedirect(r.Kind, ref raw);   // /dev/zero, /dev/fd/N, ... as what they amount to
+				var kind   = DeviceRedirect(r.Kind, ref raw, ref target, stdinSet, stdinWrite);   // /dev/zero, /dev/fd/N, ... as what they amount to
 				if (kind is null) continue;                      // `< /dev/stdin`
 				switch (kind)
 					{
@@ -2701,6 +2754,11 @@ public sealed class Evaluator
 						      : raw == "/dev/tty" ? ConsoleTarget("CONIN$", raw)
 						      : OpenTarget(raw, target, r.Kind == RedirectKind.ReadWrite ? ChildLauncher.Access.ReadWrite : ChildLauncher.Access.Read);
 						if (fd <= 2) fds[fd] = t;   // a Windows child has fds 0-2 only
+						if (fd == 0)
+							{
+							stdinSet = true;
+							stdinWrite = raw is "/dev/null" or "/dev/tty" ? raw : ShellFile.Device(raw) is null ? target : null;
+							}
 						break;
 						}
 					case RedirectKind.OutputBoth:
@@ -2942,7 +3000,6 @@ public sealed class Evaluator
 	/// Only a pipe, a here-doc or a text source is still pumped.</remarks>
 	private static ChildFd CurrentStdin()
 		{
-		if (ConsoleMux.In is BadDescriptorReader) return new InPumpFd(Stream.Null, null, null);   // a closed stdin: empty
 		var lf = ConsoleMux.In as LfReader;
 		var pending = lf?.TakeBuffered();
 		int pendingBytes = pending is { Length: > 0 } ? ShellEncoding.Utf8.GetByteCount(pending) : 0;
@@ -2964,6 +3021,12 @@ public sealed class Evaluator
 		if (ConsoleMux.RawIn is { } pr && PipeBuffer.Of(pr) is { } pb)
 			return new InPumpFd(null, null, null, pb, pending is { Length: > 0 } ? ShellEncoding.Utf8.GetBytes(pending) : null);
 		if (ConsoleMux.RawIn is { } raw) return new InPumpFd(Prefixed(raw), null, null);
+		// a here-document: its rest as a C#Bash pipe, fed with the give-back, so what the child leaves is read next (bugs list 18)
+		if (ConsoleMux.In is HereDocReader hd)
+			{
+			var pipe = hd.AsPipe();
+			return new InPumpFd(null, null, null, pipe, hd.TakeBuffered() is { Length: > 0 } b ? ShellEncoding.Utf8.GetBytes(b) : null);
+			}
 		if (ConsoleMux.InSwapped)        return new InPumpFd(null, ConsoleMux.In, null);   // a text source
 		if (pending is { Length: > 0 })  return new InPumpFd(Prefixed(Console.OpenStandardInput()), null, null);
 		return new InheritFd(0);
@@ -3104,7 +3167,7 @@ public sealed class Evaluator
 	/// `&lt; /dev/stdin` changes nothing (null). Anything else comes back as it was; a device read
 	/// (`&lt; /dev/zero`, `&lt; /dev/tty`) is opened by ShellFile.OpenInput. Until 2026-10-10 only
 	/// /dev/null, /dev/stdout and /dev/stderr were known.</summary>
-	private static RedirectKind? DeviceRedirect(RedirectKind kind, ref string raw)
+	private static RedirectKind? DeviceRedirect(RedirectKind kind, ref string raw, ref string target, bool stdinSet = false, string? stdinWrite = null)
 		{
 		var dev = ShellFile.Device(raw);
 		if (dev is null) return kind;
@@ -3115,6 +3178,16 @@ public sealed class Evaluator
 		if (n < 0) return kind;
 		if (output)
 			{
+			if (n == 0)
+				{
+				// `> /dev/stdin`: what descriptor 0 is, opened for writing, as GNU's (bugs list 10): /dev/null, the console,
+				// or the file itself, truncated by `>` (raw stays /dev/stdin, for the messages); a pipe still fails
+				var w = stdinSet ? stdinWrite : FileTests.StdinForWriting();   // a child's own `< f` first
+				if (ReferenceEquals(w, FileTests.StdinIsPipe)) throw new RedirectException($"{raw}: Permission denied");
+				if (w is "/dev/null" or "/dev/tty") raw = w;
+				else if (w is not null) target = w;
+				return kind;
+				}
 			if (n == 1) raw = "/dev/stdout";
 			else if (n == 2) raw = "/dev/stderr";
 			else if (n >= 3 && kind is not (RedirectKind.OutputBoth or RedirectKind.AppendBoth)) { raw = n.ToString(); return RedirectKind.OutputDup; }
@@ -3143,7 +3216,7 @@ public sealed class Evaluator
 				var text = ExpandRedirectBody(r.Target);
 				if (r.Kind == RedirectKind.HereString) text += "\n";
 				scope.SaveIn(); scope.SaveRawIn();
-				ConsoleMux.SetIn(new System.IO.StringReader(text));
+				ConsoleMux.SetIn(new HereDocReader(text));
 				ConsoleMux.RawIn = null;   // text source: byte builtins fall back to Console.In
 				continue;
 				}
@@ -3153,7 +3226,9 @@ public sealed class Evaluator
 			catch (RedirectException ex) { throw RedirectFailed(scope, ex.Message); }
 			var target    = ShellEnvironment.TranslatePath(rawTarget);
 			int fd        = r.Fd ?? 1;
-			var kind      = DeviceRedirect(r.Kind, ref rawTarget);
+			RedirectKind? kind;
+			try { kind = DeviceRedirect(r.Kind, ref rawTarget, ref target); }
+			catch (RedirectException ex) { throw RedirectFailed(scope, ex.Message); }
 			if (kind is null) continue;   // `< /dev/stdin`: stdin already
 			switch (kind)
 				{
@@ -3616,6 +3691,15 @@ public sealed class Evaluator
 			catch (ContinueException c) { if (c.Levels <= 1) continue; throw new ContinueException(c.Levels - 1); }
 			}
 		return code;
+		}
+
+	/// <summary>A bash construct C#Bash parses but does not run (`select`, `coproc`): says so, with the link to ask
+	/// for it, counted in the request log (<see cref="NotAvailable.Lines"/>), status 2 as `complete`'s; the script
+	/// goes on (DECISIONS 2026-11-22).</summary>
+	private int NotAvailableHere(string keyword, string feature)
+		{
+		foreach (var line in NotAvailable.Lines($"{ErrorPrefix}{keyword}: ", feature)) Console.Error.WriteLine(line);
+		return 2;
 		}
 
 	private static string ForHead(ForCommand fc) =>

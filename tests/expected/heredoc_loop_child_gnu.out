@@ -1,0 +1,31 @@
+-- a here-document
+it a
+it b
+it c
+-- a here-string
+it a
+it b
+it c
+-- the program inside $( )
+it a v
+it b v
+it c v
+-- the program in a function
+it a
+it b
+it c
+-- the program as a pipeline stage
+it a
+it b
+it c
+-- a program that reads everything
+it a
+-- read, a program, then cat
+first a
+b
+c
+-- a program, a read, then a program that reads the rest
+read a
+b
+c
+end

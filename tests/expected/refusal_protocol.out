@@ -24,7 +24,10 @@ unreplayable: unmarked
 assigned, by path: marked:1
 assigned through env: marked:1
 assigned over C#Bash's: marked:0
-bin-bash
+group < /dev/null: marked:1
+eval < /dev/null: marked:1
+closed stdin: marked:1
+alt:q
+group < /dev/null rc=1
+this shell
 bash rc=127
-bin-sh
-sh rc=127

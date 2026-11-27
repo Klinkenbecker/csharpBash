@@ -27,6 +27,14 @@
     <EmbeddedResource Include="help.json" LogicalName="help.json" />
   </ItemGroup>
 
+  <!-- sh.exe beside the JIT build's Bash.exe, as the installed layout has it (the architect, 2026-11-24, on the JIT folder
+       holding only Bash.exe: "that make no sense at all"). A copy of the apphost beside Bash.dll runs as `sh` (measured);
+       without it the JIT suite's `sh` was the INSTALLED build's (~/.bash/bin), not the build under test. Not for the
+       AOT publish (PublishAot): deploy.sh and the installer make its sh.exe. -->
+  <Target Name="ShBesideBash" AfterTargets="CopyFilesToOutputDirectory" Condition="'$(PublishAot)' != 'true'">
+    <Copy SourceFiles="$(OutDir)$(AssemblyName).exe" DestinationFiles="$(OutDir)sh.exe" SkipUnchangedFiles="true" />
+  </Target>
+
   <Target Name="StampHg" BeforeTargets="GetAssemblyVersion" Condition="'$(HgStamp)' == ''">
     <!-- `hg id -n -i` prints "<hash>[+] <rev>[+]"; the + marks an uncommitted working tree -->
     <Exec Command="hg id -n -i"

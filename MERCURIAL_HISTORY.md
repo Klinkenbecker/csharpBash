@@ -12,11 +12,107 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 906 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 1002 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 1001 | 2026-11-27 | doc review for the publish of build 999: README table and startup line, PERFORMANCE (measured-on, wins; the noisy-start baseline and the rows against 885 stated), perf history (999 added, graph redrawn), results.md (the 999 run), KNOWN_ISSUES' release section (999 since hg-905; the 885 section dropped) |
+| 1000 | 2026-11-27 | records: DEPLOYED 999 (bugs list 19, 20; suite 338/0; checked live); only (9) left; publish waits on wombat's quiet |
+| 999 | 2026-11-27 | FIXED (bugs list 19, 20): tr takes every word after its first operand as an operand, GNU's operand rules and words; -s with two sets squeezes the last set's characters after translating; case tr_operands_gnu (red on 997, mutations fail it); KNOWN_ISSUES; counts 338; DECISIONS; anchor |
+| 998 | 2026-11-27 | records: DEPLOYED 997 (bugs list 13, 10's pipe case; suite 337/0; checked live); anchor |
+| 997 | 2026-11-27 | FIXED (bugs list 10's pipe case, his go on Claude's position): > /dev/stdin on a pipe or a here-document refused, Permission denied, 1; KNOWN_LIMITATIONS; case dev_stdin_pipe_refused (authored; red on 993, a mutation fails it); KNOWN_ISSUES; counts 337; DECISIONS; anchor (AWAITING items done removed) |
+| 996 | 2026-11-27 | FIXED (bugs list 13, web-fe; his go on Claude's position): a short option that is no letter or digit is refused in GNU's words and status by tool, never handed on (unzip exempt); env's hint line, dd's invalid option; case invalid_option_refused_gnu (red on 993, a mutation fails it); (19) tr found; KNOWN_ISSUES; counts 336; DECISIONS; anchor |
+| 995 | 2026-11-27 | anchor: GREENLIT: bugs list on Claude's positions (10 pipe refused, 13 non-alphanumeric not handed on); publish when wombat and web say quiet (asked); replaces the symbolic-ref stop |
+| 994 | 2026-11-27 | records: DEPLOYED 993 (bugs list 18; suite 335/0; checked live; wombat-3a told); every open bugs-list item now waits on his word |
+| 993 | 2026-11-27 | FIXED (bugs list 18, wombat-3a): a native program in a here-document loop leaves the rest to the loop (HereDocReader becomes a C#Bash pipe at the first child, fed with the give-back); case heredoc_loop_child_gnu (red on 992, mutations fail it); KNOWN_ISSUES; counts 335; DECISIONS; anchor (deploy 992 recorded) |
+| 992 | 2026-11-27 | FIXED (bugs list 16): a program gets a here-document over 65,536 bytes as a delete-on-close temp file, a smaller one a pipe, as bash 5.1; case heredoc_child_file_gnu (red on 990, mutations fail it); KNOWN_ISSUES; counts 334; DECISIONS; anchor |
+| 991 | 2026-11-27 | records: DEPLOYED 990 (bugs list 12, 15; suite 333/0; checked live); anchor |
+| 990 | 2026-11-27 | FIXED (bugs list 15): cp keeps times only for -p, -a, bare --preserve, or a list naming timestamps/all, --no-preserve in order, as GNU; case cp_preserve_times_gnu (red on 986, a mutation fails it); KNOWN_ISSUES; counts 333; DECISIONS; anchor |
+| 989 | 2026-11-27 | FIXED (bugs list 12, web-d0): shopt -s/-u login_shell and -O login_shell ignored, status 0, as GNU; startup marks -l via MarkLoginShell; case shopt_login_shell_gnu (red on 986, a mutation fails it); KNOWN_ISSUES; counts 332; DECISIONS; anchor |
+| 988 | 2026-11-27 | USING: the first lookup is the shell's own folder, the chain's PATH is the system PATH, what a PATH step costs (measured), WSL last wherever written; KNOWN_LIMITATIONS example in his order; DECISIONS; anchor (his request, relayed by guy-8b) |
+| 987 | 2026-11-27 | records: DEPLOYED 986 (bugs list 11; 985 stopped at its gate, expected file); (17) WITHDRAWN (his correction: first find is .bash/bin, the chain's PATH is the system PATH; code right since 954), a USING change instead; KNOWN_ISSUES; anchor |
+| 986 | 2026-11-27 | mv_cross_volume: expected output for the folder form (GNU's, generated at 985 but not copied in; the deploy's AOT suite caught it) |
+| 985 | 2026-11-27 | FIXED (bugs list 11): mv of a folder to another drive removes the source as rm -rf (each entry kept named, rc 1; a read-only file goes), as GNU; mv_cross_volume folder form (red on 982); KNOWN_ISSUES; DECISIONS; anchor |
+| 984 | 2026-11-27 | anchor: (10)'s pipe case: guy-94's data point (a Claude call whose text holds < gets Claude Code's pipe as stdin) |
+| 983 | 2026-11-27 | records: DEPLOYED 982 (dev/fd kinds; suite 331/0; checked live); bugs list (17): unix-tools folders before PATH win the first lookup (his relayed ruling: fallback only), details AWAITING; KNOWN_ISSUES; session name bash-ec |
+| 982 | 2026-11-27 | FIXED (bugs list 14 + 10 but its pipe case): /dev/stdin, /dev/stdout, /dev/stderr, /dev/fd/N test as what the descriptor is (-p pipe, -f/-s file, -c null; here-docs a pipe up to 65,536 bytes) and > /dev/stdin writes to /dev/null or the file itself; case dev_fd_kind_gnu (red on 979, mutations fail it); the pipe case AWAITING; (16) found; no /proc limitation; counts 331; DECISIONS; anchor |
+| 981 | 2026-11-27 | anchor: (9) cal blocked on a reference (WSL has no cal; ncal needs his sudo; util-linux cal not packaged for 22.04); list goes on with (10)+(14) |
+| 980 | 2026-11-27 | records: DEPLOYED 979 (cp -a hard links; suite 330/0, battery 221/237; checked live); anchor |
+| 979 | 2026-11-27 | FIXED (bugs list 8): cp -a keeps hard links within one cp, as GNU (-a, -d, --preserve, --no-preserve in the order given); case cp_hardlinks_gnu (red on 963, mutations fail it); KNOWN_ISSUES (8) fixed, (15) cp --preserve=LIST keeps mtime (found); counts 330; DECISIONS; anchor |
+| 978 | 2026-11-27 | anchor: hold lifted with a stop (his: re-start bug fixing, stop when Wombat reports symbolic-ref completed) |
+| 977 | 2026-11-27 | (14) is new, not a re-report: -p has been false for every path since rev 39; [ -p <(cmd) ] false is by design (2026-09-04 decision 6): KNOWN_LIMITATIONS gains '<( ) is a file, not a pipe' (never listed); KNOWN_ISSUES (14) corrected; anchor |
+| 976 | 2026-11-27 | anchor: publish's git measured (PortableGit 2.56.0.windows.4 by path); CLAUDE.md now says bare git = Wombat (his "make the switch now"); Claude's position on the scripts |
+| 975 | 2026-11-27 | anchor: HOLD, his "do _not_ start a fix" (no bug fix until lifted); AWAITING: publish now from 963, Wombat as publish's git (Claude's positions) |
+| 974 | 2026-11-27 | KNOWN_ISSUES + bugs list (14): [ -p /dev/stdin ] false on a pipe (wombat-3a, 963; GNU 5.1 true, Git Bash 4.4 false; also -f /dev/stdin on a file); with (10): both need fd 0's kind |
+| 973 | 2026-11-26 | anchor refreshed last (batten down): battened down through hg 972; 963 current, nothing to deploy; next (8) |
+| 972 | 2026-11-26 | batten-down pass 7: Fallbacks comment (prepended since 956; FallbackProgram only pre-956); PROJECT_CONTEXT Test Assets (run-compat.sh, its options; the old runner's stale-kill step gone); DECISIONS |
+| 971 | 2026-11-26 | batten-down pass 6: CORRECTION (the off-PATH case is FallbackProgram's own-folder look, not Windows' launcher); ARCHITECTURE/IMPLEMENTATION search order; claude.cmd comment; PROJECT_CONTEXT test section (run-tests.sh, 329); cases.tsv rows; bare reference; USING inference marked; DECISIONS |
+| 970 | 2026-11-26 | batten-down pass 5 fixes: 'cannot run renamed' -> 'a lone copy ... cannot run' (3 cases, cases.tsv); tmp_ignores_tmp_var_gnu header (until 940); DEVELOPING 'percent'; DECISIONS |
+| 969 | 2026-11-26 | batten-down pass 4 fixes: refusal_protocol comment (956); anchor (957's live check placed, (13)'s remedy under AWAITING); KNOWN_ISSUES 932 wording; DECISIONS |
+| 968 | 2026-11-26 | batten-down pass 3 fixes: test comments (off-PATH, staging sh.exe since 960); anchor (deploy chain, NEXT PUBLISH guy-windows11 check, A4 out of AWAITING, (13)'s remedy and claude.bat TMP under his word); cases.tsv/temp_one_place 963 section; KNOWN_ISSUES spellings; DECISIONS |
+| 967 | 2026-11-26 | batten-down pass 2 fixes: 877 entry superseded note; procsub/memory dates (966); pitfalls dates; anchor (955 in the deploy chain, (A2) expanded, Ctrl-G closure); DECISIONS (963's unrecorded changes, the procsub gap) |
+| 966 | 2026-11-26 | batten-down pass 1 fixes: procsub's child through cmd (the 940 rule had un-isolated its leftover count); deploy.sh step list; KNOWN_ISSUES 940 note; DEVELOPING AOT reason; USING link; anchor (chain line, bugs 11-13, labels, todate feature); DECISIONS (955/957 deploys recorded) |
+| 965 | 2026-11-25 | KNOWN_ISSUES + bugs list (13): an option no version of the tool has (grep -F "- x") is handed on to the chain instead of refused (web-fe, 963) |
+| 964 | 2026-11-25 | records: DEPLOYED 963 (seen live: a Claude Code call reads TMP=TEMP=TMPDIR=F:/TEMP); anchor |
+| 963 | 2026-11-25 | RULED (his Yes) + BUILT: a Windows path assigned to TMP, TEMP or TMPDIR is stored with forward slashes (Claude Code's per-command export now reads F:/TEMP; a backslash $TMP broke case, [[ ]], ${f#}, sed, JSON: measured); temp_one_place section (red on 960); KNOWN_LIMITATIONS' backslash entry removed; USING; KNOWN_ISSUES (963); DECISIONS; anchor |
+| 962 | 2026-11-25 | KNOWN_ISSUES + bugs list (12): shopt -s login_shell changes the option (web-d0, 960; GNU ignores it); BASH_EXECUTION_STRING's second request (web-d0) |
+| 961 | 2026-11-24 | records: DEPLOYED 960 (deploy.sh's staging sh.exe and help-table check proven; suite 329/0, battery 221); anchor refreshed |
+| 960 | 2026-11-24 | RULED (his 1/ 2/ 3/ yes): this machine's unix-tools = his line (switched, checked); deploy.sh makes staging's sh.exe before its suite and checks every earlier help table's hash (both polarities shown); claude.bat is the guy session's; DECISIONS, anchor |
+| 959 | 2026-11-24 | BUILT: the JIT build makes sh.exe beside Bash.exe (it runs there, measured; the JIT suite's sh was the installed build); deploy.sh's staging gap proposed (his); Ctrl-G closed (his, via guy-94); DEVELOPING; DECISIONS; anchor |
+| 958 | 2026-11-24 | anchor: DEPLOYED 957; bug 7 note (954+956+957); his chain line awaiting (test-home check first); the JIT sh.exe question owed; Ctrl-G open items with guy-94 |
+| 957 | 2026-11-24 | FIXED (957): a refusal is run again in the installed layout (NextProgram's list was recomposed with the own folder first: 956's deploy stopped on unix_tools_order); CORRECTION (guy-94): Ctrl-G's 'session log' may not be his prompt (externalEditorContext defaults off); DECISIONS |
+| 956 | 2026-11-24 | TESTED + FIXED (his "every variation"; bugs list 7): the own folder first ALWAYS, whatever PATH a script sets |
+| 955 | 2026-11-24 | own_dir_before_unix_tools builds the installed layout itself (the staging folder has no sh.exe; the 954 deploy stopped on it); DECISIONS |
+| 954 | 2026-11-24 | FIXED (bugs list 7, from the record): this shell's own folder is searched before every unix-tools step |
+| 953 | 2026-11-24 | MEASURED (bugs list 7): a unix-tools folder named before PATH outranks this shell's own bash/sh (documented rule; exposure: Git's usr/bin first); remedy awaiting him |
+| 952 | 2026-11-24 | records: Ctrl-G works (his word) with EDITOR = installed Notepad++ after the stale CS-Script plugin was moved out; anchor |
+| 951 | 2026-11-24 | anchor: bug (11)'s first GNU run was invalid (its /tmp argument converted for wsl.exe); rerun owed |
+| 950 | 2026-11-24 | bugs list (11) UNVERIFIED: cross-volume mv with an unremovable source says only 'cannot move', not that a copy was left (found when a mv left a 50 MB copy in the repo, removed); GNU comparison owed |
+| 949 | 2026-11-24 | KNOWN_ISSUES + bugs list (10): > /dev/stdin 'No such file or directory' (guy-94, 941), measured against Git Bash and GNU |
+| 948 | 2026-11-24 | DOCS: USING's Wombat refusal figure 'about 3 ms' (build 127 medians 2.7-3.5 ms), aligned with Wombat's docs (wombat-46) |
+| 947 | 2026-11-24 | CORRECTION: claude.bat ownership is his proposal (question form), not a ruling; awaiting his word (guy-94 caught it); anchor and DECISIONS |
+| 946 | 2026-11-24 | anchor: his claude.bat is the guy session's (rule) |
+| 945 | 2026-11-24 | DOCS + RULED (his): USING's claude.bat example shows TMP/TEMP for a Claude-only temp folder (both lines; why claude.bat, not a C#Bash-only setting); his ~/bin/claude.bat is the guy session's (handed to guy-94 with its C#Bash-made lines); DECISIONS |
+| 944 | 2026-11-24 | anchor: one backslash in the quoted Claude Code export (sed doubled it) |
+| 943 | 2026-11-24 | anchor: DEPLOYED 941; the TMP/TEMP assignment-spelling question under AWAITING THE ARCHITECT |
+| 942 | 2026-11-24 | CORRECTION: Claude Code's wrapper re-exports TMP/TEMP (backslashes) in every call: KNOWN_LIMITATIONS entry restored, reworded; USING and KNOWN_ISSUES say so; DEPLOYED 941 recorded; the assignment-spelling question open for him |
+| 941 | 2026-11-24 | README: case count 327 (the 940 commit's line-number edit missed: the line had moved) |
+| 940 | 2026-11-24 | RULED + BUILT (his "Yes, fix all three"; bugs list 6): ONE temp folder; TMP, TEMP and TMPDIR all name it |
+| 939 | 2026-11-24 | DOCS (his request, via wombat-46): USING 'Which to choose' for BASH_CLAUDE_GIT (a full git ~25 ms with the view, none nothing, Wombat's refusal ~4 ms; measured figures); README step 3 the same in one sentence; 'about five per Bash call' corrected (background polling); DECISIONS |
+| 938 | 2026-11-24 | records: DEPLOYED 937 (suite 326/0, battery 220); AOT-vs-AOT cost measured (none where the prefilter cannot help; 1.50 s -> 0.015 s); owed note delivered to guy-94 (guy-bf ended); a too-early 'deployed' recorded |
+| 937 | 2026-11-24 | FIXED (bugs list 5, facts-8a): grep skips a line without a literal every match must hold (GNU's must strings) |
+| 936 | 2026-11-24 | MOVED (bugs list 4) to KNOWN_LIMITATIONS: cmd //c and a quoted argument match Git Bash 4.4 and 5.3 byte for byte (cmd reads its line raw); workarounds measured; not special-cased (a feature, his); anchor, DECISIONS |
+| 935 | 2026-11-24 | records: DEPLOYED 934 (suite 325/0, battery 220, baseline 216; this machine's rev-553 help.json replaced, seen); anchor |
+| 934 | 2026-11-24 | FIXED (bugs list 3): help.json tables of revs 553, 645, 665 recognized and replaced |
+| 933 | 2026-11-24 | records: DEPLOYED 932 (suite 325/0 detached, battery 220, baseline 216); anchor (deployed state, the OWED note to guy-bf gains 932) |
+| 932 | 2026-11-24 | FIXED (bugs list 2b): a request handed on to WSL that WSL lacks too gets the no-WSL answer, not "command not found" |
+| 931 | 2026-11-24 | records: Ctrl-G (no Notepad here; EDITOR in his claude.bat, his yes, pending his check); the jq hand-over bug's cause found, the fix designed, its proof awaiting him; cal ignores options, KNOWN_ISSUES + bugs list (9) |
+| 930 | 2026-11-24 | records: the new claude.cmd checked (his 'setup still works correctly', via guy-94; CLAUDE.md wording landed as ~/.claude 7ee1720); the 926 deploy recorded (the anchor said 914); anchor |
+| 929 | 2026-11-24 | RULED (widened): no DECISIONS references in ARCHITECTURE (41), IMPLEMENTATION (9), DEVELOPING (1); review fixes (an exact empty-expansion fact, deferred-decision wording, ruling words, the term P1 surface); DECISIONS |
+| 928 | 2026-11-24 | records: claude.cmd installed here (old as .prev), BASH_CLAUDE_GIT=none in his claude.bat; the replaced-while-running hazard measured and fixed; exit code not passed (pre-existing); the MCP plan noted; anchor |
+| 927 | 2026-11-24 | claude.cmd: launch and exit on one line (cmd rereads a .cmd by name: a file replaced mid-session was read on from its old offset, measured: a fragment ran); README drops PROJECT_CONTEXT from its design-docs list (a process doc, his) |
+| 926 | 2026-11-24 | RULED (his): user docs carry no DECISIONS references - 5 removed (README, USING x2, KNOWN_ISSUES x2) + the >( ) refusal message; BASH_CLAUDE_GIT in README step 3 and without-start-file; USING status-line sentence corrected (it runs through the shell); DECISIONS |
+| 925 | 2026-11-24 | claude.cmd: the architect shortened the comment beside BASH_CLAUDE_GIT to one line (his edit, committed by bash-56; claude_cmd_git still green) |
+| 924 | 2026-11-24 | claude.cmd comments (his): set BASH_CLAUDE_GIT in your own claude.bat, which no install touches; this file is rewritten at every install or upgrade (said at the top and beside the option) |
+| 923 | 2026-11-24 | BUILT (his yes; his name BASH_CLAUDE_GIT): installer/claude.cmd gives Claude Code one folder on its PATH, its git (path default, found once / none / a git); case claude_cmd_git (red on the old claude.cmd); USING; counts 325; not yet in ~/.bash/bin: the status-line risk is his |
+| 922 | 2026-11-24 | RULED (his): no setting, claude.cmd stops narrowing Claude Code's PATH; SPIKE 2 (no git: quiet, no Wombat calls; the Bash tool keeps Wombat first); the exact diff proposed; anchor |
+| 921 | 2026-11-24 | SPIKE (his yes): Claude Code 2.1.331 finds git by PATH, GIT_BASH_PATH beats a PATH bash.exe (#94077 fixed since 2.1.316, now in DECISIONS), a refusing git tolerated, includeGitInstructions does not stop the calls; anchor |
+| 920 | 2026-11-24 | records: separate-git feature - his point (dual hg+git projects are git repositories); measured 21 false modifications vs the mirror; recommendation for him: none |
+| 919 | 2026-11-24 | FEATURE REQUESTED (his, via wombat-46): a separate git for Claude Code itself; found: published installs give Claude Code no git today; positions + spike first; features list |
+| 918 | 2026-11-22 | records: the GIT_CONFIG_COUNT log line explained (Claude Code's own remote calls; wombat-46) |
+| 917 | 2026-11-22 | records: Wombat 127 (-c allowlist) into ~/.bash/bin by the standing ruling; checked live (served, refused and handed on, Claude Code's -c form); anchor |
+| 916 | 2026-11-22 | records: 914 independently confirmed by wombat-46 (3/3 handed on vs 907 loud 10/12) |
+| 915 | 2026-11-22 | records: DEPLOYED 914 (suite 324/0, battery 220; live check under Claude Code's < /dev/null wrap: handed on, rc 0); wombat-46 told |
+| 914 | 2026-11-22 | BUG FIXED (his "The fix; go"): an in-process < /dev/null (group, builtin, eval: Claude Code's wrapper) or a closed stdin reaches a program as NUL, so a refused program in ~/.bash/bin is marked and rerun; the 910 local diagnostic removed; refusal_protocol +4 probes (red on 910); USING, KNOWN_ISSUES, DECISIONS (+ ruling: no CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS), anchor |
+| 913 | 2026-11-22 | records: CORRECTION (grounding) - bug (1)'s trigger was on record since 2026-10-03 (cited; the fix reframed as the 10-04 ratified NUL rule's missed case); A4 closed by his ruling via Wombat (keep logging; Wombat builds -c); anchor |
+| 912 | 2026-11-22 | CORRECTION (wombat-46): not every < stops Claude Code's < /dev/null wrap (: '<' alone does not); KNOWN_ISSUES interim advice is only the program's own < /dev/null; DECISIONS, anchor |
+| 911 | 2026-11-22 | CAUSE FOUND, bug (1): Claude Code wraps a command as eval ... < /dev/null unless its text holds a <; that in-process /dev/null stdin is counted unreplayable, so the mark is withheld (measured with the 910 diagnostic, both sides of the rule); the fix awaits his word; KNOWN_ISSUES (cause, verified workaround), DECISIONS, anchor |
+| 910 | 2026-11-22 | LOCAL DIAGNOSTIC (bug (1), not for publish): BASH_RERUN_DIAG=<file> logs, per launch of a bare-name program in ~/.bash/bin, the stdin kind chosen and the mark decision (Evaluator.RerunDiag, ChildLauncher.FileTypeOf); his "local only, not published"; DECISIONS, anchor (removal first on NEXT PUBLISH) |
+| 909 | 2026-11-22 | FINDING (partial), bug (1): C#Bash withholds the mark when it judges the child's stdin unreplayable, per process in stretches; not Wombat, not the form or wrapper; why not found; next step (instrument BASH_TIMING_LOG) awaits his word. KNOWN_ISSUES, DECISIONS, anchor |
+| 908 | 2026-11-22 | records: DEPLOYED 907 (suite 324/0 detached, battery 220); anchor: GREENLIT (a) done, (b) next, the reporter owed |
+| 907 | 2026-11-22 | BUG FIXED: select and coproc parse as bash's (declare -f prints them back) and are refused when run (the Not available refusal, status 2, counted); claude-c3 via guy-bf; cases select_coproc_parse_gnu + select_coproc_refused (red on 885); KNOWN_LIMITATIONS, KNOWN_ISSUES, DECISIONS; counts 324 |
+| 906 | 2026-11-22 | records: PUBLISHED hg-905 = build 885 (the installer over a deployed ~/.bash checked first; cp -a hard-link bug found; the coproc reframe; the go's scope); resume anchor 2026-11-22 |
 | 905 | 2026-11-22 | publish doc review (builds 864-885): README table + startup line and PERFORMANCE from the 885 compare3 run (2026-11-22, quiet, C#Bash host); graph adds 885; case count 322 (README was 308, missed at hg-861); KNOWN_ISSUES release section for 885, cp -a hard-link bug entered (open) |
 | 904 | 2026-11-17 | KNOWN_ISSUES: coproc not implemented but type calls it a keyword; jq foreach joins def (claude-c3 via guy-bf); features list: coproc, jq foreach/def; anchor |
 | 903 | 2026-11-17 | KNOWN_ISSUES: grep -E with a bounded repeat ~135x slower than GNU (facts-8a); anchor |

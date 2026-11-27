@@ -176,7 +176,7 @@ foreach (var (n, en) in pendingShopts)
 	var errMsg = evaluator.Options.SetShopt(n, en);
 	if (errMsg is not null) { Console.Error.WriteLine($"bash: {errMsg}"); return 2; }
 	}
-if (login) evaluator.Options.SetShopt("login_shell", true);
+if (login) evaluator.Options.MarkLoginShell();
 
 // Built-in defaults — set before sourcing startup files so they can be overridden.
 if (evaluator.Env.Get("BASH_VERSION").Length == 0) evaluator.Env.Set("BASH_VERSION", BashVersion);

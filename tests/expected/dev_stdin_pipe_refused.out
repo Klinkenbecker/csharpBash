@@ -1,0 +1,11 @@
+cases/dev_stdin_pipe_refused.sh: line 6: /dev/stdin: Permission denied
+pipe: rc=1
+cases/dev_stdin_pipe_refused.sh: line 7: /dev/stdin: Permission denied
+herestring: rc=1
+cases/dev_stdin_pipe_refused.sh: line 8: /dev/stdin: Permission denied
+heredoc: rc=1
+line 1: /dev/stdin: Permission denied
+child, its stdin a pipe: rc=1
+cases/dev_stdin_pipe_refused.sh: line 13: /dev/stdin: Permission denied
+child, its own here-string first: rc=1
+child, /dev/stdin before its here-string: rc=0

@@ -2614,3 +2614,45 @@ output agreement:
   pipeline    = Git Bash, = WSL
   find        = Git Bash, = WSL
 ```
+
+## 2026-11-27 08:34
+
+```
+date     : 2026-11-27 08:29:20
+host     : bash 5.1.0-koliada   (the shell running this script)
+C#Bash   : F:/Koliada/Tools/bash/dist/Bash.exe   [dist (deployed)]
+           C#Bash build 1.0.0+hg.7ed2f5734b58 999
+Git Bash : F:/Tools/PortableGit-2.28.0/bin/bash.exe
+           bash 4.4.23(1)-release
+WSL bash : C:\WINDOWS/System32/wsl.exe -e bash
+           bash 5.1.16(1)-release on Linux 6.18.54.1-microsoft-standard-WSL2
+method   : each launch by tools/benchtimer (CreateProcessW, high-resolution clock)
+           rows = best of 9 (C#Bash) / best of 3 (Git Bash, WSL); startup = median of 5 samples, each total of 100 launches / 100
+           no LANG or LC_* passed to any shell (Git Bash as Claude Code runs it: C locale)
+           baseline = benchtimer --sieve (primes below 10,000,000, one thread), best of 9 (mean too);
+           launch = C:/Windows/System32/HOSTNAME.EXE (14848 bytes) timed as startup is
+baseline : before sieve 0.0301 s (mean 0.0306) -2.9% vs quiet 0.0310   launch 0.0093 s +22.4% vs quiet 0.0076
+
+benchmark       C#Bash   Git Bash        WSL     vs Git   vs WSL
+                        4.4.23(1)
+----------------------------------------------------------------------
+loop             0.167      1.509      0.412       9.0x     2.5x
+arith            0.244      2.081      0.598       8.5x     2.5x
+func             0.225      2.332      0.564      10.4x     2.5x
+loop_big         1.468     15.080      3.433      10.3x     2.3x
+coreutils        0.062     14.620      0.848     235.8x    13.7x *
+pipeline         0.094      0.346      0.122       3.7x     1.3x *
+find             0.014      0.127      0.228       9.1x    16.3x *
+startup         0.0080     0.0246     0.0988       3.1x    12.3x
+  * touches the filesystem: WSL reaches these files over /mnt (9P), which is its own cost.
+  startup = bash -c 'exit 0', median of 5 samples, each the total of 100 consecutive launches / 100.
+baseline : after  sieve 0.0281 s (mean 0.0285) -9.4% vs quiet 0.0310   launch 0.0071 s -6.6% vs quiet 0.0076
+
+output agreement:
+  loop        = Git Bash, = WSL
+  arith       = Git Bash, = WSL
+  func        = Git Bash, = WSL
+  coreutils   = Git Bash, = WSL
+  pipeline    = Git Bash, = WSL
+  find        = Git Bash, = WSL
+```

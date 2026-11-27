@@ -36,6 +36,11 @@ else
 	printf 'some text\0' > "$P/st.bin"   # an option C#Bash's strings lacks (-d) goes the same way
 	run "PATH='$P/empty' strings -d '$P/st.bin'; echo \"rc=\$?\""
 	run "PATH='$P/empty' nosuchtool_fc_wsl x; echo \"rc=\$?\"; type nosuchtool_fc_wsl tsort 2>&1 | sed 's/^bash: line [0-9]*: //'"
+	# 2026-11-24 (KNOWN_ISSUES, jq's `def` on guy-windows11): a request handed on to WSL that WSL lacks too gets the
+	# hand-over's own answer, never "command not found" for a tool that is right here; here a refusing ~/.bash/bin
+	# program's (a builtin's hand-over takes the same path; WSL here has every tool a builtin hands on)
+	mkdir -p "$P/.bash/bin"; printf '@exit /b 127\r\n' > "$P/.bash/bin/fc_refuses.cmd"
+	run "PATH='$P/.bash/bin' fc_refuses x; echo \"rc=\$?\""
 	conf "unix-tools = PATH"
 	run "PATH='$P/empty' tsort '$P/pairs.txt'; echo \"rc=\$?\""
 fi

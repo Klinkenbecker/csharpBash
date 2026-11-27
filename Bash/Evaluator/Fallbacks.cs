@@ -78,22 +78,48 @@ internal static class Fallbacks
 		try { Console.Error.WriteLine($"C#Bash: {ShellEnvironment.ToShellPath(ConfigFile ?? FileName)}: {what}"); } catch { }
 		}
 
-	/// <summary>The search list for a command not provided in-process: the configured folders and <paramref name="path"/>
-	/// in the configured order. With no folder it is <paramref name="path"/> itself (the same string, so lookups and
-	/// remembered maps are as before), or empty when PATH is left out.</summary>
+	/// <summary>The search list for a command not provided in-process: this shell's own folder FIRST, always, then the
+	/// configured steps in their order (the folders, and PATH without this shell's folder). The steps are fallbacks (the
+	/// architect, 2026-11-11 and 2026-11-24: unix-tools is "the 'fallback' _only_ location"), and a nested bash or sh is
+	/// this shell (USING's startup step 3): a folder named before PATH was searched ahead of this shell's own folder, so
+	/// `bash -c` ran the folder's bash (bugs list 7), and so did a PATH a script had reordered (`PATH=/x:$PATH`, /x
+	/// holding a bash). Off PATH too: OwnDir is prepended here since 956; before 956 a name the list missed still reached this folder through
+	/// FallbackProgram (the own folder, then System32 and the Windows folder), so "off PATH, not searched" was never so. When this shell's folder
+	/// leads PATH and no folder is configured, as every start leaves it, it is <paramref name="path"/> itself (the same
+	/// string, so lookups and remembered maps are as before).</summary>
 	public static string SearchPath(string path)
 		{
 		Load();
-		if (!_hasFolder) return _steps.Contains(PathStep) ? path : "";
+		bool hasPath = _steps.Contains(PathStep);
 		lock (_lock)
 			{
 			if (ReferenceEquals(path, _composedFor) || path == _composedFor) return _composed!;
-			var parts = _steps.Where(s => s != WslStep).Select(s => s == PathStep ? path : s).Where(s => s.Length > 0);
-			_composed = string.Join(";", parts);
+			var entries = ShellEnvironment.PathDirs(path);
+			string composed;
+			if (!_hasFolder && hasPath && entries.Count > 0 && IsOwnDir(entries[0])) composed = path;
+			else
+				{
+				string rest = string.Join(";", entries.Where(e => !IsOwnDir(e)));
+				composed = string.Join(";", _steps.Where(s => s != WslStep).Select(s => s == PathStep ? rest : s).Prepend(OwnDir).Where(s => s.Length > 0));
+				}
+			_composed = composed;
 			_composedFor = path;
-			return _composed;
+			return composed;
 			}
 		}
+
+	/// <summary>This shell's own folder, the running program's, in the shell's form.</summary>
+	private static string OwnDir => s_ownDir ??= ShellEnvironment.ToShellPath(AppContext.BaseDirectory.TrimEnd('\\', '/'));
+	private static string? s_ownDir;
+
+	/// <summary>Whether a PATH entry (either form) is this shell's own folder, the running program's.</summary>
+	private static bool IsOwnDir(string entry)
+		{
+		static string Key(string p) => p.Replace('/', '\\').TrimEnd('\\');
+		s_ownKey ??= Key(AppContext.BaseDirectory);
+		return s_ownKey.Length > 0 && string.Equals(Key(ShellEnvironment.TranslateForm(entry)), s_ownKey, StringComparison.OrdinalIgnoreCase);
+		}
+	private static string? s_ownKey;
 
 	private static bool _preserveAccessTime;
 

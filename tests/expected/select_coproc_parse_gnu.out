@@ -1,0 +1,26 @@
+f () 
+{ 
+    select x in a b;
+    do
+        echo "$x";
+    done;
+    coproc CP { 
+        echo hi
+    };
+    coproc COPROC cat;
+    coproc COPROC ( echo sub );
+    coproc CP2 while false; do
+        :;
+    done;
+    select y in "$@";
+    do
+        break;
+    done
+}
+untaken branch, then rc=0
+g () 
+{ 
+    coproc COPROC X echo hi
+}
+select is a shell keyword
+coproc is a shell keyword

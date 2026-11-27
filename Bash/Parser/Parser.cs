@@ -326,6 +326,8 @@ public sealed class Parser
 				case "until":  return ParseWhile(until: true);
 				case "for":    return ParseFor();
 				case "case":   return ParseCase();
+				case "select": return ParseSelect();
+				case "coproc": return ParseCoproc();
 				}
 			}
 
@@ -849,8 +851,16 @@ public sealed class Parser
 			return new ArithForCommand(parts[0], parts[1], parts[2], abody, aredirects)
 				{ Line = forTok.Line, Heads = [.. raw.Select(p => $"(({p.TrimStart()}))")] };
 			}
+		var (varName, words, body, redirects, headSpan) = ParseNameInWords(forTok);
+		return new ForCommand(varName, words, body, redirects) { Line = forTok.Line, Span = headSpan };
+		}
+
+	/// <summary>`name [in words]; do body; done [redirects]` after `for` or `select` (<paramref name="keyword"/>,
+	/// already consumed): the two share bash's grammar.</summary>
+	private (string Name, List<Word> Words, Node Body, List<Redirect> Redirects, SourceSpan Head) ParseNameInWords(Token keyword)
+		{
 		var varName = ExpectWordToken().Value;
-		var headSpan = SpanFrom(forTok);
+		var headSpan = SpanFrom(keyword);
 		SkipNewlines();
 
 		var words = new List<Word>();
@@ -859,7 +869,7 @@ public sealed class Parser
 			Advance(); // consume 'in'
 			while (IsWordToken())
 				words.Add(ParseWord()!);
-			headSpan = SpanFrom(forTok);   // `for i in a b`: bash's `$BASH_COMMAND` for each turn
+			headSpan = SpanFrom(keyword);   // `for i in a b`: bash's `$BASH_COMMAND` for each turn
 			SkipSeparators();
 			}
 		else
@@ -874,8 +884,38 @@ public sealed class Parser
 		SkipSeparators();
 		ExpectWord("done");
 		var redirects = ParseRedirects();
-		return new ForCommand(varName, words, body, redirects) { Line = forTok.Line, Span = headSpan };
+		return (varName, words, body, redirects, headSpan);
 		}
+
+	/// <summary>`select name [in words]; do body; done`: parsed, so a script holding one runs up to it and a branch
+	/// that never reaches it costs nothing; refused when run (it was a syntax error until 2026-11-22).</summary>
+	private SelectCommand ParseSelect()
+		{
+		var selectTok = Advance();   // select
+		var (varName, words, body, redirects, headSpan) = ParseNameInWords(selectTok);
+		return new SelectCommand(varName, words, body, redirects) { Line = selectTok.Line, Span = headSpan };
+		}
+
+	/// <summary>`coproc [NAME] command`: as bash, a word is the NAME only when a compound command follows it
+	/// (`coproc CP { …; }`, `coproc CP while …`); otherwise the whole is the command (`coproc cat`, `coproc X echo
+	/// hi` runs X). Refused when run (it was a syntax error or "command not found" until 2026-11-22).</summary>
+	private CoprocCommand ParseCoproc()
+		{
+		var coprocTok = Advance();   // coproc
+		string? name = null;
+		if (Peek() is { Type: TokenType.Word } w && StartsCompound(PeekAhead(1)))
+			{
+			Advance();
+			name = w.Value;
+			}
+		var body = ParseCommand() ?? throw Error("Expected a command after 'coproc'");
+		return new CoprocCommand(name, body) { Line = coprocTok.Line, Span = SpanFrom(coprocTok) };
+		}
+
+	/// <summary>The first token of a compound command: `{`, `(`, `((`, or if/while/until/for/select/case/`[[`.</summary>
+	private static bool StartsCompound(Token t) =>
+		t.Type is TokenType.LBrace or TokenType.LParen or TokenType.ArithCommand
+		|| (t.Type == TokenType.Word && t.Value is "if" or "while" or "until" or "for" or "select" or "case" or "[[");
 
 	/// <summary>Split "init; cond; step" at top-level semicolons (parens/quotes respected).</summary>
 	private static string[] SplitArithFor(string spec, bool trim = true)
@@ -1396,7 +1436,7 @@ public sealed class Parser
 				}
 
 			case TokenType.GreaterLParen:
-				throw new ParseException("output process substitution >( ) is not supported: write to a temp file and read it after the command (DECISIONS 2026-09-04 #6)", Peek().Line, Peek().Column) { Unsupported = true };
+				throw new ParseException("output process substitution >( ) is not supported: write to a temp file and read it after the command", Peek().Line, Peek().Column) { Unsupported = true };
 
 			case TokenType.DollarDollarLParen:
 				Advance();

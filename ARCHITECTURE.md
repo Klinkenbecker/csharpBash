@@ -5,8 +5,7 @@
 > changing, an architectural invariant changing, or the conceptual model shifting. A new
 > method or a tweaked signature must **not** trigger an edit here — that belongs in
 > [`IMPLEMENTATION.md`](IMPLEMENTATION.md), which tracks the code surface sitting on top of
-> this (unchanged) architecture. *Why* each choice was made lives in
-> [`DECISIONS.md`](DECISIONS.md); *what exists right now / what's next* lives in
+> this (unchanged) architecture. *What exists right now / what's next* lives in
 > [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
 
 ---
@@ -100,16 +99,14 @@ downstream:
   is "inside" a parameter expansion. So `ConsumeDollar` reads the entire `${…}` body eagerly
   (balancing nested braces and quotes) and stores the raw interior as a single token. This is
   what prevents `#` in `${#arr[@]}` from starting a comment, `}` in `${x:-y}` from leaking,
-  and operator characters inside the expansion from being mis-tokenized. *(DECISIONS:
-  2026-06-13 — "All `$`-expansions routed through one path".)*
+  and operator characters inside the expansion from being mis-tokenized.
 
 - **Heredoc bodies are captured after the newline.** `<<` / `<<-` queue a delimiter; on the
   next newline `FlushHeredocs` reads the body lines and emits a heredoc-body token.
 
 - **`{` and `}` are context-sensitive.** `{` is a group-open only when followed by
   whitespace/`;` (so `{a..e}` lexes as a word); `}` is a group-close only with leading space,
-  a preceding newline, or a preceding `;`. *(DECISIONS: 2026-06-13 — "`}` recognized as a
-  group terminator in command position".)*
+  a preceding newline, or a preceding `;`.
 
 `$'…'` ANSI-C quoting (with `\n`, `\t`, `\xNN`, `\uNNNN` decoding) is also resolved in the
 lexer. When the lexer reaches EOF mid-construct (open quote, open heredoc) it raises a
@@ -160,14 +157,11 @@ Three cross-cutting mechanisms:
   does not parse becomes a `SubstitutionSyntaxError` node, met when the substitution runs: `$( )`
   then abandons the top-level command (`CommandAbortException`, status 1), contained by `( )`,
   pipeline stages and other substitutions; backquotes fail only the substitution (2).
-  *(DECISIONS: 2026-10-11 — item 6, phases 1-5.)*
 
 - **Per-statement error isolation.** Top-level statements run through `RunStatement`, which
   catches `EvalException` (and other runtime faults like divide-by-zero), prints it with
   bash's prefix (`script.sh: line 3: …`, captured where it was raised), sets `$?` to a failure
   code, and continues with the next statement — matching how bash survives a bad command.
-  *(DECISIONS: 2026-06-14 — `/dev/null` & fd-aware redirects & error-continue; 2026-10-10 —
-  every error said `bash:`.)*
 
 - **Control flow as exceptions.** `exit`, `return`, `break`, `continue` and Ctrl-C unwind via
   dedicated exceptions (`ExitException`, `ReturnException`, `BreakException`,
@@ -187,8 +181,7 @@ used where a single string is wanted (assignments, redirect targets, `case` word
 Quoting is tracked **per field**: a brace/glob metacharacter that arrived inside quotes stays
 literal, so `echo '*'` prints `*`. Two fast paths short-circuit the overwhelmingly common
 shapes (a lone literal with no metacharacters; a lone `$var`/`${simple}` under default IFS)
-to avoid allocation. *(DECISIONS: 2026-06-13 — empty expansions yield zero fields; quoting
-fixes; and the quoted-glob fix of 2026-06-14.)*
+to avoid allocation. An unquoted word that expands to nothing yields no field; a quoted one (`""`) yields one empty field.
 
 Field splitting is POSIX's, as bash does it: IFS unset means space, tab and newline; IFS set to
 `""` means no splitting at all; IFS white space runs together and is dropped at the ends, while
@@ -196,8 +189,7 @@ any other IFS character ends a field (an empty one too), so with `IFS=,` the val
 fields. Unquoted `$@`/`$*`/`${a[@]}` are joined with IFS's first character and then split; where
 `$*` or `${a[*]}` makes one string (`"$*"`, an assignment, `[[ ]]`, a here-string, `case`) it joins
 with IFS's first character, nothing when IFS is empty, a space when unset
-(`ShellEnvironment.StarSeparator`). *(DECISIONS: 2026-10-12 — field splitting and `$*` ignored what
-IFS held.)*
+(`ShellEnvironment.StarSeparator`).
 
 > **Divergence:** canonical bash performs brace expansion **first**, before all other
 > expansions; this implementation performs it **after** word-splitting. The common cases
@@ -213,7 +205,7 @@ identifiers** with no `$`, since `$((x+1))` is legal — defaulting unset names 
 resulting purely-numeric/operator string is handed to `ArithParser`, a recursive-descent
 **precedence-climbing** evaluator (`ParseTernary → ParseOr → … → ParsePrimary`) over C#
 `long`, supporting the C operator set including `&&`/`||`, bit ops, shifts, `**`, and hex/octal
-literals. *(DECISIONS: 2026-06-14 — Perf round 2: ArithParser inline rewrite.)*
+literals.
 
 ---
 
@@ -234,7 +226,6 @@ global `SyncTextWriter` via reflection, with a graceful fallback) because a glob
 let one stage blocked on a full pipe stall every other stage — a deadlock, not a slowdown;
 each target writer is locked individually instead. The per-thread state also carries the raw
 byte sink (§9.3), the capture flag, and the pipe ends an external child is given.
-*(DECISIONS: 2026-09-04 — P2 pipeline model.)*
 
 ### 9.1 Pipelines
 
@@ -252,9 +243,7 @@ and `{ a | b; } >f` writes the file. External stages get the pipe ends directly
 (`ConsoleMux.PipeIn/PipeOut`) with copy threads on either side.
 
 Divergence from bash: stages share the shell's variables and cwd (bash isolates each in a
-subshell); `PIPESTATUS`, `pipefail` and `!` are honored. *(Supersedes the 2026-03-11
-"thread + MemoryStream" and 2026-06-14 "sequential builtin pipeline" designs — DECISIONS
-2026-09-04.)*
+subshell); `PIPESTATUS`, `pipefail` and `!` are honored.
 
 ### 9.2 Redirects
 
@@ -272,7 +261,7 @@ the I/O model:
   so `ExecExternal` owns a self-contained fd-map and hands the child exactly three std handles
   through `ChildLauncher` (file truncate/append, NUL for `/dev/null` and the other device files,
   the console for `/dev/tty` only when the console has a window, else bash's "No such device or
-  address", as in Claude Code's windowless console (`ShellFile.OpenTty`; DECISIONS 2026-10-15),
+  address", as in Claude Code's windowless console (`ShellFile.OpenTty`),
   `/dev/stdout`·`/dev/stderr`·`/dev/fd/N`, `2>&1`, `1>&2`, `&>`, heredocs/here-strings as fed
   stdin, and pipeline ends), for stdin, stdout **and** stderr. A file the shell is reading (`while
   read; do prog; done < list`) is given to the child itself at the shell's offset, so it reads only
@@ -284,15 +273,14 @@ the I/O model:
 
 Running `ApplyRedirects` unconditionally *and* re-opening in `ExecExternal` was the bug that
 crashed the shell on `extcmd >file` (sharing violation) and silently dropped external
-`2>file`. *(DECISIONS: 2026-06-14 — "Redirects apply in exactly one place per command type".)*
+`2>file`.
 
 ### 9.3 Byte-faithful output
 
 Builtins that must emit exact bytes (e.g. `cat`, `od`) bypass the text `Console` via
 `CurrentRawStdout()`, which returns the raw byte sink in effect for the thread (a file-redirect
 `FileStream`, a pipe write end, or the real stdout) or `null` when output is being captured by
-`$( )`. Console newlines are forced to LF, not CRLF. *(DECISIONS: 2026-06-14 — Byte-faithful
-stdout for builtins.)*
+`$( )`. Console newlines are forced to LF, not CRLF.
 
 **Buffered output, bash's model (2026-10-28).** Text output that is not going to a console (a redirected file, a
 pipeline's pipe, C#Bash's own redirected stdout: the pipe Claude Code reads) is buffered and written when each builtin
@@ -301,8 +289,7 @@ call site), when a redirect or a pipeline stage ends, and at exit; a raw-byte wr
 handed a redirected file only after it is flushed. So one tool writing many lines makes one write per ~4 KB, not one
 per line (`sed` of 20 MB to a file 5.8x faster), while the order and what a reader sees are as before: a builtin's
 output is out when it finishes, as bash's builtins flush theirs. stderr is never left buffered, as GNU's: its writer is
-flushed after every write, so through `2>&1` a message lands in its place. *(DECISIONS: 2026-10-28 — buffered output,
-steps (a) to (c).)*
+flushed after every write, so through `2>&1` a message lands in its place.
 
 ### 9.4 No culture unless culture is the point
 
@@ -317,8 +304,7 @@ that has none no longer pays ~1.6 ms for it. Watch for the quiet culture paths: 
 fails when one reaches a common command. The process runs in the invariant culture (`ShellCulture.Pin`,
 first in Main: the default for every thread), so numbers and dates are formatted as in bash's C locale
 whatever the Windows user's culture (a culture whose minus is U+2212 printed `$((-5))` as "−5"); code
-that formats with no culture named is therefore invariant too. *(DECISIONS: 2026-10-18 — BUILT (R4
-picks 1-3), BUILT (the split's candidates).)*
+that formats with no culture named is therefore invariant too.
 
 ---
 
@@ -328,15 +314,13 @@ To avoid Windows' per-process spawn cost (no `fork`; `CreateProcess` plus AV sca
 multi-millisecond floor), the common AT&T System V command set is implemented **in-process**
 as builtins dispatched from `Builtins.TryExecute`. Scope is "bash-adjacent" — self-contained,
 bounded, byte-faithful, destructive-safe tools (text/file/dir utilities, `grep`/`sed`,
-`find`, `sort`, …) — explicitly **not** a full busybox. *(DECISIONS: 2026-06-14 — In-process
-coreutils scope; Coreutils scope = AT&T System V filtered by feasibility; Wave-4 scope.)*
+`find`, `sort`, …) — explicitly **not** a full busybox.
 
 Two model points:
 
 - **Regex dialect.** `grep` and `sed` default to **BRE**, translated to .NET regex by a
   `BreToNet` shim (`\(…\)`, `\{m,n\}`, `\+ \? \|` are operators; bare `()/{}/+/?/|` are
-  literal); `-E`/`-r` selects ERE; `-F` is literal. *(DECISIONS: 2026-06-14 — grep/sed
-  default to BRE.)*
+  literal); `-E`/`-r` selects ERE; `-F` is literal.
 - **Re-entrancy.** Builtins that drive other commands (`xargs`, `timeout`) call back through
   `Evaluator.RunCommand`, which re-enters the builtin→function→external dispatch.
 - **Streaming (2026-10-27).** The tools read as they go, so an input over 2 GiB or an endless pipe
@@ -347,15 +331,14 @@ Two model points:
   next command reads on from there (`{ head -n 1; cat; } < f`, `sed q`). Only tools that need all of
   their input hold it: sort, diff, jq, mapfile. xargs reads as it runs: a batch runs the moment it is full
   (rev 503), its commands on /dev/null so they cannot eat the items to come.
-- **Loud, never silent (DECISIONS 2026-09-04 #2).** Every tool parses its options with the
+- **Loud, never silent.** Every tool parses its options with the
   strict `Opts` parser; an option or construct it does not implement raises
   `UnsupportedOptionException`. `Builtins.TryExecute` then re-runs the command through a PATH
   external of the same name if one resolves, otherwise reports the option and exits 2.
   `BASH_COREUTILS=builtin` forbids the fall-through, `=external` prefers the external whenever
   one exists. A PATH that lacks the tool therefore fails visibly instead of returning a wrong
   answer.
-- **awk is an interpreter of a contract, not a port (DECISIONS 2026-09-04 #7).** The supported
-  language is the list in that entry; the lexer decides regex-vs-division by the previous
+- **awk is an interpreter of a contract, not a port.** The lexer decides regex-vs-division by the previous
   token, the parser is a small recursive descent to an AST, and values carry awk's
   number/string/strnum typing so comparisons follow POSIX (input-derived numeric text compares
   numerically, string constants compare as strings). Unsupported constructs surface through the
@@ -378,7 +361,7 @@ Two model points:
   Because Windows ppid chains break at every MSYS `exec` (the old pid is gone), a second,
   ppid-free rule backs that up: a process whose command line carries this pkill invocation
   itself (the pattern next to the word `pkill`/`pgrep`) is a relaying shell, never a target.
-- **Process substitution is a temp file (DECISIONS 2026-09-04 #6).** `<(cmd)` runs `cmd` to
+- **Process substitution is a temp file.** `<(cmd)` runs `cmd` to
   completion into a temp file and expands to that file's native path; the file lives until the
   node whose expansion created it has finished (`Evaluator.Execute` marks/releases per node), so
   `diff <(a) <(b)`, `< <(cmd)` loops and external consumers all see a real path. `>(cmd)` is a
@@ -391,7 +374,7 @@ Two model points:
   everything else round-trips anyway. It is used by every file, pipe, capture and console stream,
   which is what makes it a *model* rather than a per-tool workaround: no code has to decide
   whether its data is text. Escape handlers emit that range directly; `\u`/`\U` stay code points.
-  *(DECISIONS: 2026-09-12.)* Both directions carry state across chunks: the decoder holds a character
+  Both directions carry state across chunks: the decoder holds a character
   cut by a block's end (`CarryDecoder`, 2026-10-10), the encoder a surrogate pair cut by a writer's
   chunk (`CarryEncoder`, 2026-10-27: an emoji past 8192 characters of one write became two U+FFFD).
 - **Paths are forward-slash in both directions.** Backslash is the shell's escape character, so a
@@ -411,8 +394,7 @@ Two model points:
   word holding a glob or quote character (`ShellEnvironment.DoubleSlash`).
   An MSYS program (Git's `usr/bin`) reads `/c/…` itself but re-parses an unquoted word of its command
   line like a shell, so for it `ChildLauncher` double-quotes any argument beyond letters, digits and
-  `-_./:=@%+,`, doubling backslashes. *(DECISIONS: 2026-09-11, 2026-09-12, 2026-10-10, 2026-10-12,
-  2026-10-14.)*
+  `-_./:=@%+,`, doubling backslashes.
 - **PATH is the one inherited, with the shell's own directory first**, so a nested `bash` or
   `sh` is this shell. Command lookup follows the
   shell's own `$PATH` (since 2026-10-11: assigning it resets the hash, a temporary `PATH=… cmd` is
@@ -423,7 +405,7 @@ Two model points:
   this process's environment and each child's, it is Windows form with forward slashes, `C:/x;F:/y`
   (`ToWindowsPathList`), never a backslash. Every reader splits it with `PathDirs`, which takes either
   form. A Windows program's argument that is a colon list of `/`-rooted paths is converted whole, as
-  Git Bash does. *(DECISIONS: 2026-10-31 — "GO: $PATH has two forms".)*
+  Git Bash does.
 
 ---
 
@@ -439,9 +421,7 @@ no frame holds creates it in the GLOBAL frame, so a function's `x=1` survives th
 included. `unset` in the declaring function leaves the name declared and unset, still hiding an
 outer one; anywhere else it removes it. Function calls push a frame (`PushScope`/`PopScope`)
 carrying their own positionals; a subshell's snapshot deep-copies the frames. Special variables
-(`$?`, `$#`, `$@`, `$*`, `$0`, `$1…`) and exports are resolved here. *(DECISIONS: 2026-06-13 —
-`$`-expansions unified, positional parameters; array `@`/`*` field expansion; 2026-10-12 —
-VARIABLE SCOPE.)*
+(`$?`, `$#`, `$@`, `$*`, `$0`, `$1…`) and exports are resolved here.
 
 ---
 
@@ -452,13 +432,12 @@ Two pieces of machinery sit in front of `Process.Start`:
 
 - **PATH resolution + hash cache.** `ResolveOnPath` scans the search list (with `PATHEXT` on
   Windows) and memoizes hits; this cache is what the `hash` builtin inspects/clears. The search
-  list is the fallback chain's folders and PATH in the configured order (`Fallbacks`, read once
+  list is this shell's own folder first, then the fallback chain's folders and PATH (without it) in the configured order (`Fallbacks`, read once
   at the first lookup from `%USERPROFILE%/.bash/etc/csharpBash.config`; PATH alone by default).
   C#Bash's lookup is the only authority: a bare name it does not find is looked for in its own
   folder, System32 and the Windows folder (`FallbackProgram`), then run in WSL when the chain
   has it (`RunInWsl`), else "command not found", and is never handed to Windows' launcher to
-  search (it searched the cwd and the process PATH). *(DECISIONS: 2026-06-14 — hash + PATH
-  cache; 2026-10-17 — the launcher never searches; 2026-11-11 — the fallback chain.)*
+  search (it searched the cwd and the process PATH).
   Behind it, `CommandMap` keeps the shell's own lookups across processes: one file per PATH value
   (with PATHEXT) under `~/.bash/commands`, read on the first lookup. Every lookup
   remembers hits (one existence probe before use; gone: searched again). Misses are `hash name`'s
@@ -467,35 +446,31 @@ Two pieces of machinery sit in front of `Process.Start`:
   miss, as bash, and a found name replaces it. Not kept for a PATH with a relative entry; writes
   merge and rename atomically; a map in use is touched when read (at most hourly) and one unused for
   30 days is pruned. Why: Claude Code's snapshot runs `hash rg` on every call, and that
-  one miss searched the whole PATH each time. *(DECISIONS: 2026-10-16 — the tool-lookup plan; only
-  `hash` records and obeys misses.)*
+  one miss searched the whole PATH each time.
 - **A child's environment is the shell's exported variables, nothing else.** Built per launch from
   the exported set (every inherited variable is imported exported), so `unset`/`export -n` reach
   children; no empty PATH entry is ever handed to Windows (its launcher reads one as the cwd), in a
-  child's PATH or in C#Bash's own process PATH. *(DECISIONS: 2026-10-17 — fix b; red team on the
-  lookup changes.)*
+  child's PATH or in C#Bash's own process PATH.
 - **`BASH_PATH`.** At startup a non-empty `BASH_PATH` becomes `PATH` and is removed (from the
   process environment too, so a nested shell keeps its parent's PATH): a launcher that keeps its own
-  PATH narrow, such as `claude.exe`, hands the shell its PATH this way. *(DECISIONS: 2026-10-16.)*
+  PATH narrow, such as `claude.exe`, hands the shell its PATH this way.
 
 - **Shebang dispatch.** Windows can't `exec` a `#!` script, so when a command names an actual
   script file the interpreter reads its interpreter line: `bash`/`sh` scripts run in-process
   in a child `Evaluator`; anything else is spawned as `<interp> <script> <args>`. A bare name is a
   script only at its PATH match, never in the current directory (a planted `git` there ran instead
   of git.exe), and the PATH search takes the first match that passes `-x`; the interpreter chain is
-  capped at 8. *(DECISIONS: 2026-06-14 — Shebang dispatch; 2026-10-17 — defect a.)*
+  capped at 8.
 
 **A background job resolves its own paths.** A shell whose owner keeps running (`&`, `setsid -f`) is
 `Detached`, and so is everything started inside it: it resolves every relative path against its own cwd,
 because its parent's `cd` moves the process cwd under it. A pipeline stage keeps paths relative until it
-moves (its parent waits for it). *(DECISIONS: 2026-10-03 — each shell's own cwd; 2026-10-17 — background job.)*
+moves (its parent waits for it).
 
 **`TranslatePath`** maps forward-slash and MSYS-form paths to Windows paths. A `~` in a path is a name, as in
 bash: the shell expands an unquoted one (`TildeHome`: $HOME, else the profile) before a command sees it (until
-2026-10-19 a quoted `~` was the profile, whatever $HOME said; DECISIONS "FIXED (red team F5)"). A general Unix
-root mapping (`/tmp`, `/usr`, `/etc`, configurable `BASH_ROOT`) is a **deferred** design
-decision — see [`DECISIONS.md`](DECISIONS.md) "DEFERRED — Unix root path mapping" and
-[`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) "Open Questions".
+2026-10-19 a quoted `~` was the profile, whatever $HOME said). A general Unix
+root mapping (`/tmp`, `/usr`, `/etc`, configurable `BASH_ROOT`) is not provided.
 
 ---
 
@@ -505,7 +480,6 @@ The interactive subsystem lives in `IO/`:
 
 - **`LineEditor`** — a key-by-key reader with readline-style editing, history navigation, and
   tab completion (`DoComplete`), redrawing with a self-correcting anchor to avoid flicker.
-  *(DECISIONS: 2026-06-13 — line editor; line-editor flicker.)*
 - **`History`** — persisted to `~/.bash_history`, ignoring consecutive duplicates, bounded by
   `HISTSIZE`.
 - **`CompletionEngine`** — command/file/variable completion.
@@ -518,8 +492,7 @@ REPL. Startup files follow bash order (login: `/etc/profile` then the first of
 `~/.bash_profile`/`~/.bash_login`/`~/.profile`; interactive non-login: `/etc/bash.bashrc` then
 `~/.bashrc` or `--rcfile`). The REPL accumulates continuation lines (backslash-newline, and
 `Incomplete` lex/parse exceptions) before executing, and runs `PROMPT_COMMAND` before each
-prompt. *(DECISIONS: 2026-06-13 — Startup files, invocation flags, prompt; multi-line
-continuation via Incomplete.)* The standard bash startup sequence this mirrors is captured in
+prompt. The standard bash startup sequence this mirrors is captured in
 [`docs/bash-startup-reference.md`](docs/bash-startup-reference.md).
 
 ---
@@ -531,19 +504,15 @@ There is no Unix signal delivery on Windows, so:
 - **Ctrl-C** is handled by a polled interrupt flag. `Console.CancelKeyPress` calls
   `RequestInterrupt`; loop and command boundaries call `CheckInterrupt`, which throws
   `InterruptException`; the REPL catches it, prints a newline, and sets `$?` to 130. During
-  line editing the editor takes Ctrl-C as input instead. *(DECISIONS: 2026-06-13 — SIGINT via
-  polled interrupt flag.)*
+  line editing the editor takes Ctrl-C as input instead.
 - **Traps** fire for `EXIT`, `INT`, `ERR`, `DEBUG` (before each simple command, with
   `$BASH_COMMAND`) and `RETURN`; `-T` / `declare -ft` carry DEBUG and RETURN into functions. Other
   signals are stored but inert; `trap -l` / `kill -l` print bash's Linux table. `RunExitTrap` fires
-  on every exit path. *(DECISIONS: 2026-06-13 — Traps: EXIT and INT only; 2026-10-11 — DEBUG and
-  RETURN traps.)*
+  on every exit path.
 - **Background jobs** (`&`) run as in-process threads (`BackgroundJob`, `StartBackgroundJob`),
   not child process groups; `fg` hands the terminal over where possible, `bg` reports
   unsupported. An and-or list ending in `&` (`a && b &`) is one job. Jobspecs are bash's: `%N`,
   `%%`/`%+`/`%`, `%-`, `%name`, `%?text` (each pipeline stage's command is kept for the match).
-  *(DECISIONS: 2026-06-13 — Background jobs as in-process threads; 2026-10-12 — `a && b &`,
-  jobspecs.)*
 
 ---
 
@@ -552,7 +521,6 @@ There is no Unix signal delivery on Windows, so:
 **Help points at the manuals; it does not contain them.** `help NAME` and every builtin's `NAME --help` answer
 with the URL of the manual page for what was asked: GNU's, or the manual of the program a builtin imitates (a few
 on man7.org, jqlang.org, sourceware.org). C#Bash ships no help text of its own to drift from the real tools.
-*(DECISIONS: 2026-10-27 — help and --help point at the manual pages.)*
 
 - **Two tables, one answer.** The table is built into `Bash.exe` (`Bash/help.json`, a resource). A user's own
   `%USERPROFILE%/.bash/help.json` lies over it **name by name**: the file answers for every name it has, the
@@ -561,11 +529,10 @@ on man7.org, jqlang.org, sourceware.org). C#Bash ships no help text of its own t
 - **An unedited old table is refreshed.** A file that is still, byte for byte, a table an earlier build wrote is
   replaced by this build's when `help` next reads it; an edited file is never touched. The test is a SHA-256 list
   of every earlier built-in table (`EarlierHelpTables`), which must grow whenever `help.json` changes.
-  *(DECISIONS: 2026-10-29 — installer plan phase 2.)*
 - **The table has a guard.** `tools/check-help-urls.sh` (development only, never shipped) checks that every link
   answers and every `#anchor` is on its page: a GNU manual's pages against one download of its per-node archive,
   other pages fetched themselves; paced, under an honest User-Agent, following robots.txt, and only when the table
-  has changed. Those are promises made to gnu.org's webmasters. *(DECISIONS: 2026-10-29 — gnu.org lifted the ban.)*
+  has changed. Those are promises made to gnu.org's webmasters.
 
 **What C#Bash cannot do, it says, and remembers.** A bash builtin or keyword it lacks answers `help` with its page
 marked "not implemented in C#Bash"; a feature that is not available (restricted mode refused, POSIX mode goes on)
@@ -573,7 +540,6 @@ says so with a link to a prefilled GitHub issue (`NotAvailable`). Each such requ
 support (whether a PATH program then ran it or not), a construct refused when parsed, and a help topic not found is
 appended as one JSON line to `%USERPROFILE%/.bash/unserviced.jsonl` (`Unserviced.Log`), in one write that never
 fails the command. It stays in the user's profile; nothing is sent anywhere. It is the list of what to build next.
-*(DECISIONS: 2026-10-27 — the log of unserviced requests.)*
 
 ---
 

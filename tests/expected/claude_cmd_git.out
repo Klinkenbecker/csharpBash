@@ -1,0 +1,7 @@
+default, a git on PATH: W/gitA/cmd/git.exe
+path, a git on PATH: W/gitA/cmd/git.exe
+path, no git on PATH: (no git)
+none: (no git)
+a folder: W/gitB/git.exe
+a git.exe: W/gitA/cmd/git.exe
+a missing one: claude.cmd: BASH_CLAUDE_GIT=W/missing is no git.exe or folder; Claude Code runs without git.

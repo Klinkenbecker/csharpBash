@@ -220,6 +220,43 @@ public sealed class BadDescriptorWriter(bool silent = false) : TextWriter
 /// <see cref="BrokenPipeException"/> to the writer once the reader has closed — so a
 /// producer stops when its consumer exits early (`yes | head`).
 /// </summary>
+/// <summary>A here-document's or here-string's text as stdin. Its UTF-8 size, counted only when asked, decides whether
+/// test sees /dev/stdin as a pipe or a file (bash 5.1: a pipe up to its 65,536-byte capacity). It reads as a
+/// StringReader until a native child needs it as stdin; then the rest becomes a C#Bash pipe (<see cref="AsPipe"/>),
+/// fed to the child with the stdin give-back, so what the child does not read is read next here, as a bash child
+/// shares the document's pipe (bugs list 18, wombat-3a, 2026-11-27: in `while read ...; do ext; done &lt;&lt; EOF` the
+/// first ext took the whole rest, and the loop ran once). Every context reading it, a `$( )` included, holds this one
+/// object, so all of them see what the child left.</summary>
+public sealed class HereDocReader(string text) : TextReader
+	{
+	private TextReader _inner = new StringReader(text);
+	private PipeBuffer? _pipe;
+
+	public long Bytes => ShellEncoding.Utf8.GetByteCount(text);
+
+	/// <summary>The rest of the document as a C#Bash pipe, made once (its writing end closed: it is all there).</summary>
+	public PipeBuffer AsPipe()
+		{
+		if (_pipe is not null) return _pipe;
+		var rest = ShellEncoding.Utf8.GetBytes(_inner.ReadToEnd());
+		var p = new PipeBuffer(Math.Max(1 << 20, rest.Length + 1));
+		if (rest.Length > 0) p.WriteEnd.Write(rest, 0, rest.Length);
+		p.WriteEnd.Dispose();
+		_inner = new LfReader(p.ReadEnd);
+		return _pipe = p;
+		}
+
+	/// <summary>What this reader's own LfReader read ahead and nobody consumed (after <see cref="AsPipe"/>), taken.</summary>
+	public string? TakeBuffered() => (_inner as LfReader)?.TakeBuffered();
+
+	public override int Peek() => _inner.Peek();
+	public override int Read() => _inner.Read();
+	public override int Read(char[] buffer, int index, int count) => _inner.Read(buffer, index, count);
+	public override int Read(Span<char> buffer) => _inner.Read(buffer);
+	public override string? ReadLine() => _inner.ReadLine();
+	public override string ReadToEnd() => _inner.ReadToEnd();
+	}
+
 public sealed class PipeBuffer
 	{
 	private readonly object _lock = new();
@@ -316,6 +353,9 @@ public sealed class PipeBuffer
 	public void CloseWrite() { lock (_lock) { _writeClosed = true; Monitor.PulseAll(_lock); } }
 	public void CloseRead()  { lock (_lock) { _readClosed = true; _chunks.Clear(); _size = 0; _readOffset = 0; Monitor.PulseAll(_lock); } }
 	public bool ReadClosed  { get { lock (_lock) return _readClosed; } }
+
+	/// <summary>True for either end of a PipeBuffer: test's -p of /dev/fd/N (a C#Bash pipe is a pipe).</summary>
+	public static bool IsEnd(Stream s) => s is ReadStream or WriteStream;
 
 	private sealed class WriteStream(PipeBuffer p) : Stream
 		{

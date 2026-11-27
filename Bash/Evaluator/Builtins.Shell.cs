@@ -1667,7 +1667,7 @@ public sealed partial class Builtins
 			else if (a.StartsWith("-u", StringComparison.Ordinal) && a.Length > 2) unset.Add(a[2..]);
 			else if (a is "-0" or "--null") nul = true;
 			else if (a == "--") { i++; break; }
-			else if (a.StartsWith('-') && a.Length > 1) { Console.Error.WriteLine($"env: invalid option -- '{a[1..]}'"); return 125; }
+			else if (a.StartsWith('-') && a.Length > 1) { Console.Error.WriteLine($"env: invalid option -- '{a[1..]}'\nTry 'env --help' for more information."); return 125; }
 			else break;
 			}
 		// every leading operand containing '=' is an assignment, whatever its name (GNU); only the

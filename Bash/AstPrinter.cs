@@ -98,6 +98,16 @@ public static class AstPrinter
 				PrintNode(fc.Body, sb, depth + 1);
 				break;
 
+			case SelectCommand sc:
+				sb.AppendLine($"{pad}Select {sc.Variable} in [{string.Join(", ", sc.Words.Select(PrintWord))}]");
+				PrintNode(sc.Body, sb, depth + 1);
+				break;
+
+			case CoprocCommand co:
+				sb.AppendLine($"{pad}Coproc {co.Name ?? "COPROC"}");
+				PrintNode(co.Body, sb, depth + 1);
+				break;
+
 			case CaseCommand cc:
 				sb.AppendLine($"{pad}Case {PrintWord(cc.Subject)}");
 				foreach (var item in cc.Items)

@@ -208,6 +208,16 @@ public sealed class ShellEnvironment
 		if (Get("HOME").Contains('\\')) Target("HOME").Value = ToShellPath(Get("HOME"));
 		Timing.Mark("env.home");
 
+		// ONE temp folder (the architect, 2026-11-24: "c#Bash should have one and only one view of where TEMP and TMP are.
+		// Within c#bash they should both point to _THE SAME PLACE_"): /tmp's folder, found once (TempFolder), and TMP, TEMP
+		// and TMPDIR all set to it, exported, in the shell's form. A C#Bash this one starts gets the same (Evaluator).
+		var temp = ToShellPath(TempFolder);
+		foreach (var name in (ReadOnlySpan<string>)["TMP", "TEMP", "TMPDIR"])
+			{
+			Set(name, temp); Export(name);
+			}
+		Timing.Mark("env.temp");
+
 		// bash-standard shell variables (not exported unless inherited)
 		var exe = ToShellPath(Environment.ProcessPath ?? "bash");
 		SetIfUnset("OSTYPE",   "msys");                 // DECISIONS 2026-09-04 (1)
@@ -764,6 +774,15 @@ public sealed class ShellEnvironment
 	/// function's `x=1` outlives the call).</summary>
 	public void Set(string name, string value) => Assign(Target(name), name, value);
 
+	/// <summary>A value for TMP, TEMP or TMPDIR: a Windows path (`F:\x`, `F:/x\y`, `\\host\share`) is stored with forward
+	/// slashes, anything else as written (the architect's "Yes", 2026-11-25). Claude Code exports `TEMP='F:\TEMP'
+	/// TMP='F:\TEMP'` in every command, and a backslash $TMP broke `case $f in $TMP/*)`, `[[ $f == $TMP* ]]`,
+	/// `${f#$TMP/}`, `sed "s|$TMP|..|"` and a path in JSON (measured).</summary>
+	private static string TempForm(string v) =>
+		v.IndexOf('\\') >= 0
+		&& ((v.Length >= 3 && char.IsAsciiLetter(v[0]) && v[1] == ':' && v[2] is '\\' or '/') || v.StartsWith(@"\\", StringComparison.Ordinal))
+			? v.Replace('\\', '/') : v;
+
 	/// <summary>Give a variable a value: an integer variable evaluates it; an array takes it as its element
 	/// 0 / "0" (bash); PATH reaches the process environment and resets the hash.</summary>
 	private void Assign(Var v, string name, string value)
@@ -774,6 +793,7 @@ public sealed class ShellEnvironment
 			try { value = ArithEval(value).ToString(); } catch (EvalException) { value = "0"; }
 			}
 		if (name == "PATH") value = NormalizePath(value);
+		else if (name is "TMP" or "TEMP" or "TMPDIR") value = TempForm(value);
 		if (name == "RANDOM")
 			{
 			long seed = ArithEval is not null ? ArithEval(value) : long.TryParse(value, out var n) ? n : 0;

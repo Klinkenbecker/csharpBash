@@ -1,0 +1,7 @@
+here-string of 4096 bytes, child: pipe 4096
+here-string of 65536 bytes, child: pipe 65536
+here-string of 65537 bytes, child: file 65537
+here-string of 200000 bytes, child: file 200000
+bbb
+nonempty
+temporary files left: 0

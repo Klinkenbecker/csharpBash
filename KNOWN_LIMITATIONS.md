@@ -25,9 +25,28 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
 - **MSYS2's own programs (runtime 3.1.7) keep the quotes of a quoted word holding a non-ASCII character**: `'é{x}'`
   arrives as `"é{x}"`, from C#Bash or from cmd alike. It is MSYS2's parsing. Git for Windows' MSYS programs, and C#Bash's
   own tools, receive the word correctly.
+- **A quoted argument to `cmd //c` reaches cmd as `\"`**: `cmd //c '"C:/x/y.exe"'` says it is not recognized, and
+  `cmd //c 'type "C:\x\y.json"'` that the syntax is incorrect. C#Bash passes arguments with Windows' usual escaping,
+  which a program reading its own arguments decodes, as Git Bash does (the same output, 4.4 and 5.3); cmd reads its
+  command line as written. Put the cmd commands in a `.cmd` file and run that, or leave the quotes out where the path
+  has no space (`cmd //c 'type C:\x\y.json'`).
 
 ## By design
 
+- **One temp folder: `$TMP`, `$TEMP` and `$TMPDIR` in a C#Bash started from C#Bash are its parent's folder, not what
+  was given for it.** `TMP=/tmp/x bash -c 'echo "$TMP"'` prints the folder (`F:/TEMP`), where GNU bash prints
+  `/tmp/x`, so every shell of a family shares one /tmp. To hand a temp folder to a program, give it to that program
+  (`TMP=/tmp/x prog` reaches it), or to mktemp with `-p`.
+- **`> /dev/stdin` when stdin is a pipe or a here-document is "Permission denied"**, status 1. GNU bash writes into
+  the pipe, reopening it through /proc; Windows cannot open a pipe's writing end from its reading end. A Claude Code
+  command whose text holds a `<` has such a stdin. Write where the data is going by its own name. A file or /dev/null
+  as stdin is written as in GNU.
+- **There is no `/proc`.** `/proc/self/fd/0` and the rest of `/proc` are Linux's; `/dev/stdin`, `/dev/stdout`,
+  `/dev/stderr` and `/dev/fd/N` are here, and test as what the descriptor is. Use those.
+- **`<( )` is a file, not a pipe.** Its command runs to its end, its output goes to a temp file, and the word becomes
+  that file's path (removed when the outer command ends). So `[ -p <(cmd) ]` is false, where GNU says true, and a
+  command that never ends (`<(tail -f log)`) never hands over its path. Read such a command through a pipe
+  (`tail -f log | ...`).
 - **Not listed does not mean not available.** A command C#Bash does not provide runs through the fallback chain (by
   default PATH then WSL, with any folders unix-tools names in its order; USING.md "The fallback chain", `help fallback`), but `compgen`, `type`, `command -v`
   and `help` see only files: a tool the chain finds in WSL is never listed. Run the command. For example, WSL's
@@ -37,9 +56,9 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
   0.15 s: take a range per call.
 - **A tool the chain runs in WSL is the Linux one.** With no Windows `git` on PATH, a bare `git` is WSL's Linux git:
   it reads an `E:/repo.git` remote as an ssh host, and treats line ends and file modes as Linux does. Put the folder
-  of the Windows tool in the chain before WSL and after PATH: `unix-tools = PATH;F:/Tools/PortableGit/cmd;WSL` in
-  `%USERPROFILE%/.bash/etc/csharpBash.config` (Windows' PATH stays as it is). After PATH, so a program of that name in
-  `%USERPROFILE%/.bash/bin` (on PATH) still comes first; a folder before PATH would hide it.
+  of the Windows tool in the chain before WSL: for example `unix-tools = F:/Tools/PortableGit/cmd;PATH;WSL` in
+  `%USERPROFILE%/.bash/etc/csharpBash.config` (Windows' PATH stays as it is). A program of that name in
+  `%USERPROFILE%/.bash/bin` still comes first, wherever the folder is named.
 
 - **`$( )` drops a trailing CRLF** as it drops a trailing newline, where bash keeps the CR: `v=$(windows-program)` gets
   a clean value, and text captured from a CRLF file loses its last CR (an inner CRLF stays). Better: write files with
@@ -47,9 +66,6 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
 - **There is no `cygpath`, and none is needed**: C#Bash's paths are already Windows-rooted with forward slashes (`$PWD`
   is `C:/x`), which every .NET tool reads. Use a path as it is; for an absolute one write `"$PWD/x"`, or `realpath -m x`;
   a Windows program handed `/c/x` gets `C:/x`.
-- **`$TEMP` and `$TMP` are as Windows sets them, with backslashes** (`F:\TEMP`); Claude Code exports them so before
-  every command. A backslash is eaten at the next hop (JSON, a regex, sed), so for a temporary path use `mktemp`:
-  `mktemp -d`, `mktemp -u`, `mktemp --tmpdir x.XXXX` all give `F:/TEMP/…`. For the folder itself, `${TEMP//\\//}`.
 - **A Windows program gets MSYS-form paths converted, as under Git Bash.** An argument `/c/x` reaches it as `C:/x`; a
   colon list `/c/x:/f/y` as `C:/x;F:/y` (any other argument with a colon as typed); the same after the first `=` and
   after `-` and one letter (`--file=/c/x` → `--file=C:/x`, `-I/c/x` → `-IC:/x`); and in its environment (`X=/c/x prog`,
@@ -90,7 +106,10 @@ Each says so when asked for, with a link to ask for it; every request is counted
   `case`, `${x#…}` or file names): `[[ $x == @(a|b) ]]` takes them, as bash does with the option off; or use `case`
   with `|`.
 - **`>( )`**: write to a temporary file, or pipe through `tee`.
-- **jq's `def`** (the in-process jq is a jq 1.6 subset): write the helper out where it is used; or run a full jq, which
-  the fallback chain reaches in WSL.
+- **jq's `def` and `foreach`** (the in-process jq is a jq 1.6 subset): for `def`, write the helper out where it is used;
+  for either, run a full jq, which the fallback chain reaches in WSL.
 - **Restricted mode, POSIX mode, programmable completion (`complete`)**: none has a replacement here; ask if you need
   one.
+- **`select` and `coproc`**: they parse (a script holding one runs up to it, and a branch that never reaches it costs
+  nothing), and running one is refused, status 2. For a menu, print the choices and `read` the answer in a loop;
+  `coproc` (a two-way pipe to a child) has no replacement here.

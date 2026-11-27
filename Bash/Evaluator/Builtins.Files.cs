@@ -285,7 +285,7 @@ public sealed partial class Builtins
 	/// removed is reported with its own path, <paramref name="failed"/> is set and the rest still goes, as GNU: the first
 	/// failure stopped the whole tree, reported under the operand's name (dropped under -f when it was a not-found
 	/// error, so `rm -rf` of an MSYS tree with a dev/nul exited 0 and left it nearly whole; guy-bf, 2026-11-07).</summary>
-	private static bool RmTree(string p, string display, bool verbose, bool ask, bool force, bool tty, ref bool failed)
+	private static bool RmTree(string p, string display, bool verbose, bool ask, bool force, bool tty, ref bool failed, string tool = "rm")
 		{
 		string[] files, dirs;
 		try
@@ -296,7 +296,7 @@ public sealed partial class Builtins
 			}
 		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 			{
-			Console.Error.WriteLine($"rm: cannot remove '{display}': {IoError(ex)}"); failed = true; return false;
+			Console.Error.WriteLine($"{tool}: cannot remove '{display}': {IoError(ex)}"); failed = true; return false;
 			}
 		bool all = true;
 		foreach (var f in files)
@@ -310,7 +310,7 @@ public sealed partial class Builtins
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 				{
 				if (force && ex is FileNotFoundException or DirectoryNotFoundException) continue;   // gone meanwhile
-				Console.Error.WriteLine($"rm: cannot remove '{shown}': {IoError(ex)}"); failed = true; all = false;
+				Console.Error.WriteLine($"{tool}: cannot remove '{shown}': {IoError(ex)}"); failed = true; all = false;
 				}
 			}
 		foreach (var d in dirs)
@@ -327,16 +327,16 @@ public sealed partial class Builtins
 			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 				{
 				if (force && ex is FileNotFoundException or DirectoryNotFoundException) continue;
-				Console.Error.WriteLine($"rm: cannot remove '{shown}': {IoError(ex)}"); failed = true; all = false; continue;
+				Console.Error.WriteLine($"{tool}: cannot remove '{shown}': {IoError(ex)}"); failed = true; all = false; continue;
 				}
-			if (!RmTree(d, shown, verbose, ask, force, tty, ref failed)) all = false;
+			if (!RmTree(d, shown, verbose, ask, force, tty, ref failed, tool)) all = false;
 			}
 		if (ask && !RmAsk($"remove directory '{display}'")) return false;
 		if (!all) return false;   // an entry was kept: the directory stays (GNU: it is not empty)
 		try { Directory.Delete(p, false); }
 		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 			{
-			Console.Error.WriteLine($"rm: cannot remove '{display}': {IoError(ex)}"); failed = true; return false;
+			Console.Error.WriteLine($"{tool}: cannot remove '{display}': {IoError(ex)}"); failed = true; return false;
 			}
 		if (verbose) Console.WriteLine($"removed directory '{display}'");
 		return true;
@@ -384,7 +384,16 @@ public sealed partial class Builtins
 					// (facts-8a). Copy-then-delete is for another volume only, where no rename can be made.
 					if (string.Equals(Path.GetPathRoot(Path.GetFullPath(sp)), Path.GetPathRoot(Path.GetFullPath(target)), StringComparison.OrdinalIgnoreCase))
 						Directory.Move(sp, target);
-					else { CopyDir(sp, target, true); Directory.Delete(sp, true); }
+					else
+						{
+						// copy, then remove the source as `rm -rf` does: each entry that cannot go is named and the rest still
+						// goes, rc 1, as GNU's (bugs list 11, 2026-11-27: "cannot move 'SRC' to 'DST'" said nothing of the copy
+						// left, and a read-only file, which GNU removes as write-protected, stopped the removal)
+						CopyDir(sp, target, true, null);
+						bool kept = false;
+						RmTree(ShellFile.Extended(sp), s.TrimEnd('/'), false, false, true, false, ref kept, "mv");
+						if (kept) { rc = 1; continue; }
+						}
 					}
 				else if (File.Exists(sp))
 					{
@@ -410,9 +419,28 @@ public sealed partial class Builtins
 
 	private static int Cp(List<string> args)
 		{
-		var o = Opts.Parse("cp", args, "rRapfnuvit:TLPdlsx", ["recursive:r", "archive:a", "preserve", "force:f", "no-clobber:n", "update:u", "verbose:v", "interactive:i", "target-directory=:t", "no-target-directory:T", "dereference:L", "no-dereference:P", "parents", "no-preserve=", "reflink="]);
-		bool recursive = o.Has('r') || o.Has('R') || o.Has('a'), preserve = o.Has('p') || o.Has('a') || o.HasLong("preserve"), noClobber = o.Has('n'), update = o.Has('u'), verbose = o.Has('v');
+		var o = Opts.Parse("cp", args, "rRapfnuvit:TLPdlsx", ["recursive:r", "archive:a", $"preserve=?:{CpPreserve}", "force:f", "no-clobber:n", "update:u", "verbose:v", "interactive:i", "target-directory=:t", "no-target-directory:T", "dereference:L", "no-dereference:P", "parents", $"no-preserve=:{CpNoPreserve}", "reflink="]);
+		bool recursive = o.Has('r') || o.Has('R') || o.Has('a'), noClobber = o.Has('n'), update = o.Has('u'), verbose = o.Has('v');
 		if (o.Has('s') || o.Has('l')) throw new UnsupportedOptionException("cp", o.Has('s') ? "-s" : "-l", "link modes are not implemented");
+		// --preserve=links, which -a and -d give: GNU applies -a, -d, --preserve and --no-preserve in the order given
+		// (`--no-preserve=links -a` keeps links, `-a --no-preserve=all` does not; GNU cp 8.32, measured 2026-11-27), so
+		// the two long options are aliased into Sequence, where the short ones are kept in order
+		// and the times (`preserve`) the same way: -p, -a, a bare --preserve, or a list naming timestamps or all, keep them;
+		// --preserve=links or =mode, and -d, do not (bugs list 15, 2026-11-27: any --preserve kept them; GNU cp 8.32)
+		bool preserveLinks = false, preserve = false;
+		foreach (var (c, v) in o.Sequence)
+			{
+			if (c is 'a') { preserveLinks = true; preserve = true; }
+			else if (c is 'd') preserveLinks = true;
+			else if (c is 'p') preserve = true;
+			else if (c is CpPreserve or CpNoPreserve)
+				{
+				var attrs = v?.Split(',') ?? (c == CpPreserve ? ["timestamps"] : []);   // a bare --preserve: mode,ownership,timestamps
+				if (attrs.Any(a => a is "links" or "all")) preserveLinks = c == CpPreserve;
+				if (attrs.Any(a => a is "timestamps" or "all")) preserve = c == CpPreserve;
+				}
+			}
+		var links = preserveLinks ? new Dictionary<(uint, ulong), string>() : null;
 		var ps = o.Operands;
 		string dst; List<string> srcs;
 		if (o.Get('t') is string tdir) { dst = tdir; srcs = ps; }
@@ -442,7 +470,7 @@ public sealed partial class Builtins
 					{
 					if (!recursive) { Console.Error.WriteLine($"cp: -r not specified; omitting directory '{s}'"); rc = 1; continue; }
 					// `cp -r src existingdir` copies INTO the directory (src/ → existingdir/src)
-					CopyDir(sp, target, preserve);
+					CopyDir(sp, target, preserve, links);
 					}
 				else if (File.Exists(sp))
 					{
@@ -458,9 +486,14 @@ public sealed partial class Builtins
 					if (Directory.Exists(target)) { target = Path.Combine(target, Path.GetFileName(sp)); shown = shown.TrimEnd('/', '\\') + "/" + Path.GetFileName(sp); }
 					if (noClobber && File.Exists(target)) continue;
 					if (update && File.Exists(target) && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(sp)) continue;
-					File.Copy(sp, target, overwrite: true);
-					if (preserve) { File.SetLastWriteTime(target, File.GetLastWriteTime(sp)); File.SetAttributes(target, File.GetAttributes(sp)); }
-					else StampNow(target);
+					var key = LinkKey(sp, links);
+					if (!LinkToEarlierCopy(key, target, links))
+						{
+						File.Copy(sp, target, overwrite: true);
+						if (preserve) { File.SetLastWriteTime(target, File.GetLastWriteTime(sp)); File.SetAttributes(target, File.GetAttributes(sp)); }
+						else StampNow(target);
+						if (key is { } k) links![k] = target;
+						}
 					}
 				else if (ShellFile.Device(sp) is not null)
 					{
@@ -488,18 +521,41 @@ public sealed partial class Builtins
 		catch (UnauthorizedAccessException) { }   // a read-only copy: the attribute came with it, as GNU keeps the mode
 		}
 
-	private static void CopyDir(string src, string dst, bool preserve)
+	private static void CopyDir(string src, string dst, bool preserve, Dictionary<(uint, ulong), string>? links)
 		{
 		Directory.CreateDirectory(dst);
 		foreach (var f in Directory.GetFiles(src))
 			{
 			var t = Path.Combine(dst, Path.GetFileName(f));
+			var key = LinkKey(f, links);
+			if (LinkToEarlierCopy(key, t, links)) continue;
 			File.Copy(f, t, true);
 			if (preserve) File.SetLastWriteTime(t, File.GetLastWriteTime(f));
 			else StampNow(t);
+			if (key is { } k) links![k] = t;
 			}
-		foreach (var d in Directory.GetDirectories(src)) CopyDir(d, Path.Combine(dst, Path.GetFileName(d)), preserve);
+		foreach (var d in Directory.GetDirectories(src)) CopyDir(d, Path.Combine(dst, Path.GetFileName(d)), preserve, links);
 		if (preserve) Directory.SetLastWriteTime(dst, Directory.GetLastWriteTime(src));
+		}
+
+	/// <summary>cp's private aliases for --preserve and --no-preserve, so that Opts.Sequence keeps them in order with -a
+	/// and -d. Neither is in cp's short options, so neither can be typed as one.</summary>
+	private const char CpPreserve = '\u0001', CpNoPreserve = '\u0002';
+
+	/// <summary>cp's --preserve=links (-a, -d): a source file's identity when it has more than one name, else null (links
+	/// not kept, or one name: the count is read by name, so a file with one name costs no open).</summary>
+	private static (uint, ulong)? LinkKey(string src, Dictionary<(uint, ulong), string>? links)
+		=> links is not null && ShellFile.LinkCount(src) > 1 && ShellFile.Identity(src) is { } id ? (id.Volume, id.Index) : null;
+
+	/// <summary>A second name of a source file this cp has already copied becomes a second name of that copy, as GNU's
+	/// does (bugs list 8, found 2026-11-22: each name became its own file). True when <paramref name="target"/> was made
+	/// so; an existing file there is replaced, as GNU replaces it.</summary>
+	private static bool LinkToEarlierCopy((uint, ulong)? key, string target, Dictionary<(uint, ulong), string>? links)
+		{
+		if (key is not { } k || !links!.TryGetValue(k, out var first)) return false;
+		if (File.Exists(target)) File.Delete(target);
+		if (!CreateHardLinkW(target, first, IntPtr.Zero)) throw new IOException(Marshal.GetLastPInvokeErrorMessage());
+		return true;
 		}
 
 	// ── ls ──────────────────────────────────────────────────────────────────────
@@ -941,7 +997,7 @@ public sealed partial class Builtins
 
 	// ── mktemp / realpath / readlink ────────────────────────────────────────────
 
-	private static int Mktemp(List<string> args)
+	private static int Mktemp(List<string> args, string tmpdirVar)
 		{
 		var o = Opts.Parse("mktemp", args, "dqup:t", ["directory:d", "quiet:q", "dry-run:u", "tmpdir=", "tmpdir", "suffix=", "template=:t"]);
 		bool dir = o.Has('d'), dryRun = o.Has('u');
@@ -960,7 +1016,9 @@ public sealed partial class Builtins
 		// a template is relative to the current directory unless -t, -p/--tmpdir or no template, and the name prints as
 		// built (GNU): `mktemp x.XXXX` went to TEMP and printed its full path (2026-10-17)
 		bool useTmp = tmpdir is not null || o.HasLong("tmpdir") || o.Has('t') || o.Operands.Count == 0;
-		string baseDir = useTmp ? P(tmpdir is { Length: > 0 } ? tmpdir : (Environment.GetEnvironmentVariable("TMPDIR") is { Length: > 0 } td ? td : ShellEnvironment.TempFolder)) : "";
+		// TMPDIR is the shell's variable (set to the one temp folder at start; the architect, 2026-11-24): it was read from
+		// the process environment, so a TMPDIR set in the shell, per command or exported, was ignored (GNU honors it)
+		string baseDir = useTmp ? P(tmpdir is { Length: > 0 } ? tmpdir : tmpdirVar.Length > 0 ? tmpdirVar : ShellEnvironment.TempFolder) : "";
 		int xs = template.Length - template.TrimEnd('X').Length;
 		if (xs < 3) { Console.Error.WriteLine($"mktemp: too few X's in template '{shown}'"); return 1; }
 		var rnd = new Random();

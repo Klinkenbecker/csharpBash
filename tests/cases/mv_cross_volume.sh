@@ -15,6 +15,16 @@ held_move() {
 	[ -e "$src" ] && echo "source kept: yes" || echo "source kept: no"
 	[ -e "$b/held.exe" ] && echo "copy made: yes" || echo "copy made: no"
 }
+# 2026-11-27 (bugs list 11): a FOLDER to another filesystem with one entry held: GNU copies all, removes what it can (a
+# write-protected file too) and names each entry it cannot, rc 1; C#Bash said only "cannot move 'SRC/dir' to ...", and
+# a read-only file stopped the removal. The held entry: Linux dir/ro/held.exe in a read-only folder; Windows, running.
+folder_move() {
+	echo "--- a folder with one entry held, to another filesystem"
+	mv "$a/dir" "$b/dir" 2>&1 | show SRC "$a"; echo "rc=${PIPESTATUS[0]}"
+	echo "left: $(cd "$a" && find dir | sort | tr '\n' ' ')"
+	echo "copied: $(cd "$b" && find dir | sort | tr '\n' ' ')"
+}
+folder() { mkdir -p "$a/dir/ro" && echo w > "$a/dir/protected" && chmod a-w "$a/dir/protected" && echo p > "$a/dir/plain"; }
 if [ -r /proc/version ]; then
 	a=/tmp/csb-mv-$$; b=$PWD/csb-mv-$$
 	mkdir -p "$a/ro" "$b" || exit 1
@@ -22,6 +32,9 @@ if [ -r /proc/version ]; then
 	src=$a/ro/held.exe; echo data > "$src"; chmod a-w "$a/ro"
 	held_move
 	chmod u+w "$a/ro"
+	folder && echo data > "$a/dir/ro/held.exe" && chmod a-w "$a/dir/ro"
+	folder_move
+	chmod u+w "$a/dir/ro"
 else
 	drive() { local p=${1#/}; printf '%s' "${p:0:1}" | tr a-z A-Z; }
 	a=$HOME/.csb-mv-$$; b=${TEMP:-$HOME}/csb-mv-$$
@@ -29,6 +42,8 @@ else
 	mkdir -p "$a/ro" "$b" || exit 1
 	src=$a/ro/held.exe; cp "$BASH" "$src"
 	"$src" -c 'echo $$; sleep 30' < /dev/null | { read -r pid; held_move; kill "$pid"; }
+	folder && cp "$BASH" "$a/dir/ro/held.exe"
+	"$a/dir/ro/held.exe" -c 'echo $$; sleep 30' < /dev/null | { read -r pid; folder_move; kill "$pid"; }
 fi
 
 echo "--- a plain file to another filesystem"

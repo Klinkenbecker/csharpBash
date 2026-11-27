@@ -1,0 +1,57 @@
+pipe -p: yes
+file -p: no
+empty file -p: no
+null -p: no
+herestring -p: yes
+heredoc -p: yes
+pipe child -p: yes
+file child -p: no
+pipe -f: no
+file -f: yes
+empty file -f: yes
+null -f: no
+herestring -f: no
+heredoc -f: no
+pipe child -f: no
+file child -f: yes
+pipe -s: no
+file -s: yes
+empty file -s: no
+null -s: no
+herestring -s: no
+heredoc -s: no
+pipe child -s: no
+file child -s: yes
+pipe -c: no
+file -c: no
+empty file -c: no
+null -c: yes
+herestring -c: no
+heredoc -c: no
+pipe child -c: no
+file child -c: no
+pipe [[ -p ]]: yes
+pipe -p /dev/fd/0: yes
+dup <&3 -f: yes
+fd 3 -f /dev/fd/3: yes
+exec 0< f, -f: yes
+exec 0< f, -p: no
+stdout piped -p: yes
+stdout file -f: yes
+stdout file -p: no
+stdout null -c: yes
+stdout $( ) -p: yes
+stderr piped -p: yes
+stderr file -f: yes
+here-string of 4096 bytes: pipe
+here-string of 65536 bytes: pipe
+here-string of 65537 bytes: file
+-- > /dev/stdin
+null: rc=0
+file >: rc=0 y
+file >>: rc=0 one y 
+file > /dev/fd/0: rc=0 y
+a child's output: rc=0 y
+inside a child: rc=0 y
+a builtin, < g > /dev/stdin: rc=0 y
+a child, < g > /dev/stdin: rc=0 y

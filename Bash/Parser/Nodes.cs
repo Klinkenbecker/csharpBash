@@ -267,6 +267,18 @@ public sealed record ForCommand(
 	Node Body,
 	List<Redirect> Redirects) : Node;
 
+/// <summary>select name in words; do body; done: parsed as bash parses it, refused when run (C#Bash has no
+/// `select`; DECISIONS 2026-11-22). Its own node, so no `for` pays for it.</summary>
+public sealed record SelectCommand(
+	string Variable,
+	List<Word> Words,       // empty = "$@"
+	Node Body,
+	List<Redirect> Redirects) : Node;
+
+/// <summary>coproc [NAME] command: parsed as bash parses it (a NAME only before a compound command), refused
+/// when run (C#Bash has no coprocesses; DECISIONS 2026-11-22).</summary>
+public sealed record CoprocCommand(string? Name, Node Body) : Node;
+
 /// <summary>for (( init; cond; step )); do body; done</summary>
 public sealed record ArithForCommand(
 	string Init,

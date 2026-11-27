@@ -109,6 +109,11 @@ public sealed partial class Builtins
 		{
 		"70fcfdea5039e0a80fbe82b865299b81aa402218bbc9b7a6717bafc7b5364ef4",   // rev 397, 2026-10-27
 		"91eedeb6b38901f3633aac03e5612cb0ec72a22a9f5389fcc691126458d1ca4c",   // rev 462, 2026-10-29 (outgoing at dd/cksum, 2026-10-31)
+		// the next three were never added when their table changed, so a profile written from one kept it (KNOWN_ISSUES,
+		// found 2026-11-17; added 2026-11-24)
+		"be693696f9c319aba04ddb4236819f5db62b78f4b0e9b25143049296aa36ca5d",   // rev 553, 2026-10-31 (outgoing at rev 645)
+		"498fcc072d13ddd7eac307500fac6c8360c3ffd0cebdae348b0db0080fa6b59f",   // rev 645, 2026-11-05 (outgoing at rev 665)
+		"bf00a9fe806a0cfc4128ff823b1b7d4d38062881fb2f673097f07094d6f0abb3",   // rev 665, 2026-11-05 (outgoing at rev 798, 2026-11-13)
 		};
 
 	/// <summary>The table, in the built-in order then the file's own names: the file's pages for every name it has, the

@@ -1,0 +1,20 @@
+TMP same, TEMP same, TMPDIR same
+-- a child given MSYS-form TMP, TEMP and TMPDIR: the parent's place
+child /tmp same
+child TMP TEMP TMPDIR same
+marker
+-- env -i and env -u: the same
+env -i same
+env -u same
+-- any other program: what was typed for it
+PLACE/x
+-- started by cmd with TMP, TEMP and TMPDIR all different: TMP's folder for all three
+started by cmd: all three a
+-- mktemp: the shell's TMPDIR, per command and exported
+per command: in m
+exported: in n
+-- a Windows path assigned to TMP, TEMP or TMPDIR is stored with forward slashes (the architect's "Yes", 2026-11-25)
+Claude Code's export: F:/TEMP F:/TEMP
+UNC: //host/share/t
+another name, as written: F:\TEMP
+not a Windows path, as written: /tmp/x\y

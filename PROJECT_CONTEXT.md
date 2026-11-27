@@ -1,60 +1,75 @@
 # Project Context: Bash
 
-> ## RESUME HERE — 2026-11-17 (bash-ef, batten down). SUPERSEDES every block below (they are history).
-> **TRUE STATE:** DEPLOYED 885 (`1.0.0+hg.356e1ef39397 885`) to dist AND ~/.bash/bin: every local session runs it
-> (deploy.sh swaps both since 880; DECISIONS 2026-11-17 "RULED + BUILT: deploy goes into ~/.bash/bin"; DO NOT revert to
-> dist-only). Rollbacks: dist keeps all (newest *.rev882), ~/.bash/bin keeps one (*.rev882). PUBLISHED: hg-861 = build
-> 859 (2026-11-15); 864-885 unpublished (KNOWN_ISSUES "Fixed after this release (hg-861, build 859)").
-> **SINCE 859:** the refusal protocol (864) and its mark BASH_RERUN_ON_127=1 (code 866, first deployed in 868; a mark written on the command goes
-> through, 885); bash/sh in ~/.bash/bin never rerun (868); a tree kill spares the console host (870); an output redirect
-> onto fd 0 (872); EBADF (874); /tmp ignores an MSYS-form TMP (877); deploy into ~/.bash (880); the innermost unclosed
-> construct named (882). Each in DECISIONS, the deploys in "RECORD (batten down, the global CLAUDE.md routine): the
-> deploys of 2026-11-16/17, and a withdrawn cause".
-> **WOMBAT (git):** ~/.bash/bin/git.exe = Wombat 102 (rollback git.exe.rev92). This machine's unix-tools
-> (~/.bash/etc/csharpBash.config) = `PATH;F:/Tools/PortableGit/cmd;WSL` (his goal 2026-11-17: "the latest git is always
-> deployed and always falls back 'as before' (portable git)"; PATH first keeps Wombat first, measured). Each Wombat
-> deploy notice from git-9d: this session swaps it in, by hand (DECISIONS 2026-11-17 "RULED (via Wombat): C#Bash puts
-> each Wombat deploy into ~/.bash/bin itself"; a contract tool for it is on the features list). The joint try (Wombat
-> 102 + C#Bash 874, Wombat DECISIONS 2026-11-16) passed. A plain git call from a Claude session refused loudly is
-> ACCEPTABLE (his ruling; DO NOT add a change for it), but that ruling rested on a cause since withdrawn and does not
-> by itself settle bug (1): whether (1) is worked is (A1) below (Claude: work it; fixed, such a call is marked, as 868 designed). The installer ships no git until Wombat's
-> repository is pushed (DECISIONS 2026-11-10, step 2). OPEN, this session's call, with that installer change: the name
-> under which Wombat's KNOWN_ISSUES.md ships beside the install (it would collide with C#Bash's own).
-> **RULES 2026-11-17 (DO NOT re-open):** KNOWN_LIMITATIONS is this session's alone; every report enters KNOWN_ISSUES
-> first, moved as appropriate by this session. "If you see something, say something" (global memory). A "why...?"
-> question is a question, never a go. SUPPORTED TOOLCHAIN (RULED 2026-11-15): .NET 10 SDK + Build Tools for VS 2022
-> (docs/DEVELOPING.md).
-> **BUGS LIST (KNOWN_ISSUES "Open"), in its order; (1) waits on (A1), the rest are worked meanwhile (bug-fixes-dont-wait):**
-> (1) a refused bare git is sometimes not marked (git-9d; confirmed by Wombat's lines in the request log; cause unknown; the earlier "stdin
-> judged unreplayable" cause is WITHDRAWN); (2) `coproc` not implemented but `type` calls it a keyword (claude-c3 via guy-bf); (2b) jq's `def` and `foreach` say "command not found" on 806 (guy-0a, claude-c3 via guy-bf; 885 with
-> WSL in the chain but no jq there not yet tried; `def` itself deferred, DECISIONS "RULED: jq `def` deferred until a
-> second request"); (3) ~/.bash/help.json is not refreshed from the tables of revs 553, 645 and 665 (Builtins.Help.cs
-> EarlierHelpTables; no effect today); (4) a quoted argument to `cmd //c` reaches cmd as `\"` (glassmirror-4e via guy-bf; not yet compared with Git Bash); (5) grep -E with a bounded repeat (`.{0,300}`) ~135x slower than GNU (facts-8a; not yet reproduced); (6) /tmp with TMP and TEMP both in MSYS form (the 877 gap); (7) UNVERIFIED, measure first: whether a unix-tools
-> folder named before PATH outranks this shell's own bash/sh (USING step 3 says not). FEATURES list: `coproc` (claude-c3: a two-way pipe to a child); jq `foreach` and `def` in-process (guy-0a, claude-c3; see A3); a contract
-> tool for the Wombat swap (the 2026-10-12 rule). Limitations (KNOWN_LIMITATIONS "Error wording"): the error wording
-> RULED 2026-11-17, and `[ -t /dev/stdin ]` moved there by this session. KNOWN_ files changed between deploys: refresh
-> ~/.bash's copies by hand (DECISIONS "RECORD (batten down, second audit)" (4)).
-> **AWAITING THE ARCHITECT (do NOT decide):** the next PUBLISH (his word, a quiet machine; ships 864-885;
-> guy-windows11 changes only when its owner runs the installer there); Windows Sandbox for the clean-machine toolchain
-> proof (his elevated dism + a restart); README.md's remaining mention of users' own PowerShell (lines 57-58: keep or
-> remove); a nightly publish (his: "I will ponder - ! might find a better way!"; nothing scheduled); his word on the
-> chain order written 2026-11-17, `PATH;F:/Tools/PortableGit/cmd;WSL` in place of his line
-> `F:/Tools/PortableGit/cmd;PATH;WSL` (reason measured; DECISIONS "DONE (his goal)"); (A1) Claude's ask "Shall I track
-> down the cause?" of bug (1), unanswered: the process works bugs without waiting (bug-fixes-dont-wait), an unanswered
-> ask is never a go (global feedback_missed_ask_is_not_a_go), and a fix changes the outcome his ruling called
-> acceptable: which governs; (A2) THE SWITCH wording he agreed (Wombat DECISIONS 2026-11-15, "4/ concur") says a loud
-> 128 is rerun, which predates the protocol (only a marked 127 is): it needs redrafting (Wombat's session) and his
-> word; (A3) whether guy-0a's report meets the revisit condition of "RULED: jq `def` deferred until a second request";
-> (A4) Claude Code's own git calls are 3,118 of the request log's 4,189 lines (refused on `-c`), skewing the counts he
-> chooses features by (Claude: keep them loud, count without that signature; DECISIONS "RECORD (batten down, fourth audit)").
-> **NEXT PUBLISH:** compare3 hosted by C#Bash; the doc review incl. `tools/perf-history.sh --add`; KNOWN_ISSUES' "Fixed
-> after this release" becomes the release section; `tools/publish.sh <msgfile> C:/Users/guy/klinkenbecker.gh-token`;
-> check the installer over a deploy-placed Bash.exe and the rollbacks in ~/.bash/bin (Bash.exe.rev*, sh.exe.rev*,
-> git.exe.rev92), untested. After it, and once guy-windows11's owner has run the C#Bash installer and installed Wombat's
-> git.exe there: tell git-9d (Wombat's session sends guy-bf THE SWITCH wording, per (A2)).
-> **PENDING FOR WOMBAT'S SESSION** (git-9d not running 2026-11-17, message undelivered; send when it is back): (1) the
-> agreed SWITCH wording predates the protocol (A2); (2) its records: PROJECT_CONTEXT.md:16 "build 92 ... until
-> reinstalled" (it is 102), :25 "re-run contract.sh" (done under 880/882), and for the (A2) redraft: THE SWITCH targets CLAUDE.md:87 now (Wombat DECISIONS:1321 says :84; append-only, not a record fix).
+> ## RESUME HERE — 2026-11-27 (bash-ec, was bash-28 in the 11-26 batten-down; BATTENED DOWN through hg 972: seven audit passes). DEPLOYED 999 is current (2026-11-27, bugs list 19 and 20, tr; checked live; web-fe, 13's reporter, not running: tell it when it is); nothing waits to deploy. Bugs list: (9) waits on his sudo for ncal; (10)'s pipe case FIXED in 997 (refused, Permission denied, 1; KNOWN_LIMITATIONS); (19) and (20) tr FIXED in 999; the list holds only (9), his sudo. **GREENLIT (the architect, 2026-11-27, later: "ok, re-start bug fixing, but ask wombat and web to tell you when they are quiet (they both have agents running). When they are both done you can publish?"; it replaces his earlier stop on Wombat's `symbolic-ref` report): the bugs list on Claude's stated positions ((10) a pipe refused "Permission denied" 1; (13) a non-alphanumeric option character never handed on; (9) still needs his sudo for ncal); wombat-3a, web-36 and web-d0 asked to say "quiet"; when wombat AND web are quiet: finish the step in hand (never mid-deploy), commit, then PUBLISH (compare3 on the quiet machine, the doc review, tools/publish.sh with its git as it stands, PortableGit by path: the bare-git switch is still his).** Bugs list: (8) done in 979; (9) cal WAITS for a reference (AWAITING); (10) and (14) FIXED in 982 (but (10)'s pipe case: AWAITING); next (11) (compare with GNU first), then the list below in order ([CLAUDE]: (10) with (14)); (13)'s remedy waits on his word.
+> **TRUE STATE:** PUBLISHED hg-905 = build 885 (2026-11-22, DECISIONS "PUBLISHED ... hg-905"): GitHub main = git 254a441,
+> releases/latest = hg-905. DEPLOYED 999 (2026-11-27, bugs list 19 and 20, tr's operands and squeeze; suite 338/0 detached, battery 221 of 237; checked live); before it 997 (2026-11-27, bugs list 13, an option no version has refused in GNU's words, and 10's pipe case refused; suite 337/0 detached, battery 221 of 237; checked live); before it 993 (2026-11-27, bugs list 18, a native program in a here-document loop leaves the rest to the loop; suite 335/0 detached, battery 221 of 237; checked live); before it 992 (2026-11-27, bugs list 16, a large here-document as a file for a program; suite 334/0 detached, battery 221 of 237); before it 990 (2026-11-27, bugs list 12, shopt cannot change login_shell, and 15, cp keeps times only when told; suite 333/0 detached, battery 221 of 237; checked live); before it 986 (2026-11-27, bugs list 11: mv of a folder to another drive removes its source as rm -rf, as GNU; suite 331/0 detached, battery 221 of 237; 985's deploy stopped, 330/1: mv_cross_volume's expected file was not copied in); before it 982 (2026-11-27, bugs list 14 + 10 but its pipe case: /dev/fd/N tests and is written as what the descriptor is; suite 331/0 detached, battery 221 of 237, baseline 216; checked live); before it 979 (2026-11-27, bugs list 8: cp -a keeps hard links within one cp; suite 330/0 detached, battery 221 of 237, baseline 216; checked live; the deploy refreshed ~/.bash's KNOWN_ files, "This copy:" 979); before it 963 (2026-11-25: his "Yes": a Windows path assigned to TMP/TEMP/TMPDIR stored with forward slashes; live, a Claude Code call reads TMP=TEMP=TMPDIR=F:/TEMP; suite 329/0; before it 960: deploy.sh makes staging's sh.exe before its suite and checks the help tables (both worked in this deploy; suite 329/0, battery 221 of 237, baseline 216); before it 957: bugs list 7, the own folder first before every unix-tools step and whatever PATH a script sets (954, 956), with 957's fix of 956's refusal regression (checked live: a Wombat refusal reaches PortableGit); before that 955 (954's fix alone); before it 941, his ONE temp folder rule, bugs list 6; before that 937, bugs list 5, grep's required-literal prefilter; before that 934, bugs list 3, help.json tables of revs 553/645/665; before that 932, bugs list 2b, a hand-over to WSL that WSL lacks too; before that 926, the `>( )` refusal message without its DECISIONS pointer; before that
+> 914: bug (1) fixed, an in-process `< /dev/null` / closed stdin reaches a program as NUL; the 910 local diagnostic
+> removed) in dist AND ~/.bash/bin (deploy.sh swaps both since 880; DO NOT revert to
+> dist-only). Rollbacks: dist keeps all, ~/.bash/bin one. The installer over a deploy-placed ~/.bash: checked 2026-11-22
+> (it keeps git.exe, the rollbacks, etc/). Deployed beyond the release: 907 (select/coproc), 914, 926, 932, 934, 937, 941, 955, 957, 960, 963, 979, 982, 986, 990, 992, 993, 997, 999. KNOWN_ files changed between deploys: refresh
+> ~/.bash's copies by hand. The reporters' note (907, 932, cmd //c, 937) went to guy-94 on 2026-11-24 (guy-bf ended;
+> guy-94 owns ~/.claude here and relays); nothing owed. A peer is told "deployed" only after deploy.sh says DEPLOYED.
+> **WOMBAT (git):** ~/.bash/bin/git.exe = Wombat 127 (`-c` allowlist; rollback git.exe.rev102; 2026-11-22). unix-tools (~/.bash/etc/csharpBash.config)
+> = `F:/Tools/PortableGit/cmd;PATH;WSL` (HIS line, his "yes" 2026-11-24; Wombat stays first because ~/.bash/bin comes before every step since 957; its refusals go to PortableGit, checked live). Each Wombat
+> deploy notice: this session swaps it in by hand (DECISIONS 2026-11-17 "RULED (via Wombat)"; a contract tool for it is
+> on the features list). Wombat's session is now **wombat-46** (was git-9d): it has (A2), the wording of the CLAUDE.md git "switch" he agreed (Wombat DECISIONS 2026-11-15, "4/ concur"), which says a loud 128 refusal is rerun, and
+> its stale record lines (delivered and confirmed 2026-11-22; it holds its edits for his steer). The installer ships no
+> git until Wombat's repository is pushed (DECISIONS 2026-11-10, step 2); OPEN, this session's call with that change:
+> the name of Wombat's KNOWN_ISSUES.md beside the install. A Claude session's refused plain git is now handed on (914;
+> his "The fix; go" replaced the 2026-11-17 "loud is acceptable"); wombat-46 told the deployed build (963) 2026-11-26 (its switch redraft waits).
+> **RULED 2026-11-24 (his "yes"):** his ~/bin/claude.bat is the guy-NN session's (guy-94): C#Bash proposes, it edits
+> (the EDITOR line's Ctrl-G check passed 2026-11-24). **RULES (DO NOT re-open):** KNOWN_LIMITATIONS is this session's alone; every report enters KNOWN_ISSUES first. "If you
+> see something, say something" (global memory). A "why...?" question is a question, never a go. SUPPORTED TOOLCHAIN
+> (RULED 2026-11-15): .NET 10 SDK + Build Tools for VS 2022 (docs/DEVELOPING.md). `BASH_RERUN_ON_127` is public since
+> hg-905: renaming it is now a contract change.
+> **GREENLIT ("publish; go", 2026-11-22), in order:** (a) DONE, DEPLOYED 907: select/coproc parse and are refused when
+> run (the "Not available" refusal, status 2, counted; DECISIONS "BUG FIXED ... build 907", which corrects the reframe's
+> "127"). (b) DONE, DEPLOYED 914: bug (1) fixed (DECISIONS "BUG FIXED ... build 914"; cause: Claude Code's `eval '...'
+> < /dev/null`, on record since 2026-10-03). Next: the rest of the bugs list in order (bug-fixes-dont-wait).
+> **BUGS LIST (KNOWN_ISSUES "Open"), in order:** (2b) FIXED 2026-11-24 in 932 (a hand-over to WSL that WSL lacks too
+> gets the no-WSL answer, not "command not found"; the refusal-protocol hand-over had the same flaw, fixed with it;
+> red on 926 / green, case fallback_chain; the builtin path's exact case, a WSL without jq, not run here; DECISIONS
+> "FIXED ... 932"); (3) FIXED 2026-11-24 in 934 (help.json tables of revs 553, 645, 665 now recognized and replaced;
+> red on 932 / green, case help_refresh; this machine's ~/.bash/help.json was 553's); (4) MOVED 2026-11-24 to KNOWN_LIMITATIONS
+> (`cmd //c` and a quoted argument: Git Bash 4.4 and 5.3 give the same output byte for byte; cmd reads its line raw;
+> not special-cased, the platform's behavior; a cmd special case would be a feature, his to ask for); (5) FIXED
+> 2026-11-24 in 937 (grep skips a line without a literal every match must hold, GNU's way; 1.5 s -> 0.08 s on a
+> 3 MB file, GNU 0.08 s; case grep_required_literal_gnu, a mutation fails it; lines that hold the literal are still
+> backtracked: .NET NonBacktracking a possible follow-up, not built); (6) FIXED 2026-11-24 in 940 by HIS RULE, ONE temp
+> folder (DO NOT re-open: "one and only one view of where TEMP and TMP are ... _THE SAME PLACE_"; "Yes, fix all three"):
+> TMP, TEMP, TMPDIR set to /tmp's folder at start; a C#Bash child inherits it whatever was typed; mktemp reads the
+> shell's TMPDIR; case temp_one_place, red on 937; (7) FIXED 2026-11-24 in 954 + 956 + 957 (the reorder gap; 957: a refusal was no longer rerun in the installed layout, caught by the deploy gate; every variation in case unix_tools_order, his "every variation") FROM THE RECORD (USING step 3; RULED 11-11, 11-15; his "fallback _only_"): this shell's own folder before every unix-tools step (DO NOT re-open; DECISIONS "FIXED (bugs list 7, from the record)"; case own_dir_before_unix_tools, aot-only, red on 941): was whether a unix-tools folder named before PATH
+> outranks this shell's own bash/sh; (8) FIXED 2026-11-27, DEPLOYED 979 (`cp -a` keeps hard links within one cp, as GNU; -a, -d, --preserve, --no-preserve in order given; case cp_hardlinks_gnu, red on 963; DECISIONS "FIXED (bugs list 8"; mv across volumes not changed, GNU unmeasured); (9) `cal` reads only `cal MONTH
+> YEAR`: `cal 2025`, `cal -y 2025`, `cal --bogus` print this month, status 0 (found 2026-11-24); (10) FIXED 2026-11-27 in 982, ITS PIPE CASE in 997 (his go on Claude's position: refused, Permission denied, 1; KNOWN_LIMITATIONS; case dev_stdin_pipe_refused, authored): `> /dev/stdin`
+> "No such file or directory" whatever stdin is (guy-94, 2026-11-24, 941; measured: Git Bash/GNU reopen what fd 0 is
+> for writing: null 0, a file emptied and written, a pipe Git Bash "Permission denied" 1 / GNU writes; the fix needs
+> fd 0's kind and path in both the in-process redirect code and the child launch, Evaluator.cs ~3223 and ~2705);
+> (11) FIXED 2026-11-27 in 985 (compared with GNU: copy all, remove what it can, a write-protected file too, name each entry kept, rc 1; RmTree with the tool name "mv"; case mv_cross_volume's folder form, red on 982, aot-only so the deploy's suite is its green; checked by hand on the JIT build holding a running AOT copy). Was: a cross-volume `mv` whose source cannot be removed copies everything, removes
+> what it can, and says only "cannot move 'SRC' to 'DST': Permission denied" (1), not that a copy was left (found
+> 2026-11-24 when his mv of a Program Files folder left a 50 MB copy in this repo; removed; Claude recalls GNU saying
+> "cannot remove 'file'"; the first WSL run was INVALID: C#Bash converted its /tmp argument to F:/TEMP for wsl.exe, a relative path in Linux, so it moved within one file system and left an F: folder in this repo, removed; rerun with MSYS_NO_PATHCONV=1: probe F:/TEMP/bash28/mvx.sh; GNU's single-FILE answer is already in tests/expected/mv_cross_volume.out, `mv: cannot remove 'SRC': Permission denied`, rc 1: only the folder form is unverified; held back from KNOWN_ISSUES until compared); (12) FIXED 2026-11-27 in 989 (shopt -s/-u login_shell and -O login_shell ignored, status 0, as GNU; startup marks -l by MarkLoginShell; case shopt_login_shell_gnu, red on 986): `shopt -s login_shell` changes the option (web-d0, 2026-11-25; GNU ignores it, status 0; Claude Code's snapshot sets it, so every call reports a login shell); (13) FIXED 2026-11-27 in 996 (his go on Claude's position: a short option that is no letter or digit is refused in GNU's words and status, tool by tool, never handed on; unzip exempt; env and dd's own parsers too; case invalid_option_refused_gnu, red on 993): an option no version of the tool has (grep -F "- x": the space) is handed on instead of refused with C#Bash's own GNU-worded error (web-fe, 2026-11-25; [CLAUDE] proposed, not ruled: a non-alphanumeric option character is never handed on); (14) FIXED 2026-11-27 in 982 with (10) (DECISIONS "FIXED (bugs list 14"; case dev_fd_kind_gnu): `[ -p /dev/stdin ]` false on a pipe (wombat-3a, 2026-11-27, 963; measured: GNU 5.1 true for /dev/stdin, /dev/fd/0, /proc/self/fd/0, `[[ ]]`, a `bash -c` child; `[ -p <(true) ]` false is BY DESIGN (DECISIONS 2026-09-04 decision 6, `<( )` a temp file; now in KNOWN_LIMITATIONS); NOT a regression or a re-report: FileTests.cs returns false for `-p` on every path since rev 39 (2026-09-04) and for devices since rev 175 (2026-10-10, /dev/std* defined only for the console and /dev/null), recorded nowhere before; Git Bash 4.4 false but /proc/self/fd/0; also `[ -f /dev/stdin ] < file` false, GNU true; probe F:/TEMP/bash28/pprobe.sh; [CLAUDE] the same missing fact as (10), fd 0's kind, in-process and at a child's start: fix them together); (15) FIXED 2026-11-27 in 990 (the times decided in cp's ordered option pass with the links; case cp_preserve_times_gnu, red on 986): `cp --preserve=LIST` keeps the modification time whatever the list (found 2026-11-27 fixing (8); GNU keeps it only for a bare --preserve, -p, -a, timestamps, all; measured); (16) FIXED 2026-11-27 in 992 (HereFd at child launch: a delete-on-close temp file over 65,536 UTF-8 bytes; case heredoc_child_file_gnu, red on 990): a program given a here-document or here-string over 65,536 bytes gets a pipe, GNU 5.1 a temp file (found 2026-11-27 fixing (14); InPumpFd at child launch); (19) FIXED 2026-11-27 in 999 with (20) (tr: stopAtFirstOperand, GNU's operand rules and words; (20) -s with two sets squeezes the last set's characters after translating, `tr -s a b` of aab gave bb; case tr_operands_gnu, red on 997): `tr` reads an option after its first operand (found 2026-11-27 fixing (13): `tr a "- x" f`; GNU: every word after the first operand is an operand, "extra operand"); (18) FIXED 2026-11-27 in 993 (wombat-3a, 990: a native program in `while read; do prog; done << EOF` took the whole rest of the document, the loop ran once, silently; HereDocReader becomes a C#Bash pipe at the first child and CurrentStdin feeds it with the give-back; case heredoc_loop_child_gnu, red on 992; DECISIONS "FIXED (bugs list 18"); (17) WITHDRAWN 2026-11-27, NOT a code bug; its doc change DONE (DECISIONS "DONE (his request, relayed by guy-8b): USING's lookup text") (guy-8b's correction, the architect's words relayed: "c#Bash does not use the system PATH to 'first find' _any_ unix tool, it only uses its own .bash/bin dir for that. The fall-back PATH specified for unit-tools however _is_ the system PATH"; the code has done that since 954; what remains is USING's overloaded "PATH", his cost request and WSL always last: a doc change). As first logged: a unix-tools folder named before PATH wins the FIRST lookup over PATH (guy-8b for the architect, 2026-11-27, measured on 806, still so in 982; HIS RULING relayed: "the fall-back list is completely independent of the PATH c#bash uses for the 'first find'", "the USING doc is wrong"; it matches his 2026-11-24 "Nothing in _any_ those locations should be primary", which 954 under-implemented, and replaces the 2026-11-11 ruled order "in-process; the configured folder; PATH; WSL"; the published contract changes, so its details are AWAITING; his doc request rides with it).
+> FEATURES: a separate git for Claude Code itself: BUILT 2026-11-24 in installer/claude.cmd (BASH_CLAUDE_GIT = path default / none / a git; case claude_cmd_git); INSTALLED here 2026-11-24 (claude.cmd + his claude.bat none; DECISIONS "INSTALLED on guy-windows8"); CHECKED 2026-11-24: his "setup still works correctly" (relayed by guy-94; Ctrl-G checked later, see DONE below), and guy-94 landed the CLAUDE.md wording (~/.claude 7ee1720), so DONE (claude.cmd.prev kept as the fallback); MCP plan when MCP comes: git folder first then the full PATH, a stand-in git for none (Claude, not ruled); DECISIONS "FEATURE REQUESTED ... separate git"); `coproc` (claude-c3); jq `foreach` and `def` in-process (see A3); a contract tool for the Wombat swap; jq `todate` in-process (wombat-46, 2026-11-26: ~/.claude/sessions start times are epoch ms, wanted as ISO times; falls to WSL's jq today);
+> `BASH_EXECUTION_STRING` (found 2026-11-22, unset in C#Bash; SECOND request 2026-11-25, web-d0: to read back the exact -c text, e.g. how Claude Code wraps a call). RULED 2026-11-22: no CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS
+> anywhere ("We don't need it after all"; includeGitInstructions false in settings.json does it).
+> **AWAITING THE ARCHITECT (do NOT decide):** (9) cal's reference (2026-11-27: WSL's Ubuntu 22.04.5 has no cal; its `cal` is the ncal package, BSD's, candidate 12.1.7+nmu3ubuntu2, `sudo apt install ncal` needs his password; util-linux's cal, which KNOWN_ISSUES (9) names, is not packaged for 22.04; [CLAUDE]: ncal in WSL, the project's reference environment; falsifier: C#Bash's month layout was modeled on util-linux's and ncal's differs, then his pick; (9) waits, the list goes on); the publish is GREENLIT (above: when wombat and web are quiet); Wombat as publish.sh's and release.sh's git (his "why are you not using wombat for git?", 2026-11-27: both scripts set GIT=F:/Tools/PortableGit/bin/git.exe = git 2.56.0.windows.4, measured 2026-11-27; publish.sh:31's "git 2.28 here" and the github-push-token memory are stale; CLAUDE.md:92 now says, his 2026-11-27 *"ok, make the switch now."*: bare `git` where `git --version` says wombat, refusals handed on to PortableGit; [CLAUDE]: both scripts to bare `git` (only a bare name is handed on; by path is never rerun), which reverses the 2026-10-19 "configured, never searched for": HIS call; else by path to ~/.bash/bin/git.exe after a Wombat check of every command publish uses, the HTTPS push with `-c http...extraHeader` the doubtful one); Windows Sandbox for the clean-machine toolchain proof (his elevated dism +
+> a restart); README.md:55-56's mention of users' own PowerShell, keep or remove (Claude: keep, it only says where the
+> PATH takes effect; the setx instruction line went at hg 856 on his go); a nightly publish (his: "I will ponder";
+> nothing scheduled); (A2) the CLAUDE.md git "switch"
+> wording predates the protocol (only a marked 127 is rerun): wombat-46 redrafts it, then his word; (A3) whether guy-0a's
+> report is the second request of "RULED: jq `def` deferred until a second request" (Claude: yes, two sessions; a fork
+> for his review, NOT covered by a bare go).
+> (A4, closed 2026-11-22, is history: DECISIONS "RULED (via Wombat's session): A4 closed".)
+> **Optional, his:** TMP and TEMP in his own claude.bat for a Claude-only temp folder (USING shows how; not needed for spelling since 963).
+> **GROUNDING NOTE:** Claude Code's `eval '...' < /dev/null` wrap is on record since DECISIONS 2026-10-03 ("the first
+> external in any command containing `<`"); the contract memory's 10-16 "no longer" was wrong. Search DECISIONS before
+> trusting a memory about stdin, `<` or NUL (DECISIONS 2026-11-22 "CORRECTION (grounding)").
+> **DONE (2026-11-24):** the JIT build makes sh.exe since hg 959 (measured: it runs beside Bash.dll; before it, the JIT suite's sh was the INSTALLED build); deploy.sh makes staging's sh.exe before its suite and checks every earlier help table's hash (his "yes", hg 960). This machine's unix-tools is HIS line F:/Tools/PortableGit/cmd;PATH;WSL (his "yes", checked live). Ctrl-G CLOSED (his prompt; the edit comes back).
+> **NEXT PUBLISH:** after it, check on guy-windows11 (the reporters' machine) that jq `def` with no jq in WSL gives the refusal, status 2 (932's builtin path, not measurable here); (the bug (1) local diagnostic is already out, 914; `grep -r "REMOVE BEFORE ANY PUBLISH" Bash` must be
+> empty). compare3 hosted by C#Bash (`dist/Bash.exe tests/bench/compare3.sh`, a quiet machine: ListAgents);
+> the doc review (README table + startup line; PERFORMANCE's measured-on paragraph, wins and pipeline lines, the caveat
+> line naming the table's rev; case counts in README and docs/DEVELOPING.md; `tools/perf-history.sh --add`); KNOWN_ISSUES'
+> fixed-since-hg-905 section becomes the release section; `tools/publish.sh <msgfile> C:/Users/guy/klinkenbecker.gh-token`.
+> After guy-windows11's owner has installed C#Bash and Wombat's git.exe there: tell wombat-46.
 
 > ## (older block, superseded) RESUME HERE — 2026-11-12 (bash-1b). DEPLOYED 798 (785: the fallback chain, daq-a1's two fixes, facts-8a's PIPESTATUS, the cygpath hint; 787: git-9d's nullglob leak; 789: facts-8a's mv fix; 798: help fallback + the no-topic hint; reporters told). PUBLISHED 2026-11-14: hg-801 with build 798 (DECISIONS "PUBLISHED: hg rev 801"); ~/.bash runs 798. PUBLISHED 806 as hg-811 (2026-11-14): PIPESTATUS written only when read + the awk parameter pass-through fix + the advantage graph; ~/.bash runs 806. DEPLOYED 816 (access-time = default|preserve, benchtimer limit; not published). GREENLIT 2026-11-14 ("1/ yes 2/ yes"): (1) POWERSHELL REMOVED (hg 826, DECISIONS "DONE ... PowerShell removed"; the bash runners proven equivalent first; DEPLOYED 827 through them: suite 307/0, battery 220; open: README's two user-PowerShell lines); (2) ZIG SPIKE DONE (DECISIONS "SPIKE"): zig links and makes the import libs, not MSVC's CRT; AWAITING HIM: VS Build Tools or a permitted exception (plan in DECISIONS 2026-11-14 "DEPLOYED 816"). AT EACH PUBLISH (ruled 2026-11-14): `tools/perf-history.sh --add` in the doc review (publish.sh refuses without it). Bugs list empty. The benchmark is PUBLISH's, never deploy's.
 > **NEXT (GREENLIT, the features list in order): (1) find -anewer/-cnewer DEPLOYED 768 (no
@@ -753,7 +768,7 @@ machine's ~/.bash/KNOWN_ISSUES.md names the released build.
       History.cs         ← command history + ~/.bash_history persistence
       CompletionEngine.cs← command (builtin/func/PATH) + filename + variable completion
       PromptExpander.cs  ← PS1/PS2 backslash-escape + promptvars expansion
-  tests/               ← run-tests.ps1 + cases/ + expected/
+  tests/               ← run-tests.sh + cases.tsv + cases/ + expected/
   tools/               ← deploy.sh, publish.sh, release.sh, installer.sh, publish-aot.cmd, benchtimer/ (the
                          benchmark's CreateProcessW launcher and its --sieve baseline), check-help-urls.sh, bench.csx and attrib.csx (older harnesses)
   Bash.sln
@@ -1003,40 +1018,39 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
   `CLAUDE_CODE_GIT_BASH_PATH=…\Bash.exe`; `cd sub` in one call was still in effect in the next.
 
 ## Test Assets
-- **`tests/run-tests.ps1 [-NoBuild] [-Detached] [-Interpreter <exe>]`** (278 cases on
-  2026-11-07, 4 of them AOT-only). `-Detached` starts every case as Claude Code starts its shell: DETACHED_PROCESS, no
+- **`tests/run-tests.sh [--no-build] [--detached] [--interpreter <exe>]`** (PowerShell runner removed at hg 826; 338 cases on
+  2026-11-24, 6 of them aot-only). `--detached` starts every case as Claude Code starts its shell: DETACHED_PROCESS, no
   console, stdin NUL, stdout to a file. That is the only way to exercise the console-less spawn
-  path; a run from a console cannot reach it. `-Interpreter` tests a given exe, such as the AOT
+  path; a run from a console cannot reach it. `--interpreter` tests a given exe, such as the AOT
   publish or `dist/`. The runner prints the interpreter and build it tested. A case registered
-  `AotOnly = $true` (icu_lazy, 2026-10-18) runs only on the Native AOT build (no `Bash.dll` beside the
+  `aot-only` in tests/cases.tsv (icu_lazy, 2026-10-18; five lone-copy cases since) runs only on the Native AOT build (no `Bash.dll` beside the
   exe) and is reported "SKIP" on a line of its own otherwise; tools/deploy.sh runs the suite on the AOT build.
   Self-checking runner. Builds Release, runs each
   script-mode test, compares STDOUT (stderr discarded) line-by-line against
   `tests/expected/<name>.out`, prints PASS/FAIL, exits non-zero on any failure.
-  `-NoBuild` skips the build. Expected files are authored from bash semantics
+  `--no-build` skips the build. Expected files are authored from bash semantics
   (not captured blindly): for `awk`/`procsub`/`sysutils2` (P4) they were generated by
   running the same script under Git Bash/gawk, diffed against C#Bash, and only the
   by-design lines (the loud boundary) kept from C#Bash's output. The cases and why each exists: the
-  table in tests/run-tests.ps1 (one commented line each). `parser2` guards the
+  table in tests/cases.tsv (one line each). `parser2` guards the
   2026-09-05 defect report (nested `$( )` inside `$(( ))`, backslash-newline continuation,
-  quoted `$(cmd arg)`, `echo -e`/`printf`). The build step first kills any stale
-  interpreter instance under the project (a hung test process locks Bash.exe and fails
-  the copy). `flags.sh` and `procsub.sh` invoke the interpreter recursively through
+  quoted `$(cmd arg)`, `echo -e`/`printf`).
+  `flags.sh` and `procsub.sh` invoke the interpreter recursively through
   `$BASH`. `tests/fixtures/awk/` holds the small input files the awk/procsub cases read.
   A test line whose producer writes two lines into `| head -1` is racy (141 vs the real
   status) in bash too — capture with `$( )` first, as `sysutils2.sh` does.
-- **`tests/compat/run-compat.ps1`** — the Claude Code compatibility battery: runs every probe
+- **`tests/compat/run-compat.sh`** — the Claude Code compatibility battery: runs every probe
   in `tests/compat/probes.txt` (probes separated by `----` lines; APPEND only — numbers are
   positional) through a reference bash and through C#Bash in identical fresh fixture dirs, and
   passes a probe only when stdout + exit code are byte-identical. `baseline.txt` is the ratchet:
   any listed probe that stops passing fails the run; newly passing probes are reported and
-  folded in with `-UpdateBaseline`. Reference bash: WSL's GNU bash (`wsl.exe -e bash`, each probe
-  started in its fixture directory, seen as `/mnt/<drive>/...`) since 2026-10-19, or `-Reference <bash.exe>`.
+  folded in with `--update-baseline`. Reference bash: WSL's GNU bash (`wsl.exe -e bash`, each probe
+  started in its fixture directory, seen as `/mnt/<drive>/...`) since 2026-10-19, or `--reference <bash>`.
   It is RUN to identify it, and C#Bash (any build) is refused (2026-10-12: with
   `CLAUDE_CODE_GIT_BASH_PATH` naming the deployed C#Bash the battery had compared C#Bash with itself).
   Until 2026-10-19 the reference was Git for Windows' bash, found through `git.exe` on PATH, and WSL was
   refused as a different OS; the move rebuilt the baseline (DECISIONS 2026-10-19 "the battery's reference").
-  `-UpdateBaseline` writes the file with CRLF line endings; it is kept LF (convert before committing).
+  `--update-baseline` writes it (LF; the PowerShell runner, gone at hg 826, wrote CRLF).
 - **`tests/corpus/run-n.sh`** (in WSL's bash: `wsl.exe -e bash tests/corpus/run-n.sh`) — the `-n` corpus: C#Bash's `bash -n` verdict against GNU's
   on WSL's 912 bash-completion scripts (fetched each run into `tests/corpus/files`, ignored: third-party
   files are not committed). `manifest.txt` pins each file's sha256 and GNU's verdict (drift stops the run,
@@ -1045,7 +1059,7 @@ the old classification is preserved in DECISIONS 2026-06-14 and hg history):**
 - **`tests/bench/compare3.sh --build`** — the benchmark of the committed tree: refuses a dirty tree,
   publishes AOT with `tools/publish-aot.cmd` to `tests/bench/aot` (ignored), checks the stamp, and times
   it against `dist/Bash.exe` in alternating rounds (columns `deployed` and `change`).
-- **The compat battery** (`tests/compat/run-compat.ps1`, probes.txt, baseline.txt; `work/` is scratch, ignored): seeded
+- **The compat battery** (`tests/compat/run-compat.sh`, probes.txt, baseline.txt; `work/` is scratch, ignored): seeded
   2026-09-04 at 86/228; 217/228 after P4; 237 probes, 217 pass (2026-11-07). Probe 172 (`export -p | grep -c PATH`) is deliberately NOT in
   the baseline: its count depends on the launching environment (Git Bash adds `ORIGINAL_PATH`).
   **Probe authoring (web-d6's observation, 2026-09-08):** a parse-time defect is invisible to a

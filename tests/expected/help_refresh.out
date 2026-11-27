@@ -15,3 +15,15 @@ c: untouched
 help: d/.bash/help.json: an earlier build's table, unedited: replaced by this build's
 dd: https://www.gnu.org/software/coreutils/manual/html_node/dd-invocation.html
 d: now this build's table
+--- rev 553's table, unedited: replaced by this build's
+help: e553/.bash/help.json: an earlier build's table, unedited: replaced by this build's
+dd: https://www.gnu.org/software/coreutils/manual/html_node/dd-invocation.html
+e553: now this build's table
+--- rev 645's table, unedited: replaced by this build's
+help: e645/.bash/help.json: an earlier build's table, unedited: replaced by this build's
+dd: https://www.gnu.org/software/coreutils/manual/html_node/dd-invocation.html
+e645: now this build's table
+--- rev 665's table, unedited: replaced by this build's
+help: e665/.bash/help.json: an earlier build's table, unedited: replaced by this build's
+dd: https://www.gnu.org/software/coreutils/manual/html_node/dd-invocation.html
+e665: now this build's table

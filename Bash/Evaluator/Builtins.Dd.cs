@@ -31,6 +31,8 @@ public sealed partial class Builtins
 		foreach (var a in args)
 			{
 			int eq = a.IndexOf('=');
+			// `-x` is an option to GNU's dd (only --help and --version exist): "invalid option", as getopt says it (bugs list 13)
+			if (eq <= 0 && a.Length > 1 && a[0] == '-' && a[1] != '-') return DdUsage($"invalid option -- '{a[1]}'");
 			if (eq <= 0) return DdUsage($"unrecognized operand '{a}'");
 			string key = a[..eq], val = a[(eq + 1)..];
 			switch (key)

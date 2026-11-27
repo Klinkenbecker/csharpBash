@@ -11,73 +11,96 @@ Report a new issue with the build: to the C#Bash session, or as a GitHub issue.
 
 ## Open: wrong answers, being worked on
 
-- **A refused bare `git` is sometimes not marked** (git-9d, 2026-11-17; confirmed). With Wombat (a git replacement for
-  Windows, not yet published) as `git.exe` in `%USERPROFILE%/.bash/bin`, under Claude Code's Bash tool on 885 the same
-  plain command it refuses (`git log --decorate=short`) is marked and handed on to the next git in one call, and
-  unmarked, so refused loudly (128), in the next: the request log (Wombat's lines) shows both in one session seconds apart
-  (`%USERPROFILE%/.bash/unserviced.jsonl`, 2026-11-17T14:37:25Z "handed on, exit 127" and 14:37:37Z "failed, exit
-  128", args `log -1 --decorate=short --format=%h`). The form of stdin, `-C` and where stdout goes are ruled out; the
-  cause is not found yet.
-- **`coproc` is not implemented, but `type` calls it a keyword** (claude-c3 on guy-windows11, 806; relayed by guy-bf,
-  the same on 885, 2026-11-17). `type coproc` says "coproc is a shell keyword"; `coproc CP { echo hi; }` is a syntax
-  error near `}` (status 2), and `coproc echo hi` is "command not found" (127). GNU bash runs both. Its want, a
-  two-way pipe to a child (to drive `claude -p --input-format stream-json --output-format stream-json`), is on the
-  features list.
-- **jq's `def` and `foreach` say "jq: command not found"** (`def`: guy-0a; `foreach`: claude-c3; both on guy-windows11,
-  relayed by guy-bf, 2026-11-17). Neither is in the in-process jq (`[foreach (1,2) as $x (0; . + $x)]`, jq 1.6: `[1,3]`;
-  on 885 here WSL's jq answers it). On build 806,
-  `jq -n 'def f: 1; f'` printed `jq: command not found`, status 127, though jq is there: the in-process jq has no
-  `def`, and the fallback found no full jq. On 885 here WSL's jq answers it (`1`); with no WSL in the chain 885 says
-  `jq: def (function definitions): not supported by C#Bash's in-process jq` and why, status 2. Not yet tried: 885 with
-  WSL in the chain but no jq in WSL (guy-windows11's case); ASSUMED it still says "command not found", 127, as USING
-  says a tool WSL lacks does. `def` itself stays out of the in-process jq (DECISIONS "RULED: jq `def` deferred until a
-  second request"; whether this report is that second request is the architect's).
-- **`%USERPROFILE%/.bash/help.json` is not refreshed from three earlier tables** (found 2026-11-17). C#Bash replaces the file when it holds an
-  earlier built-in table, recognized by hash, but the hashes of the tables at revs 553, 645 and 665 are missing, so a
-  file written by one of those stays. No effect today: later tables only added topics, which the built-in table answers.
-- **A quoted argument to `cmd //c` reaches cmd as `\"`** (glassmirror-4e on guy-windows11, 681; relayed by guy-bf,
-  the same on 885, 2026-11-17). `cmd //c '"C:/Windows/System32/hostname.exe"'` says `'\"C:/Windows/System32/hostname.exe\"'
-  is not recognized` (1), where the unquoted form runs; `cmd //c 'type "C:\x\y.json"'` fails the same way. The usual
-  argv escaping (`\"`), which cmd does not read. Not yet compared with Git Bash. Until then: put the cmd commands in a
-  `.cmd` file and run that.
-- **grep -E with a bounded repeat such as `.{0,300}` is about 135 times slower than GNU grep** (facts-8a, 2026-11-17,
-  885; not yet reproduced here). On a 3 MB file, `grep -o -E '.{0,300}"unsigned", "invalid".{0,200}'` took 6.2 s
-  against GNU grep 3.0's 46 ms (the same match, both exit 0), `-c` 11 s; the same file without the repeats 25 ms; a 36
-  MB file ran past 120 s. Until fixed: drop the `.{0,N}` context (`grep -b`, or fixed strings with `-F`).
-- **/tmp with TMP and TEMP both in MSYS form** (found fixing 877, 2026-11-16). A shell started with `TMP=/tmp/x
-  TEMP=/tmp/y` takes /tmp from the user's temp folder (%LOCALAPPDATA%/Temp), which may not be the /tmp of the shell
-  that started it (under Claude Code that one comes from its TEMP).
-- **`cp -a` does not keep hard links within what it copies** (found 2026-11-22, 885). Two names of one file (`ln f g`)
-  copied with `cp -a` become two separate files; GNU cp (8.32) keeps them one file, as `-a` implies `--preserve=links`.
-  `cp -R` keeps none in either. Until fixed: remake the link in the copy (`ln`).
+- **`cal` reads only `cal MONTH YEAR` and ignores everything else** (found 2026-11-24, 926). `cal 2025`, `cal -y 2025`
+  and `cal --bogus` all print this month, status 0. util-linux cal prints the whole year for the first two and refuses
+  an unknown option (not compared here: this machine has no other cal). Until fixed: `cal MONTH YEAR`.
 
-## Fixed in this release (build 885), since the release before it (hg-861, build 859)
+## Fixed in this release (build 999), since the release before it (hg-905, build 885)
 
-- **864, 868:** new: the refusal protocol. A program in `%USERPROFILE%/.bash/bin` (C#Bash's own `bash` and `sh`
-  aside) that exits 127 having done nothing (it cannot serve that request) has the command run again by the next
-  program of that name in the fallback chain (USING.md, "The fallback chain"; `help fallback`); any other status is
-  its answer. Such a call is marked with `BASH_RERUN_ON_127=1` in the program's environment (868), and no other is
-  unless the mark is written on the command itself (885: to test a program against the protocol), so a program
-  refuses in silence only where it will be run again.
-- **870:** a shell started with no console (Claude Code's tool shell) lost its console when its FIRST program was ended
-  with its process tree, by a broken pipe (`prog | head -1`), `timeout` or `kill`: that program's console host went
-  too, and every later program got a fresh console on code page 437, so a .NET program wrote CP437 (`─` as byte `c4`,
-  not `e2 94 80`). A console's host is now never killed; it ends by itself with its last program. Reported by facts-8a.
-- **872:** an output redirection onto fd 0 (`0> f`, `0>> f`, `0>/dev/null`) for what C#Bash runs in-process (a
-  builtin, `env`, a function, a group) was installed as stdout: `env X=1 git hash-object --stdin 0> f` wrote git's
-  output into f, and `echo kept 0>/dev/null` printed nothing. Now it is stdin and stdout is untouched. Reported by
-  git-9d.
-- **874:** a descriptor closed or open the wrong way is bash's "Bad file descriptor" for what C#Bash runs in-process.
-  A stdin closed or open for writing (`0<&-`, `0> f`, `0>&1`) was read as empty, status 0: a read now fails, with
-  bash's or GNU's words and status (`read: read error: 0: Bad file descriptor` 1, `sed: read error on stdin: ...` 4,
-  `sort: stat failed: -: ...` 2; mapfile ends quietly, as bash's). A stdout closed or open for reading (`>&-`, `1<&-`,
-  `1< f`) was written as usual or nowhere: a write now fails, `echo: write error: Bad file descriptor`, status 1. A
-  message to such a stderr is lost, as bash loses it. A program C#Bash starts gets NUL there (Windows has no closed
-  descriptor).
-- **877:** /tmp followed TMP in a shell started by C#Bash: `TMP=/tmp/x bash -c 'cat /tmp/f'` looked in C:/tmp/x (the
-  child got TMP as typed and read it as a Windows path), and the child's mktemp and process substitutions failed
-  there. /tmp now comes from TMP or TEMP only when it is a full Windows path, else the user's temp folder; the child
-  still sees `$TMP` as typed. Reported by facts-8a.
-- **882:** an unclosed construct is reported by the innermost one left open, as bash reports it: `"${x:+it's}"` and
-  `${x:+it's}` say ``looking for matching `''`` (C#Bash said `"` and `}`), `"$(echo 'hi)"` a `'`, and
-  ``"`echo hi"`` a backquote.
+- **999:** `tr` read an option after its first operand (found 2026-11-27): `tr a -d` deleted `a`, where GNU's maps it to
+  `-`, and a third operand, or a second with `-d` alone, was taken silently. Every word after the first operand is now
+  an operand, with GNU's operand errors in its words (`tr: extra operand 'x'`, the second and third lines). And `tr -s`
+  with two sets squeezes a run of any character of the second set after translating, as GNU's: `tr -s a b` of `aab`
+  gives `b` (it gave `bb`).
+- **997:** `> /dev/stdin` when stdin is a pipe or a here-document said "No such file or directory" (guy-94,
+  2026-11-24). It is now refused as Windows must: "Permission denied", status 1 (KNOWN_LIMITATIONS); a file and
+  /dev/null are written since 982.
+- **996:** an option no version of a tool has was handed on to another tool on the chain (web-fe, 2026-11-25):
+  `grep -m1 -F "- x" f` reads `- x` as options, and an older grep on PATH answered `invalid option -- m`, blaming a
+  valid option; others answered in their own words with status 255. A short option that is no letter or digit is now
+  refused by C#Bash in GNU's words and status, tool by tool (`grep: invalid option -- ' '`, its usage line and hint,
+  2), and never handed on; sed gives its usage line, where GNU prints its whole usage. unzip is not affected (Info-ZIP's
+  has `-$`, `-:` and `-^`). Use `-e "- x"` for a pattern that starts with `-`.
+- **993:** inside `while read ...; do prog; done << EOF` (or `<<<`), the first native program the loop started took
+  the whole rest of the document, though it read none of it, so the loop ran once, with no error (wombat-3a,
+  2026-11-27: Wombat's contract checks skipped 43 values). A program now leaves what it does not read to the loop, as a
+  bash child shares the document's pipe, also inside `$( )`, a function or a pipeline stage; one that reads it all
+  still takes it all.
+- **992:** a program given a here-document or here-string over 65,536 bytes got it through a pipe (found
+  2026-11-27), so `bash -c '[ -f /dev/stdin ]' <<< "$big"` was false. It now gets a temporary file, deleted when the
+  program closes it, as GNU bash 5.1 hands it over; a smaller one still goes through a pipe.
+- **990:** `cp --preserve=LIST` kept the modification time whatever the list said (found 2026-11-27). The time is
+  now kept only for `-p`, `-a`, a bare `--preserve`, or a list naming `timestamps` or `all`, as GNU's;
+  `--preserve=links`, `--preserve=mode` and `-d` stamp the copy now, and `--no-preserve` takes it back in the order
+  given (`--no-preserve=timestamps -p` keeps it). For files and folders alike.
+- **989:** `shopt -s login_shell` turned the option on, and `shopt -u login_shell` off (web-d0, 2026-11-25); Claude
+  Code's shell snapshot runs `shopt -s login_shell`, so every Claude Code command reported a login shell. The option
+  says how the shell was started: setting or unsetting it, or `-O login_shell`, is ignored with status 0, as GNU's.
+- **985:** `mv` of a folder to another drive whose source could not all be removed said only `cannot move 'SRC' to
+  'DST'`, not that a full copy was left (found 2026-11-24), and a read-only file in it stopped the removal. It now
+  removes the source as `rm -rf` does after the copy: a read-only file goes (GNU removes a write-protected one), and
+  each entry that cannot go is named, `mv: cannot remove 'SRC/dir/x': Permission denied`, status 1, as GNU's.
+- **982:** `/dev/stdin`, `/dev/stdout`, `/dev/stderr` and `/dev/fd/N` now test as what the descriptor is (wombat-3a,
+  2026-11-27): `-p` is true on a pipe (a pipeline, a pipe into `bash -c`, `$( )`, a here-document or here-string up to
+  65,536 bytes), `-f` and `-s` on a file (`< f`, `exec 0< f`, `<&3`, `/dev/fd/3`), `-c` on /dev/null. They were false
+  for all but `-c`, as in Git Bash 4.4; GNU bash 5.1's answers now. And `> /dev/stdin` (or `/dev/fd/0`) writes to what
+  stdin is (guy-94, 2026-11-24): /dev/null, or the file itself, emptied by `>` and appended to by `>>`, also from a
+  program and inside one, and `cmd < f > /dev/stdin` writes `f`; it was "No such file or directory" whatever stdin was.
+- **979:** `cp -a` did not keep hard links within what it copied (found 2026-11-22): two names of one file became two
+  separate files. Two names of one source file met in one `cp` now become two names of one copy, as GNU's `-a` does
+  (it implies `--preserve=links`); `-d`, `--preserve=links` and `--preserve=all` keep them too, and `-a`, `-d`,
+  `--preserve` and `--no-preserve` apply in the order given, as GNU's (`--no-preserve=links -a` keeps links). A link to
+  a file outside the copy, `-R`, `-p` and two separate `cp` calls still give separate files, as in GNU.
+- **954:** a folder named before `PATH` in `unix-tools` was searched ahead of the shell's own folder, so a nested
+  `bash` or `sh`, and any program in `%USERPROFILE%/.bash/bin`, could be another folder's (with
+  `unix-tools = F:/x;PATH`, `bash -c` ran `F:/x`'s bash). The shell's own folder now comes first, before every step of
+  the chain; a name only the folder has still runs from it. **956:** the same held when a script reordered PATH
+  (`PATH="/x:$PATH"` with a `bash` in `/x` ran `/x`'s): the shell's own folder now comes first whatever PATH says.
+- **963:** under Claude Code `$TMP` and `$TEMP` read `F:\TEMP`, as Claude Code exports them before every command, and
+  a backslash path broke `case`, `[[ == ]]`, `${f#$TMP/}`, `sed` and JSON. A Windows path assigned to `TMP`, `TEMP` or
+  `TMPDIR` is now stored with forward slashes.
+- **940:** one temp folder. `/tmp`, `$TMP`, `$TEMP` and `$TMPDIR` now all name the same folder, with forward slashes
+  (under Claude Code from 963):
+  they arrived in up to
+  three spellings (`F:\TEMP`, `F:/TEMP`, `/f/TEMP`), and a shell started with `TMP=/tmp/x TEMP=/tmp/y`
+  took another folder as its /tmp than the shell that started it (found 2026-11-16). A C#Bash started from C#Bash
+  keeps its parent's folder, whatever is given for it; any other program gets what is given. `mktemp` ignored a
+  `TMPDIR` set in the shell, per command or exported; it now uses it, as GNU's does.
+- **937:** `grep` with a bounded repeat around a literal, such as `grep -o -E '.{0,300}"unsigned", "invalid".{0,200}'`,
+  was many times slower than GNU grep (facts-8a, 2026-11-17: 6.2 s against 46 ms on a 3 MB file, past 120 s on 36 MB):
+  every line was tried from every position. A line that lacks a literal every match must contain is now passed over
+  before the pattern is tried, as GNU grep does: on a 3 MB file 0.08 s, where it was 1.5 s (GNU grep 3.1: 0.08 s). A
+  line that holds the literal is still matched the slow way, so a pattern whose literal is on most lines gains nothing.
+- **934:** `%USERPROFILE%/.bash/help.json` written by the builds of revs 553, 645 or 665 was never replaced by a later
+  build's table (found 2026-11-17): C#Bash replaces an earlier built-in table it recognizes, unedited, but those three
+  were not among the ones it recognized. They are now, so such a file is replaced the next time `help` reads it (one
+  line on stderr says so). An edited file is still never touched.
+- **932:** a request handed on to WSL said "command not found", 127, when WSL lacked the tool too, though the tool
+  was right here: jq's `def` and `foreach` on another machine said `jq: command not found` (guy-0a and claude-c3,
+  relayed by guy-bf, 2026-11-17), and a refusing `.bash/bin` program's request said the same. Now it gets the answer it
+  gets with no WSL step: the tool's refusal and why, status 2 (`jq: def (function definitions): not supported by
+  C#Bash's in-process jq`), or `<program> does not serve this request, and unix-tools has no other`, 127. Measured
+  with a refusing program; a WSL without jq was not tried (WSL here has it). `def` and `foreach` themselves are not in
+  the in-process jq (KNOWN_LIMITATIONS "Not available").
+- **914:** a refused program in `%USERPROFILE%/.bash/bin` was sometimes neither marked nor run again (git-9d's report,
+  2026-11-17: the same refused `git` handed on in one Claude Code call, refused loudly with 128 in the next). Claude
+  Code runs a call whose text holds no `<` as `eval '<command>' < /dev/null`, and that `< /dev/null`, like any on a
+  group or a builtin, or a closed stdin, reached a program as a pumped empty stream that C#Bash counted as input it
+  could not give again. Such a program now gets NUL, as `/dev/null` reaches every program C#Bash starts, so it is
+  marked and a refusal is run again.
+- **907:** `select` and `coproc` were a syntax error (`coproc CP { echo hi; }`, every `select`, status 2, which stopped
+  a script even where the line never ran) or "command not found" (`coproc cat`, 127), and the syntax errors were never
+  counted in the request log. Both now parse as bash parses them (`declare -f` prints them back as bash does), and
+  running one says it is not currently available, with the link to ask for it, status 2, counted (KNOWN_LIMITATIONS
+  "Not available"). `type` calling them keywords was right: they are bash's. Reported by claude-c3, whose want, a
+  two-way pipe to a child, is on the features list.

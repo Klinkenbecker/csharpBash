@@ -1,0 +1,17 @@
+--preserve: 2020
+-p: 2020
+-a: 2020
+--preserve=timestamps: 2020
+--preserve=all: 2020
+--preserve=links: 2026
+--preserve=mode: 2026
+-d: 2026
+-a --no-preserve=timestamps: 2026
+-p --no-preserve=all: 2026
+--no-preserve=timestamps -p: 2020
+-a --no-preserve=mode: 2020
+--preserve=mode,timestamps: 2020
+folder -a: 2020 2020
+folder -r --preserve=links: 2026 2026
+folder -r --preserve=timestamps: 2020 2020
+folder -a --no-preserve=timestamps: 2026 2026

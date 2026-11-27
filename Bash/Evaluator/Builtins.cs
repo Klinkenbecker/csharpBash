@@ -107,6 +107,37 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		["xargs"]     = ("xargs: error closing file: Bad file descriptor", 1, false),
 		};
 
+	/// <summary>A short option that is no letter or digit is in no version of the tool (`grep -m1 -F "- x" f` reads `- x`
+	/// as options), so it is refused, never handed on: an older tool on the chain blamed another option (`invalid option --
+	/// m`) or said it in its own words, status 255 (bugs list 13, web-fe, 2026-11-25; the architect's go on Claude's
+	/// position, 2026-11-27). Not unzip: Info-ZIP's has -$, -: and -^.</summary>
+	private static bool NoVersionHas(UnsupportedOptionException ex) =>
+		ex.Tool != "unzip" && ex.Option.Length == 2 && ex.Option[0] == '-' && !char.IsAsciiLetterOrDigit(ex.Option[1]);
+
+	/// <summary>The refusal in GNU's words and status, tool by tool (measured 2026-11-27, coreutils 8.32, grep 3.7, diffutils
+	/// 3.8): the invalid-option line, then the hint; sed's is its usage line where GNU prints its whole usage.</summary>
+	private static int RefuseInvalidOption(UnsupportedOptionException ex)
+		{
+		var t = ex.Tool;
+		Console.Error.WriteLine(ex.Message);   // `<tool>: invalid option -- '<c>'`
+		switch (t)
+			{
+			case "grep":           Console.Error.WriteLine("Usage: grep [OPTION]... PATTERNS [FILE]...\nTry 'grep --help' for more information."); return 2;
+			case "diff" or "cmp":  Console.Error.WriteLine($"{t}: Try '{t} --help' for more information."); return 2;
+			case "sort" or "ls":   Console.Error.WriteLine($"Try '{t} --help' for more information."); return 2;
+			case "env" or "timeout": Console.Error.WriteLine($"Try '{t} --help' for more information."); return 125;
+			case "iconv":          Console.Error.WriteLine("Try `iconv --help' or `iconv --usage' for more information."); return 64;
+			case "sed":            Console.Error.WriteLine("Usage: sed [OPTION]... {script-only-if-no-other-script} [input-file]..."); return 1;
+			default:               Console.Error.WriteLine($"Try '{t} --help' for more information."); return 1;
+			}
+		}
+
+	/// <summary>Why a request a builtin cannot serve went nowhere: no external of its name on PATH (or only Windows' own),
+	/// and with <paramref name="wsl"/> none in WSL either.</summary>
+	private string NoExternal(string tool, string name, bool wsl) => _eval.AllOnPath(name).Count > 0
+		? $"{tool}: (C#Bash: not implemented in-process, and the only '{tool}' on PATH is Windows' own, another program{(wsl ? "; none in WSL" : "")})"
+		: $"{tool}: (C#Bash: not implemented in-process and no external '{tool}' on PATH{(wsl ? " or in WSL" : "")})";
+
 	public bool TryExecute(string name, List<string> args, out int exitCode)
 		{
 		// Unsupported-option policy for coreutils (DECISIONS 2026-09-04 #2):
@@ -134,6 +165,10 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 		catch (HelpRequestedException) { exitCode = HelpFor(name, args); }
 		// a value the option cannot take: the tool's own refusal, as GNU's (no fall-through: it is not missing)
 		catch (OptionValueException ex) { Console.Error.WriteLine(ex.Message); exitCode = ex.ExitCode; }
+		catch (UnsupportedOptionException ex) when (NoVersionHas(ex))
+			{
+			exitCode = RefuseInvalidOption(ex);   // a usage error, not a request C#Bash lacks: not logged, never handed on
+			}
 		catch (UnsupportedOptionException ex)
 			{
 			// either way a request C#Bash did not service itself: logged (Unserviced, 2026-10-27)
@@ -144,18 +179,18 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 				return true;
 				}
 			// the last step: the tool in WSL (Fallbacks, 2026-11-11), when no configured folder or PATH has one
+			// WSL without the tool gives the answer below (its "command not found" was wrong: the tool is here,
+			// KNOWN_ISSUES 2026-11-17, jq's `def` on guy-windows11)
 			if (policy != "builtin" && Fallbacks.Wsl is { } wsl)
 				{
-				exitCode = _eval.RunInWsl(wsl, name, args, [], []);
+				exitCode = _eval.RunInWsl(wsl, name, args, [], [], miss: ex.Message + "\n" + NoExternal(ex.Tool, name, true), missStatus: 2);
 				Unserviced.Log(ex.Tool, ex.Option, ex.Message, args, $"fell through to WSL, exit {exitCode}");
 				return true;
 				}
 			Console.Error.WriteLine(ex.Message);
 			Console.Error.WriteLine(policy == "builtin"
 				? $"{ex.Tool}: (C#Bash: not implemented in-process; BASH_COREUTILS=builtin forbids deferring to an external)"
-				: _eval.AllOnPath(name).Count > 0
-				? $"{ex.Tool}: (C#Bash: not implemented in-process, and the only '{ex.Tool}' on PATH is Windows' own, another program)"
-				: $"{ex.Tool}: (C#Bash: not implemented in-process and no external '{ex.Tool}' on PATH)");
+				: NoExternal(ex.Tool, name, false));
 			exitCode = 2;
 			Unserviced.Log(ex.Tool, ex.Option, ex.Message, args, "failed, exit 2");
 			return true;
@@ -418,7 +453,7 @@ public sealed partial class Builtins(ShellEnvironment env, Evaluator eval)
 			"unzip"   => Unzip(args),   // UnZip 6.00's most-used forms (2026-11-05; Builtins.Unzip.cs)
 			"iconv"   => Iconv(args),   // glibc's, for the Unicode forms, Latin-1, 1252, ASCII (2026-11-05; Builtins.Iconv.cs)
 			"stat"    => Stat(args),
-			"mktemp"  => Mktemp(args),
+			"mktemp"  => Mktemp(args, _env.Get("TMPDIR")),
 			"realpath"=> Realpath(args),
 			"readlink"=> Readlink(args),
 			"chmod"   => Chmod(args),

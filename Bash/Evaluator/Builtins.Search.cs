@@ -327,6 +327,80 @@ public sealed partial class Builtins
 		return new Regex(pat, opts);
 		}
 
+	/// <summary>A literal every match of the (valid) .NET pattern <paramref name="p"/> must contain, or null when none is
+	/// sure: grep skips a line without it before running the regex, as GNU skips by its "must" strings (bugs list 5,
+	/// 2026-11-24: `.{0,300}"unsigned", "invalid".{0,200}` made .NET's backtracking try every start of every line, ~135x
+	/// GNU). Conservative by construction, as a wrong literal loses matches: only a character at the top level, outside
+	/// any group or set and not followed by a quantifier, counts; a run of them is one literal, the longest is taken.
+	/// Top-level alternation, any `(?` (inline options among them), an escape other than punctuation or a known
+	/// one-character class, a `]` first in a set, a `[` inside one, or a `{` that is no quantifier: null. Case-sensitive
+	/// patterns only (the caller's to ensure).</summary>
+	internal static string? RequiredLiteral(string p)
+		{
+		if (p.Contains("(?", StringComparison.Ordinal)) return null;
+		string best = "";
+		var run = new StringBuilder();
+		int depth = 0;
+		for (int i = 0; i < p.Length; )
+			{
+			char c = p[i];
+			bool literal = false;
+			char value = c;
+			if (c == '\\')
+				{
+				if (i + 1 >= p.Length) return null;
+				char n = p[i + 1];
+				if (n < 128 && !char.IsAsciiLetterOrDigit(n)) { literal = true; value = n; }
+				else if ("dDwWsSbBAzZGtnrfvea".IndexOf(n) < 0) return null;   // \x41, \p{L}, \k<n>, a backreference...
+				i += 2;
+				}
+			else if (c == '[')
+				{
+				int k = i + 1;
+				if (k < p.Length && p[k] == '^') k++;
+				if (k < p.Length && p[k] == ']') return null;
+				for (; k < p.Length && p[k] != ']'; k++)
+					{
+					if (p[k] == '\\') k++;
+					else if (p[k] == '[') return null;   // a subtraction, or anything nested: not read here
+					}
+				if (k >= p.Length) return null;
+				i = k + 1;
+				}
+			else if (c == '(')
+				{
+				if (run.Length > best.Length) best = run.ToString();
+				run.Clear();
+				depth++; i++;
+				continue;   // the group's own quantifier is read at its `)`
+				}
+			else if (c == ')') { if (--depth < 0) return null; i++; }
+			else if (c == '|') { if (depth == 0) return null; i++; continue; }
+			else if (c is '*' or '+' or '?' or '{') return null;   // a quantifier on nothing: not this reader's
+			else { literal = c is not ('.' or '^' or '$'); i++; }
+			// the token's quantifier, if any: `*`, `+`, `?`, `{n}`, `{n,}`, `{n,m}`, then a lazy `?`
+			bool quantified = false;
+			if (i < p.Length && p[i] is '*' or '+' or '?') { quantified = true; i++; }
+			else if (i < p.Length && p[i] == '{')
+				{
+				int k = i + 1, digits = k;
+				while (k < p.Length && char.IsAsciiDigit(p[k])) k++;
+				if (k == digits) return null;
+				if (k < p.Length && p[k] == ',') { k++; while (k < p.Length && char.IsAsciiDigit(p[k])) k++; }
+				if (k >= p.Length || p[k] != '}') return null;
+				quantified = true; i = k + 1;
+				}
+			if (quantified && i < p.Length && p[i] == '?') i++;
+			if (depth > 0) continue;
+			if (literal && !quantified) { run.Append(value); continue; }
+			if (run.Length > best.Length) best = run.ToString();
+			run.Clear();
+			}
+		if (depth != 0) return null;
+		if (run.Length > best.Length) best = run.ToString();
+		return best.Length > 0 ? best : null;
+		}
+
 	// ═══════════════════════════════════════════════════════════════════════════
 	// grep
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -383,10 +457,13 @@ public sealed partial class Builtins
 			operands.RemoveAt(0);
 			}
 		Regex re;
+		string? must = null;   // a literal every match holds: a line without it is no match, the regex not run (bugs list 5)
 		try
 			{
 			var alternatives = patterns.Select(p => fixedStr ? Regex.Escape(p) : pcre ? PcreToNet(p) : ere ? EreToNet(p) : BreToNet(p));
 			string pat = zeroPatterns ? "(?!)" : patterns.Count == 1 ? alternatives.First() : "(?:" + string.Join(")|(?:", alternatives) + ")";
+			if (patterns.Count == 1 && !zeroPatterns && !icase && !pcre)
+				must = fixedStr ? (patterns[0].Length > 0 ? patterns[0] : null) : RequiredLiteral(pat);
 			if (wordMatch) pat = $@"(?<![\w])(?:{pat})(?![\w])";
 			if (lineMatch) pat = $"^(?:{pat})$";
 			re = new Regex(pat, RegexOptions.CultureInvariant | (icase ? RegexOptions.IgnoreCase : RegexOptions.None));
@@ -447,7 +524,7 @@ public sealed partial class Builtins
 					// a Windows program's CRLF: the CR is the line's end, not its text, so `$` and -x see the line without it;
 					// the line is printed as it came, CRLF and all (DECISIONS 2026-11-05 "RULED: … CRLF")
 					string body = nullData || namesCr ? line : ShellEncoding.CrlfBody(line);
-					bool m = re.IsMatch(body);
+					bool m = (must is null || body.Contains(must, StringComparison.Ordinal)) && re.IsMatch(body);
 					if (invert) m = !m;
 					if (!m)
 						{
@@ -783,7 +860,7 @@ public sealed partial class Builtins
 						{
 						// a console's own reader can peek "nothing" while input is still to come: read it through an LfReader
 						var stdin = ConsoleMux.In;
-						_r = stdin is LfReader or StringReader ? stdin : new LfReader(stdin);
+						_r = stdin is LfReader or StringReader or HereDocReader ? stdin : new LfReader(stdin);
 						_rIsStdin = true;
 						}
 					else { _r = new LfReader(ShellFile.OpenInput(ShellEnvironment.TranslatePath(f))); _rIsStdin = false; }

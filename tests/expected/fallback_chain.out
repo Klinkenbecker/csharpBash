@@ -25,6 +25,8 @@ bash: nosuchtool_fc_wsl: command not found
 rc=127
 bash: type: nosuchtool_fc_wsl: not found
 bash: type: tsort: not found
+bash: fc_refuses: P/.bash/bin/fc_refuses.cmd does not serve this request, and unix-tools has no other
+rc=127
 bash: tsort: command not found
 rc=127
 removed

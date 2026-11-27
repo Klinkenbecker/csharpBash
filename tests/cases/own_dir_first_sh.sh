@@ -1,6 +1,6 @@
 # 2026-11-03: with the shell's own folder first on its PATH, a nested `sh` is its sh.exe even when another sh.exe comes
 # first on the PATH it inherits (Git's, UnixUtils'): the installed layout, Bash.exe and sh.exe in one folder. A decoy
-# sh.exe (a copy of hostname.exe) stands in for the other. AOT only: the managed build cannot run renamed. Authored.
+# sh.exe (a copy of hostname.exe) stands in for the other. AOT only: a lone copy of the managed build cannot run. Authored.
 cd "${TMPDIR:-${TEMP:-/tmp}}" || exit 1
 d="own-dir-first-sh-$$"; mkdir -p "$d/decoy" "$d/bin" || exit 1
 cp /c/Windows/System32/hostname.exe "$d/decoy/sh.exe"

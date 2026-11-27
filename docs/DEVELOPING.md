@@ -12,7 +12,7 @@ The pipeline and the four design documents: [the README's Architecture section](
 ```sh
 dotnet build -c Release            # builds Bash.sln (.NET 10 SDK)
 Bash/bin/Release/net10.0/Bash.exe   # run it (or: Bash.exe -c '<command>')
-bash tests/run-tests.sh                    # 322 self-checking cases (four need the Native AOT build: --interpreter <exe>; --detached as Claude Code starts a shell)
+bash tests/run-tests.sh                    # 338 self-checking cases (six need the Native AOT build: five run a lone copy of the shell, icu_lazy checks how AOT loads ICU; --interpreter <exe>; --detached as Claude Code starts a shell)
 bash tests/compat/run-compat.sh            # 237-probe differential battery against WSL's GNU bash
 ```
 
@@ -20,7 +20,7 @@ The test suite's expected outputs are never captured from the interpreter: most 
 
 ## The supported toolchain
 
-C#Bash is a public project and builds only with publicly available tools that cost nothing (ruled 2026-11-15). On a
+C#Bash is a public project and builds only with publicly available tools that cost nothing. On a
 clean Windows 10 or 11 (x64), two downloads, both from Microsoft:
 
 1. **The .NET 10 SDK** (https://dotnet.microsoft.com/download/dotnet/10.0). `global.json` asks for 10.0.404 or a later
@@ -40,8 +40,7 @@ clean Windows 10 or 11 (x64), two downloads, both from Microsoft:
 Studio, so its use rests on a Visual Studio Community entitlement. Community's terms let "any number of your users ...
 develop and test applications released under Open Source Initiative (OSI) approved open source software licenses";
 C#Bash is MIT. Nothing here is open source but the .NET SDK, and nothing costs money. There is no open-source route
-today: .NET's Native AOT runtime libraries are built with Microsoft's C++ compiler and link only with its C runtime
-(DECISIONS 2026-11-14 "SPIKE ... zig").
+today: .NET's Native AOT runtime libraries are built with Microsoft's C++ compiler and link only with its C runtime.
 
 `tools/publish-aot.cmd` finds the newest released install holding the C++ tools through `vswhere`, runs its
 `vcvars64.bat`, and links with exactly that install (`-p:IlcUseEnvironmentalTools=true`); a prerelease Visual Studio is
@@ -85,7 +84,7 @@ Run it from the repository root, on a quiet machine, either way:
 
 ```sh
 dist/Bash.exe tests/bench/compare3.sh                              # C#Bash runs it: the reference way (2026-11-14)
-F:/Tools/PortableGit-2.28.0/bin/bash.exe tests/bench/compare3.sh   # Git Bash runs it too (rows agree within a few per cent)
+F:/Tools/PortableGit-2.28.0/bin/bash.exe tests/bench/compare3.sh   # Git Bash runs it too (rows agree within a few percent)
 ```
 
 At a publish, once README's table is updated from the run, `bash tools/perf-history.sh --add` appends the deployed

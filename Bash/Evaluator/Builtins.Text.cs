@@ -619,13 +619,29 @@ public sealed partial class Builtins
 
 	private static int Tr(List<string> args)
 		{
-		var o = Opts.Parse("tr", args, "cCdst", ["complement:c", "delete:d", "squeeze-repeats:s", "truncate-set1:t"]);
+		var o = Opts.Parse("tr", args, "cCdst", ["complement:c", "delete:d", "squeeze-repeats:s", "truncate-set1:t"], stopAtFirstOperand: true);   // GNU tr: a word after the first operand is an operand (`tr a -d`), bugs list 19
 		bool complement = o.Has('c') || o.Has('C'), del = o.Has('d'), squeeze = o.Has('s'), truncate = o.Has('t');
-		if (o.Operands.Count == 0) { Console.Error.WriteLine("tr: missing operand"); return 1; }
+		// GNU's operand rules and words (coreutils 8.32, measured 2026-11-27; bugs list 19: a third operand, or a second
+		// with -d alone, was taken silently, and the messages lacked their second and third lines)
+		int nOps = o.Operands.Count;
+		const string tryHelp = "Try 'tr --help' for more information.";
+		if (nOps == 0) { Console.Error.WriteLine("tr: missing operand\n" + tryHelp); return 1; }
+		if (del && !squeeze)
+			{
+			if (nOps > 1) { Console.Error.WriteLine($"tr: extra operand '{o.Operands[1]}'" + (nOps == 2 ? "\nOnly one string may be given when deleting without squeezing repeats." : "") + "\n" + tryHelp); return 1; }
+			}
+		else
+			{
+			if ((del || !squeeze) && nOps < 2)   // translating, or deleting and squeezing; -s alone takes one or two
+				{ Console.Error.WriteLine($"tr: missing operand after '{o.Operands[0]}'\nTwo strings must be given when {(del ? "both deleting and squeezing repeats" : "translating")}.\n" + tryHelp); return 1; }
+			if (nOps > 2) { Console.Error.WriteLine($"tr: extra operand '{o.Operands[2]}'\n" + tryHelp); return 1; }
+			}
 		string s1 = ExpandTrSet(o.Operands[0]);
 		string s2 = o.Operands.Count > 1 ? ExpandTrSet(o.Operands[1]) : "";
-		if (!del && o.Operands.Count < 2 && !squeeze) { Console.Error.WriteLine("tr: missing operand after '" + o.Operands[0] + "'"); return 1; }
 		var set1 = new HashSet<char>(s1);
+		// -s with two sets squeezes a run of any character of the LAST set, after translating, as GNU's (bugs list 20:
+		// only characters just mapped were squeezed, so `tr -s a b` of "aab" gave "bb")
+		var sq2 = new HashSet<char>(s2);
 		bool In1(char c) => complement ? !set1.Contains(c) : set1.Contains(c);
 		var sb = new StringBuilder(8192);
 		char? last = null;
@@ -651,7 +667,7 @@ public sealed partial class Builtins
 			step = c =>
 				{
 				char oc = set1.Contains(c) ? c : to;
-				if (squeeze && !set1.Contains(c) && last == oc) return;
+				if (squeeze && last == oc && sq2.Contains(oc)) return;
 				sb.Append(oc); last = oc;
 				};
 			}
@@ -664,7 +680,7 @@ public sealed partial class Builtins
 			step = c =>
 				{
 				char oc = map.TryGetValue(c, out var m) ? m : c;
-				if (squeeze && last == oc && map.ContainsKey(c)) return;
+				if (squeeze && last == oc && sq2.Contains(oc)) return;
 				sb.Append(oc); last = oc;
 				};
 			}

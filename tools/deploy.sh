@@ -17,10 +17,12 @@
 #
 # A CONTRACT TOOL (2026-10-12, the architect: "repetitive tools here need to be contracts, period").
 # Until then each deploy was done by hand from DECISIONS' notes. It runs one way:
-#   1. the tree must be clean: the deployed stamp names a revision;
+#   1. the tree must be clean: the deployed stamp names a revision; every earlier committed Bash/help.json table's
+#      hash must be in Builtins.Help.cs (2026-11-24);
 #   2. tools/publish-aot.cmd publishes it to dist.staging (ignored), NEVER to dist/ (the publish
 #      empties its output directory, where the rollback copies live); the stamp must carry the node;
-#   3. the suite runs on that exact binary --detached, as Claude Code starts the shell: any failure stops here. The
+#   3. staging gets sh.exe beside Bash.exe (2026-11-24: else the suite's sh was the installed build), then the suite
+#      runs on that exact binary --detached, as Claude Code starts the shell: any failure stops here. The
 #      console run moved to tools/publish.sh (the architect, 2026-11-01: "On deploy, keep 'detatched mode' run, drop
 #      'console mode'. On publish, add 'console mode' (detached should have already been run).");
 #   4. the battery runs (its Release build is the same tree): a baseline regression stops here;
@@ -51,6 +53,15 @@ dirty=$(hg status -mard) || die "hg status failed"
 [ -z "$dirty" ] || die "the working tree has uncommitted changes; commit first:
 $dirty"
 node=$(hg id -i); rev=$(hg id -n)
+# every earlier built-in help table's hash is in Builtins.Help.cs (EarlierHelpTables), so a profile written by an earlier
+# build is replaced: the step "add the outgoing table's hash" was missed three times in a row (bugs list 3, fixed in 934;
+# this check: the architect's "yes", 2026-11-24)
+help_now=$(sha256sum < Bash/help.json | cut -c1-64)
+for r in $(hg log -r 'file("Bash/help.json")' --template '{rev} '); do
+  h=$(hg cat -r "$r" Bash/help.json | sha256sum | cut -c1-64)
+  [ "$h" = "$help_now" ] || grep -q "$h" Bash/Evaluator/Builtins.Help.cs \
+    || die "Bash/help.json as of rev $r (sha256 $h) is not in Builtins.Help.cs EarlierHelpTables: add the outgoing table's hash"
+done
 old_stamp=$("$dist/Bash.exe" --version 2>/dev/null | tail -1)
 old_rev=${old_stamp##* }
 [ -n "$old_rev" ] || die "cannot read the deployed build's stamp ($dist/Bash.exe --version)"
@@ -78,6 +89,11 @@ MSYS2_ARG_CONV_EXCL='*' cmd.exe /c "$root/tools/publish-aot.cmd" "$stage" > "$ro
 new="$stage/Bash.exe"
 new_stamp=$("$new" --version 2>/dev/null | tail -1)
 [[ "$new_stamp" == *"hg.$node $rev" ]] || die "the published build's stamp is '$new_stamp', not rev $rev ($node)"
+# staging's sh.exe, as the installed layout has it, BEFORE the suite: without it the suite's `sh` was the next one on PATH,
+# the INSTALLED build in ~/.bash/bin, not the build under test (the architect's "yes", 2026-11-24)
+rm -f "$stage/sh.exe"
+{ ln "$new" "$stage/sh.exe" 2>/dev/null && [ "$new" -ef "$stage/sh.exe" ]; } || cp "$new" "$stage/sh.exe" \
+  || die "could not make $stage/sh.exe"
 
 # 3. the suite on that exact binary, detached (the console run is publish's, 2026-11-01)
 # the launcher the detached suite starts each case with (tools/launch; built when missing, as benchtimer is)

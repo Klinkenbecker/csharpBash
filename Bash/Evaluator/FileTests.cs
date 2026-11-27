@@ -19,13 +19,30 @@ public static class FileTests
 		// to test as missing: `[ -e /dev/null ]` was false until 2026-10-10). A /dev/fd/N and
 		// /dev/std* is a character device when its descriptor is one: the console, or /dev/null.
 		if (ShellFile.Device(p) is { } dev)
+			{
+			if (dev.StartsWith("fd:", StringComparison.Ordinal))
+				{
+				// a /dev/fd/N or /dev/std* tests as what its descriptor is, as GNU's stat of it sees it (bugs list 14,
+				// wombat-3a, 2026-11-27: -p was false on a pipe, -f and -s on a file)
+				var (kind, size) = Describe(ShellFile.DeviceFd(p));
+				return op switch
+					{
+					"-e" or "-a" or "-r" or "-w" or "-O" or "-G" => true,
+					"-c" => kind == FdKind.Char,
+					"-p" => kind == FdKind.Pipe,
+					"-f" => kind == FdKind.File,
+					"-s" => kind == FdKind.File && size > 0,
+					"-d" or "-x" or "-L" or "-h" or "-S" or "-b" or "-k" or "-u" or "-g" or "-N" => false,
+					_ => null,
+					};
+				}
 			return op switch
 				{
-				"-e" or "-a" or "-r" or "-w" or "-O" or "-G" => true,
-				"-c" => !dev.StartsWith("fd:", StringComparison.Ordinal) || FdIsCharDevice(ShellFile.DeviceFd(p)),
+				"-e" or "-a" or "-r" or "-w" or "-O" or "-G" or "-c" => true,
 				"-f" or "-d" or "-s" or "-x" or "-L" or "-h" or "-p" or "-S" or "-b" or "-k" or "-u" or "-g" or "-N" => false,
 				_ => null,
 				};
+			}
 		bool isFile = File.Exists(p), isDir = Directory.Exists(p);
 		switch (op)
 			{
@@ -58,13 +75,87 @@ public static class FileTests
 		return null;
 		}
 
-	/// <summary>Whether descriptor <paramref name="fd"/> is a character device: the console, or /dev/null.</summary>
-	private static bool FdIsCharDevice(int fd) => fd switch
+	private enum FdKind { Unknown, Char, Pipe, File }
+
+	/// <summary>Where a write to /dev/stdin (or /dev/fd/0) goes, as GNU reopens descriptor 0 for writing (bugs list 10,
+	/// guy-94, 2026-11-24: it was "No such file or directory" whatever stdin was): "/dev/null", "/dev/tty", or the file's
+	/// own path; null for a pipe, a here-document or what cannot be told, and the write then fails as before.</summary>
+	public static string? StdinForWriting()
 		{
-		0 => ReferenceEquals(ConsoleMux.RawIn, Stream.Null) || (ConsoleMux.RawIn is null && !ConsoleMux.InSwapped && !Console.IsInputRedirected),
-		1 => ReferenceEquals(ConsoleMux.Out, TextWriter.Null) || (!ConsoleMux.OutSwapped && !Console.IsOutputRedirected),
-		2 => ReferenceEquals(ConsoleMux.Err, TextWriter.Null) || (!ConsoleMux.ErrSwapped && !Console.IsErrorRedirected),
-		_ => false,
+		switch (ConsoleMux.RawIn)
+			{
+			case { } s when ReferenceEquals(s, Stream.Null): return "/dev/null";
+			case FileStream { CanSeek: true } fs: return fs.Name;
+			case FileStream fs: return ChildLauncher.HandleType(fs.SafeFileHandle.DangerousGetHandle()).Type == 2 ? "/dev/tty" : null;
+			case { } s when PipeBuffer.IsEnd(s) || s is System.IO.Pipes.PipeStream: return StdinIsPipe;
+			case null when ConsoleMux.InSlot is HereDocReader: return StdinIsPipe;
+			case null when !ConsoleMux.InSwapped:
+				{
+				var h = ChildLauncher.StdHandle(0);
+				return ChildLauncher.HandleType(h).Type switch
+					{
+					1 => ChildLauncher.HandlePath(h),
+					2 => ChildLauncher.IsConsole(h) ? "/dev/tty" : "/dev/null",
+					3 => StdinIsPipe,
+					_ => null,
+					};
+				}
+			default: return null;
+			}
+		}
+
+	/// <summary><see cref="StdinForWriting"/>'s answer for a pipe or a here-document: `> /dev/stdin` is refused, "Permission
+	/// denied", status 1 (bugs list 10's pipe case; the architect's go on Claude's position, 2026-11-27). GNU writes into the
+	/// pipe through /proc; Windows cannot open a pipe's writing end from its reading end, so one answer for every pipe.</summary>
+	public static readonly string StdinIsPipe = "\0pipe";
+
+	/// <summary>What descriptor <paramref name="fd"/> is, with a file's size. This thread's stdin, stdout or stderr as
+	/// installed: a C#Bash pipe and a `$( )` are pipes, /dev/null a character device, `&lt; file` a file, a here-document
+	/// or here-string a pipe up to 65,536 bytes and a file beyond (bash 5.1's, measured 2026-11-27); else the process's
+	/// own standard handle (a console or NUL is a character device). A numbered descriptor by its stream.</summary>
+	private static (FdKind Kind, long Size) Describe(int fd)
+		{
+		switch (fd)
+			{
+			case 0:
+				if (ConsoleMux.RawIn is { } rawIn) return OfStream(rawIn);
+				if (ConsoleMux.InSlot is HereDocReader h) { long n = h.Bytes; return n <= 65536 ? (FdKind.Pipe, 0) : (FdKind.File, n); }
+				return ConsoleMux.InSwapped ? (FdKind.Unknown, 0) : OfHandle(ChildLauncher.StdHandle(0));
+			case 1:
+				if (!ConsoleMux.OutSwapped) return OfHandle(ChildLauncher.StdHandle(1));
+				return ConsoleMux.Raw is { } raw ? OfStream(raw) : ConsoleMux.Capturing ? (FdKind.Pipe, 0) : (FdKind.Unknown, 0);
+			case 2:
+				if (!ConsoleMux.ErrSwapped) return OfHandle(ChildLauncher.StdHandle(2));
+				if (ReferenceEquals(ConsoleMux.ErrSlot, ConsoleMux.OutSlot)) return Describe(1);   // 2>&1
+				return ConsoleMux.ErrSlot switch
+					{
+					var w when ReferenceEquals(w, TextWriter.Null) => (FdKind.Char, 0),
+					StreamWriter sw => OfStream(sw.BaseStream),
+					_ => (FdKind.Unknown, 0),
+					};
+			default:
+				return ShellEnvironment.Active?.FdStream?.Invoke(fd) is { } s ? OfStream(s) : (FdKind.Unknown, 0);
+			}
+		}
+
+	/// <summary>A stream's kind. A seekable FileStream is a file by its length (its handle is not exposed, which would
+	/// slow every later read of it); an unseekable one (the console's CONIN$) by its handle.</summary>
+	private static (FdKind Kind, long Size) OfStream(Stream s) => s switch
+		{
+		_ when ReferenceEquals(s, Stream.Null) => (FdKind.Char, 0),
+		FileStream { CanSeek: true } fs => (FdKind.File, fs.Length),
+		FileStream fs => OfHandle(fs.SafeFileHandle.DangerousGetHandle()),
+		System.IO.Pipes.PipeStream => (FdKind.Pipe, 0),
+		_ when PipeBuffer.IsEnd(s) => (FdKind.Pipe, 0),
+		_ => (FdKind.Unknown, 0),
+		};
+
+	private static (FdKind Kind, long Size) OfHandle(IntPtr h) => ChildLauncher.HandleType(h) switch
+		{
+		(1, var size) => (FdKind.File, size),
+		(2, _) => (FdKind.Char, 0),
+		(3, _) => (FdKind.Pipe, 0),
+		_ => (FdKind.Unknown, 0),
 		};
 
 	public static bool? Binary(string op, string a, string b)

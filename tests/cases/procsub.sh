@@ -5,7 +5,9 @@
 # a child whose TMP and TEMP are a folder of its own, and counts there.
 if [ -z "${PROCSUB_OWN_TEMP-}" ]; then
 	own=$(mktemp -d) || exit 1
-	PROCSUB_OWN_TEMP=1 TMP=$own TEMP=$own "$BASH" "$0"; rc=$?
+	# 2026-11-26 (hg 966): through cmd, as a C#Bash started by C#Bash keeps its parent's temp folder whatever TMP says (one temp
+	# folder); a shell another program starts takes TMP's, so this child counts in a folder of its own again
+	PROCSUB_OWN_TEMP=1 TMP=$own TEMP=$own cmd //c "$BASH" "$0"; rc=$?
 	rm -rf "$own"; exit $rc
 fi
 cd "$(dirname "$0")/../fixtures/awk" || exit 1

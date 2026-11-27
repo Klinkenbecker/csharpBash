@@ -3,7 +3,7 @@
 # in dist/. No code knows the name: this proves a lone copy found on PATH serves what scripts and programs ask of `sh`
 # (-c, a script, stdin, xargs and find -exec, which run through the shell's own lookup, an exit status), and that its
 # messages name it by its path, as $0 is argv[0] (DECISIONS 2026-10-11). It runs bash's default mode, as a #!/bin/sh
-# script does (POSIX mode is not available). Authored. AOT only: the managed build's apphost cannot run renamed.
+# script does (POSIX mode is not available). Authored. AOT only: a lone copy of the managed build cannot run.
 d=${TEMP:-/tmp}/csb-sh-$$
 mkdir -p "$d/bin" "$d/w" || exit 1
 cp "$BASH" "$d/bin/sh.exe" || exit 1

@@ -40,9 +40,20 @@ exec 3< in.txt; echo -n "unreplayable: "; mark <&3 | tr -d '\r'; exec 3<&-
 echo -n "assigned, by path: "; BASH_RERUN_ON_127=1 "$w/home/.bash/bin/mark.cmd" | tr -d '\r'
 echo -n "assigned through env: "; env BASH_RERUN_ON_127=1 seen | tr -d '\r'
 echo -n "assigned over C#Bash's: "; BASH_RERUN_ON_127=0 mark | tr -d '\r'
-# bash and sh in ~/.bash/bin are C#Bash: a 127 is a script's "not found", an answer (`bash -c 'x; exit 127'` ran twice)
-printf '@echo bin-%%~n0\r\n@exit /b 127\r\n' > home/.bash/bin/bash.cmd; cp home/.bash/bin/bash.cmd home/.bash/bin/sh.cmd
-printf '@echo alt-%%~n0\r\n' > alt/bash.cmd; cp alt/bash.cmd alt/sh.cmd
-bash -c x | tr -d '\r'; echo "bash rc=${PIPESTATUS[0]}"
-sh -c x | tr -d '\r'; echo "sh rc=${PIPESTATUS[0]}"
+# 2026-11-22 (bug (1); the 2026-10-04 rule, /dev/null is NUL for every external child): the shell's OWN `< /dev/null`
+# (on a group, a builtin, `eval`: Claude Code runs a call whose text has no `<` as `eval '...' < /dev/null`) gives the
+# child NUL, an empty input that can be given again, so it is marked and a refusal is run again; a closed stdin
+# likewise (874: such a child gets NUL). They got a pumped empty stream, counted unreplayable: unmarked, refused loudly.
+echo -n "group < /dev/null: "; { mark; } < /dev/null | tr -d '\r'
+echo -n "eval < /dev/null: "; eval 'mark' < /dev/null | tr -d '\r'
+echo -n "closed stdin: "; { mark; } 0<&- | tr -d '\r'
+{ tool q; } < /dev/null | tr -d '\r'; echo "group < /dev/null rc=${PIPESTATUS[0]}"   # rc: alt's findstr, no lines on NUL = 1
+# bash and sh in ~/.bash/bin are C#Bash: a 127 is a script's "not found", an answer (`bash -c 'x; exit 127'` ran twice).
+# 2026-11-24 (bugs list 7, the architect: unix-tools is "the 'fallback' _only_ location"): a bare `bash` is this shell
+# whatever PATH a script sets (here home/.bash/bin and alt/ come first, each with a bash.cmd), and its 127 is never run
+# again (alt-bash would show it). Until 956 the bin-bash decoy ran. `sh`: the AOT case unix_tools_order, where the
+# installed layout has its own sh.exe.
+printf '@echo bin-%%~n0\r\n@exit /b 127\r\n' > home/.bash/bin/bash.cmd
+printf '@echo alt-%%~n0\r\n' > alt/bash.cmd
+bash -c 'echo this shell; exit 127' | tr -d '\r'; echo "bash rc=${PIPESTATUS[0]}"
 cd / && rm -rf "$d"

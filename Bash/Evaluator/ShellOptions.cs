@@ -273,10 +273,20 @@ public sealed class ShellOptions
 	public string? SetShopt(string name, bool enable)
 		{
 		if (!IsKnownShopt(name)) return $"{name}: invalid shell option name";
+		// login_shell says how the shell was started: `shopt -s` and `-u` of it are ignored, status 0, as GNU's (bugs list
+		// 12, web-d0, 2026-11-25: Claude Code's snapshot runs `shopt -s login_shell`, so every call reported a login shell)
+		if (name == "login_shell") return null;
 		if (enable && UnsupportedShopts.Contains(name)) return $"{name}: not supported by this interpreter";
 		if (_shoptShared) { _shopt = new HashSet<string>(_shopt); _shoptShared = false; }   // a saved state holds the old set
 		if (enable) _shopt.Add(name); else _shopt.Remove(name);
 		return null;
+		}
+
+	/// <summary>Startup's mark of a login shell (`-l`, `--login`, a `-` before argv[0]): the only way login_shell is set.</summary>
+	public void MarkLoginShell()
+		{
+		if (_shoptShared) { _shopt = new HashSet<string>(_shopt); _shoptShared = false; }
+		_shopt.Add("login_shell");
 		}
 
 	// Convenience accessors for the options the evaluator consults.

@@ -1,0 +1,15 @@
+select: select (menus) is not currently available in C#Bash
+select: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20select%20%28menus%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+select rc=2
+coproc: coproc (coprocesses) is not currently available in C#Bash
+coproc: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20coproc%20%28coprocesses%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+coproc NAME { } rc=2
+coproc: coproc (coprocesses) is not currently available in C#Bash
+coproc: to ask for it, open: https://github.com/klinkenbecker/csharpBash/issues/new?title=Build%20request%3A%20coproc%20%28coprocesses%29&body=Requested%20from%20C%23Bash%20build%20<stamp>
+coproc simple rc=2
+--- the request log
+select | select (menus) | not available
+coproc | coproc (coprocesses) | not available
+coproc | coproc (coprocesses) | not available
+--- set -e stops at one, as at any failed command
+rc=2

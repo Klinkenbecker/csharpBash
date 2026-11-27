@@ -1,0 +1,48 @@
+-- cp -a, a folder
+rc=0
+a1/f = a1/g
+a1/f = a1/sub/h
+a1/f != a1/x
+a1/o != outside
+a1/f != s/f
+a1/f 3
+a1/g 3
+a1/sub/h 3
+a1/x 1
+a1/o 1
+-- cp -a into an existing folder
+rc=0
+a1/s/f = a1/s/g
+a1/s/f != a1/f
+-- cp -R
+r1/f != r1/g
+-- cp -a, two operands in one call
+rc=0
+m1/f = m1/g
+-- cp -a, two calls
+m2/f != m2/g
+-- cp -a over existing files
+rc=0
+e1/f = e1/g
+one
+one
+-- a write through one copied name
+changed
+changed
+one
+-- the options, in order
+-p: rc=0 o/f != o/g
+-d: rc=0 o/f = o/g
+--preserve: rc=0 o/f != o/g
+--preserve=all: rc=0 o/f = o/g
+--preserve=links: rc=0 o/f = o/g
+--preserve=mode,links: rc=0 o/f = o/g
+-a --preserve=timestamps: rc=0 o/f = o/g
+-a --no-preserve=links: rc=0 o/f != o/g
+-a --no-preserve=all: rc=0 o/f != o/g
+-a --no-preserve=mode: rc=0 o/f = o/g
+--no-preserve=links -a: rc=0 o/f = o/g
+-- a read-only source
+rc=0
+ro/f = ro/g
+read-only

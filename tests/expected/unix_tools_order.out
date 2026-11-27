@@ -1,0 +1,39 @@
+== A: unix-tools = P/tools;PATH
+own-bash
+own-sh
+bash exit 127: rc=127
+sh exit 127: rc=127
+OWN-owntool
+FOLDER-refuser
+FOLDER-onlyfolder
+FOLDER-both
+PATH-onlypath
+P/tools/both.cmd P/pathdir/both.cmd 
+own-bash-after-a-reorder
+own-bash-off-PATH
+== B: unix-tools = PATH;P/tools
+own-bash
+own-sh
+bash exit 127: rc=127
+sh exit 127: rc=127
+OWN-owntool
+PATH-refuser
+FOLDER-onlyfolder
+PATH-both
+PATH-onlypath
+P/pathdir/both.cmd P/tools/both.cmd 
+own-bash-after-a-reorder
+own-bash-off-PATH
+== C: unix-tools = PATH
+own-bash
+own-sh
+bash exit 127: rc=127
+sh exit 127: rc=127
+OWN-owntool
+PATH-refuser
+onlyfolder: not found
+PATH-both
+PATH-onlypath
+P/pathdir/both.cmd 
+own-bash-after-a-reorder
+own-bash-off-PATH

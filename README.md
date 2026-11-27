@@ -12,21 +12,21 @@ It was built to be the shell Claude Code uses on Windows. Claude Code starts a f
 
 | benchmark (seconds) | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
 |---|---:|---:|---:|---:|---:|
-| `loop` — 200 k `while` iterations | **0.156** | 1.520 | 0.420 | 9.7× | 2.7× |
-| `arith` — 200 k `$(( ))` evaluations | **0.249** | 2.113 | 0.596 | 8.5× | 2.4× |
-| `func` — 100 k function calls | **0.216** | 2.316 | 0.560 | 10.7× | 2.6× |
-| `loop_big` — 2 M iterations | **1.464** | 15.001 | 3.431 | 10.2× | 2.3× |
-| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.057** | 14.197 | 0.863 | **249×** | 15.1× |
-| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.099** | 0.298 | 0.114 | 3.0× | 1.2× |
-| `find` — walk 400 files | **0.016** | 0.135 | 0.186 | 8.4× | 11.6× |
-| startup — `bash -c 'exit 0'` | **0.0079** | 0.0242 | 0.0956 | 3.1× | 12.1× |
+| `loop` — 200 k `while` iterations | **0.167** | 1.509 | 0.412 | 9.0× | 2.5× |
+| `arith` — 200 k `$(( ))` evaluations | **0.244** | 2.081 | 0.598 | 8.5× | 2.5× |
+| `func` — 100 k function calls | **0.225** | 2.332 | 0.564 | 10.4× | 2.5× |
+| `loop_big` — 2 M iterations | **1.468** | 15.080 | 3.433 | 10.3× | 2.3× |
+| `coreutils` — 900 `basename`/`dirname`/`wc` calls | **0.062** | 14.620 | 0.848 | **236×** | 13.7× |
+| `pipeline` — `grep\|sed\|sort\|uniq\|awk` over 50 k lines | **0.094** | 0.346 | 0.122 | 3.7× | 1.3× |
+| `find` — walk 400 files | **0.014** | 0.127 | 0.228 | 9.1× | 16.3× |
+| startup — `bash -c 'exit 0'` | **0.0080** | 0.0246 | 0.0988 | 3.1× | 12.3× |
 
 Every row gives the same output in all three shells, so a fast wrong answer can't count as a win. Where the speed
 comes from:
 
 - **No new process per command.** The `coreutils` row runs 900 small commands. Under Git Bash that is 900 Windows
   processes; under C#Bash it is none.
-- **It starts fast:** 7.9 ms, against Git Bash's 24.2 ms or WSL's 95.6 ms. Claude Code pays that on every call.
+- **It starts fast:** 8.0 ms, against Git Bash's 24.6 ms or WSL's 98.8 ms. Claude Code pays that on every call.
 - **It remembers where programs are.** On Windows, finding a program on a long PATH is slow, and not finding one is
   slower still. C#Bash remembers both, so a simple Claude Code call takes about 11 ms in all.
 
@@ -42,8 +42,6 @@ tools, both free ([the supported toolchain](docs/DEVELOPING.md#the-supported-too
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — the conceptual model (including how it maps onto GNU bash's own modules, and where Windows forces it to diverge).
 - [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — the class/method map and an end-to-end walk-through.
-- [`DECISIONS.md`](DECISIONS.md) — the append-only design log.
-- [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md) — current state and scope.
 
 ## Use it with Claude Code
 
@@ -59,7 +57,13 @@ tools, both free ([the supported toolchain](docs/DEVELOPING.md#the-supported-too
    it puts [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), the known issues of the build it installs, and
    [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md), its known limitations, each with the way that works.
 3. Start Claude Code with `%USERPROFILE%/.bash/bin/claude.cmd` (your arguments pass through: `--resume` and the rest).
-   It gives that session C#Bash as its shell and nothing else on the machine changes.
+   It gives that session C#Bash as its shell and nothing else on the machine changes. It also chooses the git Claude
+   Code itself runs (its own branch and status checks, in the background, not the git your commands get): by default
+   the first `git.exe` on your PATH, looked up once at the start, so Claude Code never searches your whole PATH for it.
+   To change that, set `BASH_CLAUDE_GIT` to `none` (no git for Claude Code) or to a `git.exe` or its folder, in your
+   own launcher or with `setx`, never inside `claude.cmd`, which every install rewrites. A full git gives Claude Code
+   its view of the repository at about 25 ms a call; `none` runs nothing and leaves that view empty
+   ([details, and which to choose](docs/USING.md#start-claude-code-with-a-path-of-one-folder-the-git-it-runs)).
 4. Check it: in the session, type `! bash --version`. Its last line must read `C#Bash build …`.
 
 To remove it, delete `%USERPROFILE%/.bash/bin` (and its PATH entry, if you added one).
@@ -70,13 +74,16 @@ To remove it, delete `%USERPROFILE%/.bash/bin` (and its PATH entry, if you added
 2. Point Claude Code at it, from a Command Prompt: `setx CLAUDE_CODE_GIT_BASH_PATH "%USERPROFILE%/.bash/bin/Bash.exe"`.
 3. Restart Claude Code, and check with `! bash --version` (the last line must read `C#Bash build …`).
 
+Without the start file, Claude Code searches your whole PATH for `git` each time it runs it, and `BASH_CLAUDE_GIT` has
+no effect.
+
 **If it is not C#Bash:** without `CLAUDE_CODE_GIT_BASH_PATH`, Claude Code runs the first `bash.exe` on PATH. With
 WSL installed that is its launcher, `C:/Windows/System32/bash.exe`, which Windows puts on PATH ahead of any folder of
 yours; with Git for Windows on PATH, it may be Git Bash. You need not reorder PATH: make sure the variable reaches
 Claude Code. `setx` changes only programs started afterwards, so open a NEW terminal before starting Claude Code; or
 use the start file (the installer's `claude.cmd`, or the one in [Using C#Bash](docs/USING.md)), which sets it for
-that session alone. (Measured 2026-11-03 with Claude Code 2.1.316: the variable wins over PATH. Earlier versions
-ignored it: Claude Code issue #94077.)
+that session alone. (Measured with Claude Code 2.1.316 and again with 2.1.331: the variable wins over PATH. Earlier
+versions ignored it: Claude Code issue #94077.)
 
 To go back to Git Bash, remove the variable (or stop using the start file) and restart Claude Code. Building it
 yourself, the start file, and tips: [Using C#Bash](docs/USING.md).
@@ -115,7 +122,7 @@ Everything, in detail: [Features](docs/FEATURES.md).
 
 ## How it's tested
 
-322 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
+338 test cases, most of them checked against GNU bash's own output (bash 5.1 under WSL), never against C#Bash's, so a
 bug fails a test instead of becoming its expected answer. A battery of 237 probes runs the same commands through both
 shells and compares them. Building and testing it yourself, and how the source is laid out: [Developing C#Bash](docs/DEVELOPING.md).
 

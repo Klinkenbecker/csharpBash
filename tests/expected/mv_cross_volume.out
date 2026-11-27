@@ -3,6 +3,11 @@ mv: cannot remove 'SRC': Permission denied
 rc=1
 source kept: yes
 copy made: yes
+--- a folder with one entry held, to another filesystem
+mv: cannot remove 'SRC/dir/ro/held.exe': Permission denied
+rc=1
+left: dir dir/ro dir/ro/held.exe 
+copied: dir dir/plain dir/protected dir/ro dir/ro/held.exe 
 --- a plain file to another filesystem
 rc=0
 source kept: no

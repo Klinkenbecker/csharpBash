@@ -1,5 +1,4 @@
 control: hello
 TMP=/tmp/x: hello
-the child's TMP: /tmp/x
 mktemp: made
 a process substitution: read

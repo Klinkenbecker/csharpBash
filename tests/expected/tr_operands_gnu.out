@@ -1,0 +1,66 @@
+a -d: --b c| rc=0
+a - x: --b c| rc=0
+-d a: -b c| rc=0
+-d a -s: tr: extra operand '-s'|Only one string may be given when deleting without squeezing repeats.| rc=1
+-s a -d: -b c| rc=0
+a b -c: tr: extra operand '-c'|Try 'tr --help' for more information.| rc=1
+-- -d x: axb c| rc=0
+a-b x: x-x c| rc=0
+-d -: ab c| rc=0
+\- x: axb c| rc=0
+b
+rc=0
+tr: extra operand '-s'
+Only one string may be given when deleting without squeezing repeats.
+Try 'tr --help' for more information.
+rc=1
+tr: extra operand '-c'
+Try 'tr --help' for more information.
+rc=1
+tr: extra operand 'b'
+Only one string may be given when deleting without squeezing repeats.
+Try 'tr --help' for more information.
+rc=1
+tr: missing operand
+Try 'tr --help' for more information.
+rc=1
+tr: missing operand after 'a'
+Two strings must be given when translating.
+Try 'tr --help' for more information.
+rc=1
+== tr -d -s a
+tr: missing operand after 'a'
+Two strings must be given when both deleting and squeezing repeats.
+Try 'tr --help' for more information.
+rc=1
+== tr -d -s a b c
+tr: extra operand 'c'
+Try 'tr --help' for more information.
+rc=1
+== tr -s a b c
+tr: extra operand 'c'
+Try 'tr --help' for more information.
+rc=1
+== tr -d a b c
+tr: extra operand 'b'
+Try 'tr --help' for more information.
+rc=1
+== tr -c a
+tr: missing operand after 'a'
+Two strings must be given when translating.
+Try 'tr --help' for more information.
+rc=1
+== tr -t a
+tr: missing operand after 'a'
+Two strings must be given when translating.
+Try 'tr --help' for more information.
+rc=1
+== tr -s
+tr: missing operand
+Try 'tr --help' for more information.
+rc=1
+== tr -d
+tr: missing operand
+Try 'tr --help' for more information.
+rc=1
+aaXAB C

@@ -1,0 +1,52 @@
+== grep -m1 -F "- x" f
+grep: invalid option -- ' '
+Usage: grep [OPTION]... PATTERNS [FILE]...
+Try 'grep --help' for more information.
+rc=2
+grep rc=2: grep: invalid option -- '%'|Usage: grep [OPTION]... PATTERNS [FILE]...|Try 'grep --help' for more information.|
+cut rc=1: cut: invalid option -- '%'|Try 'cut --help' for more information.|
+sort rc=2: sort: invalid option -- '%'|Try 'sort --help' for more information.|
+ls rc=2: ls: invalid option -- '%'|Try 'ls --help' for more information.|
+diff rc=2: diff: invalid option -- '%'|diff: Try 'diff --help' for more information.|
+cmp rc=2: cmp: invalid option -- '%'|cmp: Try 'cmp --help' for more information.|
+env rc=125: env: invalid option -- '%'|Try 'env --help' for more information.|
+timeout rc=125: timeout: invalid option -- '%'|Try 'timeout --help' for more information.|
+head rc=1: head: invalid option -- '%'|Try 'head --help' for more information.|
+wc rc=1: wc: invalid option -- '%'|Try 'wc --help' for more information.|
+uniq rc=1: uniq: invalid option -- '%'|Try 'uniq --help' for more information.|
+cat rc=1: cat: invalid option -- '%'|Try 'cat --help' for more information.|
+tail rc=1: tail: invalid option -- '%'|Try 'tail --help' for more information.|
+od rc=1: od: invalid option -- '%'|Try 'od --help' for more information.|
+date rc=1: date: invalid option -- '%'|Try 'date --help' for more information.|
+tee rc=1: tee: invalid option -- '%'|Try 'tee --help' for more information.|
+nl rc=1: nl: invalid option -- '%'|Try 'nl --help' for more information.|
+fold rc=1: fold: invalid option -- '%'|Try 'fold --help' for more information.|
+paste rc=1: paste: invalid option -- '%'|Try 'paste --help' for more information.|
+comm rc=1: comm: invalid option -- '%'|Try 'comm --help' for more information.|
+seq rc=1: seq: invalid option -- '%'|Try 'seq --help' for more information.|
+stat rc=1: stat: invalid option -- '%'|Try 'stat --help' for more information.|
+touch rc=1: touch: invalid option -- '%'|Try 'touch --help' for more information.|
+mkdir rc=1: mkdir: invalid option -- '%'|Try 'mkdir --help' for more information.|
+rm rc=1: rm: invalid option -- '%'|Try 'rm --help' for more information.|
+cp rc=1: cp: invalid option -- '%'|Try 'cp --help' for more information.|
+mv rc=1: mv: invalid option -- '%'|Try 'mv --help' for more information.|
+ln rc=1: ln: invalid option -- '%'|Try 'ln --help' for more information.|
+du rc=1: du: invalid option -- '%'|Try 'du --help' for more information.|
+df rc=1: df: invalid option -- '%'|Try 'df --help' for more information.|
+chmod rc=1: chmod: invalid option -- '%'|Try 'chmod --help' for more information.|
+realpath rc=1: realpath: invalid option -- '%'|Try 'realpath --help' for more information.|
+basename rc=1: basename: invalid option -- '%'|Try 'basename --help' for more information.|
+dirname rc=1: dirname: invalid option -- '%'|Try 'dirname --help' for more information.|
+readlink rc=1: readlink: invalid option -- '%'|Try 'readlink --help' for more information.|
+mktemp rc=1: mktemp: invalid option -- '%'|Try 'mktemp --help' for more information.|
+tac rc=1: tac: invalid option -- '%'|Try 'tac --help' for more information.|
+rev rc=1: rev: invalid option -- '%'|Try 'rev --help' for more information.|
+split rc=1: split: invalid option -- '%'|Try 'split --help' for more information.|
+md5sum rc=1: md5sum: invalid option -- '%'|Try 'md5sum --help' for more information.|
+sha256sum rc=1: sha256sum: invalid option -- '%'|Try 'sha256sum --help' for more information.|
+base64 rc=1: base64: invalid option -- '%'|Try 'base64 --help' for more information.|
+cksum rc=1: cksum: invalid option -- '%'|Try 'cksum --help' for more information.|
+dd rc=1: dd: invalid option -- '%'|Try 'dd --help' for more information.|
+iconv rc=64: iconv: invalid option -- '%'|Try `iconv --help' or `iconv --usage' for more information.|
+sed rc=1: sed: invalid option -- '%'|Usage: sed [OPTION]... {script-only-if-no-other-script} [input-file]...|
+xargs rc=1: xargs: invalid option -- '%'|Try 'xargs --help' for more information.|

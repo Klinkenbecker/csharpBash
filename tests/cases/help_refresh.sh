@@ -32,4 +32,12 @@ echo "--- rev 462's table, unedited: replaced by this build's, which has dd"
 mkdir -p d/.bash; cp "${fx%397.json}462.json" d/.bash/help.json
 ask d dd
 cmp -s d/.bash/help.json a/.bash/help.json && echo "d: now this build's table"
+# 2026-11-24 (KNOWN_ISSUES, found 2026-11-17): the tables of revs 553, 645 and 665 (cases/help_revN.json = `hg cat -r N
+# Bash/help.json`) were never added to EarlierHelpTables, so a profile written from one kept it; each is replaced now
+for r in 553 645 665; do
+	echo "--- rev $r's table, unedited: replaced by this build's"
+	mkdir -p "e$r/.bash"; cp "${fx%397.json}$r.json" "e$r/.bash/help.json"
+	ask "e$r" dd
+	cmp -s "e$r/.bash/help.json" a/.bash/help.json && echo "e$r: now this build's table"
+done
 cd .. && rm -rf "$t"
