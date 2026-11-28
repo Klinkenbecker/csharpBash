@@ -42,7 +42,7 @@ function graph(which, top, title,   i, j, r, x0, y0, ymax, v, x, y, pts, col, ro
 		for (i = 1; i <= nb; i++) {
 			v = ratio(which, builds[i], r)
 			x = x0 + (i - 1) * PW / (nb - 1); y = y0 + PH - v / ymax * PH
-			printf "<circle class=\"dot\" cx=\"%.1f\" cy=\"%.1f\" r=\"3.5\"><title>%s, build %s (hg rev %s): %s× faster (C#Bash %s s, %s %s s)</title></circle>\n", x, y, r, builds[i], builds[i], fmt(v), cs[builds[i], r], (which == "git" ? "Git Bash" : "WSL"), (which == "git" ? gb[builds[i], r] : ws[builds[i], r])
+			printf "<circle class=\"dot\" cx=\"%.1f\" cy=\"%.1f\" r=\"3.5\"><title>%s, build %s (hg rev %s): %s× faster (C#Bash %s s, %s %s s)</title></circle>\n", x, y, r, builds[i], builds[i], fmt(v), cs[builds[i], r], (which == "git" ? "PortableGit's bash" : "WSL"), (which == "git" ? gb[builds[i], r] : ws[builds[i], r])
 		}
 		printf "<text class=\"val\" x=\"%.1f\" y=\"%.1f\">%s×</text>", lx + 2, ly - 7, fmt(ratio(which, builds[1], r))
 		printf "<text class=\"val b\" x=\"%.1f\" y=\"%.1f\" text-anchor=\"end\">%s×</text>\n", ex - 2, ey - 7, fmt(ratio(which, builds[nb], r))
@@ -51,12 +51,12 @@ function graph(which, top, title,   i, j, r, x0, y0, ymax, v, x, y, pts, col, ro
 END {
 	PW = 220; PH = 100; W = 4 * (PW + 40) + 40; GH = 2 * (PH + 64) + 40; H = 2 * GH + 70
 	printf "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 %d %d\" width=\"%d\" height=\"%d\" role=\"img\" aria-label=\"C#Bash advantage per published build\">\n", W, H, W, H
-	printf "<title>C#Bash: times faster than Git Bash and than WSL bash, per benchmark row, at each published build (%s to %s)</title>\n", builds[1], builds[nb]
+	printf "<title>C#Bash: times faster than Git® Bash (PortableGit's bash) and than WSL bash, per benchmark row, at each published build (%s to %s)</title>\n", builds[1], builds[nb]
 	print "<style>text{font-family:system-ui,Segoe UI,sans-serif;fill:#0b0b0b}.h1{font-size:17px;font-weight:600}.h2{font-size:14px;font-weight:600}.sub{font-size:11px;fill:#52514e}.pt{font-size:12px;font-weight:600}.ax{font-size:9px;fill:#8a8984}.val{font-size:10px;fill:#52514e}.b{font-weight:600;fill:#0b0b0b}.grid{stroke:#e4e3df;stroke-width:1}.line{fill:none;stroke:#2a78d6;stroke-width:2;stroke-linejoin:round}.dot{fill:#2a78d6;stroke:#fcfcfb;stroke-width:1.5}</style>"
 	printf "<rect width=\"%d\" height=\"%d\" fill=\"#fcfcfb\"/>\n", W, H
 	printf "<text class=\"h1\" x=\"20\" y=\"28\">C#Bash's advantage, per published build (%s to %s)</text>\n", builds[1], builds[nb]
 	print "<text class=\"sub\" x=\"20\" y=\"46\">Times faster than the other shell on each benchmark row (higher is better); each panel starts at 0×.</text>"
-	graph("git", 80, "Against Git Bash 4.4 (Git for Windows)")
+	graph("git", 80, "Against Git® Bash 4.4 (PortableGit's bash)")
 	graph("wsl", 80 + GH, "Against WSL bash 5.1 (native Linux bash)")
 	print "</svg>"
 }

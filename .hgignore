@@ -28,3 +28,4 @@ dist.staging.log
 glob:tests/corpus/printer/**
 glob:dist.installer/**
 tools/installgen.path
+tools/wombat.path

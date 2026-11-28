@@ -18,16 +18,16 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
   one; `^[[:punct:]]+$` does. The POSIX classes follow .NET's Unicode version where glibc's differs (U+0CF3 and U+0ECE
   are print here, unassigned in GNU). Match such a character with a `+` class, or by its text.
 - **Reading a file's details moves its access time** on NTFS: `stat` and `ls -l` read a file's first bytes for `#!`
-  (Windows has no execute bit), as Git Bash's do, so `ls -u` and `find -atime` see the look as a use. Put
+  (Windows has no execute bit), as those of Git® Bash (PortableGit's bash) do, so `ls -u` and `find -atime` see the look as a use. Put
   `access-time = preserve` in `%USERPROFILE%/.bash/etc/csharpBash.config` to keep it; `cat` still counts as a read.
 - **`df -i`**: Windows keeps no inode counts. It goes to the fallback chain, as any option C#Bash lacks does; in WSL,
   `df -i /` answers for WSL's own Linux disk, and a drive (`F:/`, there `/mnt/f`) for what WSL reports of it, not NTFS.
 - **MSYS2's own programs (runtime 3.1.7) keep the quotes of a quoted word holding a non-ASCII character**: `'é{x}'`
-  arrives as `"é{x}"`, from C#Bash or from cmd alike. It is MSYS2's parsing. Git for Windows' MSYS programs, and C#Bash's
+  arrives as `"é{x}"`, from C#Bash or from cmd alike. It is MSYS2's parsing. Git® for Windows' MSYS programs, and C#Bash's
   own tools, receive the word correctly.
 - **A quoted argument to `cmd //c` reaches cmd as `\"`**: `cmd //c '"C:/x/y.exe"'` says it is not recognized, and
   `cmd //c 'type "C:\x\y.json"'` that the syntax is incorrect. C#Bash passes arguments with Windows' usual escaping,
-  which a program reading its own arguments decodes, as Git Bash does (the same output, 4.4 and 5.3); cmd reads its
+  which a program reading its own arguments decodes, as PortableGit's bash does (the same output, 4.4 and 5.3); cmd reads its
   command line as written. Put the cmd commands in a `.cmd` file and run that, or leave the quotes out where the path
   has no space (`cmd //c 'type C:\x\y.json'`).
 
@@ -54,9 +54,9 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
   `pdfinfo f.pdf` (pages, title); `pdftotext -f 20 -l 25 f.pdf -` (those pages' text; `-layout` keeps columns);
   `pdftoppm -png -r 80 -f 20 -l 20 f.pdf "$(mktemp -d)/p"` (page images, which Read opens). Each WSL start costs about
   0.15 s: take a range per call.
-- **A tool the chain runs in WSL is the Linux one.** With no Windows `git` on PATH, a bare `git` is WSL's Linux git:
-  it reads an `E:/repo.git` remote as an ssh host, and treats line ends and file modes as Linux does. Put the folder
-  of the Windows tool in the chain before WSL: for example `unix-tools = F:/Tools/PortableGit/cmd;PATH;WSL` in
+- **A tool the chain runs in WSL is the Linux one.** A `git` request the installed `git.exe` (Wombat) does not serve yet goes on along the chain; with no Windows `git` there, it reaches WSL's Linux git, which
+  reads an `E:/repo.git` remote as an ssh host, and treats line ends and file modes as Linux does. Put the folder
+  of the Windows tool in the chain before WSL: for example `unix-tools = C:/Tools/PortableGit/cmd;PATH;WSL` in
   `%USERPROFILE%/.bash/etc/csharpBash.config` (Windows' PATH stays as it is). A program of that name in
   `%USERPROFILE%/.bash/bin` still comes first, wherever the folder is named.
 
@@ -66,7 +66,7 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
 - **There is no `cygpath`, and none is needed**: C#Bash's paths are already Windows-rooted with forward slashes (`$PWD`
   is `C:/x`), which every .NET tool reads. Use a path as it is; for an absolute one write `"$PWD/x"`, or `realpath -m x`;
   a Windows program handed `/c/x` gets `C:/x`.
-- **A Windows program gets MSYS-form paths converted, as under Git Bash.** An argument `/c/x` reaches it as `C:/x`; a
+- **A Windows program gets MSYS-form paths converted, as under PortableGit's bash.** An argument `/c/x` reaches it as `C:/x`; a
   colon list `/c/x:/f/y` as `C:/x;F:/y` (any other argument with a colon as typed); the same after the first `=` and
   after `-` and one letter (`--file=/c/x` → `--file=C:/x`, `-I/c/x` → `-IC:/x`); and in its environment (`X=/c/x prog`,
   or an exported `X`). A word holding `;` is passed whole, a bare `/c` or `/` as typed. The trap: a switch shaped like a
@@ -75,7 +75,7 @@ https://github.com/Klinkenbecker/csharpBash/blob/main/KNOWN_LIMITATIONS.md.
   `NAME=value`: the environment); pass a switch to `cmd` as `cmd //c …`, or `cmd /c` when conversion is off. A nested
   `bash` (this shell) and an MSYS program get the environment as typed. (USING.md, "Write paths with forward slashes".)
 - **A bare Windows device name is the device**: `> nul`, `2>nul` and `cat nul` reach NUL, not a file named nul. Write
-  `./nul` for that file. (Git Bash makes a file named nul there, one Windows' own tools cannot delete.)
+  `./nul` for that file. (PortableGit's bash makes a file named nul there, one Windows' own tools cannot delete.)
 - **There is no terminal**: `/dev/tty` reports "No such device or address", so a program that would prompt there fails
   instead of hanging. Give it its input on stdin, or its non-interactive flags.
 - **Lookups are remembered across shells**, so a program installed later in a folder earlier on PATH stays hidden

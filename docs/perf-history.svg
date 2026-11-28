@@ -1,209 +1,209 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 806" width="1080" height="806" role="img" aria-label="C#Bash advantage per published build">
-<title>C#Bash: times faster than Git Bash and than WSL bash, per benchmark row, at each published build (472 to 999)</title>
+<title>C#Bash: times faster than Git® Bash (PortableGit's bash) and than WSL bash, per benchmark row, at each published build (472 to 999)</title>
 <style>text{font-family:system-ui,Segoe UI,sans-serif;fill:#0b0b0b}.h1{font-size:17px;font-weight:600}.h2{font-size:14px;font-weight:600}.sub{font-size:11px;fill:#52514e}.pt{font-size:12px;font-weight:600}.ax{font-size:9px;fill:#8a8984}.val{font-size:10px;fill:#52514e}.b{font-weight:600;fill:#0b0b0b}.grid{stroke:#e4e3df;stroke-width:1}.line{fill:none;stroke:#2a78d6;stroke-width:2;stroke-linejoin:round}.dot{fill:#2a78d6;stroke:#fcfcfb;stroke-width:1.5}</style>
 <rect width="1080" height="806" fill="#fcfcfb"/>
 <text class="h1" x="20" y="28">C#Bash's advantage, per published build (472 to 999)</text>
 <text class="sub" x="20" y="46">Times faster than the other shell on each benchmark row (higher is better); each panel starts at 0×.</text>
-<text class="h2" x="20" y="80">Against Git Bash 4.4 (Git for Windows)</text>
+<text class="h2" x="20" y="80">Against Git® Bash 4.4 (PortableGit's bash)</text>
 <text class="pt" x="50" y="104">loop</text>
 <line class="grid" x1="50" x2="270" y1="120" y2="120"/><line class="grid" x1="50" x2="270" y1="220" y2="220"/>
 <text class="ax" x="46" y="124" text-anchor="end">15.0×</text><text class="ax" x="46" y="224" text-anchor="end">0</text>
 <text class="ax" x="50" y="235">472</text><text class="ax" x="270" y="235" text-anchor="end">999</text>
 <polyline class="line" points="50.0,155.1 62.2,154.7 74.4,155.5 86.7,151.2 98.9,156.5 111.1,156.2 123.3,156.1 135.6,158.5 147.8,155.0 160.0,154.4 172.2,157.1 184.4,157.6 196.7,156.6 208.9,158.8 221.1,163.0 233.3,155.1 245.6,159.4 257.8,155.0 270.0,159.8 "/>
-<circle class="dot" cx="50.0" cy="155.1" r="3.5"><title>loop, build 472 (hg rev 472): 9.74× faster (C#Bash 0.153 s, Git Bash 1.49 s)</title></circle>
-<circle class="dot" cx="62.2" cy="154.7" r="3.5"><title>loop, build 511 (hg rev 511): 9.79× faster (C#Bash 0.152 s, Git Bash 1.488 s)</title></circle>
-<circle class="dot" cx="74.4" cy="155.5" r="3.5"><title>loop, build 520 (hg rev 520): 9.67× faster (C#Bash 0.154 s, Git Bash 1.489 s)</title></circle>
-<circle class="dot" cx="86.7" cy="151.2" r="3.5"><title>loop, build 532 (hg rev 532): 10.3× faster (C#Bash 0.156 s, Git Bash 1.609 s)</title></circle>
-<circle class="dot" cx="98.9" cy="156.5" r="3.5"><title>loop, build 536 (hg rev 536): 9.52× faster (C#Bash 0.159 s, Git Bash 1.514 s)</title></circle>
-<circle class="dot" cx="111.1" cy="156.2" r="3.5"><title>loop, build 553 (hg rev 553): 9.57× faster (C#Bash 0.161 s, Git Bash 1.541 s)</title></circle>
-<circle class="dot" cx="123.3" cy="156.1" r="3.5"><title>loop, build 583 (hg rev 583): 9.59× faster (C#Bash 0.158 s, Git Bash 1.515 s)</title></circle>
-<circle class="dot" cx="135.6" cy="158.5" r="3.5"><title>loop, build 612 (hg rev 612): 9.22× faster (C#Bash 0.164 s, Git Bash 1.512 s)</title></circle>
-<circle class="dot" cx="147.8" cy="155.0" r="3.5"><title>loop, build 635 (hg rev 635): 9.75× faster (C#Bash 0.153 s, Git Bash 1.491 s)</title></circle>
-<circle class="dot" cx="160.0" cy="154.4" r="3.5"><title>loop, build 651 (hg rev 651): 9.84× faster (C#Bash 0.155 s, Git Bash 1.525 s)</title></circle>
-<circle class="dot" cx="172.2" cy="157.1" r="3.5"><title>loop, build 655 (hg rev 655): 9.43× faster (C#Bash 0.158 s, Git Bash 1.49 s)</title></circle>
-<circle class="dot" cx="184.4" cy="157.6" r="3.5"><title>loop, build 681 (hg rev 681): 9.36× faster (C#Bash 0.165 s, Git Bash 1.544 s)</title></circle>
-<circle class="dot" cx="196.7" cy="156.6" r="3.5"><title>loop, build 726 (hg rev 726): 9.51× faster (C#Bash 0.163 s, Git Bash 1.55 s)</title></circle>
-<circle class="dot" cx="208.9" cy="158.8" r="3.5"><title>loop, build 754 (hg rev 754): 9.19× faster (C#Bash 0.172 s, Git Bash 1.58 s)</title></circle>
-<circle class="dot" cx="221.1" cy="163.0" r="3.5"><title>loop, build 798 (hg rev 798): 8.55× faster (C#Bash 0.178 s, Git Bash 1.522 s)</title></circle>
-<circle class="dot" cx="233.3" cy="155.1" r="3.5"><title>loop, build 806 (hg rev 806): 9.74× faster (C#Bash 0.157 s, Git Bash 1.529 s)</title></circle>
-<circle class="dot" cx="245.6" cy="159.4" r="3.5"><title>loop, build 859 (hg rev 859): 9.08× faster (C#Bash 0.165 s, Git Bash 1.499 s)</title></circle>
-<circle class="dot" cx="257.8" cy="155.0" r="3.5"><title>loop, build 885 (hg rev 885): 9.74× faster (C#Bash 0.156 s, Git Bash 1.52 s)</title></circle>
-<circle class="dot" cx="270.0" cy="159.8" r="3.5"><title>loop, build 999 (hg rev 999): 9.04× faster (C#Bash 0.167 s, Git Bash 1.509 s)</title></circle>
+<circle class="dot" cx="50.0" cy="155.1" r="3.5"><title>loop, build 472 (hg rev 472): 9.74× faster (C#Bash 0.153 s, PortableGit's bash 1.49 s)</title></circle>
+<circle class="dot" cx="62.2" cy="154.7" r="3.5"><title>loop, build 511 (hg rev 511): 9.79× faster (C#Bash 0.152 s, PortableGit's bash 1.488 s)</title></circle>
+<circle class="dot" cx="74.4" cy="155.5" r="3.5"><title>loop, build 520 (hg rev 520): 9.67× faster (C#Bash 0.154 s, PortableGit's bash 1.489 s)</title></circle>
+<circle class="dot" cx="86.7" cy="151.2" r="3.5"><title>loop, build 532 (hg rev 532): 10.3× faster (C#Bash 0.156 s, PortableGit's bash 1.609 s)</title></circle>
+<circle class="dot" cx="98.9" cy="156.5" r="3.5"><title>loop, build 536 (hg rev 536): 9.52× faster (C#Bash 0.159 s, PortableGit's bash 1.514 s)</title></circle>
+<circle class="dot" cx="111.1" cy="156.2" r="3.5"><title>loop, build 553 (hg rev 553): 9.57× faster (C#Bash 0.161 s, PortableGit's bash 1.541 s)</title></circle>
+<circle class="dot" cx="123.3" cy="156.1" r="3.5"><title>loop, build 583 (hg rev 583): 9.59× faster (C#Bash 0.158 s, PortableGit's bash 1.515 s)</title></circle>
+<circle class="dot" cx="135.6" cy="158.5" r="3.5"><title>loop, build 612 (hg rev 612): 9.22× faster (C#Bash 0.164 s, PortableGit's bash 1.512 s)</title></circle>
+<circle class="dot" cx="147.8" cy="155.0" r="3.5"><title>loop, build 635 (hg rev 635): 9.75× faster (C#Bash 0.153 s, PortableGit's bash 1.491 s)</title></circle>
+<circle class="dot" cx="160.0" cy="154.4" r="3.5"><title>loop, build 651 (hg rev 651): 9.84× faster (C#Bash 0.155 s, PortableGit's bash 1.525 s)</title></circle>
+<circle class="dot" cx="172.2" cy="157.1" r="3.5"><title>loop, build 655 (hg rev 655): 9.43× faster (C#Bash 0.158 s, PortableGit's bash 1.49 s)</title></circle>
+<circle class="dot" cx="184.4" cy="157.6" r="3.5"><title>loop, build 681 (hg rev 681): 9.36× faster (C#Bash 0.165 s, PortableGit's bash 1.544 s)</title></circle>
+<circle class="dot" cx="196.7" cy="156.6" r="3.5"><title>loop, build 726 (hg rev 726): 9.51× faster (C#Bash 0.163 s, PortableGit's bash 1.55 s)</title></circle>
+<circle class="dot" cx="208.9" cy="158.8" r="3.5"><title>loop, build 754 (hg rev 754): 9.19× faster (C#Bash 0.172 s, PortableGit's bash 1.58 s)</title></circle>
+<circle class="dot" cx="221.1" cy="163.0" r="3.5"><title>loop, build 798 (hg rev 798): 8.55× faster (C#Bash 0.178 s, PortableGit's bash 1.522 s)</title></circle>
+<circle class="dot" cx="233.3" cy="155.1" r="3.5"><title>loop, build 806 (hg rev 806): 9.74× faster (C#Bash 0.157 s, PortableGit's bash 1.529 s)</title></circle>
+<circle class="dot" cx="245.6" cy="159.4" r="3.5"><title>loop, build 859 (hg rev 859): 9.08× faster (C#Bash 0.165 s, PortableGit's bash 1.499 s)</title></circle>
+<circle class="dot" cx="257.8" cy="155.0" r="3.5"><title>loop, build 885 (hg rev 885): 9.74× faster (C#Bash 0.156 s, PortableGit's bash 1.52 s)</title></circle>
+<circle class="dot" cx="270.0" cy="159.8" r="3.5"><title>loop, build 999 (hg rev 999): 9.04× faster (C#Bash 0.167 s, PortableGit's bash 1.509 s)</title></circle>
 <text class="val" x="52.0" y="148.1">9.74×</text><text class="val b" x="268.0" y="152.8" text-anchor="end">9.04×</text>
 <text class="pt" x="310" y="104">arith</text>
 <line class="grid" x1="310" x2="530" y1="120" y2="120"/><line class="grid" x1="310" x2="530" y1="220" y2="220"/>
 <text class="ax" x="306" y="124" text-anchor="end">10.0×</text><text class="ax" x="306" y="224" text-anchor="end">0</text>
 <text class="ax" x="310" y="235">472</text><text class="ax" x="530" y="235" text-anchor="end">999</text>
 <polyline class="line" points="310.0,134.7 322.2,132.2 334.4,136.1 346.7,135.9 358.9,136.7 371.1,135.3 383.3,139.6 395.6,135.1 407.8,135.0 420.0,136.8 432.2,136.8 444.4,135.0 456.7,136.7 468.9,135.3 481.1,140.4 493.3,133.5 505.6,133.6 517.8,135.1 530.0,134.7 "/>
-<circle class="dot" cx="310.0" cy="134.7" r="3.5"><title>arith, build 472 (hg rev 472): 8.53× faster (C#Bash 0.242 s, Git Bash 2.064 s)</title></circle>
-<circle class="dot" cx="322.2" cy="132.2" r="3.5"><title>arith, build 511 (hg rev 511): 8.78× faster (C#Bash 0.235 s, Git Bash 2.063 s)</title></circle>
-<circle class="dot" cx="334.4" cy="136.1" r="3.5"><title>arith, build 520 (hg rev 520): 8.39× faster (C#Bash 0.246 s, Git Bash 2.065 s)</title></circle>
-<circle class="dot" cx="346.7" cy="135.9" r="3.5"><title>arith, build 532 (hg rev 532): 8.41× faster (C#Bash 0.25 s, Git Bash 2.103 s)</title></circle>
-<circle class="dot" cx="358.9" cy="136.7" r="3.5"><title>arith, build 536 (hg rev 536): 8.33× faster (C#Bash 0.252 s, Git Bash 2.1 s)</title></circle>
-<circle class="dot" cx="371.1" cy="135.3" r="3.5"><title>arith, build 553 (hg rev 553): 8.47× faster (C#Bash 0.251 s, Git Bash 2.127 s)</title></circle>
-<circle class="dot" cx="383.3" cy="139.6" r="3.5"><title>arith, build 583 (hg rev 583): 8.04× faster (C#Bash 0.26 s, Git Bash 2.09 s)</title></circle>
-<circle class="dot" cx="395.6" cy="135.1" r="3.5"><title>arith, build 612 (hg rev 612): 8.49× faster (C#Bash 0.247 s, Git Bash 2.098 s)</title></circle>
-<circle class="dot" cx="407.8" cy="135.0" r="3.5"><title>arith, build 635 (hg rev 635): 8.50× faster (C#Bash 0.244 s, Git Bash 2.075 s)</title></circle>
-<circle class="dot" cx="420.0" cy="136.8" r="3.5"><title>arith, build 651 (hg rev 651): 8.32× faster (C#Bash 0.25 s, Git Bash 2.081 s)</title></circle>
-<circle class="dot" cx="432.2" cy="136.8" r="3.5"><title>arith, build 655 (hg rev 655): 8.32× faster (C#Bash 0.251 s, Git Bash 2.088 s)</title></circle>
-<circle class="dot" cx="444.4" cy="135.0" r="3.5"><title>arith, build 681 (hg rev 681): 8.50× faster (C#Bash 0.252 s, Git Bash 2.141 s)</title></circle>
-<circle class="dot" cx="456.7" cy="136.7" r="3.5"><title>arith, build 726 (hg rev 726): 8.33× faster (C#Bash 0.254 s, Git Bash 2.115 s)</title></circle>
-<circle class="dot" cx="468.9" cy="135.3" r="3.5"><title>arith, build 754 (hg rev 754): 8.47× faster (C#Bash 0.258 s, Git Bash 2.184 s)</title></circle>
-<circle class="dot" cx="481.1" cy="140.4" r="3.5"><title>arith, build 798 (hg rev 798): 7.96× faster (C#Bash 0.264 s, Git Bash 2.101 s)</title></circle>
-<circle class="dot" cx="493.3" cy="133.5" r="3.5"><title>arith, build 806 (hg rev 806): 8.65× faster (C#Bash 0.243 s, Git Bash 2.103 s)</title></circle>
-<circle class="dot" cx="505.6" cy="133.6" r="3.5"><title>arith, build 859 (hg rev 859): 8.64× faster (C#Bash 0.242 s, Git Bash 2.092 s)</title></circle>
-<circle class="dot" cx="517.8" cy="135.1" r="3.5"><title>arith, build 885 (hg rev 885): 8.49× faster (C#Bash 0.249 s, Git Bash 2.113 s)</title></circle>
-<circle class="dot" cx="530.0" cy="134.7" r="3.5"><title>arith, build 999 (hg rev 999): 8.53× faster (C#Bash 0.244 s, Git Bash 2.081 s)</title></circle>
+<circle class="dot" cx="310.0" cy="134.7" r="3.5"><title>arith, build 472 (hg rev 472): 8.53× faster (C#Bash 0.242 s, PortableGit's bash 2.064 s)</title></circle>
+<circle class="dot" cx="322.2" cy="132.2" r="3.5"><title>arith, build 511 (hg rev 511): 8.78× faster (C#Bash 0.235 s, PortableGit's bash 2.063 s)</title></circle>
+<circle class="dot" cx="334.4" cy="136.1" r="3.5"><title>arith, build 520 (hg rev 520): 8.39× faster (C#Bash 0.246 s, PortableGit's bash 2.065 s)</title></circle>
+<circle class="dot" cx="346.7" cy="135.9" r="3.5"><title>arith, build 532 (hg rev 532): 8.41× faster (C#Bash 0.25 s, PortableGit's bash 2.103 s)</title></circle>
+<circle class="dot" cx="358.9" cy="136.7" r="3.5"><title>arith, build 536 (hg rev 536): 8.33× faster (C#Bash 0.252 s, PortableGit's bash 2.1 s)</title></circle>
+<circle class="dot" cx="371.1" cy="135.3" r="3.5"><title>arith, build 553 (hg rev 553): 8.47× faster (C#Bash 0.251 s, PortableGit's bash 2.127 s)</title></circle>
+<circle class="dot" cx="383.3" cy="139.6" r="3.5"><title>arith, build 583 (hg rev 583): 8.04× faster (C#Bash 0.26 s, PortableGit's bash 2.09 s)</title></circle>
+<circle class="dot" cx="395.6" cy="135.1" r="3.5"><title>arith, build 612 (hg rev 612): 8.49× faster (C#Bash 0.247 s, PortableGit's bash 2.098 s)</title></circle>
+<circle class="dot" cx="407.8" cy="135.0" r="3.5"><title>arith, build 635 (hg rev 635): 8.50× faster (C#Bash 0.244 s, PortableGit's bash 2.075 s)</title></circle>
+<circle class="dot" cx="420.0" cy="136.8" r="3.5"><title>arith, build 651 (hg rev 651): 8.32× faster (C#Bash 0.25 s, PortableGit's bash 2.081 s)</title></circle>
+<circle class="dot" cx="432.2" cy="136.8" r="3.5"><title>arith, build 655 (hg rev 655): 8.32× faster (C#Bash 0.251 s, PortableGit's bash 2.088 s)</title></circle>
+<circle class="dot" cx="444.4" cy="135.0" r="3.5"><title>arith, build 681 (hg rev 681): 8.50× faster (C#Bash 0.252 s, PortableGit's bash 2.141 s)</title></circle>
+<circle class="dot" cx="456.7" cy="136.7" r="3.5"><title>arith, build 726 (hg rev 726): 8.33× faster (C#Bash 0.254 s, PortableGit's bash 2.115 s)</title></circle>
+<circle class="dot" cx="468.9" cy="135.3" r="3.5"><title>arith, build 754 (hg rev 754): 8.47× faster (C#Bash 0.258 s, PortableGit's bash 2.184 s)</title></circle>
+<circle class="dot" cx="481.1" cy="140.4" r="3.5"><title>arith, build 798 (hg rev 798): 7.96× faster (C#Bash 0.264 s, PortableGit's bash 2.101 s)</title></circle>
+<circle class="dot" cx="493.3" cy="133.5" r="3.5"><title>arith, build 806 (hg rev 806): 8.65× faster (C#Bash 0.243 s, PortableGit's bash 2.103 s)</title></circle>
+<circle class="dot" cx="505.6" cy="133.6" r="3.5"><title>arith, build 859 (hg rev 859): 8.64× faster (C#Bash 0.242 s, PortableGit's bash 2.092 s)</title></circle>
+<circle class="dot" cx="517.8" cy="135.1" r="3.5"><title>arith, build 885 (hg rev 885): 8.49× faster (C#Bash 0.249 s, PortableGit's bash 2.113 s)</title></circle>
+<circle class="dot" cx="530.0" cy="134.7" r="3.5"><title>arith, build 999 (hg rev 999): 8.53× faster (C#Bash 0.244 s, PortableGit's bash 2.081 s)</title></circle>
 <text class="val" x="312.0" y="127.7">8.53×</text><text class="val b" x="528.0" y="127.7" text-anchor="end">8.53×</text>
 <text class="pt" x="570" y="104">func</text>
 <line class="grid" x1="570" x2="790" y1="120" y2="120"/><line class="grid" x1="570" x2="790" y1="220" y2="220"/>
 <text class="ax" x="566" y="124" text-anchor="end">15.0×</text><text class="ax" x="566" y="224" text-anchor="end">0</text>
 <text class="ax" x="570" y="235">472</text><text class="ax" x="790" y="235" text-anchor="end">999</text>
 <polyline class="line" points="570.0,147.3 582.2,147.3 594.4,146.8 606.7,147.9 618.9,148.0 631.1,148.5 643.3,147.5 655.6,150.1 667.8,147.4 680.0,149.7 692.2,147.0 704.4,145.9 716.7,148.8 728.9,148.5 741.1,156.4 753.3,148.0 765.6,150.0 777.8,148.5 790.0,150.9 "/>
-<circle class="dot" cx="570.0" cy="147.3" r="3.5"><title>func, build 472 (hg rev 472): 10.9× faster (C#Bash 0.211 s, Git Bash 2.301 s)</title></circle>
-<circle class="dot" cx="582.2" cy="147.3" r="3.5"><title>func, build 511 (hg rev 511): 10.9× faster (C#Bash 0.21 s, Git Bash 2.291 s)</title></circle>
-<circle class="dot" cx="594.4" cy="146.8" r="3.5"><title>func, build 520 (hg rev 520): 11.0× faster (C#Bash 0.21 s, Git Bash 2.306 s)</title></circle>
-<circle class="dot" cx="606.7" cy="147.9" r="3.5"><title>func, build 532 (hg rev 532): 10.8× faster (C#Bash 0.217 s, Git Bash 2.347 s)</title></circle>
-<circle class="dot" cx="618.9" cy="148.0" r="3.5"><title>func, build 536 (hg rev 536): 10.8× faster (C#Bash 0.217 s, Git Bash 2.345 s)</title></circle>
-<circle class="dot" cx="631.1" cy="148.5" r="3.5"><title>func, build 553 (hg rev 553): 10.7× faster (C#Bash 0.222 s, Git Bash 2.381 s)</title></circle>
-<circle class="dot" cx="643.3" cy="147.5" r="3.5"><title>func, build 583 (hg rev 583): 10.9× faster (C#Bash 0.213 s, Git Bash 2.315 s)</title></circle>
-<circle class="dot" cx="655.6" cy="150.1" r="3.5"><title>func, build 612 (hg rev 612): 10.5× faster (C#Bash 0.22 s, Git Bash 2.307 s)</title></circle>
-<circle class="dot" cx="667.8" cy="147.4" r="3.5"><title>func, build 635 (hg rev 635): 10.9× faster (C#Bash 0.212 s, Git Bash 2.308 s)</title></circle>
-<circle class="dot" cx="680.0" cy="149.7" r="3.5"><title>func, build 651 (hg rev 651): 10.5× faster (C#Bash 0.222 s, Git Bash 2.341 s)</title></circle>
-<circle class="dot" cx="692.2" cy="147.0" r="3.5"><title>func, build 655 (hg rev 655): 10.9× faster (C#Bash 0.211 s, Git Bash 2.309 s)</title></circle>
-<circle class="dot" cx="704.4" cy="145.9" r="3.5"><title>func, build 681 (hg rev 681): 11.1× faster (C#Bash 0.214 s, Git Bash 2.379 s)</title></circle>
-<circle class="dot" cx="716.7" cy="148.8" r="3.5"><title>func, build 726 (hg rev 726): 10.7× faster (C#Bash 0.222 s, Git Bash 2.371 s)</title></circle>
-<circle class="dot" cx="728.9" cy="148.5" r="3.5"><title>func, build 754 (hg rev 754): 10.7× faster (C#Bash 0.222 s, Git Bash 2.382 s)</title></circle>
-<circle class="dot" cx="741.1" cy="156.4" r="3.5"><title>func, build 798 (hg rev 798): 9.54× faster (C#Bash 0.246 s, Git Bash 2.348 s)</title></circle>
-<circle class="dot" cx="753.3" cy="148.0" r="3.5"><title>func, build 806 (hg rev 806): 10.8× faster (C#Bash 0.217 s, Git Bash 2.342 s)</title></circle>
-<circle class="dot" cx="765.6" cy="150.0" r="3.5"><title>func, build 859 (hg rev 859): 10.5× faster (C#Bash 0.222 s, Git Bash 2.332 s)</title></circle>
-<circle class="dot" cx="777.8" cy="148.5" r="3.5"><title>func, build 885 (hg rev 885): 10.7× faster (C#Bash 0.216 s, Git Bash 2.316 s)</title></circle>
-<circle class="dot" cx="790.0" cy="150.9" r="3.5"><title>func, build 999 (hg rev 999): 10.4× faster (C#Bash 0.225 s, Git Bash 2.332 s)</title></circle>
+<circle class="dot" cx="570.0" cy="147.3" r="3.5"><title>func, build 472 (hg rev 472): 10.9× faster (C#Bash 0.211 s, PortableGit's bash 2.301 s)</title></circle>
+<circle class="dot" cx="582.2" cy="147.3" r="3.5"><title>func, build 511 (hg rev 511): 10.9× faster (C#Bash 0.21 s, PortableGit's bash 2.291 s)</title></circle>
+<circle class="dot" cx="594.4" cy="146.8" r="3.5"><title>func, build 520 (hg rev 520): 11.0× faster (C#Bash 0.21 s, PortableGit's bash 2.306 s)</title></circle>
+<circle class="dot" cx="606.7" cy="147.9" r="3.5"><title>func, build 532 (hg rev 532): 10.8× faster (C#Bash 0.217 s, PortableGit's bash 2.347 s)</title></circle>
+<circle class="dot" cx="618.9" cy="148.0" r="3.5"><title>func, build 536 (hg rev 536): 10.8× faster (C#Bash 0.217 s, PortableGit's bash 2.345 s)</title></circle>
+<circle class="dot" cx="631.1" cy="148.5" r="3.5"><title>func, build 553 (hg rev 553): 10.7× faster (C#Bash 0.222 s, PortableGit's bash 2.381 s)</title></circle>
+<circle class="dot" cx="643.3" cy="147.5" r="3.5"><title>func, build 583 (hg rev 583): 10.9× faster (C#Bash 0.213 s, PortableGit's bash 2.315 s)</title></circle>
+<circle class="dot" cx="655.6" cy="150.1" r="3.5"><title>func, build 612 (hg rev 612): 10.5× faster (C#Bash 0.22 s, PortableGit's bash 2.307 s)</title></circle>
+<circle class="dot" cx="667.8" cy="147.4" r="3.5"><title>func, build 635 (hg rev 635): 10.9× faster (C#Bash 0.212 s, PortableGit's bash 2.308 s)</title></circle>
+<circle class="dot" cx="680.0" cy="149.7" r="3.5"><title>func, build 651 (hg rev 651): 10.5× faster (C#Bash 0.222 s, PortableGit's bash 2.341 s)</title></circle>
+<circle class="dot" cx="692.2" cy="147.0" r="3.5"><title>func, build 655 (hg rev 655): 10.9× faster (C#Bash 0.211 s, PortableGit's bash 2.309 s)</title></circle>
+<circle class="dot" cx="704.4" cy="145.9" r="3.5"><title>func, build 681 (hg rev 681): 11.1× faster (C#Bash 0.214 s, PortableGit's bash 2.379 s)</title></circle>
+<circle class="dot" cx="716.7" cy="148.8" r="3.5"><title>func, build 726 (hg rev 726): 10.7× faster (C#Bash 0.222 s, PortableGit's bash 2.371 s)</title></circle>
+<circle class="dot" cx="728.9" cy="148.5" r="3.5"><title>func, build 754 (hg rev 754): 10.7× faster (C#Bash 0.222 s, PortableGit's bash 2.382 s)</title></circle>
+<circle class="dot" cx="741.1" cy="156.4" r="3.5"><title>func, build 798 (hg rev 798): 9.54× faster (C#Bash 0.246 s, PortableGit's bash 2.348 s)</title></circle>
+<circle class="dot" cx="753.3" cy="148.0" r="3.5"><title>func, build 806 (hg rev 806): 10.8× faster (C#Bash 0.217 s, PortableGit's bash 2.342 s)</title></circle>
+<circle class="dot" cx="765.6" cy="150.0" r="3.5"><title>func, build 859 (hg rev 859): 10.5× faster (C#Bash 0.222 s, PortableGit's bash 2.332 s)</title></circle>
+<circle class="dot" cx="777.8" cy="148.5" r="3.5"><title>func, build 885 (hg rev 885): 10.7× faster (C#Bash 0.216 s, PortableGit's bash 2.316 s)</title></circle>
+<circle class="dot" cx="790.0" cy="150.9" r="3.5"><title>func, build 999 (hg rev 999): 10.4× faster (C#Bash 0.225 s, PortableGit's bash 2.332 s)</title></circle>
 <text class="val" x="572.0" y="140.3">10.9×</text><text class="val b" x="788.0" y="143.9" text-anchor="end">10.4×</text>
 <text class="pt" x="830" y="104">loop_big</text>
 <line class="grid" x1="830" x2="1050" y1="120" y2="120"/><line class="grid" x1="830" x2="1050" y1="220" y2="220"/>
 <text class="ax" x="826" y="124" text-anchor="end">15.0×</text><text class="ax" x="826" y="224" text-anchor="end">0</text>
 <text class="ax" x="830" y="235">472</text><text class="ax" x="1050" y="235" text-anchor="end">999</text>
 <polyline class="line" points="830.0,146.3 842.2,128.8 854.4,130.7 866.7,132.0 878.9,131.2 891.1,132.0 903.3,149.4 915.6,128.9 927.8,149.8 940.0,150.7 952.2,150.0 964.4,132.5 976.7,132.7 988.9,134.1 1001.1,156.7 1013.3,151.6 1025.6,134.0 1037.8,151.7 1050.0,151.5 "/>
-<circle class="dot" cx="830.0" cy="146.3" r="3.5"><title>loop_big, build 472 (hg rev 472): 11.1× faster (C#Bash 1.418 s, Git Bash 15.673 s)</title></circle>
-<circle class="dot" cx="842.2" cy="128.8" r="3.5"><title>loop_big, build 511 (hg rev 511): 13.7× faster (C#Bash 1.403 s, Git Bash 19.202 s)</title></circle>
-<circle class="dot" cx="854.4" cy="130.7" r="3.5"><title>loop_big, build 520 (hg rev 520): 13.4× faster (C#Bash 1.437 s, Git Bash 19.244 s)</title></circle>
-<circle class="dot" cx="866.7" cy="132.0" r="3.5"><title>loop_big, build 532 (hg rev 532): 13.2× faster (C#Bash 1.468 s, Git Bash 19.384 s)</title></circle>
-<circle class="dot" cx="878.9" cy="131.2" r="3.5"><title>loop_big, build 536 (hg rev 536): 13.3× faster (C#Bash 1.475 s, Git Bash 19.654 s)</title></circle>
-<circle class="dot" cx="891.1" cy="132.0" r="3.5"><title>loop_big, build 553 (hg rev 553): 13.2× faster (C#Bash 1.499 s, Git Bash 19.791 s)</title></circle>
-<circle class="dot" cx="903.3" cy="149.4" r="3.5"><title>loop_big, build 583 (hg rev 583): 10.6× faster (C#Bash 1.43 s, Git Bash 15.148 s)</title></circle>
-<circle class="dot" cx="915.6" cy="128.9" r="3.5"><title>loop_big, build 612 (hg rev 612): 13.7× faster (C#Bash 1.44 s, Git Bash 19.674 s)</title></circle>
-<circle class="dot" cx="927.8" cy="149.8" r="3.5"><title>loop_big, build 635 (hg rev 635): 10.5× faster (C#Bash 1.43 s, Git Bash 15.061 s)</title></circle>
-<circle class="dot" cx="940.0" cy="150.7" r="3.5"><title>loop_big, build 651 (hg rev 651): 10.4× faster (C#Bash 1.5 s, Git Bash 15.6 s)</title></circle>
-<circle class="dot" cx="952.2" cy="150.0" r="3.5"><title>loop_big, build 655 (hg rev 655): 10.5× faster (C#Bash 1.452 s, Git Bash 15.24 s)</title></circle>
-<circle class="dot" cx="964.4" cy="132.5" r="3.5"><title>loop_big, build 681 (hg rev 681): 13.1× faster (C#Bash 1.514 s, Git Bash 19.878 s)</title></circle>
-<circle class="dot" cx="976.7" cy="132.7" r="3.5"><title>loop_big, build 726 (hg rev 726): 13.1× faster (C#Bash 1.508 s, Git Bash 19.738 s)</title></circle>
-<circle class="dot" cx="988.9" cy="134.1" r="3.5"><title>loop_big, build 754 (hg rev 754): 12.9× faster (C#Bash 1.537 s, Git Bash 19.797 s)</title></circle>
-<circle class="dot" cx="1001.1" cy="156.7" r="3.5"><title>loop_big, build 798 (hg rev 798): 9.50× faster (C#Bash 1.602 s, Git Bash 15.223 s)</title></circle>
-<circle class="dot" cx="1013.3" cy="151.6" r="3.5"><title>loop_big, build 806 (hg rev 806): 10.3× faster (C#Bash 1.483 s, Git Bash 15.223 s)</title></circle>
-<circle class="dot" cx="1025.6" cy="134.0" r="3.5"><title>loop_big, build 859 (hg rev 859): 12.9× faster (C#Bash 1.477 s, Git Bash 19.061 s)</title></circle>
-<circle class="dot" cx="1037.8" cy="151.7" r="3.5"><title>loop_big, build 885 (hg rev 885): 10.2× faster (C#Bash 1.464 s, Git Bash 15.001 s)</title></circle>
-<circle class="dot" cx="1050.0" cy="151.5" r="3.5"><title>loop_big, build 999 (hg rev 999): 10.3× faster (C#Bash 1.468 s, Git Bash 15.08 s)</title></circle>
+<circle class="dot" cx="830.0" cy="146.3" r="3.5"><title>loop_big, build 472 (hg rev 472): 11.1× faster (C#Bash 1.418 s, PortableGit's bash 15.673 s)</title></circle>
+<circle class="dot" cx="842.2" cy="128.8" r="3.5"><title>loop_big, build 511 (hg rev 511): 13.7× faster (C#Bash 1.403 s, PortableGit's bash 19.202 s)</title></circle>
+<circle class="dot" cx="854.4" cy="130.7" r="3.5"><title>loop_big, build 520 (hg rev 520): 13.4× faster (C#Bash 1.437 s, PortableGit's bash 19.244 s)</title></circle>
+<circle class="dot" cx="866.7" cy="132.0" r="3.5"><title>loop_big, build 532 (hg rev 532): 13.2× faster (C#Bash 1.468 s, PortableGit's bash 19.384 s)</title></circle>
+<circle class="dot" cx="878.9" cy="131.2" r="3.5"><title>loop_big, build 536 (hg rev 536): 13.3× faster (C#Bash 1.475 s, PortableGit's bash 19.654 s)</title></circle>
+<circle class="dot" cx="891.1" cy="132.0" r="3.5"><title>loop_big, build 553 (hg rev 553): 13.2× faster (C#Bash 1.499 s, PortableGit's bash 19.791 s)</title></circle>
+<circle class="dot" cx="903.3" cy="149.4" r="3.5"><title>loop_big, build 583 (hg rev 583): 10.6× faster (C#Bash 1.43 s, PortableGit's bash 15.148 s)</title></circle>
+<circle class="dot" cx="915.6" cy="128.9" r="3.5"><title>loop_big, build 612 (hg rev 612): 13.7× faster (C#Bash 1.44 s, PortableGit's bash 19.674 s)</title></circle>
+<circle class="dot" cx="927.8" cy="149.8" r="3.5"><title>loop_big, build 635 (hg rev 635): 10.5× faster (C#Bash 1.43 s, PortableGit's bash 15.061 s)</title></circle>
+<circle class="dot" cx="940.0" cy="150.7" r="3.5"><title>loop_big, build 651 (hg rev 651): 10.4× faster (C#Bash 1.5 s, PortableGit's bash 15.6 s)</title></circle>
+<circle class="dot" cx="952.2" cy="150.0" r="3.5"><title>loop_big, build 655 (hg rev 655): 10.5× faster (C#Bash 1.452 s, PortableGit's bash 15.24 s)</title></circle>
+<circle class="dot" cx="964.4" cy="132.5" r="3.5"><title>loop_big, build 681 (hg rev 681): 13.1× faster (C#Bash 1.514 s, PortableGit's bash 19.878 s)</title></circle>
+<circle class="dot" cx="976.7" cy="132.7" r="3.5"><title>loop_big, build 726 (hg rev 726): 13.1× faster (C#Bash 1.508 s, PortableGit's bash 19.738 s)</title></circle>
+<circle class="dot" cx="988.9" cy="134.1" r="3.5"><title>loop_big, build 754 (hg rev 754): 12.9× faster (C#Bash 1.537 s, PortableGit's bash 19.797 s)</title></circle>
+<circle class="dot" cx="1001.1" cy="156.7" r="3.5"><title>loop_big, build 798 (hg rev 798): 9.50× faster (C#Bash 1.602 s, PortableGit's bash 15.223 s)</title></circle>
+<circle class="dot" cx="1013.3" cy="151.6" r="3.5"><title>loop_big, build 806 (hg rev 806): 10.3× faster (C#Bash 1.483 s, PortableGit's bash 15.223 s)</title></circle>
+<circle class="dot" cx="1025.6" cy="134.0" r="3.5"><title>loop_big, build 859 (hg rev 859): 12.9× faster (C#Bash 1.477 s, PortableGit's bash 19.061 s)</title></circle>
+<circle class="dot" cx="1037.8" cy="151.7" r="3.5"><title>loop_big, build 885 (hg rev 885): 10.2× faster (C#Bash 1.464 s, PortableGit's bash 15.001 s)</title></circle>
+<circle class="dot" cx="1050.0" cy="151.5" r="3.5"><title>loop_big, build 999 (hg rev 999): 10.3× faster (C#Bash 1.468 s, PortableGit's bash 15.08 s)</title></circle>
 <text class="val" x="832.0" y="139.3">11.1×</text><text class="val b" x="1048.0" y="144.5" text-anchor="end">10.3×</text>
 <text class="pt" x="50" y="268">coreutils</text>
 <line class="grid" x1="50" x2="270" y1="284" y2="284"/><line class="grid" x1="50" x2="270" y1="384" y2="384"/>
 <text class="ax" x="46" y="288" text-anchor="end">300×</text><text class="ax" x="46" y="388" text-anchor="end">0</text>
 <text class="ax" x="50" y="399">472</text><text class="ax" x="270" y="399" text-anchor="end">999</text>
 <polyline class="line" points="50.0,292.4 62.2,292.9 74.4,294.5 86.7,295.8 98.9,296.0 111.1,299.6 123.3,294.2 135.6,296.1 147.8,296.6 160.0,291.6 172.2,301.6 184.4,291.9 196.7,290.4 208.9,290.7 221.1,297.7 233.3,294.0 245.6,296.6 257.8,301.0 270.0,305.4 "/>
-<circle class="dot" cx="50.0" cy="292.4" r="3.5"><title>coreutils, build 472 (hg rev 472): 275× faster (C#Bash 0.053 s, Git Bash 14.566 s)</title></circle>
-<circle class="dot" cx="62.2" cy="292.9" r="3.5"><title>coreutils, build 511 (hg rev 511): 273× faster (C#Bash 0.053 s, Git Bash 14.481 s)</title></circle>
-<circle class="dot" cx="74.4" cy="294.5" r="3.5"><title>coreutils, build 520 (hg rev 520): 268× faster (C#Bash 0.054 s, Git Bash 14.496 s)</title></circle>
-<circle class="dot" cx="86.7" cy="295.8" r="3.5"><title>coreutils, build 532 (hg rev 532): 265× faster (C#Bash 0.054 s, Git Bash 14.296 s)</title></circle>
-<circle class="dot" cx="98.9" cy="296.0" r="3.5"><title>coreutils, build 536 (hg rev 536): 264× faster (C#Bash 0.055 s, Git Bash 14.512 s)</title></circle>
-<circle class="dot" cx="111.1" cy="299.6" r="3.5"><title>coreutils, build 553 (hg rev 553): 253× faster (C#Bash 0.057 s, Git Bash 14.425 s)</title></circle>
-<circle class="dot" cx="123.3" cy="294.2" r="3.5"><title>coreutils, build 583 (hg rev 583): 269× faster (C#Bash 0.053 s, Git Bash 14.277 s)</title></circle>
-<circle class="dot" cx="135.6" cy="296.1" r="3.5"><title>coreutils, build 612 (hg rev 612): 264× faster (C#Bash 0.055 s, Git Bash 14.496 s)</title></circle>
-<circle class="dot" cx="147.8" cy="296.6" r="3.5"><title>coreutils, build 635 (hg rev 635): 262× faster (C#Bash 0.053 s, Git Bash 13.889 s)</title></circle>
-<circle class="dot" cx="160.0" cy="291.6" r="3.5"><title>coreutils, build 651 (hg rev 651): 277× faster (C#Bash 0.055 s, Git Bash 15.246 s)</title></circle>
-<circle class="dot" cx="172.2" cy="301.6" r="3.5"><title>coreutils, build 655 (hg rev 655): 247× faster (C#Bash 0.058 s, Git Bash 14.335 s)</title></circle>
-<circle class="dot" cx="184.4" cy="291.9" r="3.5"><title>coreutils, build 681 (hg rev 681): 276× faster (C#Bash 0.06 s, Git Bash 16.573 s)</title></circle>
-<circle class="dot" cx="196.7" cy="290.4" r="3.5"><title>coreutils, build 726 (hg rev 726): 281× faster (C#Bash 0.06 s, Git Bash 16.842 s)</title></circle>
-<circle class="dot" cx="208.9" cy="290.7" r="3.5"><title>coreutils, build 754 (hg rev 754): 280× faster (C#Bash 0.057 s, Git Bash 15.961 s)</title></circle>
-<circle class="dot" cx="221.1" cy="297.7" r="3.5"><title>coreutils, build 798 (hg rev 798): 259× faster (C#Bash 0.061 s, Git Bash 15.789 s)</title></circle>
-<circle class="dot" cx="233.3" cy="294.0" r="3.5"><title>coreutils, build 806 (hg rev 806): 270× faster (C#Bash 0.057 s, Git Bash 15.398 s)</title></circle>
-<circle class="dot" cx="245.6" cy="296.6" r="3.5"><title>coreutils, build 859 (hg rev 859): 262× faster (C#Bash 0.06 s, Git Bash 15.735 s)</title></circle>
-<circle class="dot" cx="257.8" cy="301.0" r="3.5"><title>coreutils, build 885 (hg rev 885): 249× faster (C#Bash 0.057 s, Git Bash 14.197 s)</title></circle>
-<circle class="dot" cx="270.0" cy="305.4" r="3.5"><title>coreutils, build 999 (hg rev 999): 236× faster (C#Bash 0.062 s, Git Bash 14.62 s)</title></circle>
+<circle class="dot" cx="50.0" cy="292.4" r="3.5"><title>coreutils, build 472 (hg rev 472): 275× faster (C#Bash 0.053 s, PortableGit's bash 14.566 s)</title></circle>
+<circle class="dot" cx="62.2" cy="292.9" r="3.5"><title>coreutils, build 511 (hg rev 511): 273× faster (C#Bash 0.053 s, PortableGit's bash 14.481 s)</title></circle>
+<circle class="dot" cx="74.4" cy="294.5" r="3.5"><title>coreutils, build 520 (hg rev 520): 268× faster (C#Bash 0.054 s, PortableGit's bash 14.496 s)</title></circle>
+<circle class="dot" cx="86.7" cy="295.8" r="3.5"><title>coreutils, build 532 (hg rev 532): 265× faster (C#Bash 0.054 s, PortableGit's bash 14.296 s)</title></circle>
+<circle class="dot" cx="98.9" cy="296.0" r="3.5"><title>coreutils, build 536 (hg rev 536): 264× faster (C#Bash 0.055 s, PortableGit's bash 14.512 s)</title></circle>
+<circle class="dot" cx="111.1" cy="299.6" r="3.5"><title>coreutils, build 553 (hg rev 553): 253× faster (C#Bash 0.057 s, PortableGit's bash 14.425 s)</title></circle>
+<circle class="dot" cx="123.3" cy="294.2" r="3.5"><title>coreutils, build 583 (hg rev 583): 269× faster (C#Bash 0.053 s, PortableGit's bash 14.277 s)</title></circle>
+<circle class="dot" cx="135.6" cy="296.1" r="3.5"><title>coreutils, build 612 (hg rev 612): 264× faster (C#Bash 0.055 s, PortableGit's bash 14.496 s)</title></circle>
+<circle class="dot" cx="147.8" cy="296.6" r="3.5"><title>coreutils, build 635 (hg rev 635): 262× faster (C#Bash 0.053 s, PortableGit's bash 13.889 s)</title></circle>
+<circle class="dot" cx="160.0" cy="291.6" r="3.5"><title>coreutils, build 651 (hg rev 651): 277× faster (C#Bash 0.055 s, PortableGit's bash 15.246 s)</title></circle>
+<circle class="dot" cx="172.2" cy="301.6" r="3.5"><title>coreutils, build 655 (hg rev 655): 247× faster (C#Bash 0.058 s, PortableGit's bash 14.335 s)</title></circle>
+<circle class="dot" cx="184.4" cy="291.9" r="3.5"><title>coreutils, build 681 (hg rev 681): 276× faster (C#Bash 0.06 s, PortableGit's bash 16.573 s)</title></circle>
+<circle class="dot" cx="196.7" cy="290.4" r="3.5"><title>coreutils, build 726 (hg rev 726): 281× faster (C#Bash 0.06 s, PortableGit's bash 16.842 s)</title></circle>
+<circle class="dot" cx="208.9" cy="290.7" r="3.5"><title>coreutils, build 754 (hg rev 754): 280× faster (C#Bash 0.057 s, PortableGit's bash 15.961 s)</title></circle>
+<circle class="dot" cx="221.1" cy="297.7" r="3.5"><title>coreutils, build 798 (hg rev 798): 259× faster (C#Bash 0.061 s, PortableGit's bash 15.789 s)</title></circle>
+<circle class="dot" cx="233.3" cy="294.0" r="3.5"><title>coreutils, build 806 (hg rev 806): 270× faster (C#Bash 0.057 s, PortableGit's bash 15.398 s)</title></circle>
+<circle class="dot" cx="245.6" cy="296.6" r="3.5"><title>coreutils, build 859 (hg rev 859): 262× faster (C#Bash 0.06 s, PortableGit's bash 15.735 s)</title></circle>
+<circle class="dot" cx="257.8" cy="301.0" r="3.5"><title>coreutils, build 885 (hg rev 885): 249× faster (C#Bash 0.057 s, PortableGit's bash 14.197 s)</title></circle>
+<circle class="dot" cx="270.0" cy="305.4" r="3.5"><title>coreutils, build 999 (hg rev 999): 236× faster (C#Bash 0.062 s, PortableGit's bash 14.62 s)</title></circle>
 <text class="val" x="52.0" y="285.4">275×</text><text class="val b" x="268.0" y="298.4" text-anchor="end">236×</text>
 <text class="pt" x="310" y="268">pipeline</text>
 <line class="grid" x1="310" x2="530" y1="284" y2="284"/><line class="grid" x1="310" x2="530" y1="384" y2="384"/>
 <text class="ax" x="306" y="288" text-anchor="end">5.00×</text><text class="ax" x="306" y="388" text-anchor="end">0</text>
 <text class="ax" x="310" y="399">472</text><text class="ax" x="530" y="399" text-anchor="end">999</text>
 <polyline class="line" points="310.0,322.8 322.2,323.8 334.4,323.8 346.7,324.0 358.9,323.3 371.1,321.6 383.3,325.2 395.6,321.8 407.8,327.5 420.0,323.8 432.2,325.6 444.4,313.8 456.7,318.0 468.9,332.6 481.1,320.9 493.3,322.7 505.6,329.5 517.8,323.8 530.0,310.4 "/>
-<circle class="dot" cx="310.0" cy="322.8" r="3.5"><title>pipeline, build 472 (hg rev 472): 3.06× faster (C#Bash 0.081 s, Git Bash 0.248 s)</title></circle>
-<circle class="dot" cx="322.2" cy="323.8" r="3.5"><title>pipeline, build 511 (hg rev 511): 3.01× faster (C#Bash 0.081 s, Git Bash 0.244 s)</title></circle>
-<circle class="dot" cx="334.4" cy="323.8" r="3.5"><title>pipeline, build 520 (hg rev 520): 3.01× faster (C#Bash 0.081 s, Git Bash 0.244 s)</title></circle>
-<circle class="dot" cx="346.7" cy="324.0" r="3.5"><title>pipeline, build 532 (hg rev 532): 3.00× faster (C#Bash 0.081 s, Git Bash 0.243 s)</title></circle>
-<circle class="dot" cx="358.9" cy="323.3" r="3.5"><title>pipeline, build 536 (hg rev 536): 3.04× faster (C#Bash 0.082 s, Git Bash 0.249 s)</title></circle>
-<circle class="dot" cx="371.1" cy="321.6" r="3.5"><title>pipeline, build 553 (hg rev 553): 3.12× faster (C#Bash 0.085 s, Git Bash 0.265 s)</title></circle>
-<circle class="dot" cx="383.3" cy="325.2" r="3.5"><title>pipeline, build 583 (hg rev 583): 2.94× faster (C#Bash 0.085 s, Git Bash 0.25 s)</title></circle>
-<circle class="dot" cx="395.6" cy="321.8" r="3.5"><title>pipeline, build 612 (hg rev 612): 3.11× faster (C#Bash 0.09 s, Git Bash 0.28 s)</title></circle>
-<circle class="dot" cx="407.8" cy="327.5" r="3.5"><title>pipeline, build 635 (hg rev 635): 2.83× faster (C#Bash 0.086 s, Git Bash 0.243 s)</title></circle>
-<circle class="dot" cx="420.0" cy="323.8" r="3.5"><title>pipeline, build 651 (hg rev 651): 3.01× faster (C#Bash 0.087 s, Git Bash 0.262 s)</title></circle>
-<circle class="dot" cx="432.2" cy="325.6" r="3.5"><title>pipeline, build 655 (hg rev 655): 2.92× faster (C#Bash 0.09 s, Git Bash 0.263 s)</title></circle>
-<circle class="dot" cx="444.4" cy="313.8" r="3.5"><title>pipeline, build 681 (hg rev 681): 3.51× faster (C#Bash 0.094 s, Git Bash 0.33 s)</title></circle>
-<circle class="dot" cx="456.7" cy="318.0" r="3.5"><title>pipeline, build 726 (hg rev 726): 3.30× faster (C#Bash 0.093 s, Git Bash 0.307 s)</title></circle>
-<circle class="dot" cx="468.9" cy="332.6" r="3.5"><title>pipeline, build 754 (hg rev 754): 2.57× faster (C#Bash 0.1 s, Git Bash 0.257 s)</title></circle>
-<circle class="dot" cx="481.1" cy="320.9" r="3.5"><title>pipeline, build 798 (hg rev 798): 3.16× faster (C#Bash 0.09 s, Git Bash 0.284 s)</title></circle>
-<circle class="dot" cx="493.3" cy="322.7" r="3.5"><title>pipeline, build 806 (hg rev 806): 3.06× faster (C#Bash 0.094 s, Git Bash 0.288 s)</title></circle>
-<circle class="dot" cx="505.6" cy="329.5" r="3.5"><title>pipeline, build 859 (hg rev 859): 2.72× faster (C#Bash 0.101 s, Git Bash 0.275 s)</title></circle>
-<circle class="dot" cx="517.8" cy="323.8" r="3.5"><title>pipeline, build 885 (hg rev 885): 3.01× faster (C#Bash 0.099 s, Git Bash 0.298 s)</title></circle>
-<circle class="dot" cx="530.0" cy="310.4" r="3.5"><title>pipeline, build 999 (hg rev 999): 3.68× faster (C#Bash 0.094 s, Git Bash 0.346 s)</title></circle>
+<circle class="dot" cx="310.0" cy="322.8" r="3.5"><title>pipeline, build 472 (hg rev 472): 3.06× faster (C#Bash 0.081 s, PortableGit's bash 0.248 s)</title></circle>
+<circle class="dot" cx="322.2" cy="323.8" r="3.5"><title>pipeline, build 511 (hg rev 511): 3.01× faster (C#Bash 0.081 s, PortableGit's bash 0.244 s)</title></circle>
+<circle class="dot" cx="334.4" cy="323.8" r="3.5"><title>pipeline, build 520 (hg rev 520): 3.01× faster (C#Bash 0.081 s, PortableGit's bash 0.244 s)</title></circle>
+<circle class="dot" cx="346.7" cy="324.0" r="3.5"><title>pipeline, build 532 (hg rev 532): 3.00× faster (C#Bash 0.081 s, PortableGit's bash 0.243 s)</title></circle>
+<circle class="dot" cx="358.9" cy="323.3" r="3.5"><title>pipeline, build 536 (hg rev 536): 3.04× faster (C#Bash 0.082 s, PortableGit's bash 0.249 s)</title></circle>
+<circle class="dot" cx="371.1" cy="321.6" r="3.5"><title>pipeline, build 553 (hg rev 553): 3.12× faster (C#Bash 0.085 s, PortableGit's bash 0.265 s)</title></circle>
+<circle class="dot" cx="383.3" cy="325.2" r="3.5"><title>pipeline, build 583 (hg rev 583): 2.94× faster (C#Bash 0.085 s, PortableGit's bash 0.25 s)</title></circle>
+<circle class="dot" cx="395.6" cy="321.8" r="3.5"><title>pipeline, build 612 (hg rev 612): 3.11× faster (C#Bash 0.09 s, PortableGit's bash 0.28 s)</title></circle>
+<circle class="dot" cx="407.8" cy="327.5" r="3.5"><title>pipeline, build 635 (hg rev 635): 2.83× faster (C#Bash 0.086 s, PortableGit's bash 0.243 s)</title></circle>
+<circle class="dot" cx="420.0" cy="323.8" r="3.5"><title>pipeline, build 651 (hg rev 651): 3.01× faster (C#Bash 0.087 s, PortableGit's bash 0.262 s)</title></circle>
+<circle class="dot" cx="432.2" cy="325.6" r="3.5"><title>pipeline, build 655 (hg rev 655): 2.92× faster (C#Bash 0.09 s, PortableGit's bash 0.263 s)</title></circle>
+<circle class="dot" cx="444.4" cy="313.8" r="3.5"><title>pipeline, build 681 (hg rev 681): 3.51× faster (C#Bash 0.094 s, PortableGit's bash 0.33 s)</title></circle>
+<circle class="dot" cx="456.7" cy="318.0" r="3.5"><title>pipeline, build 726 (hg rev 726): 3.30× faster (C#Bash 0.093 s, PortableGit's bash 0.307 s)</title></circle>
+<circle class="dot" cx="468.9" cy="332.6" r="3.5"><title>pipeline, build 754 (hg rev 754): 2.57× faster (C#Bash 0.1 s, PortableGit's bash 0.257 s)</title></circle>
+<circle class="dot" cx="481.1" cy="320.9" r="3.5"><title>pipeline, build 798 (hg rev 798): 3.16× faster (C#Bash 0.09 s, PortableGit's bash 0.284 s)</title></circle>
+<circle class="dot" cx="493.3" cy="322.7" r="3.5"><title>pipeline, build 806 (hg rev 806): 3.06× faster (C#Bash 0.094 s, PortableGit's bash 0.288 s)</title></circle>
+<circle class="dot" cx="505.6" cy="329.5" r="3.5"><title>pipeline, build 859 (hg rev 859): 2.72× faster (C#Bash 0.101 s, PortableGit's bash 0.275 s)</title></circle>
+<circle class="dot" cx="517.8" cy="323.8" r="3.5"><title>pipeline, build 885 (hg rev 885): 3.01× faster (C#Bash 0.099 s, PortableGit's bash 0.298 s)</title></circle>
+<circle class="dot" cx="530.0" cy="310.4" r="3.5"><title>pipeline, build 999 (hg rev 999): 3.68× faster (C#Bash 0.094 s, PortableGit's bash 0.346 s)</title></circle>
 <text class="val" x="312.0" y="315.8">3.06×</text><text class="val b" x="528.0" y="303.4" text-anchor="end">3.68×</text>
 <text class="pt" x="570" y="268">find</text>
 <line class="grid" x1="570" x2="790" y1="284" y2="284"/><line class="grid" x1="570" x2="790" y1="384" y2="384"/>
 <text class="ax" x="566" y="288" text-anchor="end">10.0×</text><text class="ax" x="566" y="388" text-anchor="end">0</text>
 <text class="ax" x="570" y="399">472</text><text class="ax" x="790" y="399" text-anchor="end">999</text>
 <polyline class="line" points="570.0,296.0 582.2,291.9 594.4,298.0 606.7,298.0 618.9,294.7 631.1,295.3 643.3,296.0 655.6,294.0 667.8,298.0 680.0,298.0 692.2,300.9 704.4,294.7 716.7,294.6 728.9,304.0 741.1,295.3 753.3,300.2 765.6,292.8 777.8,299.6 790.0,293.3 "/>
-<circle class="dot" cx="570.0" cy="296.0" r="3.5"><title>find, build 472 (hg rev 472): 8.80× faster (C#Bash 0.015 s, Git Bash 0.132 s)</title></circle>
-<circle class="dot" cx="582.2" cy="291.9" r="3.5"><title>find, build 511 (hg rev 511): 9.21× faster (C#Bash 0.014 s, Git Bash 0.129 s)</title></circle>
-<circle class="dot" cx="594.4" cy="298.0" r="3.5"><title>find, build 520 (hg rev 520): 8.60× faster (C#Bash 0.015 s, Git Bash 0.129 s)</title></circle>
-<circle class="dot" cx="606.7" cy="298.0" r="3.5"><title>find, build 532 (hg rev 532): 8.60× faster (C#Bash 0.015 s, Git Bash 0.129 s)</title></circle>
-<circle class="dot" cx="618.9" cy="294.7" r="3.5"><title>find, build 536 (hg rev 536): 8.93× faster (C#Bash 0.015 s, Git Bash 0.134 s)</title></circle>
-<circle class="dot" cx="631.1" cy="295.3" r="3.5"><title>find, build 553 (hg rev 553): 8.87× faster (C#Bash 0.015 s, Git Bash 0.133 s)</title></circle>
-<circle class="dot" cx="643.3" cy="296.0" r="3.5"><title>find, build 583 (hg rev 583): 8.80× faster (C#Bash 0.015 s, Git Bash 0.132 s)</title></circle>
-<circle class="dot" cx="655.6" cy="294.0" r="3.5"><title>find, build 612 (hg rev 612): 9.00× faster (C#Bash 0.015 s, Git Bash 0.135 s)</title></circle>
-<circle class="dot" cx="667.8" cy="298.0" r="3.5"><title>find, build 635 (hg rev 635): 8.60× faster (C#Bash 0.015 s, Git Bash 0.129 s)</title></circle>
-<circle class="dot" cx="680.0" cy="298.0" r="3.5"><title>find, build 651 (hg rev 651): 8.60× faster (C#Bash 0.015 s, Git Bash 0.129 s)</title></circle>
-<circle class="dot" cx="692.2" cy="300.9" r="3.5"><title>find, build 655 (hg rev 655): 8.31× faster (C#Bash 0.016 s, Git Bash 0.133 s)</title></circle>
-<circle class="dot" cx="704.4" cy="294.7" r="3.5"><title>find, build 681 (hg rev 681): 8.93× faster (C#Bash 0.015 s, Git Bash 0.134 s)</title></circle>
-<circle class="dot" cx="716.7" cy="294.6" r="3.5"><title>find, build 726 (hg rev 726): 8.94× faster (C#Bash 0.016 s, Git Bash 0.143 s)</title></circle>
-<circle class="dot" cx="728.9" cy="304.0" r="3.5"><title>find, build 754 (hg rev 754): 8.00× faster (C#Bash 0.018 s, Git Bash 0.144 s)</title></circle>
-<circle class="dot" cx="741.1" cy="295.3" r="3.5"><title>find, build 798 (hg rev 798): 8.87× faster (C#Bash 0.015 s, Git Bash 0.133 s)</title></circle>
-<circle class="dot" cx="753.3" cy="300.2" r="3.5"><title>find, build 806 (hg rev 806): 8.38× faster (C#Bash 0.016 s, Git Bash 0.134 s)</title></circle>
-<circle class="dot" cx="765.6" cy="292.8" r="3.5"><title>find, build 859 (hg rev 859): 9.12× faster (C#Bash 0.016 s, Git Bash 0.146 s)</title></circle>
-<circle class="dot" cx="777.8" cy="299.6" r="3.5"><title>find, build 885 (hg rev 885): 8.44× faster (C#Bash 0.016 s, Git Bash 0.135 s)</title></circle>
-<circle class="dot" cx="790.0" cy="293.3" r="3.5"><title>find, build 999 (hg rev 999): 9.07× faster (C#Bash 0.014 s, Git Bash 0.127 s)</title></circle>
+<circle class="dot" cx="570.0" cy="296.0" r="3.5"><title>find, build 472 (hg rev 472): 8.80× faster (C#Bash 0.015 s, PortableGit's bash 0.132 s)</title></circle>
+<circle class="dot" cx="582.2" cy="291.9" r="3.5"><title>find, build 511 (hg rev 511): 9.21× faster (C#Bash 0.014 s, PortableGit's bash 0.129 s)</title></circle>
+<circle class="dot" cx="594.4" cy="298.0" r="3.5"><title>find, build 520 (hg rev 520): 8.60× faster (C#Bash 0.015 s, PortableGit's bash 0.129 s)</title></circle>
+<circle class="dot" cx="606.7" cy="298.0" r="3.5"><title>find, build 532 (hg rev 532): 8.60× faster (C#Bash 0.015 s, PortableGit's bash 0.129 s)</title></circle>
+<circle class="dot" cx="618.9" cy="294.7" r="3.5"><title>find, build 536 (hg rev 536): 8.93× faster (C#Bash 0.015 s, PortableGit's bash 0.134 s)</title></circle>
+<circle class="dot" cx="631.1" cy="295.3" r="3.5"><title>find, build 553 (hg rev 553): 8.87× faster (C#Bash 0.015 s, PortableGit's bash 0.133 s)</title></circle>
+<circle class="dot" cx="643.3" cy="296.0" r="3.5"><title>find, build 583 (hg rev 583): 8.80× faster (C#Bash 0.015 s, PortableGit's bash 0.132 s)</title></circle>
+<circle class="dot" cx="655.6" cy="294.0" r="3.5"><title>find, build 612 (hg rev 612): 9.00× faster (C#Bash 0.015 s, PortableGit's bash 0.135 s)</title></circle>
+<circle class="dot" cx="667.8" cy="298.0" r="3.5"><title>find, build 635 (hg rev 635): 8.60× faster (C#Bash 0.015 s, PortableGit's bash 0.129 s)</title></circle>
+<circle class="dot" cx="680.0" cy="298.0" r="3.5"><title>find, build 651 (hg rev 651): 8.60× faster (C#Bash 0.015 s, PortableGit's bash 0.129 s)</title></circle>
+<circle class="dot" cx="692.2" cy="300.9" r="3.5"><title>find, build 655 (hg rev 655): 8.31× faster (C#Bash 0.016 s, PortableGit's bash 0.133 s)</title></circle>
+<circle class="dot" cx="704.4" cy="294.7" r="3.5"><title>find, build 681 (hg rev 681): 8.93× faster (C#Bash 0.015 s, PortableGit's bash 0.134 s)</title></circle>
+<circle class="dot" cx="716.7" cy="294.6" r="3.5"><title>find, build 726 (hg rev 726): 8.94× faster (C#Bash 0.016 s, PortableGit's bash 0.143 s)</title></circle>
+<circle class="dot" cx="728.9" cy="304.0" r="3.5"><title>find, build 754 (hg rev 754): 8.00× faster (C#Bash 0.018 s, PortableGit's bash 0.144 s)</title></circle>
+<circle class="dot" cx="741.1" cy="295.3" r="3.5"><title>find, build 798 (hg rev 798): 8.87× faster (C#Bash 0.015 s, PortableGit's bash 0.133 s)</title></circle>
+<circle class="dot" cx="753.3" cy="300.2" r="3.5"><title>find, build 806 (hg rev 806): 8.38× faster (C#Bash 0.016 s, PortableGit's bash 0.134 s)</title></circle>
+<circle class="dot" cx="765.6" cy="292.8" r="3.5"><title>find, build 859 (hg rev 859): 9.12× faster (C#Bash 0.016 s, PortableGit's bash 0.146 s)</title></circle>
+<circle class="dot" cx="777.8" cy="299.6" r="3.5"><title>find, build 885 (hg rev 885): 8.44× faster (C#Bash 0.016 s, PortableGit's bash 0.135 s)</title></circle>
+<circle class="dot" cx="790.0" cy="293.3" r="3.5"><title>find, build 999 (hg rev 999): 9.07× faster (C#Bash 0.014 s, PortableGit's bash 0.127 s)</title></circle>
 <text class="val" x="572.0" y="289.0">8.80×</text><text class="val b" x="788.0" y="286.3" text-anchor="end">9.07×</text>
 <text class="pt" x="830" y="268">startup</text>
 <line class="grid" x1="830" x2="1050" y1="284" y2="284"/><line class="grid" x1="830" x2="1050" y1="384" y2="384"/>
 <text class="ax" x="826" y="288" text-anchor="end">5.00×</text><text class="ax" x="826" y="388" text-anchor="end">0</text>
 <text class="ax" x="830" y="399">472</text><text class="ax" x="1050" y="399" text-anchor="end">999</text>
 <polyline class="line" points="830.0,320.0 842.2,329.1 854.4,329.7 866.7,331.3 878.9,331.1 891.1,331.1 903.3,330.4 915.6,331.4 927.8,332.1 940.0,332.4 952.2,332.4 964.4,332.4 976.7,334.5 988.9,335.5 1001.1,334.0 1013.3,332.3 1025.6,322.8 1037.8,322.7 1050.0,322.5 "/>
-<circle class="dot" cx="830.0" cy="320.0" r="3.5"><title>startup, build 472 (hg rev 472): 3.20× faster (C#Bash 0.0086 s, Git Bash 0.0275 s)</title></circle>
-<circle class="dot" cx="842.2" cy="329.1" r="3.5"><title>startup, build 511 (hg rev 511): 2.74× faster (C#Bash 0.0086 s, Git Bash 0.0236 s)</title></circle>
-<circle class="dot" cx="854.4" cy="329.7" r="3.5"><title>startup, build 520 (hg rev 520): 2.71× faster (C#Bash 0.0084 s, Git Bash 0.0228 s)</title></circle>
-<circle class="dot" cx="866.7" cy="331.3" r="3.5"><title>startup, build 532 (hg rev 532): 2.64× faster (C#Bash 0.0088 s, Git Bash 0.0232 s)</title></circle>
-<circle class="dot" cx="878.9" cy="331.1" r="3.5"><title>startup, build 536 (hg rev 536): 2.64× faster (C#Bash 0.0087 s, Git Bash 0.023 s)</title></circle>
-<circle class="dot" cx="891.1" cy="331.1" r="3.5"><title>startup, build 553 (hg rev 553): 2.64× faster (C#Bash 0.0087 s, Git Bash 0.023 s)</title></circle>
-<circle class="dot" cx="903.3" cy="330.4" r="3.5"><title>startup, build 583 (hg rev 583): 2.68× faster (C#Bash 0.0088 s, Git Bash 0.0236 s)</title></circle>
-<circle class="dot" cx="915.6" cy="331.4" r="3.5"><title>startup, build 612 (hg rev 612): 2.63× faster (C#Bash 0.0092 s, Git Bash 0.0242 s)</title></circle>
-<circle class="dot" cx="927.8" cy="332.1" r="3.5"><title>startup, build 635 (hg rev 635): 2.60× faster (C#Bash 0.0089 s, Git Bash 0.0231 s)</title></circle>
-<circle class="dot" cx="940.0" cy="332.4" r="3.5"><title>startup, build 651 (hg rev 651): 2.58× faster (C#Bash 0.0095 s, Git Bash 0.0245 s)</title></circle>
-<circle class="dot" cx="952.2" cy="332.4" r="3.5"><title>startup, build 655 (hg rev 655): 2.58× faster (C#Bash 0.0091 s, Git Bash 0.0235 s)</title></circle>
-<circle class="dot" cx="964.4" cy="332.4" r="3.5"><title>startup, build 681 (hg rev 681): 2.58× faster (C#Bash 0.0102 s, Git Bash 0.0263 s)</title></circle>
-<circle class="dot" cx="976.7" cy="334.5" r="3.5"><title>startup, build 726 (hg rev 726): 2.48× faster (C#Bash 0.0107 s, Git Bash 0.0265 s)</title></circle>
-<circle class="dot" cx="988.9" cy="335.5" r="3.5"><title>startup, build 754 (hg rev 754): 2.42× faster (C#Bash 0.0104 s, Git Bash 0.0252 s)</title></circle>
-<circle class="dot" cx="1001.1" cy="334.0" r="3.5"><title>startup, build 798 (hg rev 798): 2.50× faster (C#Bash 0.0104 s, Git Bash 0.026 s)</title></circle>
-<circle class="dot" cx="1013.3" cy="332.3" r="3.5"><title>startup, build 806 (hg rev 806): 2.58× faster (C#Bash 0.0103 s, Git Bash 0.0266 s)</title></circle>
-<circle class="dot" cx="1025.6" cy="322.8" r="3.5"><title>startup, build 859 (hg rev 859): 3.06× faster (C#Bash 0.0083 s, Git Bash 0.0254 s)</title></circle>
-<circle class="dot" cx="1037.8" cy="322.7" r="3.5"><title>startup, build 885 (hg rev 885): 3.06× faster (C#Bash 0.0079 s, Git Bash 0.0242 s)</title></circle>
-<circle class="dot" cx="1050.0" cy="322.5" r="3.5"><title>startup, build 999 (hg rev 999): 3.08× faster (C#Bash 0.008 s, Git Bash 0.0246 s)</title></circle>
+<circle class="dot" cx="830.0" cy="320.0" r="3.5"><title>startup, build 472 (hg rev 472): 3.20× faster (C#Bash 0.0086 s, PortableGit's bash 0.0275 s)</title></circle>
+<circle class="dot" cx="842.2" cy="329.1" r="3.5"><title>startup, build 511 (hg rev 511): 2.74× faster (C#Bash 0.0086 s, PortableGit's bash 0.0236 s)</title></circle>
+<circle class="dot" cx="854.4" cy="329.7" r="3.5"><title>startup, build 520 (hg rev 520): 2.71× faster (C#Bash 0.0084 s, PortableGit's bash 0.0228 s)</title></circle>
+<circle class="dot" cx="866.7" cy="331.3" r="3.5"><title>startup, build 532 (hg rev 532): 2.64× faster (C#Bash 0.0088 s, PortableGit's bash 0.0232 s)</title></circle>
+<circle class="dot" cx="878.9" cy="331.1" r="3.5"><title>startup, build 536 (hg rev 536): 2.64× faster (C#Bash 0.0087 s, PortableGit's bash 0.023 s)</title></circle>
+<circle class="dot" cx="891.1" cy="331.1" r="3.5"><title>startup, build 553 (hg rev 553): 2.64× faster (C#Bash 0.0087 s, PortableGit's bash 0.023 s)</title></circle>
+<circle class="dot" cx="903.3" cy="330.4" r="3.5"><title>startup, build 583 (hg rev 583): 2.68× faster (C#Bash 0.0088 s, PortableGit's bash 0.0236 s)</title></circle>
+<circle class="dot" cx="915.6" cy="331.4" r="3.5"><title>startup, build 612 (hg rev 612): 2.63× faster (C#Bash 0.0092 s, PortableGit's bash 0.0242 s)</title></circle>
+<circle class="dot" cx="927.8" cy="332.1" r="3.5"><title>startup, build 635 (hg rev 635): 2.60× faster (C#Bash 0.0089 s, PortableGit's bash 0.0231 s)</title></circle>
+<circle class="dot" cx="940.0" cy="332.4" r="3.5"><title>startup, build 651 (hg rev 651): 2.58× faster (C#Bash 0.0095 s, PortableGit's bash 0.0245 s)</title></circle>
+<circle class="dot" cx="952.2" cy="332.4" r="3.5"><title>startup, build 655 (hg rev 655): 2.58× faster (C#Bash 0.0091 s, PortableGit's bash 0.0235 s)</title></circle>
+<circle class="dot" cx="964.4" cy="332.4" r="3.5"><title>startup, build 681 (hg rev 681): 2.58× faster (C#Bash 0.0102 s, PortableGit's bash 0.0263 s)</title></circle>
+<circle class="dot" cx="976.7" cy="334.5" r="3.5"><title>startup, build 726 (hg rev 726): 2.48× faster (C#Bash 0.0107 s, PortableGit's bash 0.0265 s)</title></circle>
+<circle class="dot" cx="988.9" cy="335.5" r="3.5"><title>startup, build 754 (hg rev 754): 2.42× faster (C#Bash 0.0104 s, PortableGit's bash 0.0252 s)</title></circle>
+<circle class="dot" cx="1001.1" cy="334.0" r="3.5"><title>startup, build 798 (hg rev 798): 2.50× faster (C#Bash 0.0104 s, PortableGit's bash 0.026 s)</title></circle>
+<circle class="dot" cx="1013.3" cy="332.3" r="3.5"><title>startup, build 806 (hg rev 806): 2.58× faster (C#Bash 0.0103 s, PortableGit's bash 0.0266 s)</title></circle>
+<circle class="dot" cx="1025.6" cy="322.8" r="3.5"><title>startup, build 859 (hg rev 859): 3.06× faster (C#Bash 0.0083 s, PortableGit's bash 0.0254 s)</title></circle>
+<circle class="dot" cx="1037.8" cy="322.7" r="3.5"><title>startup, build 885 (hg rev 885): 3.06× faster (C#Bash 0.0079 s, PortableGit's bash 0.0242 s)</title></circle>
+<circle class="dot" cx="1050.0" cy="322.5" r="3.5"><title>startup, build 999 (hg rev 999): 3.08× faster (C#Bash 0.008 s, PortableGit's bash 0.0246 s)</title></circle>
 <text class="val" x="832.0" y="313.0">3.20×</text><text class="val b" x="1048.0" y="315.5" text-anchor="end">3.08×</text>
 <text class="h2" x="20" y="448">Against WSL bash 5.1 (native Linux bash)</text>
 <text class="pt" x="50" y="472">loop</text>

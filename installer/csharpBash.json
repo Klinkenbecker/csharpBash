@@ -2,14 +2,24 @@
   "schema": 2,
   "product": { "name": "C#Bash", "version": "@VERSION@" },
   "destinations": {
-    "home": { "fixed": "%USERPROFILE%/.bash", "primary": true },
-    "bin":  { "fixed": "home:bin" }
+    "home":   { "fixed": "%USERPROFILE%/.bash", "primary": true },
+    "bin":    { "fixed": "home:bin" },
+    "etc":    { "fixed": "home:etc" },
+    "wombat": { "fixed": "home:wombat" },
+    "wombatdocs": { "fixed": "home:wombat/docs" }
   },
   "artifacts": [
     { "from": "Bash.exe", "to": "bin:", "links": [ "bin:sh.exe" ] },
+    { "from": "wombat.exe", "to": "bin:", "links": [ "bin:git.exe" ] },
     { "from": "claude.cmd", "to": "bin:" },
     { "from": "KNOWN_ISSUES.md", "to": "home:" },
-    { "from": "KNOWN_LIMITATIONS.md", "to": "home:" }
+    { "from": "KNOWN_LIMITATIONS.md", "to": "home:" },
+    { "from": "gitconfig", "to": "etc:" },
+    { "from": "gitattributes", "to": "etc:" },
+    { "from": "wombat/KNOWN_ISSUES.md", "to": "wombat:" },
+    { "from": "wombat/KNOWN_LIMITATIONS.md", "to": "wombat:" },
+    { "from": "wombat/docs/USING.md", "to": "wombatdocs:" },
+    { "from": "wombat/README.md", "to": "wombat:" }
   ],
   "path": { "add": "bin:", "default": "no" }
 }

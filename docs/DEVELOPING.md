@@ -46,25 +46,25 @@ today: .NET's Native AOT runtime libraries are built with Microsoft's C++ compil
 `vcvars64.bat`, and links with exactly that install (`-p:IlcUseEnvironmentalTools=true`); a prerelease Visual Studio is
 never used. Not yet proven on a clean machine.
 
-## What the build and the tests use: WSL, Git for Windows, MSYS2
+## What the build and the tests use: WSL, Git® for Windows, MSYS2
 
-**C#Bash itself needs none of them.** The shipped `Bash.exe` is one static executable: no .NET runtime, no Git, no MSYS, no WSL. An MSYS program (one with `msys-2.0.dll` or `cygwin1.dll` beside it) gets its arguments quoted and its file handles opened the way MSYS needs. Nothing of Git or MSYS ships with C#Bash.
+**C#Bash itself needs none of them.** The shipped `Bash.exe` is one static executable: no .NET runtime, no PortableGit, no MSYS, no WSL. An MSYS program (one with `msys-2.0.dll` or `cygwin1.dll` beside it) gets its arguments quoted and its file handles opened the way MSYS needs. Nothing of PortableGit or MSYS ships with C#Bash.
 
 The development tooling is another matter. Each outside system has one job, and nothing reaches for one outside that job:
 
 | | Used by | For |
 |---|---|---|
 | **WSL** (`wsl.exe -e bash`, Ubuntu: GNU bash 5.1, coreutils, gawk, jq) | the battery (`tests/compat/run-compat.sh`), the `bash -n` corpus (`tests/corpus/run-n.sh`), the `df` check (`tests/df/compare-wsl.sh`), the benchmark's third column, the `fallback_chain` case's WSL part (a `SKIP` line without WSL); and by hand, to produce a test case's expected output | **The reference.** Every behavior is matched against GNU bash on Linux. The corpus and `df` scripts run *in* WSL's bash and start C#Bash through WSL's interop. |
-| **Git for Windows** (PortableGit, configured at the top of each script: the benchmark pins 2.28.0 at `F:/Tools/PortableGit-2.28.0`, `publish.sh` uses `F:/Tools/PortableGit`) | the benchmark (`tests/bench/compare3.sh`, and the older `compare.sh`), `tools/publish.sh` | **Git Bash** is one of the shells the benchmark times; either Git Bash or C#Bash may run it, and its table names which (C#Bash is the reference way since 2026-11-14). **`git.exe`** is how `publish.sh` pushes to GitHub (the project's VCS is Mercurial). Nothing else reaches Git; the development machine keeps it off PATH. |
-| **MSYS**, optional (`tests/cases/msys_pin.inc`: pinned to `F:/Tools/PortableGit-2.28.0/usr/bin`; else the first PATH folder holding `msys-2.0.dll`) | nine suite cases: `coreutils_external`, `device_names`, `msys_arguments`, `msys_append_shared`, `msys_inherited_append`, `msys_redirects`, `native_args_msys`, `rm_reserved_names`, `awk_fallthrough` | They test how C#Bash runs MSYS programs. **Without an MSYS, the case prints `BYPASSED: <reason>`**: shown in red, named on its own summary line (`!!! N BYPASSED, NOT TESTED`), repeated by `deploy.sh`, never a failure. |
+| **Git® for Windows** (PortableGit, configured at the top of each script: the benchmark pins 2.28.0 in the folder its `GITBASH` line names, `publish.sh` uses the one its `GIT` line names) | the benchmark (`tests/bench/compare3.sh`, and the older `compare.sh`), `tools/publish.sh` | **Git® Bash** (PortableGit's bash) is one of the shells the benchmark times; either PortableGit's bash or C#Bash may run it, and its table names which (C#Bash is the reference way since 2026-11-14). **`git.exe`** is how `publish.sh` pushes to GitHub (the project's VCS is Mercurial). Nothing else reaches PortableGit; the development machine keeps it off PATH. |
+| **MSYS**, optional (`tests/cases/msys_pin.inc`: pinned to that PortableGit 2.28.0's `usr/bin`; else the first PATH folder holding `msys-2.0.dll`) | nine suite cases: `coreutils_external`, `device_names`, `msys_arguments`, `msys_append_shared`, `msys_inherited_append`, `msys_redirects`, `native_args_msys`, `rm_reserved_names`, `awk_fallthrough` | They test how C#Bash runs MSYS programs. **Without an MSYS, the case prints `BYPASSED: <reason>`**: shown in red, named on its own summary line (`!!! N BYPASSED, NOT TESTED`), repeated by `deploy.sh`, never a failure. |
 | **git on PATH**, optional | two suite cases: `native_args_git`, `dev_tty_git_prompt` | How C#Bash runs git. Without it, the case prints `SKIP: <reason>`: a skip, never a pass. |
 | **The Visual Studio C++ tools**: any edition (Build Tools for Visual Studio is enough) with the components `Microsoft.VisualStudio.Component.VC.Tools.x86.x64` and a Windows SDK (`...Windows11SDK.26100`); `vswhere.exe` comes with the installer | `tools/publish-aot.cmd` (and so `tools/deploy.sh` and `compare3.sh --build`), which finds the newest released install holding the C++ tools through vswhere | The Native AOT link step. |
 
-So a machine with the .NET 10 SDK and WSL runs the whole suite (the MSYS cases bypassed and the git cases skipped when those are absent) and the battery. The push also needs Git for Windows; the benchmark uses Git Bash and WSL when they are there ([below](#running-the-benchmark)); the shipped build also needs the VS C++ tools. `tests/bench/claudecall.sh` (what a Claude Code call costs) still converts paths with `cygpath`, which comes with Git, so for now it runs only from Git Bash.
+So a machine with the .NET 10 SDK and WSL runs the whole suite (the MSYS cases bypassed and the git cases skipped when those are absent) and the battery. The push also needs PortableGit; the benchmark uses PortableGit's bash and WSL when they are there ([below](#running-the-benchmark)); the shipped build also needs the VS C++ tools. `tests/bench/claudecall.sh` (what a Claude Code call costs) still converts paths with `cygpath`, which comes with PortableGit, so for now it runs only from PortableGit's bash.
 
 ## Running the benchmark
 
-`tests/bench/compare3.sh` times C#Bash (the deployed `dist/Bash.exe`) against Git Bash and WSL's GNU bash. Either of
+`tests/bench/compare3.sh` times C#Bash (the deployed `dist/Bash.exe`) against PortableGit's bash and WSL's GNU bash. Either of
 those two may be missing: its column is left out, with a note. With neither, the benchmark is bypassed: a loud
 `BYPASSED` line, exit 0, nothing timed and nothing appended.
 
@@ -72,9 +72,9 @@ It uses:
 - **`tools/benchtimer`**, built: `dotnet build tools/benchtimer -c Release -o tools/benchtimer/bin`. A launch that runs past
   300 s is killed with every process under it and its cell reads `TIMEOUT`; the run goes on. It starts and times
   every shell, and runs the sieve baseline.
-- **Git Bash**, optional: Git for Windows v2.28.0.windows.1's 64-bit PortableGit (46,902,448 bytes, SHA-256
-  `0cd682188b76eeb3a5da3a466d4095d2ccd892e07aae5871c45bf8c43cdb3b13`), unpacked whole into `F:/Tools/PortableGit-2.28.0`
-  (or the folder `GITBASH` names at the top of compare3.sh). Nothing is installed and nothing goes on PATH. Any version
+- **PortableGit's bash**, optional: Git® for Windows v2.28.0.windows.1's 64-bit PortableGit (46,902,448 bytes, SHA-256
+  `0cd682188b76eeb3a5da3a466d4095d2ccd892e07aae5871c45bf8c43cdb3b13`), unpacked whole into a folder of its own,
+  the one `GITBASH` names at the top of compare3.sh. Nothing is installed and nothing goes on PATH. Any version
   runs, shown under the column title; `4.4.23(1)-release` is the one every earlier table used.
 - **WSL**, optional: `wsl.exe` with a Linux distribution whose bash is GNU bash, able to see the repository under
   `/mnt/<drive>` (a WSL that cannot see it stops the run).
@@ -84,7 +84,7 @@ Run it from the repository root, on a quiet machine, either way:
 
 ```sh
 dist/Bash.exe tests/bench/compare3.sh                              # C#Bash runs it: the reference way (2026-11-14)
-F:/Tools/PortableGit-2.28.0/bin/bash.exe tests/bench/compare3.sh   # Git Bash runs it too (rows agree within a few percent)
+<PortableGit-2.28.0>/bin/bash.exe tests/bench/compare3.sh    # Git Bash runs it too (rows agree within a few percent)
 ```
 
 At a publish, once README's table is updated from the run, `bash tools/perf-history.sh --add` appends the deployed

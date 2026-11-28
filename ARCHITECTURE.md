@@ -347,14 +347,14 @@ Two model points:
   overflow), `print > file` / `>> file`, `getline [var] < file`, `close`, `fflush`, 3-argument
   `match`; 2026-10-12, main-input `getline` / `getline var` (one reader shared with the rule loop).
   Pipes (`print | cmd`, `cmd | getline`) and `system()` stay loud. A program that still goes to the
-  PATH awk (Git's gawk) gets `-v BINMODE=3`, so CR survives as on Linux. **A program never runs
+  PATH awk (PortableGit's gawk) gets `-v BINMODE=3`, so CR survives as on Linux. **A program never runs
   twice (2026-10-18):** what the text shows (a literal `printf`/`sprintf` format with `%a`, `system()`;
   `%e`/`%g` and any `RS` are in-process since) is refused at parse time, so the PATH awk runs it once; a refusal met only while the
   program runs (`AwkInterp.Running`) is loud, status 2, since the PATH awk would start again after
   this run's output, stdin reads and `system()` calls. Out-of-range numbers print as gawk 5.1's
   `+inf`/`-nan`.
 - **Processes without procps.** `pgrep`/`pkill`/`ps` are in-process (Toolhelp32 for the list,
-  `NtQueryInformationProcess` for command lines), because a Git-less Windows PATH has none and
+  `NtQueryInformationProcess` for command lines), because a Windows PATH without PortableGit has none and
   Claude Code's own `pkill` shim ends in `command pkill`. Names match case-insensitively; the
   shell itself is never a match, and `pkill` additionally refuses (aloud) to kill its own
   ancestors, whose command lines with `-f` routinely contain the very pattern being killed.
@@ -383,16 +383,16 @@ Two model points:
   Windows API accepts — so a path that leaves through `pwd` and returns as an argument is the same
   string. Within the shell the conversion is a path boundary only, so `grep '\.txt'` and
   `printf 'a\tb'` keep their escapes. Arguments AND environment values are rewritten only for a WINDOWS
-  program, where Git Bash rewrites them: at the start, after the first `=` and after `-X` (`--file=/c/x`,
+  program, where Git® Bash (PortableGit's bash) rewrites them: at the start, after the first `=` and after `-X` (`--file=/c/x`,
   `-I/c/x`), `/c/…` becomes `C:/…` and `/tmp` the temp directory; never a bare `/c` or `/`, never a
   word holding `;` (`ShellEnvironment.NativeArgument`/`NativeValue`). `MSYS_NO_PATHCONV` switches both
   off; `MSYS2_ARG_CONV_EXCL` the arguments, `MSYS2_ENV_CONV_EXCL` the environment (prefixes of
   `NAME=value`); PATH keeps its own exit form; an MSYS program and the shell itself get the environment
   as typed (2026-11-07).
-  An argument starting `//` is Git Bash's escape for a Windows switch: one leading `/` goes and `\`
+  An argument starting `//` is the escape PortableGit's bash uses for a Windows switch: one leading `/` goes and `\`
   becomes `/` (`cmd //c` runs `cmd /c`), except a UNC path (exactly two slashes and a later `/`) or a
   word holding a glob or quote character (`ShellEnvironment.DoubleSlash`).
-  An MSYS program (Git's `usr/bin`) reads `/c/…` itself but re-parses an unquoted word of its command
+  An MSYS program (PortableGit's `usr/bin`) reads `/c/…` itself but re-parses an unquoted word of its command
   line like a shell, so for it `ChildLauncher` double-quotes any argument beyond letters, digits and
   `-_./:=@%+,`, doubling backslashes.
 - **PATH is the one inherited, with the shell's own directory first**, so a nested `bash` or
@@ -405,7 +405,7 @@ Two model points:
   this process's environment and each child's, it is Windows form with forward slashes, `C:/x;F:/y`
   (`ToWindowsPathList`), never a backslash. Every reader splits it with `PathDirs`, which takes either
   form. A Windows program's argument that is a colon list of `/`-rooted paths is converted whole, as
-  Git Bash does.
+  PortableGit's bash does.
 
 ---
 

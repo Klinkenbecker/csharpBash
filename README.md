@@ -4,13 +4,13 @@ You don't need WSL, MSYS2, Cygwin or .NET: it is one program. It also runs nearl
 
 It was built to be the shell Claude Code uses on Windows. Claude Code starts a fresh shell for every tool call, and that is exactly what C#Bash is fast at.
 
-**Download:** [the installer, `csharpBash-setup.exe`](https://github.com/Klinkenbecker/csharpBash/releases/latest/download/csharpBash-setup.exe) (one file, no .NET runtime needed; it installs `Bash.exe`, `sh.exe`, a start file and that build's [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)) · [all releases](https://github.com/Klinkenbecker/csharpBash/releases), each with its SHA-256. Releases up to hg-657 also carried `Bash.exe` on its own.
+**Download:** [the installer, `csharpBash-setup.exe`](https://github.com/Klinkenbecker/csharpBash/releases/latest/download/csharpBash-setup.exe) (one file, no .NET runtime needed; it installs `Bash.exe`, `sh.exe`, `wombat.exe` with `git.exe` a hard link to it (Wombat, a git-compatible tool for Windows), a start file and that build's [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)) · [all releases](https://github.com/Klinkenbecker/csharpBash/releases), each with its SHA-256. Releases up to hg-657 also carried `Bash.exe` on its own.
 
 > **Provenance, stated plainly.** The architecture was human-directed; the code was written, tested, and optimized by Claude (Anthropic). It was developed under **Mercurial**: the full commit history is in [`MERCURIAL_HISTORY.md`](MERCURIAL_HISTORY.md), and the real repository ships as the `mercurial-history.hg` bundle (`hg unbundle mercurial-history.hg`). The story behind it: [*It's moosh all the way down*](https://www.linkedin.com/pulse/its-moosh-all-way-down-guy-mcilroy-mer9c/).
 
 **Money talks, bullshit walks:**
 
-| benchmark (seconds) | C#Bash | Git Bash | WSL bash | vs Git | vs WSL |
+| benchmark (seconds) | C#Bash | Git® Bash | WSL bash | vs Git® | vs WSL |
 |---|---:|---:|---:|---:|---:|
 | `loop` — 200 k `while` iterations | **0.167** | 1.509 | 0.412 | 9.0× | 2.5× |
 | `arith` — 200 k `$(( ))` evaluations | **0.244** | 2.081 | 0.598 | 8.5× | 2.5× |
@@ -24,9 +24,9 @@ It was built to be the shell Claude Code uses on Windows. Claude Code starts a f
 Every row gives the same output in all three shells, so a fast wrong answer can't count as a win. Where the speed
 comes from:
 
-- **No new process per command.** The `coreutils` row runs 900 small commands. Under Git Bash that is 900 Windows
+- **No new process per command.** The `coreutils` row runs 900 small commands. Under Git® Bash (PortableGit's bash) that is 900 Windows
   processes; under C#Bash it is none.
-- **It starts fast:** 8.0 ms, against Git Bash's 24.6 ms or WSL's 98.8 ms. Claude Code pays that on every call.
+- **It starts fast:** 8.0 ms, against 24.6 ms for PortableGit's bash or WSL's 98.8 ms. Claude Code pays that on every call.
 - **It remembers where programs are.** On Windows, finding a program on a long PATH is slow, and not finding one is
   slower still. C#Bash remembers both, so a simple Claude Code call takes about 11 ms in all.
 
@@ -51,11 +51,13 @@ tools, both free ([the supported toolchain](docs/DEVELOPING.md#the-supported-too
    and its [`csharpBash-setup.exe.sha256`](https://github.com/Klinkenbecker/csharpBash/releases/latest/download/csharpBash-setup.exe.sha256),
    and compare them (`certutil -hashfile csharpBash-setup.exe SHA256`). It is not code-signed, so Windows may warn
    about it the first time.
-2. Run it. It puts `Bash.exe`, `sh.exe` (a hard link to it) and a start file, `claude.cmd`, in `%USERPROFILE%/.bash/bin`,
-   and asks `Add [<that folder>] to your PATH? [y/N]` (say yes only if you want `bash` and `sh` in cmd and
+2. Run it. It puts `Bash.exe`, `sh.exe` (a hard link to it), `wombat.exe` with `git.exe` a hard link to it (Wombat, a git-compatible tool for Windows: what it does not do yet is handed on to the next git C#Bash finds, see [Using C#Bash](docs/USING.md#the-fallback-chain)) and a start file, `claude.cmd`, in `%USERPROFILE%/.bash/bin`,
+   and asks `Add [<that folder>] to your PATH? [y/N]` (say yes only if you want `bash`, `sh` and that `git` in cmd and
    PowerShell). Run it again to repair or upgrade, even while C#Bash is running. Beside `bin`, in `%USERPROFILE%/.bash`,
    it puts [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md), the known issues of the build it installs, and
-   [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md), its known limitations, each with the way that works.
+   [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md), its known limitations, each with the way that works; in `wombat`,
+   Wombat's own `README.md`, `KNOWN_ISSUES.md`, `KNOWN_LIMITATIONS.md` and `docs/USING.md`; and in `etc`, git's settings for it: a
+   `gitconfig` with `core.symlinks = false` and an empty `gitattributes`.
 3. Start Claude Code with `%USERPROFILE%/.bash/bin/claude.cmd` (your arguments pass through: `--resume` and the rest).
    It gives that session C#Bash as its shell and nothing else on the machine changes. It also chooses the git Claude
    Code itself runs (its own branch and status checks, in the background, not the git your commands get): by default
@@ -66,7 +68,8 @@ tools, both free ([the supported toolchain](docs/DEVELOPING.md#the-supported-too
    ([details, and which to choose](docs/USING.md#start-claude-code-with-a-path-of-one-folder-the-git-it-runs)).
 4. Check it: in the session, type `! bash --version`. Its last line must read `C#Bash build …`.
 
-To remove it, delete `%USERPROFILE%/.bash/bin` (and its PATH entry, if you added one).
+To remove it, delete `%USERPROFILE%/.bash` (everything it installed, and its own files there: its remembered lookups,
+its log, any `etc/csharpBash.config` you wrote), and its PATH entry, if you added one.
 
 **Without the start file:**
 
@@ -79,13 +82,13 @@ no effect.
 
 **If it is not C#Bash:** without `CLAUDE_CODE_GIT_BASH_PATH`, Claude Code runs the first `bash.exe` on PATH. With
 WSL installed that is its launcher, `C:/Windows/System32/bash.exe`, which Windows puts on PATH ahead of any folder of
-yours; with Git for Windows on PATH, it may be Git Bash. You need not reorder PATH: make sure the variable reaches
+yours; with Git® for Windows on PATH, it may be PortableGit's bash. You need not reorder PATH: make sure the variable reaches
 Claude Code. `setx` changes only programs started afterwards, so open a NEW terminal before starting Claude Code; or
 use the start file (the installer's `claude.cmd`, or the one in [Using C#Bash](docs/USING.md)), which sets it for
 that session alone. (Measured with Claude Code 2.1.316 and again with 2.1.331: the variable wins over PATH. Earlier
 versions ignored it: Claude Code issue #94077.)
 
-To go back to Git Bash, remove the variable (or stop using the start file) and restart Claude Code. Building it
+To go back to PortableGit's bash, remove the variable (or stop using the start file) and restart Claude Code. Building it
 yourself, the start file, and tips: [Using C#Bash](docs/USING.md).
 
 ## What you get
@@ -97,14 +100,14 @@ yourself, the start file, and tips: [Using C#Bash](docs/USING.md).
   `find`, `cp`, `mv`, `rm`, `stat`), and `jq`, `diff`, `xargs`, `date`, `unzip`, `iconv` and more. They stream, so a 2 GiB file or an
   endless pipe is fine.
 - **Windows paths both ways:** `/c/Users/you` and `C:/Users/you` both work, and paths come back with forward slashes,
-  which a script can safely take apart. A Windows program given `/dev/null` gets `nul`, as under Git Bash.
+  which a script can safely take apart. A Windows program given `/dev/null` gets `nul`, as under PortableGit's bash.
 - **Bytes stay bytes:** data that isn't valid UTF-8 survives variables, `$( )`, pipes and files unchanged.
 - **Windows programs' CRLF lines just work:** `grep 'x$'`, `read`, `mapfile`, `$( )`, `sed`, `awk`, `cut`, `sort`,
   `uniq`, `comm`, `nl`, `rev` and `xargs` take a CRLF as the end of a line, so the output of a .NET or other Windows program matches as you'd expect,
   and a line they pass on keeps its CRLF (`sed -i` leaves a CRLF file CRLF).
 - **Help that points at the manual:** `help grep` or `grep --help` gives you the GNU manual page for it.
 - **An interactive shell too:** line editing, history, tab completion, prompts.
-- **`sh` too:** the installer makes `sh.exe` a hard link to `Bash.exe`, as Git for Windows ships its own (by hand: copy
+- **`sh` too:** the installer makes `sh.exe` a hard link to `Bash.exe`, as PortableGit ships its own (by hand: copy
   `Bash.exe` to `sh.exe` in the same folder). Scripts that run `sh`, and the programs they start, will find it. It is
   bash, not a strict POSIX `sh`.
 
@@ -135,3 +138,10 @@ and to the FSF's administrators for their patience when an early version of our 
 ## License
 
 [MIT](LICENSE).
+
+## Trademark
+
+C#Bash's installer includes Wombat (`wombat.exe`, with `git.exe` a hard link to it), an independent, git-compatible repository tool. Wombat is not Git®:
+Git® is a trademark of the Software Freedom Conservancy (US Registration 4680534), and neither C#Bash nor Wombat is
+affiliated with or endorsed by the Git® project. Wherever C#Bash's documentation refers to an executable as `git`, it
+means Wombat or a similar git-compatible tool.

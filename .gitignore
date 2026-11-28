@@ -42,3 +42,4 @@ dist.staging.log
 tests/corpus/printer/
 dist.installer/
 tools/installgen.path
+tools/wombat.path

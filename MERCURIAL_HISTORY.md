@@ -12,11 +12,26 @@ The full history is preserved two ways:
   hg update
   ```
 
-Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 1002 changesets.
+Authored by `Guy <guy@koliada.com>`, co-authored by Claude (Anthropic). 1017 changesets.
 
 
 | rev | date | summary |
 |----:|------------|---------|
+| 1016 | 2026-11-27 | BUILT for the publish: Wombat 185 as wombat.exe with git.exe a hard link (installer: source, manifest link, README, sandbox checks; pin 185); README names the pair; KNOWN_ISSUES heading for a second release of build 999; ~/.bash/bin swapped (records); DECISIONS |
+| 1015 | 2026-11-27 | GREENLIT (his): publish when Wombat's next build arrives (read as the build after 127); the steps; anchor refreshed |
+| 1014 | 2026-11-27 | README Trademark note: every Git marked (wombat-3a's correction under his rule; his 'whatever is correct' on the exception); DECISIONS |
+| 1013 | 2026-11-27 | DONE (his rule): Git in prose only for PortableGit, always Git®, far fewer (first mention Git® Bash (PortableGit's bash), then PortableGit's bash); README's 'a git for Windows' rephrased; the graph's labels and redraw; DECISIONS; anchor |
+| 1012 | 2026-11-27 | RULED (his): Git in prose only for PortableGit, always with the trademark symbol; four readings put to him before the sweep; anchor |
+| 1011 | 2026-11-27 | RULED (his): git colloquially, Wombat formally in user docs; Claude's three conditions for no confusion recorded; anchor refreshed at 70% |
+| 1010 | 2026-11-27 | RULED (relayed by wombat-3a, his '1/ yes'): Wombat ships as wombat.exe with git.exe a hard link to it; to build when Wombat's next deploy lands; DECISIONS; anchor |
+| 1009 | 2026-11-27 | README: Trademark note at the bottom (his yes; the registration number checked on git-scm.com/about/trademark; his added sentence: an executable called git means Wombat or a similar tool); the Conservancy question closed; DECISIONS; anchor |
+| 1008 | 2026-11-27 | anchor refreshed (context near 70%): published hg-1001; 1004-1006 built not published; awaiting his word on the Conservancy question, the README trademark note, wombat.exe + hard link |
+| 1007 | 2026-11-27 | records: his rule restated (a conflict stops the work for his word); Claude's two misses on the Wombat installer recorded; the Conservancy conflict put to him |
+| 1006 | 2026-11-27 | BUILT (his ruling): the installer ships Wombat's git.exe (pinned by installer/wombat.build, refused otherwise), etc/gitconfig + gitattributes, ~/.bash/wombat/ docs; tools/wombat.path local and ignored; sandbox checks; README install list and removal; NOT published: the Conservancy question (a) and Wombat's reporting route (b) are his; DECISIONS; anchor |
+| 1005 | 2026-11-27 | user docs: Wombat's git.exe as the git the installer puts in .bash/bin (README download line and install step, the PATH question; USING's Claude Code git and refusal-protocol lines, 'not yet published' gone; KNOWN_LIMITATIONS' WSL-git entry: Wombat's refusals travel the chain) (his ruling: it ships in the installer); the installer change waits on wombat-3a's folder/build |
+| 1004 | 2026-11-27 | RULED (his): Wombat's git.exe ships in the C#Bash installer now (supersedes 2026-11-10 step 2) and goes in the user docs; no user-facing document holds internal information: KNOWN_ISSUES (reporters, sessions, Wombat's internals, the features list, 'the C#Bash session'), machine paths in USING/KNOWN_LIMITATIONS/DEVELOPING/IMPLEMENTATION, 'another session' in PERFORMANCE; IMPLEMENTATION's stale benchmark host and msys64; DECISIONS; anchor |
+| 1003 | 2026-11-27 | anchor: guy-8b answered (claude.cmd with BASH_CLAUDE_GIT unset; none keeps today's; the install hazard); guy-windows11's install waits on his word |
+| 1002 | 2026-11-27 | records: PUBLISHED hg-1001 = build 999 (benchmark, doc review, console suite 338/0, release checked; wombat-3a, web-d0, guy-8b told); anchor true state and next-publish section |
 | 1001 | 2026-11-27 | doc review for the publish of build 999: README table and startup line, PERFORMANCE (measured-on, wins; the noisy-start baseline and the rows against 885 stated), perf history (999 added, graph redrawn), results.md (the 999 run), KNOWN_ISSUES' release section (999 since hg-905; the 885 section dropped) |
 | 1000 | 2026-11-27 | records: DEPLOYED 999 (bugs list 19, 20; suite 338/0; checked live); only (9) left; publish waits on wombat's quiet |
 | 999 | 2026-11-27 | FIXED (bugs list 19, 20): tr takes every word after its first operand as an operand, GNU's operand rules and words; -s with two sets squeezes the last set's characters after translating; case tr_operands_gnu (red on 997, mutations fail it); KNOWN_ISSUES; counts 338; DECISIONS; anchor |
